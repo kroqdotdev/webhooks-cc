@@ -1,0 +1,838 @@
+{
+  "about": "What a user can do, and how each client reaches it. Every API route is a capability here or listed in internalRoutes; each surface names its calls (SDK methods, CLI commands, MCP tools), or says in a sentence why it has none. Nobody should need the dashboard: a capability every client lacks is a gap to close, and sessionOnly says why a person still has to be in the loop. Checked by packages/sdk/src/__tests__/capabilities.test.ts, packages/mcp/src/__tests__/capabilities.test.ts and apps/cli-rs (cli::capabilities).",
+  "capabilities": [
+    {
+      "id": "endpoint.create",
+      "does": "Create an endpoint",
+      "routes": ["POST /api/endpoints"],
+      "sdk": ["endpoints.create"],
+      "python": ["endpoints.create"],
+      "go": ["Endpoints.Create"],
+      "cli": ["create"],
+      "mcp": ["create_endpoint", "create_endpoints"]
+    },
+    {
+      "id": "endpoint.list",
+      "does": "List the endpoints you own and those shared with you",
+      "routes": ["GET /api/endpoints"],
+      "sdk": ["endpoints.list"],
+      "python": ["endpoints.list"],
+      "go": ["Endpoints.List"],
+      "cli": ["list"],
+      "mcp": ["list_endpoints"]
+    },
+    {
+      "id": "endpoint.get",
+      "does": "Read an endpoint and its settings",
+      "routes": ["GET /api/endpoints/[slug]"],
+      "sdk": ["endpoints.get"],
+      "python": ["endpoints.get"],
+      "go": ["Endpoints.Get"],
+      "cli": ["get"],
+      "mcp": ["get_endpoint"]
+    },
+    {
+      "id": "endpoint.update",
+      "does": "Change an endpoint: name, mock response, rules, layouts, email, forwarding",
+      "routes": ["PATCH /api/endpoints/[slug]"],
+      "sdk": ["endpoints.update", "forwarding.configure"],
+      "python": ["endpoints.update"],
+      "go": ["Endpoints.Update"],
+      "cli": ["update-endpoint"],
+      "mcp": ["update_endpoint", "configure_forwarding"]
+    },
+    {
+      "id": "endpoint.delete",
+      "does": "Delete an endpoint",
+      "routes": ["DELETE /api/endpoints/[slug]"],
+      "sdk": ["endpoints.delete"],
+      "python": ["endpoints.delete"],
+      "go": ["Endpoints.Delete"],
+      "cli": ["delete"],
+      "mcp": ["delete_endpoint", "delete_endpoints"]
+    },
+    {
+      "id": "endpoint.favorite",
+      "does": "Pin an endpoint to the top of the list, or unpin it",
+      "routes": ["PUT /api/endpoints/[slug]/favorite", "DELETE /api/endpoints/[slug]/favorite"],
+      "sdk": ["endpoints.favorite", "endpoints.unfavorite"],
+      "python": ["endpoints.favorite", "endpoints.unfavorite"],
+      "go": ["Endpoints.Favorite", "Endpoints.Unfavorite"],
+      "cli": ["favorite", "unfavorite"],
+      "mcp": ["favorite_endpoint"]
+    },
+    {
+      "id": "endpoint.claim-guest",
+      "does": "Move an endpoint made on the landing page without an account into the account",
+      "routes": ["POST /api/endpoints/claim"],
+      "sdk": "guest endpoints come from the landing page, which claims them on sign-in",
+      "python": "guest endpoints come from the landing page, which claims them on sign-in",
+      "go": "guest endpoints come from the landing page, which claims them on sign-in",
+      "cli": "guest endpoints come from the landing page, which claims them on sign-in",
+      "mcp": "guest endpoints come from the landing page, which claims them on sign-in"
+    },
+    {
+      "id": "endpoint.preview-response",
+      "does": "Show which mock response a request would get",
+      "routes": ["POST /api/endpoints/[slug]/responses/preview"],
+      "sdk": ["endpoints.previewResponse"],
+      "python": ["endpoints.preview_response"],
+      "go": ["Endpoints.PreviewResponse"],
+      "cli": "no command yet: `whk api` reaches it",
+      "mcp": ["preview_response"]
+    },
+    {
+      "id": "endpoint.preview-layouts",
+      "does": "Run an endpoint's email layouts over a request without saving",
+      "routes": ["POST /api/endpoints/[slug]/layouts/preview"],
+      "sdk": ["endpoints.previewLayouts"],
+      "python": ["endpoints.preview_layouts"],
+      "go": ["Endpoints.PreviewLayouts"],
+      "cli": "no command yet: `whk api` reaches it",
+      "mcp": ["preview_layouts"]
+    },
+    {
+      "id": "endpoint.layout-template",
+      "does": "Add a ready-made email layout to an endpoint",
+      "routes": ["POST /api/endpoints/[slug]/layouts/template"],
+      "sdk": "no method yet",
+      "python": "testing-focused SDK: added on demand",
+      "go": "testing-focused SDK: added on demand",
+      "cli": "no command yet: `whk api` reaches it",
+      "mcp": "no tool yet"
+    },
+    {
+      "id": "endpoint.preview-email-fields",
+      "does": "Try named email field patterns on captured emails",
+      "routes": ["POST /api/endpoints/[slug]/email-fields/preview"],
+      "sdk": "no method yet",
+      "python": "testing-focused SDK: added on demand",
+      "go": "testing-focused SDK: added on demand",
+      "cli": "no command yet: `whk api` reaches it",
+      "mcp": "no tool yet"
+    },
+    {
+      "id": "endpoint.layout-assist",
+      "does": "Have AI propose email layout patterns from chosen emails",
+      "routes": [
+        "GET /api/endpoints/[slug]/layouts/assist",
+        "POST /api/endpoints/[slug]/layouts/assist"
+      ],
+      "sessionOnly": "a person consents to sending the emails to the model; planned: the agent asks, a person approves",
+      "sdk": "session only",
+      "python": "session only",
+      "go": "session only",
+      "cli": "session only",
+      "mcp": "session only"
+    },
+    {
+      "id": "endpoint.alerts",
+      "does": "Read and change an endpoint's alerts",
+      "routes": ["GET /api/endpoints/[slug]/alerts", "PUT /api/endpoints/[slug]/alerts"],
+      "sdk": ["alerts.get", "alerts.update"],
+      "python": "testing-focused SDK: added on demand",
+      "go": "testing-focused SDK: added on demand",
+      "cli": "no command yet: `whk api` reaches it",
+      "mcp": "no tool yet"
+    },
+    {
+      "id": "request.list",
+      "does": "List an endpoint's captured requests, newest first, page by page",
+      "routes": [
+        "GET /api/endpoints/[slug]/requests",
+        "GET /api/endpoints/[slug]/requests/paginated"
+      ],
+      "sdk": ["requests.list", "requests.listPaginated", "requests.export"],
+      "python": ["requests.list", "requests.list_paginated"],
+      "go": ["Requests.List", "Requests.ListPage"],
+      "cli": ["requests list", "requests export"],
+      "mcp": ["list_requests", "generate_payload_schema"]
+    },
+    {
+      "id": "request.wait",
+      "does": "Wait for requests to arrive, or follow them live",
+      "routes": ["GET /api/stream/[slug]", "GET /api/endpoints/[slug]/requests"],
+      "sdk": ["requests.waitFor", "requests.waitForAll", "requests.subscribe"],
+      "python": ["requests.wait_for", "requests.wait_for_all", "requests.subscribe"],
+      "go": ["Requests.WaitFor", "Requests.WaitForAll", "Requests.Subscribe"],
+      "cli": ["wait", "listen", "tunnel"],
+      "mcp": ["wait_for_request", "wait_for_requests", "test_webhook_flow"]
+    },
+    {
+      "id": "request.get",
+      "does": "Read one captured request in full",
+      "routes": ["GET /api/requests/[id]"],
+      "sdk": ["requests.get"],
+      "python": ["requests.get"],
+      "go": ["Requests.Get"],
+      "cli": ["requests get"],
+      "mcp": ["get_request", "compare_requests", "extract_from_request", "verify_signature"]
+    },
+    {
+      "id": "request.download",
+      "does": "Download a stored email's exact message or one of its attachments",
+      "routes": ["GET /api/requests/[id]/raw", "GET /api/requests/[id]/attachments/[index]"],
+      "sdk": ["requests.raw", "requests.attachment"],
+      "python": ["requests.raw", "requests.attachment"],
+      "go": ["Requests.Raw", "Requests.Attachment"],
+      "cli": "no command yet: `whk api` reaches it",
+      "mcp": "a tool answer carries text; get_email links the attachments"
+    },
+    {
+      "id": "request.search",
+      "does": "Search and count requests across endpoints",
+      "routes": ["GET /api/search/requests", "GET /api/search/requests/count"],
+      "sdk": ["requests.search", "requests.count"],
+      "python": ["requests.search", "requests.count"],
+      "go": ["Requests.Search", "Requests.Count"],
+      "cli": ["requests search", "requests count"],
+      "mcp": ["search_requests", "count_requests"]
+    },
+    {
+      "id": "request.clear",
+      "does": "Delete an endpoint's captured requests",
+      "routes": ["DELETE /api/endpoints/[slug]/requests"],
+      "sdk": ["requests.clear"],
+      "python": ["requests.clear"],
+      "go": ["Requests.Clear"],
+      "cli": ["requests clear"],
+      "mcp": ["clear_requests"]
+    },
+    {
+      "id": "request.replay",
+      "does": "Send a captured request again to the endpoint itself, through its rules and destinations",
+      "routes": ["POST /api/requests/[id]/replay", "POST /api/endpoints/[slug]/replay"],
+      "sdk": ["requests.redeliver", "endpoints.redeliver"],
+      "python": "testing-focused SDK: added on demand",
+      "go": "testing-focused SDK: added on demand",
+      "cli": "no command yet: `whk api` reaches it",
+      "mcp": "no tool yet"
+    },
+    {
+      "id": "request.replay-to-url",
+      "does": "Send a captured request again to a URL you name, such as localhost",
+      "routes": ["GET /api/requests/[id]"],
+      "sdk": ["requests.replay"],
+      "python": ["requests.replay"],
+      "go": ["Requests.Replay"],
+      "cli": ["replay"],
+      "mcp": ["replay_request"]
+    },
+    {
+      "id": "request.render",
+      "does": "Render a captured email as JSON or an inbound provider's webhook (Postmark, SendGrid, Mailgun, CloudMailin)",
+      "routes": ["POST /api/requests/[id]/render"],
+      "sdk": ["emails.render"],
+      "python": ["emails.render"],
+      "go": ["Emails.Render"],
+      "cli": ["tunnel"],
+      "mcp": ["render_email"]
+    },
+    {
+      "id": "email.read",
+      "does": "List and read captured emails, with codes and links",
+      "routes": ["GET /api/endpoints/[slug]/requests", "GET /api/requests/[id]"],
+      "sdk": ["emails.list", "emails.get", "emails.latest"],
+      "python": ["emails.list", "emails.get", "emails.latest"],
+      "go": ["Emails.List", "Emails.Get", "Emails.Latest"],
+      "cli": ["requests list", "requests get"],
+      "mcp": ["list_emails", "get_email"]
+    },
+    {
+      "id": "email.wait",
+      "does": "Wait for an email to arrive",
+      "routes": ["GET /api/endpoints/[slug]/requests"],
+      "sdk": ["emails.waitFor", "emails.waitForAll"],
+      "python": ["emails.wait_for", "emails.wait_for_all"],
+      "go": ["Emails.WaitFor", "Emails.WaitForAll"],
+      "cli": ["wait"],
+      "mcp": ["wait_for_email"]
+    },
+    {
+      "id": "email.send-test",
+      "does": "Send a test email to an endpoint's address",
+      "routes": ["POST /api/send-test-email"],
+      "sdk": ["emails.sendTest"],
+      "python": ["emails.send_test"],
+      "go": ["Emails.SendTest"],
+      "cli": "no command yet: `whk api` reaches it",
+      "mcp": ["send_test_email"]
+    },
+    {
+      "id": "webhook.send",
+      "does": "Send a test webhook to an endpoint, signed like a provider's if asked",
+      "routes": ["POST /api/send-test"],
+      "sdk": ["endpoints.send", "endpoints.sendTemplate"],
+      "python": ["endpoints.send", "endpoints.send_template"],
+      "go": ["Endpoints.Send"],
+      "cli": ["send"],
+      "mcp": ["send_webhook"]
+    },
+    {
+      "id": "webhook.send-to",
+      "does": "Send a webhook straight to any URL, signed like a provider's if asked",
+      "routes": [],
+      "sdk": ["sendTo", "buildRequest"],
+      "python": ["send_to", "build_request"],
+      "go": ["SendTo"],
+      "cli": ["send-to"],
+      "mcp": ["send_to", "preview_webhook"]
+    },
+    {
+      "id": "destination.list",
+      "does": "List and read an endpoint's destinations",
+      "routes": [
+        "GET /api/endpoints/[slug]/destinations",
+        "GET /api/endpoints/[slug]/destinations/[id]"
+      ],
+      "sdk": ["destinations.list", "destinations.get"],
+      "python": ["destinations.list", "destinations.get"],
+      "go": ["Destinations.List", "Destinations.Get"],
+      "cli": "no command yet: `whk api` reaches it",
+      "mcp": ["list_destinations"]
+    },
+    {
+      "id": "destination.create",
+      "does": "Add a destination",
+      "routes": ["POST /api/endpoints/[slug]/destinations"],
+      "sdk": ["destinations.create"],
+      "python": ["destinations.create"],
+      "go": ["Destinations.Create"],
+      "cli": "no command yet: `whk api` reaches it",
+      "mcp": ["add_destination"]
+    },
+    {
+      "id": "destination.update",
+      "does": "Change a destination, or the order destinations run in",
+      "routes": [
+        "PATCH /api/endpoints/[slug]/destinations/[id]",
+        "PUT /api/endpoints/[slug]/destinations/order"
+      ],
+      "sdk": ["destinations.update", "destinations.reorder"],
+      "python": ["destinations.update", "destinations.reorder"],
+      "go": ["Destinations.Update", "Destinations.Reorder"],
+      "cli": "no command yet: `whk api` reaches it",
+      "mcp": ["update_destination"]
+    },
+    {
+      "id": "destination.delete",
+      "does": "Remove a destination",
+      "routes": ["DELETE /api/endpoints/[slug]/destinations/[id]"],
+      "sdk": ["destinations.delete"],
+      "python": ["destinations.delete"],
+      "go": ["Destinations.Delete"],
+      "cli": "no command yet: `whk api` reaches it",
+      "mcp": ["remove_destination"]
+    },
+    {
+      "id": "destination.preview",
+      "does": "Show what a destination would send for a request, without sending",
+      "routes": ["POST /api/endpoints/[slug]/destinations/preview"],
+      "sdk": ["destinations.preview"],
+      "python": ["destinations.preview"],
+      "go": ["Destinations.Preview"],
+      "cli": "no command yet: `whk api` reaches it",
+      "mcp": ["preview_destination"]
+    },
+    {
+      "id": "destination.test",
+      "does": "Send a test delivery to a destination",
+      "routes": [
+        "POST /api/endpoints/[slug]/destinations/[id]/test",
+        "POST /api/endpoints/[slug]/forwarding/test"
+      ],
+      "sdk": ["destinations.test", "forwarding.test"],
+      "python": ["destinations.test"],
+      "go": ["Destinations.Test"],
+      "cli": "no command yet: `whk api` reaches it",
+      "mcp": ["test_forwarding"]
+    },
+    {
+      "id": "destination.secret",
+      "does": "Read or rotate the secret that signs deliveries",
+      "routes": [
+        "GET /api/endpoints/[slug]/destinations/[id]/secret",
+        "POST /api/endpoints/[slug]/destinations/[id]/secret",
+        "GET /api/endpoints/[slug]/forwarding",
+        "POST /api/endpoints/[slug]/forwarding"
+      ],
+      "sdk": [
+        "destinations.secret",
+        "destinations.rotateSecret",
+        "forwarding.secret",
+        "forwarding.rotateSecret"
+      ],
+      "python": [
+        "destinations.secret",
+        "destinations.rotate_secret",
+        "forwarding.secret",
+        "forwarding.rotate_secret"
+      ],
+      "go": [
+        "Destinations.Secret",
+        "Destinations.RotateSecret",
+        "Forwarding.Secret",
+        "Forwarding.RotateSecret"
+      ],
+      "cli": "no command yet: `whk api` reaches it",
+      "mcp": ["get_forwarding_secret"]
+    },
+    {
+      "id": "delivery.list",
+      "does": "List deliveries and their outcomes, per endpoint or per request",
+      "routes": [
+        "GET /api/endpoints/[slug]/deliveries",
+        "GET /api/endpoints/[slug]/deliveries/summary",
+        "GET /api/requests/[id]/deliveries"
+      ],
+      "sdk": [
+        "forwarding.deliveries",
+        "forwarding.summary",
+        "forwarding.requestDeliveries",
+        "forwarding.emailDeliveries"
+      ],
+      "python": "testing-focused SDK: added on demand",
+      "go": "testing-focused SDK: added on demand",
+      "cli": "no command yet: `whk api` reaches it",
+      "mcp": ["list_deliveries"]
+    },
+    {
+      "id": "delivery.redeliver",
+      "does": "Deliver a request again, or every failed delivery",
+      "routes": [
+        "POST /api/requests/[id]/deliveries",
+        "POST /api/endpoints/[slug]/deliveries/redeliver-failed"
+      ],
+      "sdk": ["forwarding.redeliver", "forwarding.redeliverFailed"],
+      "python": "testing-focused SDK: added on demand",
+      "go": "testing-focused SDK: added on demand",
+      "cli": "no command yet: `whk api` reaches it",
+      "mcp": ["redeliver"]
+    },
+    {
+      "id": "account.usage",
+      "does": "Read the plan, quota and what is used",
+      "routes": ["GET /api/usage"],
+      "sdk": ["usage"],
+      "python": ["usage"],
+      "go": ["Usage"],
+      "cli": ["usage"],
+      "mcp": ["get_usage"]
+    },
+    {
+      "id": "account.manage",
+      "does": "Change or delete the account",
+      "routes": ["PATCH /api/account", "DELETE /api/account"],
+      "sessionOnly": "deleting an account must be a person's decision",
+      "sdk": "session only",
+      "python": "session only",
+      "go": "session only",
+      "cli": "session only",
+      "mcp": "session only"
+    },
+    {
+      "id": "account.api-keys",
+      "does": "List, create and revoke API keys",
+      "routes": ["GET /api/api-keys", "POST /api/api-keys", "DELETE /api/api-keys"],
+      "sessionOnly": "a key cannot mint keys; planned: the agent asks, a person approves",
+      "sdk": "session only",
+      "python": "session only",
+      "go": "session only",
+      "cli": "session only",
+      "mcp": "session only"
+    },
+    {
+      "id": "account.connected-agents",
+      "does": "List and disconnect connected agents",
+      "routes": ["GET /api/agent/registrations", "DELETE /api/agent/registrations/[id]"],
+      "sessionOnly": "planned: the agent asks, a person approves",
+      "sdk": "session only",
+      "python": "session only",
+      "go": "session only",
+      "cli": "session only",
+      "mcp": "session only"
+    },
+    {
+      "id": "billing.manage",
+      "does": "Subscribe, change plan, buy extra capacity, open the billing portal, cancel",
+      "routes": [
+        "POST /api/billing/checkout",
+        "POST /api/billing/change-plan",
+        "DELETE /api/billing/change-plan",
+        "GET /api/billing/capacity",
+        "POST /api/billing/capacity",
+        "POST /api/billing/portal",
+        "POST /api/billing/cancel",
+        "POST /api/billing/resubscribe"
+      ],
+      "sessionOnly": "payment stays with a person; planned: checkout links an agent hands over",
+      "sdk": "session only",
+      "python": "session only",
+      "go": "session only",
+      "cli": "session only",
+      "mcp": "session only"
+    },
+    {
+      "id": "support.tickets",
+      "does": "Open and follow support tickets, and see when staff looked at your data",
+      "routes": [
+        "GET /api/support/tickets",
+        "POST /api/support/tickets",
+        "GET /api/support/tickets/[number]",
+        "PATCH /api/support/tickets/[number]",
+        "POST /api/support/tickets/[number]/messages",
+        "GET /api/support/attachments/[id]",
+        "GET /api/support/access-log"
+      ],
+      "sessionOnly": "tickets belong to the person who opened them",
+      "sdk": "session only",
+      "python": "session only",
+      "go": "session only",
+      "cli": "session only",
+      "mcp": "session only"
+    },
+    {
+      "id": "domain.manage",
+      "does": "Add, verify, change and remove custom inbound domains",
+      "routes": [
+        "GET /api/domains",
+        "POST /api/domains",
+        "PATCH /api/domains/[id]",
+        "DELETE /api/domains/[id]",
+        "POST /api/domains/[id]/verify"
+      ],
+      "sessionOnly": "planned: the agent asks, a person approves",
+      "sdk": "session only",
+      "python": "session only",
+      "go": "session only",
+      "cli": "session only",
+      "mcp": "session only"
+    },
+    {
+      "id": "google.connections",
+      "does": "List the connected Google accounts",
+      "routes": ["GET /api/integrations/google/connections"],
+      "sdk": "no method yet",
+      "python": "testing-focused SDK: added on demand",
+      "go": "testing-focused SDK: added on demand",
+      "cli": "no command yet: `whk api` reaches it",
+      "mcp": "no tool yet"
+    },
+    {
+      "id": "google.connect",
+      "does": "Connect a Google account for Sheets destinations, pick spreadsheets, disconnect",
+      "routes": [
+        "POST /api/integrations/google/start",
+        "POST /api/integrations/google/pick",
+        "GET /api/integrations/google/spreadsheets",
+        "POST /api/integrations/google/spreadsheets",
+        "DELETE /api/integrations/google/connections/[id]"
+      ],
+      "sessionOnly": "Google's consent runs in a browser; planned: the agent asks, a person approves",
+      "sdk": "session only",
+      "python": "session only",
+      "go": "session only",
+      "cli": "session only",
+      "mcp": "session only"
+    },
+    {
+      "id": "request.share-link",
+      "does": "Make, list and revoke public links to a frozen copy of a request",
+      "routes": [
+        "GET /api/requests/[id]/shares",
+        "POST /api/requests/[id]/shares",
+        "GET /api/request-shares",
+        "DELETE /api/request-shares/[id]"
+      ],
+      "sessionOnly": "a link publishes data to anyone who holds it; planned: the agent asks, a person approves",
+      "sdk": "session only",
+      "python": "session only",
+      "go": "session only",
+      "cli": "session only",
+      "mcp": "session only"
+    },
+    {
+      "id": "share.start",
+      "does": "Share a local port on a public preview link (through the tunnel edge)",
+      "routes": [],
+      "sdk": ["shares.start"],
+      "python": ["shares.start"],
+      "go": ["Shares.Start"],
+      "cli": ["share", "tunnel"],
+      "mcp": ["share_port"]
+    },
+    {
+      "id": "share.list",
+      "does": "List live and past shares",
+      "routes": ["GET /api/shares"],
+      "sdk": ["shares.list"],
+      "python": ["shares.list"],
+      "go": ["Shares.List"],
+      "cli": ["shares ls"],
+      "mcp": ["list_shares"]
+    },
+    {
+      "id": "share.stop",
+      "does": "Stop a share",
+      "routes": ["POST /api/shares/[id]/stop"],
+      "sdk": ["shares.stop"],
+      "python": ["shares.stop"],
+      "go": ["Shares.Stop"],
+      "cli": ["shares stop"],
+      "mcp": ["stop_share"]
+    },
+    {
+      "id": "share.requests",
+      "does": "Read the request log of a share",
+      "routes": ["GET /api/shares/[id]/requests"],
+      "sdk": ["shares.requests"],
+      "python": ["shares.requests"],
+      "go": ["Shares.Requests"],
+      "cli": ["shares log"],
+      "mcp": ["share_requests"]
+    },
+    {
+      "id": "name.list",
+      "does": "List reserved preview names",
+      "routes": ["GET /api/tunnel-names"],
+      "sdk": ["names.list"],
+      "python": ["names.list"],
+      "go": ["Names.List"],
+      "cli": ["names ls"],
+      "mcp": ["list_names"]
+    },
+    {
+      "id": "name.reserve",
+      "does": "Reserve a preview name",
+      "routes": ["POST /api/tunnel-names"],
+      "sdk": ["names.reserve"],
+      "python": ["names.reserve"],
+      "go": ["Names.Reserve"],
+      "cli": ["names reserve"],
+      "mcp": ["reserve_name"]
+    },
+    {
+      "id": "name.release",
+      "does": "Release a reserved name",
+      "routes": ["DELETE /api/tunnel-names/[name]"],
+      "sdk": ["names.release"],
+      "python": ["names.release"],
+      "go": ["Names.Release"],
+      "cli": ["names release"],
+      "mcp": ["release_name"]
+    },
+    {
+      "id": "name.password",
+      "does": "Set or clear the password on a reserved name",
+      "routes": [
+        "PUT /api/tunnel-names/[name]/password",
+        "DELETE /api/tunnel-names/[name]/password"
+      ],
+      "sdk": ["names.setPassword", "names.clearPassword"],
+      "python": ["names.set_password", "names.clear_password"],
+      "go": ["Names.SetPassword", "Names.ClearPassword"],
+      "cli": ["names password"],
+      "mcp": ["set_name_password", "clear_name_password"]
+    },
+    {
+      "id": "team.list",
+      "does": "List your teams",
+      "routes": ["GET /api/teams"],
+      "sdk": ["teams.list"],
+      "python": "testing-focused SDK: added on demand",
+      "go": "testing-focused SDK: added on demand",
+      "cli": ["teams list"],
+      "mcp": ["list_teams"]
+    },
+    {
+      "id": "team.create",
+      "does": "Create a team",
+      "routes": ["POST /api/teams"],
+      "sdk": "no method yet",
+      "python": "testing-focused SDK: added on demand",
+      "go": "testing-focused SDK: added on demand",
+      "cli": "no command yet: `whk api` reaches it",
+      "mcp": "no tool yet"
+    },
+    {
+      "id": "team.update",
+      "does": "Rename or delete a team",
+      "routes": ["PATCH /api/teams/[teamId]", "DELETE /api/teams/[teamId]"],
+      "sdk": "no method yet",
+      "python": "testing-focused SDK: added on demand",
+      "go": "testing-focused SDK: added on demand",
+      "cli": "no command yet: `whk api` reaches it",
+      "mcp": "no tool yet"
+    },
+    {
+      "id": "team.members",
+      "does": "List a team's members",
+      "routes": ["GET /api/teams/[teamId]/members"],
+      "sdk": ["teams.members"],
+      "python": "testing-focused SDK: added on demand",
+      "go": "testing-focused SDK: added on demand",
+      "cli": ["teams members"],
+      "mcp": ["list_team_members"]
+    },
+    {
+      "id": "team.remove-member",
+      "does": "Remove a member, or leave a team",
+      "routes": ["DELETE /api/teams/[teamId]/members/[userId]", "POST /api/teams/[teamId]/leave"],
+      "sdk": "no method yet",
+      "python": "testing-focused SDK: added on demand",
+      "go": "testing-focused SDK: added on demand",
+      "cli": "no command yet: `whk api` reaches it",
+      "mcp": "no tool yet"
+    },
+    {
+      "id": "team.share",
+      "does": "Share endpoints with a team, list them, stop sharing",
+      "routes": [
+        "GET /api/teams/[teamId]/endpoints",
+        "POST /api/teams/[teamId]/endpoints",
+        "DELETE /api/teams/[teamId]/endpoints/[endpointId]"
+      ],
+      "sdk": ["teams.share", "teams.unshare"],
+      "python": "testing-focused SDK: added on demand",
+      "go": "testing-focused SDK: added on demand",
+      "cli": ["teams share", "teams unshare"],
+      "mcp": ["share_endpoint", "unshare_endpoint"]
+    },
+    {
+      "id": "team.invite",
+      "does": "Invite someone to a team, or withdraw the invite",
+      "routes": [
+        "POST /api/teams/[teamId]/invite",
+        "DELETE /api/teams/[teamId]/invites/[inviteId]"
+      ],
+      "sdk": ["teams.invite"],
+      "python": "testing-focused SDK: added on demand",
+      "go": "testing-focused SDK: added on demand",
+      "cli": ["teams invite"],
+      "mcp": "no tool yet"
+    },
+    {
+      "id": "team.invites",
+      "does": "List, accept and decline invites to you",
+      "routes": [
+        "GET /api/invites",
+        "POST /api/invites/[inviteId]/accept",
+        "POST /api/invites/[inviteId]/decline"
+      ],
+      "sdk": ["teams.invites.list", "teams.invites.accept", "teams.invites.decline"],
+      "python": "testing-focused SDK: added on demand",
+      "go": "testing-focused SDK: added on demand",
+      "cli": ["teams invites", "teams accept", "teams decline"],
+      "mcp": "no tool yet"
+    },
+    {
+      "id": "team.billing",
+      "does": "Subscribe a team, change its plan or seats, buy capacity, open its billing portal, cancel",
+      "routes": [
+        "POST /api/teams/[teamId]/billing/checkout",
+        "GET /api/teams/[teamId]/billing/plan",
+        "POST /api/teams/[teamId]/billing/plan",
+        "GET /api/teams/[teamId]/billing/seats",
+        "POST /api/teams/[teamId]/billing/seats",
+        "GET /api/teams/[teamId]/billing/capacity",
+        "POST /api/teams/[teamId]/billing/capacity",
+        "POST /api/teams/[teamId]/billing/portal",
+        "POST /api/teams/[teamId]/billing/cancel",
+        "POST /api/teams/[teamId]/billing/resubscribe"
+      ],
+      "sessionOnly": "payment stays with a person; planned: checkout links an agent hands over",
+      "sdk": "session only",
+      "python": "session only",
+      "go": "session only",
+      "cli": "session only",
+      "mcp": "session only"
+    },
+    {
+      "id": "sandbox",
+      "does": "Endpoints for an agent with no account yet, and their requests",
+      "routes": [
+        "GET /api/agent/sandbox/endpoints",
+        "POST /api/agent/sandbox/endpoints",
+        "GET /api/agent/sandbox/endpoints/[slug]",
+        "DELETE /api/agent/sandbox/endpoints/[slug]",
+        "GET /api/agent/sandbox/endpoints/[slug]/requests",
+        "GET /api/agent/sandbox/requests/[id]"
+      ],
+      "sdk": ["WebhooksCC.sandbox"],
+      "python": ["sandbox"],
+      "go": ["NewSandbox"],
+      "cli": [
+        "sandbox create",
+        "sandbox list",
+        "sandbox get",
+        "sandbox delete",
+        "sandbox requests",
+        "sandbox request",
+        "sandbox wait"
+      ],
+      "mcp": [
+        "sandbox/create_endpoint",
+        "sandbox/list_endpoints",
+        "sandbox/get_endpoint",
+        "sandbox/delete_endpoint",
+        "sandbox/list_requests",
+        "sandbox/get_request",
+        "sandbox/wait_for_request"
+      ]
+    }
+  ],
+  "internalRoutes": {
+    "/api/ops/*": "the operations center, for staff",
+    "/api/blog/*": "blog editing, for staff",
+    "/api/edge/*": "the tunnel edge's own calls, with its secret",
+    "/api/polar-webhook": "Polar's webhook",
+    "/api/health": "health check",
+    "/api/stats": "the site's public totals",
+    "/api/report": "the report form on preview pages",
+    "/api/site-switch": "carries a browser session between webhooks.cc and mailhooks.cc",
+    "/api/go/*": "guest endpoints on the landing page",
+    "/api/auth/*": "the device login behind `whk auth login`",
+    "/api/oauth2/*": "the OAuth server behind the remote MCP server and `whk auth login`",
+    "/api/agent/auth/*": "agent registration (/auth.md)",
+    "/api/agent/identity/*": "agent registration (/auth.md)",
+    "/api/agent/event/*": "security events from identity providers",
+    "/api/attachments/*": "signed attachment links inside deliveries: the link is the permission",
+    "/api/integrations/google/begin": "Google's OAuth redirect",
+    "/api/integrations/google/callback": "Google's OAuth redirect",
+    "/api/integrations/google/finish": "Google's OAuth redirect",
+    "/api/integrations/google/handoff": "the Google picker pop-up",
+    "/api/integrations/google/picked": "the Google picker pop-up",
+    "/api/account/analytics-consent": "the browser's cookie banner",
+    "/api/account/mfa/*": "two-factor sign-in, which belongs to the browser"
+  },
+  "local": {
+    "sdk": {
+      "flow": "builds a test flow out of the other calls",
+      "templates.listProviders": "the provider catalog ships in the SDK",
+      "templates.get": "the provider catalog ships in the SDK",
+      "emails.address": "an endpoint's email address, worked out locally",
+      "emails.toJson": "converts a captured email locally",
+      "emails.toInbound": "converts a captured email locally",
+      "fetchImpl": "the fetch the client uses, not a call"
+    },
+    "cli": {
+      "auth login": "signs this machine in",
+      "auth status": "shows the saved login",
+      "auth logout": "removes the saved login",
+      "api": "any API route, for whatever has no command yet",
+      "update": "updates whk itself",
+      "completions": "shell completions",
+      "sandbox status": "shows the saved agent connection",
+      "sandbox connect": "connects an agent to an account (/auth.md)",
+      "sandbox forget": "removes the saved agent connection"
+    },
+    "mcp": {
+      "describe": "describes the server and its tools",
+      "list_provider_templates": "the provider catalog ships in the SDK",
+      "sandbox/connect_account": "connects the agent to an account (/auth.md)",
+      "sandbox/wait_for_connection": "connects the agent to an account (/auth.md)",
+      "sandbox/about_sandbox": "describes the sandbox and its limits",
+      "sandbox/generate_payload_schema": "works on requests already read"
+    }
+  }
+}
