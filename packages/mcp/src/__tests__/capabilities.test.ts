@@ -26,7 +26,10 @@ function toolNames(register: (server: McpServer) => void): string[] {
 
 const tools = new Set([
   ...toolNames((server) => registerTools(server, {} as WebhooksCC)),
-  ...toolNames((server) => registerSandboxTools(server, {})).map((name) => `sandbox/${name}`),
+  // Without the saved connection, which would register the account's tools instead.
+  ...toolNames((server) => registerSandboxTools(server, { credentialsFile: false })).map(
+    (name) => `sandbox/${name}`
+  ),
 ]);
 
 const listed = [
