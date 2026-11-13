@@ -1017,7 +1017,7 @@ export interface RegisterToolsOptions {
  * Tools that only make sense next to the caller: they post to a URL of the
  * caller's choosing, or (share_port) run the whk CLI on the caller's machine.
  */
-const LOCAL_ONLY_TOOLS = new Set(["send_to", "replay_request", "share_port"]);
+export const LOCAL_ONLY_TOOLS = new Set(["send_to", "replay_request", "share_port"]);
 /** Tools whose optional targetUrl posts somewhere of the caller's choosing. */
 const TARGET_URL_TOOLS = new Set(["render_email", "test_webhook_flow"]);
 /** Longest wait on the hosted server; Cloudflare ends a request after 100 seconds. */

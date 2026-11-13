@@ -2,7 +2,6 @@ import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative, sep } from "node:path";
 import { describe, expect, it } from "vitest";
 import { WebhooksCC } from "../client";
-import * as sdk from "../index";
 
 // capabilities.json at the repository root says what a user can do and how
 // each client reaches it. This suite holds it to the API routes and the
@@ -25,7 +24,7 @@ interface Capability extends Record<Surface, string[] | string> {
 interface Manifest {
   capabilities: Capability[];
   internalRoutes: Record<string, string>;
-  local: Record<"sdk" | "cli" | "mcp", Record<string, string>>;
+  local: Record<Surface, Record<string, string>>;
 }
 
 const manifest = JSON.parse(read(join(repo, "capabilities.json"))) as Manifest;
@@ -35,10 +34,29 @@ const capabilities = manifest.capabilities;
 const names = (c: Capability, surface: Surface): string[] =>
   Array.isArray(c[surface]) ? (c[surface] as string[]) : [];
 
+/** Every name the file gives for a surface, with where it is listed. */
+const listed = (surface: Surface) => [
+  ...capabilities.flatMap((c) => names(c, surface).map((name) => ({ id: c.id, name }))),
+  ...Object.keys(manifest.local[surface] ?? {}).map((name) => ({ id: `local.${surface}`, name })),
+];
+
+/** Fails on a listed name the client lacks, and on a client name not listed. */
+function expectSameNames(surface: Surface, label: string, actual: Set<string>) {
+  for (const { id, name } of listed(surface)) {
+    expect(actual.has(name), `${id}: the ${label} has no ${name}`).toBe(true);
+  }
+  const all = new Set(listed(surface).map(({ name }) => name));
+  const missing = [...actual].filter((name) => !all.has(name)).sort();
+  expect(
+    missing,
+    `add these ${label} names to a capability in capabilities.json (or to local.${surface})`
+  ).toEqual([]);
+}
+
 // ─── API routes ─────────────────────────────────────────────────────────
 
 const apiDir = join(repo, "apps", "web", "app", "api");
-const HANDLER = /export\s+(?:async\s+)?(?:function\s+|const\s+)(GET|POST|PUT|PATCH|DELETE)\b/g;
+const METHODS = new Set(["GET", "POST", "PUT", "PATCH", "DELETE"]);
 
 function routeFiles(dir: string): string[] {
   return readdirSync(dir).flatMap((entry) => {
@@ -48,13 +66,30 @@ function routeFiles(dir: string): string[] {
   });
 }
 
+/** The HTTP methods a route file exports, declared or re-exported. */
+function handlers(source: string): string[] {
+  const declared = [
+    ...source.matchAll(/export\s+(?:async\s+)?(?:function\s+|const\s+|let\s+)([A-Z]+)\b/g),
+  ].map((m) => m[1]);
+  const reexported = [...source.matchAll(/export\s*\{([^}]*)\}/g)].flatMap((m) =>
+    m[1].split(",").map(
+      (part) =>
+        part
+          .trim()
+          .split(/\s+as\s+/)
+          .pop() ?? ""
+    )
+  );
+  return [...declared, ...reexported].filter((name) => METHODS.has(name));
+}
+
 /** "METHOD /api/path" for every handler, with the file that serves it. */
 const routes = new Map<string, string>();
 for (const file of routeFiles(apiDir)) {
   const path = "/api/" + relative(apiDir, file).split(sep).slice(0, -1).join("/");
   const source = read(file);
-  for (const match of source.matchAll(HANDLER)) {
-    routes.set(`${match[1]} ${path.replace(/\/$/, "")}`, source);
+  for (const method of handlers(source)) {
+    routes.set(`${method} ${path.replace(/\/$/, "")}`, source);
   }
 }
 
@@ -69,9 +104,10 @@ function internalEntry(route: string): string | undefined {
   );
 }
 
-/** Routes that refuse API keys: only a browser session reaches them. */
-const isSessionOnly = (source: string) =>
-  /authenticateSessionRequest\(|domainAccount\(/.test(source);
+// Session-only is read per file: a file that mixed both kinds of handler
+// would need a smarter check, and the test below refuses one.
+const SESSION_AUTH = /authenticateSessionRequest\(|domainAccount\(/;
+const KEY_AUTH = /authenticateRequest(?:RequireUser)?\(/;
 
 describe("capabilities.json", () => {
   it("has a description and every surface for each capability", () => {
@@ -92,6 +128,7 @@ describe("capabilities.json", () => {
   });
 
   it("lists every API route, as a capability or as internal", () => {
+    expect(routes.size).toBeGreaterThan(100);
     const missing = [...routes.keys()].filter(
       (route) => !internalEntry(route) && !capabilities.some((c) => c.routes.includes(route))
     );
@@ -119,8 +156,13 @@ describe("capabilities.json", () => {
   it("marks the capabilities whose routes take only a session", () => {
     for (const c of capabilities) {
       for (const route of c.routes) {
+        const source = routes.get(route) ?? "";
         expect(
-          isSessionOnly(routes.get(route) ?? ""),
+          SESSION_AUTH.test(source) && KEY_AUTH.test(source),
+          `${route}: its file has handlers of both kinds, which this check cannot tell apart`
+        ).toBe(false);
+        expect(
+          SESSION_AUTH.test(source),
           c.sessionOnly
             ? `${c.id}: ${route} takes API keys, but the capability says sessionOnly`
             : `${c.id}: ${route} takes only a session; say why in sessionOnly`
@@ -132,90 +174,74 @@ describe("capabilities.json", () => {
 
 // ─── TypeScript SDK ─────────────────────────────────────────────────────
 
-const client = new WebhooksCC({ apiKey: "whcc_capabilities" });
+const clientSource = read(join(__dirname, "..", "client.ts"));
+const privateMembers = new Set(
+  [...clientSource.matchAll(/^ {2}(?:private|protected)\s+(?:readonly\s+|async\s+)*(\w+)/gm)].map(
+    (m) => m[1]
+  )
+);
 
-function clientFunctions(value: object, prefix = ""): string[] {
-  return Object.entries(value).flatMap(([key, member]) => {
-    const name = prefix + key;
-    if (typeof member === "function") return [name];
-    if (member && typeof member === "object" && !Array.isArray(member)) {
-      return clientFunctions(member as object, `${name}.`);
-    }
-    return [];
-  });
-}
-
-function resolvesInSdk(name: string): boolean {
-  // WebhooksCC.sandbox() and the other static constructors.
-  if (name.startsWith("WebhooksCC.")) {
-    return typeof (WebhooksCC as unknown as Record<string, unknown>)[name.slice(11)] === "function";
-  }
-  let value: unknown = client;
-  for (const part of name.split(".")) {
-    value =
-      value && typeof value === "object" ? (value as Record<string, unknown>)[part] : undefined;
-  }
-  if (typeof value === "function") return true;
-  return !name.includes(".") && typeof (sdk as Record<string, unknown>)[name] === "function";
-}
-
-describe("capabilities.json and the TypeScript SDK", () => {
-  it("names methods the SDK has", () => {
-    for (const c of capabilities) {
-      for (const name of names(c, "sdk")) {
-        expect(resolvesInSdk(name), `${c.id}: the SDK has no ${name}`).toBe(true);
+/** The client's public calls: namespaces, methods, and static constructors. */
+function sdkNames(): Set<string> {
+  const client = new WebhooksCC({ apiKey: "whcc_capabilities" });
+  const out = new Set<string>();
+  const walk = (value: object, prefix: string) => {
+    for (const [key, member] of Object.entries(value)) {
+      if (!prefix && privateMembers.has(key)) continue;
+      if (typeof member === "function") out.add(prefix + key);
+      else if (member && typeof member === "object" && !Array.isArray(member)) {
+        walk(member as object, `${prefix}${key}.`);
       }
     }
-    for (const name of Object.keys(manifest.local.sdk)) {
-      expect(resolvesInSdk(name), `local.sdk: the SDK has no ${name}`).toBe(true);
+  };
+  walk(client, "");
+  for (const key of Object.getOwnPropertyNames(WebhooksCC.prototype)) {
+    if (key !== "constructor" && !privateMembers.has(key)) out.add(key);
+  }
+  for (const key of Object.getOwnPropertyNames(WebhooksCC)) {
+    if (typeof (WebhooksCC as unknown as Record<string, unknown>)[key] === "function") {
+      out.add(`WebhooksCC.${key}`);
     }
-  });
+  }
+  return out;
+}
 
-  it("lists every client method", () => {
-    const listed = new Set([
-      ...capabilities.flatMap((c) => names(c, "sdk")),
-      ...Object.keys(manifest.local.sdk),
-    ]);
-    const missing = clientFunctions(client).filter((name) => !listed.has(name));
-    expect(missing, "add these SDK methods to a capability in capabilities.json").toEqual([]);
-  });
-});
-
-// ─── Python and Go SDKs ─────────────────────────────────────────────────
+// ─── Python SDK ─────────────────────────────────────────────────────────
 
 const pythonDir = join(repo, "packages", "sdk-python", "src", "webhooks_cc");
 const pythonModules = readdirSync(pythonDir)
   .filter((file) => file.endsWith(".py"))
   .map((file) => read(join(pythonDir, file)));
-const pythonClient = read(join(pythonDir, "client.py"));
 
-function pythonClass(name: string): string | undefined {
-  for (const source of pythonModules) {
-    const start = source.search(new RegExp(`^class ${name}\\b`, "m"));
+/** A class's body: its indented lines, up to the next unindented one. */
+function classBody(sources: string[], header: RegExp): string {
+  for (const source of sources) {
+    const start = source.search(header);
     if (start < 0) continue;
-    // The class body: its indented lines, up to the next unindented one.
     const rest = source.slice(source.indexOf("\n", start) + 1);
     const end = rest.search(/^\S/m);
     return end < 0 ? rest : rest.slice(0, end);
   }
-  return undefined;
+  throw new Error(`no ${header}`);
 }
 
-const hasDef = (source: string | undefined, name: string) =>
-  source !== undefined && new RegExp(`^\\s+def ${name}\\(`, "m").test(source);
-
-function resolvesInPython(name: string): boolean {
-  const parts = name.split(".");
-  if (parts.length === 1) {
-    return (
-      hasDef(pythonClass("WebhooksCC"), name) ||
-      pythonModules.some((source) => new RegExp(`^def ${name}\\(`, "m").test(source))
-    );
+/** WebhooksCC's public methods and those of the resources it hangs off itself. */
+function pythonNames(): Set<string> {
+  const methods = (cls: string) =>
+    [
+      ...classBody(pythonModules, new RegExp(`^class ${cls}\\b`, "m")).matchAll(
+        /^ {4}(?:async\s+)?def ([a-z]\w*)\(/gm
+      ),
+    ].map((m) => m[1]);
+  const client = classBody(pythonModules, /^class WebhooksCC\b/m);
+  const out = new Set(methods("WebhooksCC"));
+  for (const [, attribute, cls] of client.matchAll(/self\.(\w+)\s*=\s*([A-Z]\w*)\(self\)/g)) {
+    for (const method of methods(cls)) out.add(`${attribute}.${method}`);
   }
-  const [attribute, method] = parts;
-  const cls = new RegExp(`self\\.${attribute}\\s*=\\s*(\\w+)\\(self\\)`).exec(pythonClient)?.[1];
-  return parts.length === 2 && cls !== undefined && hasDef(pythonClass(cls), method);
+  return out;
 }
+
+// ─── Go SDK ─────────────────────────────────────────────────────────────
 
 const goDir = join(repo, "packages", "sdk-go");
 const goSource = readdirSync(goDir)
@@ -223,40 +249,41 @@ const goSource = readdirSync(goDir)
   .map((file) => read(join(goDir, file)))
   .join("\n");
 
-function resolvesInGo(name: string): boolean {
-  const parts = name.split(".");
-  if (parts.length === 1) {
-    return new RegExp(`^func (\\(\\w+ \\*Client\\) )?${name}\\(`, "m").test(goSource);
+/** Client's exported methods, its services' (Endpoints.Create), and New* constructors. */
+function goNames(): Set<string> {
+  const methodsOf = (type: string) =>
+    [...goSource.matchAll(new RegExp(`^func \\(\\w+ \\*?${type}\\) ([A-Z]\\w*)\\(`, "gm"))].map(
+      (m) => m[1]
+    );
+  const client = classBody([goSource], /^type Client struct \{/m);
+  const out = new Set(methodsOf("Client"));
+  for (const [, field, type] of client.matchAll(/^\s+([A-Z]\w*)\s+\*(\w+)\s*$/gm)) {
+    for (const method of methodsOf(type)) out.add(`${field}.${method}`);
   }
-  const [field, method] = parts;
-  const type = new RegExp(`^\\s+${field}\\s+\\*(\\w+)`, "m").exec(goSource)?.[1];
-  return (
-    parts.length === 2 &&
-    type !== undefined &&
-    new RegExp(`^func \\(\\w+ \\*${type}\\) ${method}\\(`, "m").test(goSource)
-  );
+  for (const [, name] of goSource.matchAll(/^func (New\w*)\(/gm)) out.add(name);
+  return out;
 }
 
-describe("capabilities.json and the Python and Go SDKs", () => {
-  it("names methods the Python SDK has", () => {
-    for (const c of capabilities) {
-      for (const name of names(c, "python")) {
-        expect(resolvesInPython(name), `${c.id}: the Python SDK has no ${name}`).toBe(true);
-      }
-    }
+describe("capabilities.json and the SDKs", () => {
+  it("matches the TypeScript SDK's client", () => {
+    expectSameNames("sdk", "TypeScript SDK", sdkNames());
   });
 
-  it("names methods the Go SDK has", () => {
-    for (const c of capabilities) {
-      for (const name of names(c, "go")) {
-        expect(resolvesInGo(name), `${c.id}: the Go SDK has no ${name}`).toBe(true);
-      }
-    }
+  it("matches the Python SDK's client", () => {
+    expectSameNames("python", "Python SDK", pythonNames());
   });
 
-  it("would notice a method that is not there", () => {
-    expect(resolvesInSdk("endpoints.nope")).toBe(false);
-    expect(resolvesInPython("endpoints.nope")).toBe(false);
-    expect(resolvesInGo("Endpoints.Nope")).toBe(false);
+  it("matches the Go SDK's client", () => {
+    expectSameNames("go", "Go SDK", goNames());
+  });
+
+  it("reads each SDK's client", () => {
+    expect(sdkNames()).toContain("endpoints.create");
+    expect(sdkNames()).toContain("WebhooksCC.sandbox");
+    expect(sdkNames()).not.toContain("request");
+    expect(pythonNames()).toContain("endpoints.create");
+    expect(pythonNames()).not.toContain("endpoints.__init__");
+    expect(goNames()).toContain("Endpoints.Create");
+    expect(goNames()).toContain("NewSandbox");
   });
 });

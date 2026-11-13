@@ -1,5 +1,5 @@
 {
-  "about": "What a user can do, and how each client reaches it. Every API route is a capability here or listed in internalRoutes; each surface names its calls (SDK methods, CLI commands, MCP tools), or says in a sentence why it has none. Nobody should need the dashboard: a capability every client lacks is a gap to close, and sessionOnly says why a person still has to be in the loop. Checked by packages/sdk/src/__tests__/capabilities.test.ts, packages/mcp/src/__tests__/capabilities.test.ts and apps/cli-rs (cli::capabilities).",
+  "about": "What a user can do, and how each client reaches it. Every API route is a capability here or listed in internalRoutes; each surface names its calls (SDK methods, CLI commands, MCP tools), or says in a sentence why it has none, and mcpHosted says when the hosted MCP server lacks a tool the local one has. A capability counts as covered when its calls reach its routes; split one when a client reaches only some of them. Nobody should need the dashboard: a capability every client lacks is a gap to close, and sessionOnly says why a person still has to be in the loop. Checked by packages/sdk/src/__tests__/capabilities.test.ts, packages/mcp/src/__tests__/capabilities.test.ts and apps/cli-rs (cli::capabilities).",
   "capabilities": [
     {
       "id": "endpoint.create",
@@ -151,7 +151,11 @@
     {
       "id": "request.wait",
       "does": "Wait for requests to arrive, or follow them live",
-      "routes": ["GET /api/stream/[slug]", "GET /api/endpoints/[slug]/requests"],
+      "routes": [
+        "GET /api/stream/[slug]",
+        "GET /api/endpoints/[slug]/requests",
+        "GET /api/requests/[id]"
+      ],
       "sdk": ["requests.waitFor", "requests.waitForAll", "requests.subscribe"],
       "python": ["requests.wait_for", "requests.wait_for_all", "requests.subscribe"],
       "go": ["Requests.WaitFor", "Requests.WaitForAll", "Requests.Subscribe"],
@@ -216,7 +220,8 @@
       "python": ["requests.replay"],
       "go": ["Requests.Replay"],
       "cli": ["replay"],
-      "mcp": ["replay_request"]
+      "mcp": ["replay_request"],
+      "mcpHosted": "replay_request runs only in the local server: the hosted one would send from webhooks.cc's network"
     },
     {
       "id": "request.render",
@@ -241,7 +246,11 @@
     {
       "id": "email.wait",
       "does": "Wait for an email to arrive",
-      "routes": ["GET /api/endpoints/[slug]/requests"],
+      "routes": [
+        "GET /api/endpoints/[slug]/requests",
+        "GET /api/stream/[slug]",
+        "GET /api/requests/[id]"
+      ],
       "sdk": ["emails.waitFor", "emails.waitForAll"],
       "python": ["emails.wait_for", "emails.wait_for_all"],
       "go": ["Emails.WaitFor", "Emails.WaitForAll"],
@@ -260,13 +269,23 @@
     },
     {
       "id": "webhook.send",
-      "does": "Send a test webhook to an endpoint, signed like a provider's if asked",
-      "routes": ["POST /api/send-test"],
+      "does": "Send a test webhook straight to an endpoint's capture URL, signed like a provider's if asked",
+      "routes": [],
       "sdk": ["endpoints.send", "endpoints.sendTemplate"],
       "python": ["endpoints.send", "endpoints.send_template"],
       "go": ["Endpoints.Send"],
-      "cli": ["send"],
+      "cli": "`whk send` asks the server to send it (webhook.send-from-server)",
       "mcp": ["send_webhook"]
+    },
+    {
+      "id": "webhook.send-from-server",
+      "does": "Have webhooks.cc send a test webhook to an endpoint",
+      "routes": ["POST /api/send-test"],
+      "sdk": "the SDKs send to the capture URL themselves (webhook.send)",
+      "python": "the SDKs send to the capture URL themselves (webhook.send)",
+      "go": "the SDKs send to the capture URL themselves (webhook.send)",
+      "cli": ["send"],
+      "mcp": "send_webhook sends to the capture URL itself (webhook.send)"
     },
     {
       "id": "webhook.send-to",
@@ -276,7 +295,8 @@
       "python": ["send_to", "build_request"],
       "go": ["SendTo"],
       "cli": ["send-to"],
-      "mcp": ["send_to", "preview_webhook"]
+      "mcp": ["send_to", "preview_webhook"],
+      "mcpHosted": "send_to runs only in the local server: the hosted one would send from webhooks.cc's network"
     },
     {
       "id": "destination.list",
@@ -423,7 +443,7 @@
       "id": "account.manage",
       "does": "Change or delete the account",
       "routes": ["PATCH /api/account", "DELETE /api/account"],
-      "sessionOnly": "deleting an account must be a person's decision",
+      "sessionOnly": "changing or deleting the account is a person's decision, and connected agents are promised they cannot",
       "sdk": "session only",
       "python": "session only",
       "go": "session only",
@@ -559,7 +579,8 @@
       "python": ["shares.start"],
       "go": ["Shares.Start"],
       "cli": ["share", "tunnel"],
-      "mcp": ["share_port"]
+      "mcp": ["share_port"],
+      "mcpHosted": "share_port runs only in the local server, which can reach this machine's ports"
     },
     {
       "id": "share.list",
@@ -686,9 +707,8 @@
     },
     {
       "id": "team.share",
-      "does": "Share endpoints with a team, list them, stop sharing",
+      "does": "Share an endpoint with a team, or stop sharing it",
       "routes": [
-        "GET /api/teams/[teamId]/endpoints",
         "POST /api/teams/[teamId]/endpoints",
         "DELETE /api/teams/[teamId]/endpoints/[endpointId]"
       ],
@@ -699,16 +719,33 @@
       "mcp": ["share_endpoint", "unshare_endpoint"]
     },
     {
+      "id": "team.endpoints",
+      "does": "List the endpoints shared with one team",
+      "routes": ["GET /api/teams/[teamId]/endpoints"],
+      "sdk": "endpoint.list includes the endpoints shared with your teams",
+      "python": "testing-focused SDK: added on demand",
+      "go": "testing-focused SDK: added on demand",
+      "cli": "endpoint.list includes the endpoints shared with your teams",
+      "mcp": "endpoint.list includes the endpoints shared with your teams"
+    },
+    {
       "id": "team.invite",
-      "does": "Invite someone to a team, or withdraw the invite",
-      "routes": [
-        "POST /api/teams/[teamId]/invite",
-        "DELETE /api/teams/[teamId]/invites/[inviteId]"
-      ],
+      "does": "Invite someone to a team",
+      "routes": ["POST /api/teams/[teamId]/invite"],
       "sdk": ["teams.invite"],
       "python": "testing-focused SDK: added on demand",
       "go": "testing-focused SDK: added on demand",
       "cli": ["teams invite"],
+      "mcp": "no tool yet"
+    },
+    {
+      "id": "team.invite-withdraw",
+      "does": "Withdraw an invite before it is answered",
+      "routes": ["DELETE /api/teams/[teamId]/invites/[inviteId]"],
+      "sdk": "no method yet",
+      "python": "testing-focused SDK: added on demand",
+      "go": "testing-focused SDK: added on demand",
+      "cli": "no command yet: `whk api` reaches it",
       "mcp": "no tool yet"
     },
     {
@@ -813,7 +850,25 @@
       "emails.address": "an endpoint's email address, worked out locally",
       "emails.toJson": "converts a captured email locally",
       "emails.toInbound": "converts a captured email locally",
-      "fetchImpl": "the fetch the client uses, not a call"
+      "describe": "describes the SDK's operations, without a call",
+      "WebhooksCC.connect": "connects an agent to an account (/auth.md)",
+      "WebhooksCC.connected": "opens the saved agent connection",
+      "WebhooksCC.fromSavedConnection": "opens the saved agent connection",
+      "WebhooksCC.describeRegistration": "describes agent registration, without a call"
+    },
+    "python": {
+      "close": "closes the HTTP client",
+      "connect": "connects an agent to an account (/auth.md)",
+      "connected": "opens the saved agent connection",
+      "emails.address": "an endpoint's email address, worked out locally"
+    },
+    "go": {
+      "New": "makes a client",
+      "CaptureDuring": "a test helper built from endpoint.create, request.wait and endpoint.delete",
+      "CaptureEmailDuring": "a test helper built from endpoint.create, email.wait and endpoint.delete",
+      "WithTemporaryEndpoint": "a test helper built from endpoint.create and endpoint.delete",
+      "Emails.Address": "an endpoint's email address, worked out locally",
+      "Emails.AddressOf": "an endpoint's email address, worked out locally"
     },
     "cli": {
       "auth login": "signs this machine in",
