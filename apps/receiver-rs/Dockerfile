@@ -6,7 +6,7 @@
 # The builder and the runtime share a Debian release so the binary's glibc
 # matches. TLS is rustls throughout, so the runtime needs only CA certificates.
 
-FROM rust:1.98-slim-trixie AS builder
+FROM rust:1.99-slim-trixie AS builder
 RUN apt-get update && apt-get install -y --no-install-recommends pkg-config libssl-dev \
     && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
