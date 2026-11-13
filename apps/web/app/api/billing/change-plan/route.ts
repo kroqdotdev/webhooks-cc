@@ -7,6 +7,10 @@ import {
   keepCurrentPlanForUser,
 } from "@/lib/supabase/billing";
 import { reportError } from "@/lib/observability";
+import { parseJsonBodyWith } from "@/lib/request-validation";
+import { z } from "zod";
+
+const changePlanBody = z.object({ plan: z.unknown().optional(), interval: z.unknown().optional() });
 
 const STATUS: Record<string, number> = {
   no_subscription: 409,
@@ -26,13 +30,9 @@ export async function POST(request: Request) {
   const auth = await authenticateSessionRequest(request);
   if (!auth.success) return auth.response;
 
-  let body: Record<string, unknown> = {};
-  try {
-    const parsed: unknown = await request.json();
-    if (parsed && typeof parsed === "object") body = parsed as Record<string, unknown>;
-  } catch {
-    // Refused below.
-  }
+  // A body that cannot be read counts as an empty one, refused below.
+  const parsed = await parseJsonBodyWith(request, changePlanBody);
+  const body: z.infer<typeof changePlanBody> = "data" in parsed ? parsed.data : {};
   const { plan, interval } = body;
   if ((plan !== "pro" && plan !== "business") || (interval !== "month" && interval !== "year")) {
     return Response.json({ error: "Give a plan and an interval" }, { status: 400 });

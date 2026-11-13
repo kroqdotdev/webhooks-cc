@@ -1,8 +1,12 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { fromEdge, notEdge } from "@/lib/tunnels/edge-auth";
 import { gateOf, passwordMatches } from "@/lib/tunnels/passwords";
+import { parseJsonBodyWith } from "@/lib/request-validation";
+import { z } from "zod";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+const unlockBody = z.object({ shareId: z.unknown().optional(), password: z.unknown().optional() });
 
 /**
  * A visitor typed a password on a preview's password page. The answer says
@@ -11,10 +15,9 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
  */
 export async function POST(request: Request) {
   if (!fromEdge(request)) return notEdge();
-  const body = (await request.json().catch(() => ({}))) as {
-    shareId?: unknown;
-    password?: unknown;
-  };
+  // A body that cannot be read counts as an empty one.
+  const parsed = await parseJsonBodyWith(request, unlockBody);
+  const body: z.infer<typeof unlockBody> = "data" in parsed ? parsed.data : {};
   if (
     typeof body.password !== "string" ||
     typeof body.shareId !== "string" ||

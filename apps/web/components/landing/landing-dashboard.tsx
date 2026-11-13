@@ -4,7 +4,7 @@ import Link from "next/link";
 import dynamic from "next/dynamic";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
-import { copyToClipboard } from "@/lib/clipboard";
+import { useCopyWithFeedback } from "@/hooks/use-copy-with-feedback";
 import { getWebhookUrl } from "@/lib/constants";
 import { ErrorBoundary } from "@/components/error-boundary";
 import { OAuthSignInButtons } from "@/components/auth/oauth-signin-buttons";
@@ -722,20 +722,10 @@ function LandingDashboardInner() {
 }
 
 function UrlCopy({ url }: { url: string }) {
-  const [copied, setCopied] = useState(false);
-  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  useEffect(() => {
-    return () => {
-      if (timeoutRef.current) clearTimeout(timeoutRef.current);
-    };
-  }, []);
+  const { copy, isCopied } = useCopyWithFeedback(COPY_FEEDBACK_MS);
+  const copied = isCopied();
 
-  const handleCopy = async () => {
-    if (!(await copyToClipboard(url))) return;
-    setCopied(true);
-    if (timeoutRef.current) clearTimeout(timeoutRef.current);
-    timeoutRef.current = setTimeout(() => setCopied(false), COPY_FEEDBACK_MS);
-  };
+  const handleCopy = () => void copy(url);
 
   return (
     <div className="flex items-center gap-1.5 min-w-0">
@@ -761,27 +751,21 @@ function UrlCopy({ url }: { url: string }) {
 }
 
 function WaitingState({ url, onSent }: { url: string; onSent?: () => void }) {
-  const [copied, setCopied] = useState(false);
+  const { copy, isCopied } = useCopyWithFeedback(COPY_FEEDBACK_MS);
+  const copied = isCopied();
   const [sending, setSending] = useState(false);
   const [sent, setSent] = useState(false);
-  const copyTimeoutRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const sentTimeoutRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   useEffect(() => {
     return () => {
-      if (copyTimeoutRef.current) clearTimeout(copyTimeoutRef.current);
       if (sentTimeoutRef.current) clearTimeout(sentTimeoutRef.current);
     };
   }, []);
 
   const curlCmd = `curl -X POST ${url} \\\n  -H "Content-Type: application/json" \\\n  -d '{"hello": "world"}'`;
 
-  const handleCopy = async () => {
-    if (!(await copyToClipboard(curlCmd))) return;
-    setCopied(true);
-    if (copyTimeoutRef.current) clearTimeout(copyTimeoutRef.current);
-    copyTimeoutRef.current = setTimeout(() => setCopied(false), COPY_FEEDBACK_MS);
-  };
+  const handleCopy = () => void copy(curlCmd);
 
   const finishSend = useCallback(() => {
     setSent(true);

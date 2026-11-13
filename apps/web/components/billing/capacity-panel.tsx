@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Notice, Panel, PanelRow, settingsLink } from "@/components/settings/panel";
-import { longDate } from "@/components/settings/format";
+import { longDate } from "@/lib/dates";
 import {
   AlertDialog,
   AlertDialogAction,

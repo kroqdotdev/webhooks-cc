@@ -4,6 +4,8 @@ import { accountDetail } from "@/lib/ops/accounts";
 import { authenticateStaffRequest, opsJson } from "@/lib/staff";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { isUuid } from "@/lib/uuid";
+import { parseJsonBodyWith } from "@/lib/request-validation";
+import { z } from "zod";
 
 /** An account's metadata. Never request or email contents. */
 export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -26,18 +28,20 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
   }
 }
 
+const accountChanges = z.object({ internal: z.unknown().optional() });
+
 /** Marks a test account internal, so the metrics leave it out. */
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const auth = await authenticateStaffRequest(request);
   if (!auth.success) return auth.response;
   const { id } = await params;
   if (!isUuid(id)) return opsJson({ error: "Not found" }, { status: 404 });
-  let body: Record<string, unknown>;
-  try {
-    body = (await request.json()) as Record<string, unknown>;
-  } catch {
-    return opsJson({ error: "Invalid JSON." }, { status: 400 });
-  }
+  const parsed = await parseJsonBodyWith(request, accountChanges, {
+    message: "Invalid JSON.",
+    respond: opsJson,
+  });
+  if ("error" in parsed) return parsed.error;
+  const body = parsed.data;
   if (typeof body.internal !== "boolean") {
     return opsJson({ error: "Nothing to change." }, { status: 400 });
   }

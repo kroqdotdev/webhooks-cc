@@ -1,10 +1,7 @@
-import {
-  createCipheriv,
-  createDecipheriv,
-  createHash,
-  randomBytes,
-  timingSafeEqual,
-} from "node:crypto";
+import { createHash } from "node:crypto";
+import { randomBase64Url } from "@/lib/ids";
+import { cookieValue } from "@/lib/cookies";
+import { openJson, purposeKey, safeEqual, sealJson } from "@/lib/crypto";
 import type { SiteKey } from "@/lib/site";
 
 /**
@@ -53,7 +50,7 @@ export const GRANT_LIFETIME_MS = 60 * 1000;
 export const TICKET_LIFETIME_MS = 2 * 60 * 1000;
 
 export function newNonce(): string {
-  return randomBytes(32).toString("base64url");
+  return randomBase64Url(32);
 }
 
 export function nonceHash(nonce: string): string {
@@ -79,21 +76,13 @@ export function clearSwitchCookie(secure: boolean): string {
 
 /** The browser's nonce; over https only the __Host- cookie counts. */
 export function switchNonceOf(request: Request, secure: boolean): string | null {
-  const wanted = secure ? SECURE_COOKIE_NAME : COOKIE_NAME;
-  const header = request.headers.get("cookie") ?? "";
-  for (const part of header.split(";")) {
-    const [name, ...rest] = part.trim().split("=");
-    if (name === wanted) return rest.join("=") || null;
-  }
-  return null;
+  return cookieValue(request.headers.get("cookie"), secure ? SECURE_COOKIE_NAME : COOKIE_NAME);
 }
 
 /** Whether the browser's nonce is the one the ticket was made for. */
 export function nonceMatches(nonce: string | null, expectedHash: string): boolean {
   if (!nonce) return false;
-  const actual = Buffer.from(nonceHash(nonce));
-  const expected = Buffer.from(expectedHash);
-  return actual.length === expected.length && timingSafeEqual(actual, expected);
+  return safeEqual(nonceHash(nonce), expectedHash);
 }
 
 /** The cookie banner's answer on the site switched from, when it had one. */
@@ -160,7 +149,7 @@ export function switchKeyConfigured(): boolean {
 function keyFor(purpose: string): Buffer {
   const key = baseKey();
   if (!key) throw new Error("SIGNING_SECRET_KEY is not a 32-byte base64 key");
-  return createHash("sha256").update(key).update(purpose).digest();
+  return purposeKey(key, purpose);
 }
 
 // Grants and tickets are sealed under keys of their own, so neither passes for the other.
@@ -168,23 +157,12 @@ const GRANT_PURPOSE = "site switch grant";
 const TICKET_PURPOSE = "site switch ticket";
 
 function seal(purpose: string, value: unknown): string {
-  const nonce = randomBytes(12);
-  const cipher = createCipheriv("aes-256-gcm", keyFor(purpose), nonce);
-  const body = Buffer.concat([cipher.update(JSON.stringify(value), "utf8"), cipher.final()]);
-  return Buffer.concat([nonce, body, cipher.getAuthTag()]).toString("base64url");
+  return sealJson(keyFor(purpose), value);
 }
 
 function open(purpose: string, sealed: string): unknown {
   try {
-    const bytes = Buffer.from(sealed, "base64url");
-    if (bytes.length < 29) return null;
-    const decipher = createDecipheriv("aes-256-gcm", keyFor(purpose), bytes.subarray(0, 12));
-    decipher.setAuthTag(bytes.subarray(bytes.length - 16));
-    const json = Buffer.concat([
-      decipher.update(bytes.subarray(12, bytes.length - 16)),
-      decipher.final(),
-    ]).toString("utf8");
-    return JSON.parse(json);
+    return openJson(keyFor(purpose), sealed);
   } catch {
     return null;
   }

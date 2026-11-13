@@ -27,7 +27,7 @@ import { cn } from "@/lib/utils";
 import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { LAYOUT_TEMPLATES, layoutTemplate, type LayoutTemplate } from "@/lib/layout-templates";
 import { groupedTemplates } from "@/lib/layout-template-groups";
-import { copyToClipboard } from "@/lib/clipboard";
+import { useCopyWithFeedback } from "@/hooks/use-copy-with-feedback";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -384,20 +384,14 @@ export function orderedFieldNames(parsed: ParsedEmail, layouts?: readonly unknow
 
 /** Copies one parsed value; the icon turns to a check for a moment. */
 function CopyValueButton({ name, value }: { name: string; value: string }) {
-  const [copied, setCopied] = useState(false);
-  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  useEffect(() => () => void (timer.current && clearTimeout(timer.current)), []);
+  const { copy, isCopied } = useCopyWithFeedback(1500);
+  const copied = isCopied();
   return (
     <button
       type="button"
       aria-label={`Copy ${name}`}
       title="Copy"
-      onClick={async () => {
-        if (!(await copyToClipboard(value))) return;
-        setCopied(true);
-        if (timer.current) clearTimeout(timer.current);
-        timer.current = setTimeout(() => setCopied(false), 1500);
-      }}
+      onClick={() => void copy(value)}
       className="shrink-0 -my-0.5 h-6 w-6 inline-flex items-center justify-center rounded-sm text-muted-foreground hover:text-foreground hover:bg-muted cursor-pointer"
     >
       {copied ? (

@@ -1,15 +1,17 @@
 use super::*;
-use aes_gcm::aead::{Aead, Generate, Nonce};
-use aes_gcm::{Aes256Gcm, KeyInit};
+use ring::rand::{SecureRandom, SystemRandom};
 
 /// Helper: encrypt with AES-256-GCM (mirrors Node.js encryption in web app).
 fn encrypt(plaintext: &[u8], key: &[u8; 32]) -> Vec<u8> {
-    let cipher = Aes256Gcm::new_from_slice(key).unwrap();
-    let nonce = Nonce::<Aes256Gcm>::generate();
-    let ciphertext = cipher.encrypt(&nonce, plaintext).unwrap();
-    let mut out = Vec::with_capacity(NONCE_SIZE + ciphertext.len());
-    out.extend_from_slice(&nonce);
-    out.extend_from_slice(&ciphertext);
+    let cipher = LessSafeKey::new(UnboundKey::new(&AES_256_GCM, key).unwrap());
+    let mut nonce = [0u8; NONCE_SIZE];
+    SystemRandom::new().fill(&mut nonce).unwrap();
+    let mut body = plaintext.to_vec();
+    cipher
+        .seal_in_place_append_tag(Nonce::assume_unique_for_key(nonce), Aad::empty(), &mut body)
+        .unwrap();
+    let mut out = nonce.to_vec();
+    out.extend_from_slice(&body);
     out
 }
 
@@ -140,4 +142,27 @@ fn parse_signing_key_wrong_length() {
 #[test]
 fn parse_signing_key_invalid_base64() {
     assert!(parse_signing_key("not-base64!!!").is_none());
+}
+
+#[test]
+fn opens_a_secret_sealed_by_node() {
+    // createCipheriv("aes-256-gcm", 0x42 * 32, nonce 0..11) over
+    // "whsec_written_by_node", laid out as apps/web/lib/crypto.ts writes it.
+    let sealed = hex::decode(
+        "000102030405060708090a0b72b6e2b8d2738579f4723076bf8239426df3a10ec598360b895a6f9fc3e2ddd0707bd9f5f5",
+    )
+    .unwrap();
+    assert_eq!(
+        decrypt_secret(&sealed, &test_key()).unwrap(),
+        b"whsec_written_by_node"
+    );
+}
+
+#[test]
+fn hmac_sha256_matches_rfc_4231() {
+    // RFC 4231 test case 2.
+    assert_eq!(
+        hex::encode(hmac_sha256(b"Jefe", b"what do ya want for nothing?")),
+        "5bdcc146bf60754e6a042426089575c75a003f089d2739839dec58b964ec3843"
+    );
 }

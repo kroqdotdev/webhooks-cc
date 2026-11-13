@@ -22,7 +22,7 @@ import {
   type PaidPlan,
 } from "@/lib/billing-api";
 import type { AccountProfile } from "@/lib/account-profile";
-import { longDate } from "@/components/settings/format";
+import { longDate } from "@/lib/dates";
 
 /**
  * The plan changes an account can make from where it is: a checkout for a

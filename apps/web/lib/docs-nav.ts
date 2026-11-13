@@ -26,7 +26,6 @@ export const NAV_SECTIONS: NavSection[] = [
       { title: "Core concepts", href: "/docs/core-concepts" },
       { title: "Plans & limits", href: "/docs/plans-limits" },
       { title: "REST API", href: "/docs/api" },
-      { title: "API Explorer", href: "/api-explorer", depth: 1 },
       { title: "AI agents", href: "/docs/agents" },
     ],
   },

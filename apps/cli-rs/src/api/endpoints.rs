@@ -22,7 +22,10 @@ impl ApiClient {
     pub async fn get_endpoint(&self, slug: &str) -> Result<Fetched<Endpoint>> {
         self.require_auth()?;
         let resp = self
-            .get(&format!("/api/endpoints/{}", urlencoding::encode(slug)))
+            .get(&format!(
+                "/api/endpoints/{}",
+                crate::util::url::encode(slug)
+            ))
             .await?;
         resp.parse("endpoint")
     }
@@ -35,7 +38,7 @@ impl ApiClient {
         self.require_auth()?;
         let resp = self
             .patch(
-                &format!("/api/endpoints/{}", urlencoding::encode(slug)),
+                &format!("/api/endpoints/{}", crate::util::url::encode(slug)),
                 req,
             )
             .await?;
@@ -44,8 +47,11 @@ impl ApiClient {
 
     pub async fn delete_endpoint(&self, slug: &str) -> Result<()> {
         self.require_auth()?;
-        self.delete(&format!("/api/endpoints/{}", urlencoding::encode(slug)))
-            .await?;
+        self.delete(&format!(
+            "/api/endpoints/{}",
+            crate::util::url::encode(slug)
+        ))
+        .await?;
         Ok(())
     }
 
@@ -64,7 +70,7 @@ impl ApiClient {
 }
 
 fn favorite_path(slug: &str) -> String {
-    format!("/api/endpoints/{}/favorite", urlencoding::encode(slug))
+    format!("/api/endpoints/{}/favorite", crate::util::url::encode(slug))
 }
 
 #[cfg(test)]

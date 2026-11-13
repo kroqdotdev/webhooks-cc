@@ -13,16 +13,9 @@ import {
   type ChangelogTrack,
 } from "@/lib/changelog";
 import { Radio, RadioGroup } from "@/components/ui/radio-group";
+import { shortDate } from "@/lib/dates";
 
 const TRACKS: (ChangelogTrack | "all")[] = ["all", "web", "cli", "sdk", "python", "go", "mcp"];
-
-function formatDate(iso: string): string {
-  return new Date(iso + "T00:00:00").toLocaleDateString("en-US", {
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-  });
-}
 
 export default function ChangelogPage() {
   const [activeTrack, setActiveTrack] = useState<ChangelogTrack | "all">("all");
@@ -102,7 +95,7 @@ export default function ChangelogPage() {
                   dateTime={entry.date}
                   className="text-sm text-muted-foreground whitespace-nowrap"
                 >
-                  {formatDate(entry.date)}
+                  {shortDate(`${entry.date}T00:00:00`)}
                 </time>
               </div>
               <ul className="space-y-1.5">

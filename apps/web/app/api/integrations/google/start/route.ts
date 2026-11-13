@@ -8,7 +8,7 @@ import {
   safeReturnPath,
   sealBeginTicket,
 } from "@/lib/integrations/google";
-import { randomBytes } from "node:crypto";
+import { randomBase64Url } from "@/lib/ids";
 import { parseJsonBody } from "@/lib/request-validation";
 import { SITE_HEADER, parseSite, webhooksOrigin } from "@/lib/site";
 import { applyRateLimitHeaders, checkRateLimitWithInfo } from "@/lib/rate-limit";
@@ -35,7 +35,7 @@ export async function POST(request: Request) {
   const site = parseSite(request.headers.get(SITE_HEADER));
   // Started on mailhooks.cc: this browser proves itself there on the way out
   // (handoff) and on the way back (finish) with this cookie.
-  const handoff = site === "mailhooks" ? randomBytes(24).toString("base64url") : null;
+  const handoff = site === "mailhooks" ? randomBase64Url(24) : null;
   const { url, browserNonce } = authorizationUrl(
     config,
     auth.userId,

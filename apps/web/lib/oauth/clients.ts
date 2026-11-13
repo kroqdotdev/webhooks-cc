@@ -1,5 +1,5 @@
 import { isIP } from "node:net";
-import { customAlphabet } from "nanoid";
+import { alphanumericToken } from "@/lib/ids";
 import { sendOptions } from "@/lib/forwarding/config";
 import { sendForward } from "@/lib/forwarding/send";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -31,10 +31,6 @@ export interface OAuthClient {
 }
 
 const DCR_PREFIX = "whoc_";
-const generateDcrId = customAlphabet(
-  "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789",
-  32
-);
 
 const MAX_REDIRECT_URIS = 10;
 const MAX_URI_LENGTH = 2048;
@@ -418,7 +414,7 @@ export async function registerClient(
     return { error: "invalid_client_metadata", description: "response_types must include code." };
   }
 
-  const clientId = `${DCR_PREFIX}${generateDcrId()}`;
+  const clientId = `${DCR_PREFIX}${alphanumericToken(32)}`;
   const name = cleanName(body.client_name);
   const clientUri = cleanUri(body.client_uri);
   const admin = createAdminClient();

@@ -24,7 +24,7 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
-import { shortDate } from "@/components/settings/format";
+import { shortDate } from "@/lib/dates";
 
 interface ApiKeyEntry {
   id: string;
@@ -107,8 +107,8 @@ export default function ApiKeysPage() {
               MCP server
             </Link>{" "}
             and{" "}
-            <Link href="/api-explorer" className={settingsLink}>
-              API explorer
+            <Link href="/docs/api" className={settingsLink}>
+              REST API
             </Link>{" "}
             act as you. A key is shown once, when you create it.
           </>

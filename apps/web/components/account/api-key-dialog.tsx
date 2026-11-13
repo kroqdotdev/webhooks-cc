@@ -14,7 +14,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { Copy, Check, AlertTriangle } from "lucide-react";
-import { copyToClipboard } from "@/lib/clipboard";
+import { useCopyWithFeedback } from "@/hooks/use-copy-with-feedback";
 import { trackApiKeyCreated } from "@/lib/analytics";
 
 interface ApiKeyDialogProps {
@@ -27,7 +27,8 @@ export function ApiKeyDialog({ accessToken, onCreated }: ApiKeyDialogProps) {
   const [name, setName] = useState("");
   const [createdKey, setCreatedKey] = useState<string | null>(null);
   const [isCreating, setIsCreating] = useState(false);
-  const [copied, setCopied] = useState(false);
+  const { copy, isCopied, reset: resetCopied } = useCopyWithFeedback();
+  const copied = isCopied();
   const [error, setError] = useState<string | null>(null);
 
   const handleCreate = async () => {
@@ -72,11 +73,7 @@ export function ApiKeyDialog({ accessToken, onCreated }: ApiKeyDialogProps) {
 
   const copyKey = async () => {
     if (!createdKey) return;
-    const success = await copyToClipboard(createdKey);
-    if (success) {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    }
+    await copy(createdKey);
   };
 
   const handleClose = () => {
@@ -85,7 +82,7 @@ export function ApiKeyDialog({ accessToken, onCreated }: ApiKeyDialogProps) {
       setName("");
       setCreatedKey(null);
       setError(null);
-      setCopied(false);
+      resetCopied();
     }, 200);
   };
 

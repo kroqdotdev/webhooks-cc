@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { customAlphabet } from "nanoid";
+import { alphanumericToken } from "@/lib/ids";
 import { publicEnv, serverEnv } from "@/lib/env";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { Database } from "@/lib/supabase/database";
@@ -30,14 +30,9 @@ import { AgentError } from "./errors";
 
 export type RegistrationRow = Database["public"]["Tables"]["agent_registrations"]["Row"];
 
-const generateClaimTokenBody = customAlphabet(
-  "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789",
-  32
-);
-
 /** `clm_` + 32 base62 characters; only its SHA-256 is stored. */
 export function generateClaimToken(): string {
-  return `clm_${generateClaimTokenBody()}`;
+  return `clm_${alphanumericToken(32)}`;
 }
 
 export function hashClaimToken(token: string): string {

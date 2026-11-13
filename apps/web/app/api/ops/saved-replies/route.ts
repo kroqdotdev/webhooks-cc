@@ -3,6 +3,8 @@ import { reportError } from "@/lib/observability";
 import { authenticateStaffRequest, opsJson } from "@/lib/staff";
 import { textField } from "@/lib/support/form";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { parseJsonBodyWith } from "@/lib/request-validation";
+import { z } from "zod";
 
 export async function GET(request: Request) {
   const auth = await authenticateStaffRequest(request);
@@ -18,15 +20,21 @@ export async function GET(request: Request) {
   return opsJson(data ?? []);
 }
 
+// A reply's text is cut to 20,000 characters, which can be more bytes than
+// the default limit allows.
+const SAVED_REPLY_MAX_BYTES = 256 * 1024;
+const savedReplyBody = z.object({ title: z.unknown().optional(), body: z.unknown().optional() });
+
 export async function POST(request: Request) {
   const auth = await authenticateStaffRequest(request);
   if (!auth.success) return auth.response;
-  let body: Record<string, unknown>;
-  try {
-    body = (await request.json()) as Record<string, unknown>;
-  } catch {
-    return opsJson({ error: "Invalid JSON." }, { status: 400 });
-  }
+  const parsed = await parseJsonBodyWith(request, savedReplyBody, {
+    message: "Invalid JSON.",
+    respond: opsJson,
+    maxSize: SAVED_REPLY_MAX_BYTES,
+  });
+  if ("error" in parsed) return parsed.error;
+  const body = parsed.data;
   const title = textField(body.title).slice(0, 120);
   const text = textField(body.body);
   if (!title || !text) return opsJson({ error: "Give it a title and a text." }, { status: 400 });

@@ -28,7 +28,7 @@ impl ApiClient {
         let resp = self
             .get_anonymous(&format!(
                 "/api/auth/device-poll?code={}",
-                urlencoding::encode(device_code)
+                crate::util::url::encode(device_code)
             ))
             .await?;
         serde_json::from_str(&resp.body).context("failed to parse poll response")

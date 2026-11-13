@@ -1,4 +1,6 @@
-import { createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypto";
+import { createHash, createHmac } from "node:crypto";
+import { randomBase64Url } from "@/lib/ids";
+import { safeEqual } from "@/lib/crypto";
 import { POW_ALGORITHM, POW_CHALLENGE_TTL_SECONDS, POW_MAX_WORK_BITS } from "./constants";
 
 /**
@@ -95,7 +97,7 @@ export function issueChallenge(input: {
   const iat = Math.floor((input.now ?? Date.now()) / 1000);
   const payload: PowPayload = {
     v: 1,
-    id: randomBytes(16).toString("base64url"),
+    id: randomBase64Url(16),
     iat,
     exp: iat + POW_CHALLENGE_TTL_SECONDS,
     d: input.difficulty,
@@ -166,7 +168,7 @@ export function verifySolution(input: {
   const given = Buffer.from(parts[2], "base64url");
   const macMatches = input.secrets.some((secret) => {
     const expected = mac(secret, signed);
-    return given.length === expected.length && timingSafeEqual(given, expected);
+    return safeEqual(given, expected);
   });
   if (!macMatches) return { ok: false, reason: "bad_mac" };
 

@@ -8,6 +8,10 @@ import {
   listPublishedBlogPosts,
 } from "@/lib/supabase/blog-posts";
 import { reportError } from "@/lib/observability";
+import { parseJsonBodyWith } from "@/lib/request-validation";
+
+// A post's content is long: well past the default body limit.
+const MAX_POST_BYTES = 2 * 1024 * 1024;
 
 function isSlugExistsError(error: unknown): boolean {
   if (error instanceof Error && error.message === "slug_exists") {
@@ -21,17 +25,12 @@ export async function POST(request: Request) {
   const authError = verifyBlogSecret(request);
   if (authError) return authError;
 
-  let body: unknown;
-  try {
-    body = await request.json();
-  } catch {
-    return Response.json({ error: "invalid_json" }, { status: 400 });
-  }
-
-  const parsed = createBlogPostSchema.safeParse(body);
-  if (!parsed.success) {
-    return Response.json({ error: "invalid_body" }, { status: 400 });
-  }
+  const parsed = await parseJsonBodyWith(request, createBlogPostSchema, {
+    message: "invalid_body",
+    invalidJson: "invalid_json",
+    maxSize: MAX_POST_BYTES,
+  });
+  if ("error" in parsed) return parsed.error;
 
   try {
     const result = await createBlogPost(parsed.data);

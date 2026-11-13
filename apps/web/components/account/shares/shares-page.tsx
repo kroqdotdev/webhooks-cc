@@ -12,7 +12,7 @@ import {
   StatusTag,
   settingsLink,
 } from "@/components/settings/panel";
-import { longDate, shortDate } from "@/components/settings/format";
+import { longDate, shortDate } from "@/lib/dates";
 import { useSettingsData } from "@/components/settings/settings-data";
 import { Button } from "@/components/ui/button";
 import {
@@ -25,7 +25,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { copyToClipboard } from "@/lib/clipboard";
+import { useCopyWithFeedback } from "@/hooks/use-copy-with-feedback";
 import {
   durationText,
   listNames,
@@ -376,13 +376,11 @@ function LiveShareRow({
   onWatch: () => void;
   onStop: () => void;
 }) {
-  const [copied, setCopied] = useState(false);
+  const { copy: copyText, isCopied } = useCopyWithFeedback();
+  const copied = isCopied();
   const label = share.kind === "live" ? (share.endpointSlug ?? "live tunnel") : (share.name ?? "");
-  const copy = async () => {
-    if (share.url && (await copyToClipboard(share.url))) {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    }
+  const copy = () => {
+    if (share.url) void copyText(share.url);
   };
   return (
     <li

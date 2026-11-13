@@ -8,19 +8,19 @@ import {
 } from "@/lib/polar";
 import { BillingActionError, createCheckoutForUser } from "@/lib/supabase/billing";
 import { reportError } from "@/lib/observability";
+import { parseJsonBodyWith } from "@/lib/request-validation";
+import { z } from "zod";
+
+const checkoutBody = z.object({ plan: z.unknown().optional(), interval: z.unknown().optional() });
 
 export async function POST(request: Request) {
   const auth = await authenticateSessionRequest(request);
   if (!auth.success) return auth.response;
 
   // { plan?: "pro" | "business", interval?: "month" | "year" }; Pro monthly when left out.
-  let body: Record<string, unknown> = {};
-  try {
-    const parsed: unknown = await request.json();
-    if (parsed && typeof parsed === "object") body = parsed as Record<string, unknown>;
-  } catch {
-    // An empty body is Pro, as before.
-  }
+  // An empty body, or one that cannot be read, is Pro, as before.
+  const parsed = await parseJsonBodyWith(request, checkoutBody);
+  const body: z.infer<typeof checkoutBody> = "data" in parsed ? parsed.data : {};
   const plan = body.plan === undefined ? "pro" : body.plan;
   const interval = body.interval === undefined ? "month" : body.interval;
   if ((plan !== "pro" && plan !== "business") || (interval !== "month" && interval !== "year")) {

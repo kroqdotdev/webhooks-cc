@@ -1,4 +1,5 @@
-import { createHmac, timingSafeEqual } from "node:crypto";
+import { createHmac } from "node:crypto";
+import { safeEqual } from "@/lib/crypto";
 import { publicEnv } from "@/lib/env";
 
 /**
@@ -57,7 +58,5 @@ export function verifyAttachmentLink(
   if (!key || !expires || !sig || !/^\d{1,12}$/.test(expires)) return false;
   const expiresAt = Number(expires);
   if (expiresAt * 1000 < now) return false;
-  const expected = Buffer.from(signature(key, requestId, index, expiresAt));
-  const given = Buffer.from(sig);
-  return expected.length === given.length && timingSafeEqual(expected, given);
+  return safeEqual(signature(key, requestId, index, expiresAt), sig);
 }

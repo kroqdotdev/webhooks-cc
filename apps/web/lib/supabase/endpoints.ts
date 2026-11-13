@@ -1,7 +1,7 @@
 import { storedEmailFields } from "@/lib/email-fields";
 import { storedLayouts } from "@/lib/parsing/stored";
 import type { EmailField, Layout } from "@webhooks-cc/sdk/email";
-import { customAlphabet } from "nanoid";
+import { endpointSlug } from "@/lib/ids";
 import { decryptOwnerHeaders, maskOwnerHeaders } from "@/lib/forwarding/owner-headers";
 import { closeRunsWithoutAccess } from "@/lib/tunnels/access";
 import { createAdminClient } from "./admin";
@@ -17,7 +17,6 @@ import { isValidSigningHeaderName, isValidSigningProvider } from "@/lib/signing-
 import { isEndpointSite, type EndpointSite } from "@/lib/site";
 
 const MAX_SLUG_ATTEMPTS = 5;
-const nanoidSlug = customAlphabet("0123456789abcdefghijklmnopqrstuvwxyz", 10);
 
 type EndpointRow = Database["public"]["Tables"]["endpoints"]["Row"];
 type EndpointInsert = Database["public"]["Tables"]["endpoints"]["Insert"];
@@ -339,7 +338,7 @@ async function generateUniqueSlug(): Promise<string> {
   const admin = createAdminClient();
 
   for (let attempt = 0; attempt < MAX_SLUG_ATTEMPTS; attempt += 1) {
-    const slug = nanoidSlug();
+    const slug = endpointSlug();
     const { data, error } = await admin
       .from("endpoints")
       .select("id")
@@ -853,7 +852,7 @@ export async function createSandboxEndpoint(
   for (let attempt = 0; attempt < MAX_SLUG_ATTEMPTS; attempt += 1) {
     const { data, error } = await admin.rpc("create_sandbox_endpoint", {
       p_registration_id: registrationId,
-      p_slug: nanoidSlug(),
+      p_slug: endpointSlug(),
       p_max_endpoints: limits.maxEndpoints,
       p_pool_size: limits.poolSize,
     });

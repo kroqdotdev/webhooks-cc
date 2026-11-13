@@ -135,7 +135,7 @@ fn now_ms() -> i64 {
 /// so this is at or before the true start: nothing sent after the command
 /// started is missed, and at most a second before it can count.
 async fn server_start(client: &ApiClient, slug: &str, deadline: Instant) -> Result<i64> {
-    let path = format!("/api/endpoints/{}", urlencoding::encode(slug));
+    let path = format!("/api/endpoints/{}", crate::util::url::encode(slug));
     let (resp, started, local) = retrying(deadline, || async {
         // Timed per try, so a retried read measures its own round trip.
         let started = std::time::Instant::now();

@@ -8,6 +8,8 @@ import { gatesOnEdge } from "@/lib/tunnels/edge";
 import { passwordProblem } from "@/lib/tunnels/password-hash";
 import { setNamePassword } from "@/lib/tunnels/passwords";
 import { tunnelPlanOf } from "@/lib/tunnels/plan";
+import { parseJsonBodyWith } from "@/lib/request-validation";
+import { z } from "zod";
 
 const LIMIT = 30;
 const WINDOW_MS = 10 * 60_000;
@@ -78,16 +80,14 @@ async function change(
   }
 }
 
+const passwordBody = z.object({ password: z.unknown().optional() });
+
 /** Puts a kept name behind a password: `{password}`. Every preview under it follows. */
 export async function PUT(request: Request, { params }: { params: Promise<{ name: string }> }) {
-  let password: string | undefined;
-  try {
-    const body = (await request.json()) as Record<string, unknown>;
-    password = typeof body.password === "string" && body.password ? body.password : undefined;
-  } catch {
-    password = undefined;
-  }
-  return change(request, params, password);
+  // A body that cannot be read is a missing password, which `change` refuses.
+  const parsed = await parseJsonBodyWith(request, passwordBody);
+  const sent = "data" in parsed ? parsed.data.password : undefined;
+  return change(request, params, typeof sent === "string" && sent ? sent : undefined);
 }
 
 /** Takes the password off a kept name. */

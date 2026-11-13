@@ -3,17 +3,21 @@ import { reportError } from "@/lib/observability";
 import { startViewSession, ViewError } from "@/lib/ops/view";
 import { authenticateStaffRequest, opsJson } from "@/lib/staff";
 import { ticketRowByNumber } from "@/lib/support/tickets";
+import { parseJsonBodyWith } from "@/lib/request-validation";
+import { z } from "zod";
+
+const viewBody = z.object({ ticketNumber: z.unknown().optional() });
 
 /** Opens a 30-minute read-only view of the account behind a ticket with access. */
 export async function POST(request: Request) {
   const auth = await authenticateStaffRequest(request);
   if (!auth.success) return auth.response;
-  let body: Record<string, unknown>;
-  try {
-    body = (await request.json()) as Record<string, unknown>;
-  } catch {
-    return opsJson({ error: "Invalid JSON." }, { status: 400 });
-  }
+  const parsed = await parseJsonBodyWith(request, viewBody, {
+    message: "Invalid JSON.",
+    respond: opsJson,
+  });
+  if ("error" in parsed) return parsed.error;
+  const body = parsed.data;
   const number = typeof body.ticketNumber === "number" ? body.ticketNumber : NaN;
   if (!Number.isInteger(number)) return opsJson({ error: "Name the ticket." }, { status: 400 });
   try {

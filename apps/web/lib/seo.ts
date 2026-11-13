@@ -173,7 +173,6 @@ export const PUBLIC_SITEMAP_PAGES: readonly SitemapPageDefinition[] = [
     lastModified: TUNNEL_COMPARE_UPDATED,
   })),
   // Blog pages are dynamically generated from Supabase in app/sitemap.xml/route.ts
-  // /api-explorer is noindexed - client-only Scalar viewer, /docs/api owns this query
   {
     path: "/installation",
     changeFrequency: "monthly",

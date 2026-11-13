@@ -84,7 +84,7 @@ impl ApiClient {
             .build()
             .context("failed to create SSE client")?;
 
-        let base_url = self.url(&format!("/api/stream/{}", urlencoding::encode(slug)));
+        let base_url = self.url(&format!("/api/stream/{}", crate::util::url::encode(slug)));
         let mut cursor = ResumeCursor {
             floor: since,
             ..ResumeCursor::default()

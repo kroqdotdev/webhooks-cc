@@ -11,11 +11,11 @@ import {
   StatusTag,
   settingsLink,
 } from "@/components/settings/panel";
-import { longDate, shortDate } from "@/components/settings/format";
+import { longDate, shortDate } from "@/lib/dates";
 import { Button } from "@/components/ui/button";
 import { MAX_EXTRA_DOMAINS, MONTHLY_DOMAIN_CENTS } from "@/lib/capacity";
 import { changeCapacity, fetchCapacity } from "@/lib/capacity-api";
-import { copyToClipboard } from "@/lib/clipboard";
+import { useCopyWithFeedback } from "@/hooks/use-copy-with-feedback";
 import type { CapacityState } from "@/lib/supabase/capacity-billing";
 import { formatCents } from "@/lib/team-pricing";
 import { BillingPortalLink } from "@/components/billing/billing-portal";
@@ -42,7 +42,8 @@ function endpointLabel(endpoint: RoutableEndpoint): string {
 }
 
 function CopyValue({ value, label }: { value: string; label: string }) {
-  const [copied, setCopied] = useState(false);
+  const { copy, isCopied } = useCopyWithFeedback(1500);
+  const copied = isCopied();
   return (
     <span className="inline-flex items-center gap-2 min-w-0">
       <CodeBox className="text-xs px-2 py-1 break-all shadow-none!" render={<code />}>
@@ -52,13 +53,7 @@ function CopyValue({ value, label }: { value: string; label: string }) {
         type="button"
         aria-label={`Copy ${label}`}
         className="text-muted-foreground hover:text-foreground cursor-pointer shrink-0"
-        onClick={() =>
-          void copyToClipboard(value).then((ok) => {
-            if (!ok) return;
-            setCopied(true);
-            setTimeout(() => setCopied(false), 1500);
-          })
-        }
+        onClick={() => void copy(value)}
       >
         {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
       </button>

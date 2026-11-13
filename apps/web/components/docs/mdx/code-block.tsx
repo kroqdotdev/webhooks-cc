@@ -1,21 +1,21 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useRef } from "react";
 import { Check, Copy } from "lucide-react";
+import { useCopyWithFeedback } from "@/hooks/use-copy-with-feedback";
 
 export function CodeBlock({
   children,
   title,
   ...props
 }: React.ComponentProps<"pre"> & { title?: string }) {
-  const [copied, setCopied] = useState(false);
+  const { copy, isCopied } = useCopyWithFeedback();
+  const copied = isCopied();
   const preRef = useRef<HTMLPreElement>(null);
 
   async function handleCopy() {
     const text = preRef.current?.textContent ?? "";
-    await navigator.clipboard.writeText(text);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    await copy(text);
   }
 
   return (

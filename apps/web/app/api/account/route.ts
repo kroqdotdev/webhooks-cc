@@ -6,6 +6,16 @@ import { AccountDeletionBillingError, deleteAccountForUser } from "@/lib/supabas
 import { parseDisplayName, updateDisplayName } from "@/lib/supabase/profile";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { reportError } from "@/lib/observability";
+import { parseJsonBodyWith } from "@/lib/request-validation";
+import { z } from "zod";
+
+const NAME_REQUIRED = "name is required (a string, or null to clear it)";
+// A field left out stays out of the parsed body, so `"name" in` still tells
+// "clear it" (null) from "not sent".
+const patchBody = z.object({
+  name: z.unknown().optional(),
+  approvalEmails: z.unknown().optional(),
+});
 
 const NAME_RATE_LIMIT_MAX = 20;
 const NAME_RATE_LIMIT_WINDOW_MS = 10 * 60_000;
@@ -26,32 +36,20 @@ export async function PATCH(request: Request) {
   );
   if (rateLimit.response) return rateLimit.response;
 
-  let body: unknown;
-  try {
-    body = await request.json();
-  } catch {
-    return applyRateLimitHeaders(
-      Response.json({ error: "Invalid JSON body" }, { status: 400 }),
-      rateLimit
-    );
+  const read = await parseJsonBodyWith(request, patchBody, {
+    message: NAME_REQUIRED,
+    invalidJson: "Invalid JSON body",
+  });
+  if ("error" in read) return applyRateLimitHeaders(read.error, rateLimit);
+
+  if ("approvalEmails" in read.data) {
+    return setApprovalEmails(request, auth.userId, read.data.approvalEmails, rateLimit);
+  }
+  if (!("name" in read.data)) {
+    return applyRateLimitHeaders(Response.json({ error: NAME_REQUIRED }, { status: 400 }), rateLimit);
   }
 
-  if (body && typeof body === "object" && !Array.isArray(body) && "approvalEmails" in body) {
-    return setApprovalEmails(
-      request,
-      auth.userId,
-      (body as { approvalEmails: unknown }).approvalEmails,
-      rateLimit
-    );
-  }
-  if (!body || typeof body !== "object" || Array.isArray(body) || !("name" in body)) {
-    return applyRateLimitHeaders(
-      Response.json({ error: "name is required (a string, or null to clear it)" }, { status: 400 }),
-      rateLimit
-    );
-  }
-
-  const parsed = parseDisplayName((body as { name: unknown }).name);
+  const parsed = parseDisplayName(read.data.name);
   if (!parsed.ok) {
     await auditUserAction(request, auth.userId, {
       action: "account.name_updated",

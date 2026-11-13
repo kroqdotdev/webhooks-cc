@@ -1,4 +1,4 @@
-import { customAlphabet } from "nanoid";
+import { userCodePart } from "@/lib/ids";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { Json } from "@/lib/supabase/database";
 import { compareNetworks, type DeviceRequester, type NetworkMatch } from "@/lib/device-requester";
@@ -8,8 +8,6 @@ import { actionSpec, type ActionDetail, type ApprovalAction } from "./actions";
 export const APPROVAL_TTL_MS = 15 * 60_000;
 /** Pending approvals an account may have at once. */
 export const MAX_PENDING_APPROVALS = 10;
-
-const codePart = customAlphabet("ABCDEFGHJKMNPQRSTUVWXYZ23456789", 4);
 
 export type ApprovalStatus = "pending" | "approved" | "denied" | "completed" | "expired";
 
@@ -141,7 +139,7 @@ export async function createApproval(input: {
         action: input.action,
         params: input.params as Json,
         summary: spec.summary(input.params),
-        user_code: `${codePart()}-${codePart()}`,
+        user_code: `${userCodePart()}-${userCodePart()}`,
         requested_by_key: input.asker.agentRegistrationId ? null : (input.asker.keyId ?? null),
         requested_by_agent: input.asker.agentRegistrationId ?? null,
         requester,

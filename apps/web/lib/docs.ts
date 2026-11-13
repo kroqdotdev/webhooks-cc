@@ -1,6 +1,6 @@
 import fs from "fs/promises";
 import path from "path";
-import matter from "gray-matter";
+import { parseFrontmatter } from "@/lib/frontmatter";
 
 // -------------------------------------------------------------------
 // Types
@@ -58,10 +58,10 @@ export async function getDocBySlug(slug: string): Promise<DocPage | null> {
 
   try {
     const raw = await fs.readFile(filePath, "utf-8");
-    const { data, content } = matter(raw);
+    const { data, content } = parseFrontmatter<DocFrontmatter>(raw);
     return {
       slug,
-      frontmatter: data as DocFrontmatter,
+      frontmatter: data,
       content,
     };
   } catch (err: unknown) {
@@ -71,10 +71,10 @@ export async function getDocBySlug(slug: string): Promise<DocPage | null> {
       const indexPath = path.join(CONTENT_DIR, slug, "index.mdx");
       try {
         const raw = await fs.readFile(indexPath, "utf-8");
-        const { data, content } = matter(raw);
+        const { data, content } = parseFrontmatter<DocFrontmatter>(raw);
         return {
           slug,
-          frontmatter: data as DocFrontmatter,
+          frontmatter: data,
           content,
         };
       } catch (err2: unknown) {

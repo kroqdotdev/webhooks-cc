@@ -3,6 +3,8 @@ import { authenticateRequestRequireUser } from "@/lib/api-auth";
 import { checkRateLimitByKeyWithInfo, applyRateLimitHeaders } from "@/lib/rate-limit";
 import { createTeam, listTeamsForUser } from "@/lib/supabase/teams";
 import { reportError } from "@/lib/observability";
+import { parseJsonBodyWith } from "@/lib/request-validation";
+import { z } from "zod";
 
 const TEAM_CREATE_RATE_LIMIT_MAX = 10;
 const TEAM_CREATE_RATE_LIMIT_WINDOW_MS = 10 * 60_000;
@@ -20,6 +22,8 @@ export async function GET(request: Request) {
   }
 }
 
+const createTeamBody = z.object({ name: z.unknown().optional() });
+
 export async function POST(request: Request) {
   const auth = await authenticateRequestRequireUser(request);
   if (!auth.success) return auth.response;
@@ -31,12 +35,9 @@ export async function POST(request: Request) {
   );
   if (rateLimit.response) return rateLimit.response;
 
-  let body: Record<string, unknown>;
-  try {
-    body = (await request.json()) as Record<string, unknown>;
-  } catch {
-    return Response.json({ error: "Invalid JSON body" }, { status: 400 });
-  }
+  const parsed = await parseJsonBodyWith(request, createTeamBody, { message: "Invalid JSON body" });
+  if ("error" in parsed) return parsed.error;
+  const body = parsed.data;
 
   const name = typeof body.name === "string" ? body.name.trim() : "";
   if (name.length === 0 || name.length > 100) {

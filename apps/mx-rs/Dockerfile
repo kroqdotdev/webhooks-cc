@@ -10,7 +10,7 @@
 # binary cannot even start. TLS is rustls with ring, so the runtime needs only
 # CA certificates.
 
-FROM rust:1.98-slim-trixie AS builder
+FROM rust:1.99-slim-trixie AS builder
 RUN apt-get update && apt-get install -y --no-install-recommends libcap2-bin \
     && rm -rf /var/lib/apt/lists/*
 WORKDIR /app

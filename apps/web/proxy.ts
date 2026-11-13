@@ -44,7 +44,7 @@ function sanitizeCspOrigin(raw: string | undefined, fallback: string): string {
 }
 
 function shouldNoIndexPath(pathname: string): boolean {
-  if (pathname === "/login" || pathname === "/api-explorer") return true;
+  if (pathname === "/login") return true;
   // /support itself is a public page; a ticket or the form is not.
   if (pathname.startsWith("/support/")) return true;
   const privatePrefixes = [

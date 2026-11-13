@@ -7,6 +7,8 @@ import {
   parseAccountAnalyticsConsent,
   setAccountAnalyticsConsent,
 } from "@/lib/supabase/analytics-consent";
+import { parseJsonBodyWith } from "@/lib/request-validation";
+import { z } from "zod";
 
 // Read on every page load of a signed-in browser, so the read limit is loose.
 const READ_RATE_LIMIT_MAX = 300;
@@ -48,6 +50,9 @@ export async function GET(request: Request) {
   }
 }
 
+const CONSENT_REQUIRED = 'consent must be "granted" or "denied"';
+const consentBody = z.object({ consent: z.unknown().optional() });
+
 /** Saves `{ consent: "granted" | "denied" }` on the account. */
 export async function PUT(request: Request) {
   const auth = await authenticateSessionRequest(request);
@@ -60,23 +65,16 @@ export async function PUT(request: Request) {
   );
   if (rateLimit.response) return rateLimit.response;
 
-  let body: unknown;
-  try {
-    body = await request.json();
-  } catch {
-    return applyRateLimitHeaders(
-      Response.json({ error: "Invalid JSON body" }, { status: 400 }),
-      rateLimit
-    );
-  }
+  const parsed = await parseJsonBodyWith(request, consentBody, {
+    message: CONSENT_REQUIRED,
+    invalidJson: "Invalid JSON body",
+  });
+  if ("error" in parsed) return applyRateLimitHeaders(parsed.error, rateLimit);
 
-  const consent =
-    body && typeof body === "object" && !Array.isArray(body)
-      ? parseAccountAnalyticsConsent((body as { consent?: unknown }).consent)
-      : null;
+  const consent = parseAccountAnalyticsConsent(parsed.data.consent);
   if (!consent) {
     return applyRateLimitHeaders(
-      Response.json({ error: 'consent must be "granted" or "denied"' }, { status: 400 }),
+      Response.json({ error: CONSENT_REQUIRED }, { status: 400 }),
       rateLimit
     );
   }

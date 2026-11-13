@@ -3,13 +3,13 @@
 //! Mirrors the SDK's `verify.ts` but in Rust. Each provider has a dedicated
 //! function that returns a [`VerificationResult`].
 
-use hmac::{Hmac, KeyInit, Mac};
-use ring::signature::{RSA_PKCS1_2048_8192_SHA256, UnparsedPublicKey};
-use sha1::Sha1;
-use sha2::Sha256;
+use crate::crypto::hmac_sha256;
+use ring::hmac::{HMAC_SHA1_FOR_LEGACY_USE_ONLY, Key};
+use ring::signature::{ED25519, RSA_PKCS1_2048_8192_SHA256, UnparsedPublicKey};
 use std::collections::HashMap;
 use std::sync::{Mutex, OnceLock};
 use std::time::Duration;
+use subtle::ConstantTimeEq;
 
 /// Bound on cached PayPal certificates. The cert URL path suffix is
 /// sender-controlled, so an unbounded map keyed by it would be a
@@ -144,9 +144,9 @@ fn get_header<'a>(headers: &'a HashMap<String, String>, name: &str) -> Option<&'
     None
 }
 
-/// Constant-time byte comparison.
+/// Constant-time byte comparison; values of different lengths are unequal.
 fn ct_eq(a: &[u8], b: &[u8]) -> bool {
-    constant_time_eq::constant_time_eq(a, b)
+    a.ct_eq(b).into()
 }
 
 /// Constant-time string comparison.
@@ -154,18 +154,11 @@ fn ct_str_eq(a: &str, b: &str) -> bool {
     ct_eq(a.as_bytes(), b.as_bytes())
 }
 
-/// HMAC-SHA256 over the payload using the secret as a UTF-8 key.
-fn hmac_sha256(secret: &[u8], payload: &[u8]) -> Vec<u8> {
-    let mut mac = Hmac::<Sha256>::new_from_slice(secret).expect("HMAC accepts any key length");
-    mac.update(payload);
-    mac.finalize().into_bytes().to_vec()
-}
-
-/// HMAC-SHA1 over the payload using the secret as a UTF-8 key.
+/// HMAC-SHA1 over the payload using the secret as a UTF-8 key. SHA-1 only
+/// because the providers that use it still sign with it.
 fn hmac_sha1(secret: &[u8], payload: &[u8]) -> Vec<u8> {
-    let mut mac = Hmac::<Sha1>::new_from_slice(secret).expect("HMAC accepts any key length");
-    mac.update(payload);
-    mac.finalize().into_bytes().to_vec()
+    let key = Key::new(HMAC_SHA1_FOR_LEGACY_USE_ONLY, secret);
+    ring::hmac::sign(&key, payload).as_ref().to_vec()
 }
 
 fn hmac_sha256_hex_key(secret_hex: &[u8], payload: &[u8]) -> Result<Vec<u8>, Box<SignatureError>> {
@@ -1224,14 +1217,9 @@ fn verify_discord(
             )));
         }
     };
-    let verifying_key = match ed25519_dalek::VerifyingKey::from_bytes(&pk_array) {
-        Ok(vk) => vk,
-        Err(_) => {
-            return VerificationResult::Invalid(SignatureError::invalid_encoding(
-                "Invalid Ed25519 public key",
-            ));
-        }
-    };
+    // ring checks the key when it verifies, so a 32-byte value that is not
+    // a curve point reads as a failed signature below.
+    let verifying_key = UnparsedPublicKey::new(&ED25519, pk_array);
 
     // Decode hex signature
     let sig_bytes = match hex::decode(sig_header.trim()) {
@@ -1251,14 +1239,11 @@ fn verify_discord(
             ));
         }
     };
-    let signature = ed25519_dalek::Signature::from_bytes(&sig_array);
-
     // Message = timestamp + body
     let mut message = timestamp.as_bytes().to_vec();
     message.extend_from_slice(body);
 
-    use ed25519_dalek::Verifier;
-    match verifying_key.verify(&message, &signature) {
+    match verifying_key.verify(&message, &sig_array) {
         Ok(()) => VerificationResult::Valid,
         Err(_) => {
             let mut err = SignatureError {

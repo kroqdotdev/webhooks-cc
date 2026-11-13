@@ -1,9 +1,66 @@
-import { createCipheriv, createDecipheriv, randomBytes } from "crypto";
+import {
+  createCipheriv,
+  createDecipheriv,
+  createHash,
+  randomBytes,
+  timingSafeEqual,
+} from "node:crypto";
 import { reportError } from "@/lib/observability";
 
 const ALGORITHM = "aes-256-gcm";
 const NONCE_SIZE = 12;
 const TAG_SIZE = 16;
+
+/**
+ * AES-256-GCM with the layout every sealed value here uses, and the
+ * receiver's `crypto.rs` reads: [12-byte nonce][ciphertext][16-byte tag].
+ */
+export function sealBytes(key: Buffer, plaintext: string | Buffer): Buffer {
+  const nonce = randomBytes(NONCE_SIZE);
+  const cipher = createCipheriv(ALGORITHM, key, nonce);
+  const data = typeof plaintext === "string" ? Buffer.from(plaintext, "utf8") : plaintext;
+  const encrypted = Buffer.concat([cipher.update(data), cipher.final()]);
+  return Buffer.concat([nonce, encrypted, cipher.getAuthTag()]);
+}
+
+/** The plaintext of `sealBytes`; throws when the value is short, changed or sealed under another key. */
+export function openBytes(key: Buffer, sealed: Buffer): Buffer {
+  if (sealed.length < NONCE_SIZE + TAG_SIZE + 1) {
+    throw new Error("Ciphertext too short");
+  }
+  const decipher = createDecipheriv(ALGORITHM, key, sealed.subarray(0, NONCE_SIZE));
+  decipher.setAuthTag(sealed.subarray(sealed.length - TAG_SIZE));
+  return Buffer.concat([
+    decipher.update(sealed.subarray(NONCE_SIZE, sealed.length - TAG_SIZE)),
+    decipher.final(),
+  ]);
+}
+
+/** A JSON value sealed for a URL or a cookie (base64url). */
+export function sealJson(key: Buffer, value: unknown): string {
+  return sealBytes(key, JSON.stringify(value)).toString("base64url");
+}
+
+/** The value `sealJson` sealed, or null when it is not one, has been changed or is under another key. */
+export function openJson(key: Buffer, sealed: string): unknown {
+  try {
+    return JSON.parse(openBytes(key, Buffer.from(sealed, "base64url")).toString("utf8"));
+  } catch {
+    return null;
+  }
+}
+
+/** A key of its own for one purpose, so a value sealed for one never opens as another. */
+export function purposeKey(base: Buffer, purpose: string): Buffer {
+  return createHash("sha256").update(base).update(purpose).digest();
+}
+
+/** Constant-time equality; values of different lengths are simply unequal. */
+export function safeEqual(a: string | Buffer, b: string | Buffer): boolean {
+  const left = typeof a === "string" ? Buffer.from(a, "utf8") : a;
+  const right = typeof b === "string" ? Buffer.from(b, "utf8") : b;
+  return left.length === right.length && timingSafeEqual(left, right);
+}
 
 /**
  * Get the signing secret encryption key from environment.
@@ -21,45 +78,24 @@ function getKey(): Buffer | null {
 }
 
 /**
- * Encrypt a signing secret with AES-256-GCM.
- * Returns raw bytes: [12-byte nonce][ciphertext][16-byte tag].
+ * Encrypt a signing secret with AES-256-GCM (`sealBytes`).
  * Throws if SIGNING_SECRET_KEY is not configured.
  */
 export function encryptSigningSecret(plaintext: string): Buffer {
   const key = getKey();
   if (!key) {
-    throw new Error("SIGNING_SECRET_KEY is not configured — cannot encrypt signing secrets");
+    throw new Error("SIGNING_SECRET_KEY is not configured, so signing secrets cannot be encrypted");
   }
-
-  const nonce = randomBytes(NONCE_SIZE);
-  const cipher = createCipheriv(ALGORITHM, key, nonce);
-  const encrypted = Buffer.concat([cipher.update(plaintext, "utf8"), cipher.final()]);
-  const tag = cipher.getAuthTag();
-
-  return Buffer.concat([nonce, encrypted, tag]);
+  return sealBytes(key, plaintext);
 }
 
-/**
- * Decrypt an AES-256-GCM encrypted signing secret.
- * Input is raw bytes: [12-byte nonce][ciphertext][16-byte tag].
- */
+/** Decrypt a signing secret sealed by `encryptSigningSecret`. */
 export function decryptSigningSecret(ciphertext: Buffer): string {
   const key = getKey();
   if (!key) {
-    throw new Error("SIGNING_SECRET_KEY is not configured — cannot decrypt signing secrets");
+    throw new Error("SIGNING_SECRET_KEY is not configured, so signing secrets cannot be decrypted");
   }
-
-  if (ciphertext.length < NONCE_SIZE + TAG_SIZE + 1) {
-    throw new Error("Ciphertext too short");
-  }
-
-  const nonce = ciphertext.subarray(0, NONCE_SIZE);
-  const tag = ciphertext.subarray(ciphertext.length - TAG_SIZE);
-  const encrypted = ciphertext.subarray(NONCE_SIZE, ciphertext.length - TAG_SIZE);
-
-  const decipher = createDecipheriv(ALGORITHM, key, nonce);
-  decipher.setAuthTag(tag);
-  return Buffer.concat([decipher.update(encrypted), decipher.final()]).toString("utf8");
+  return openBytes(key, ciphertext).toString("utf8");
 }
 
 /**

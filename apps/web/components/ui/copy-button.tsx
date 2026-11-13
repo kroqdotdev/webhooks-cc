@@ -1,8 +1,7 @@
 "use client";
 
-import { useState } from "react";
 import { Copy, Check } from "lucide-react";
-import { copyToClipboard } from "@/lib/clipboard";
+import { useCopyWithFeedback } from "@/hooks/use-copy-with-feedback";
 
 interface CopyButtonProps {
   text: string;
@@ -10,15 +9,10 @@ interface CopyButtonProps {
 }
 
 export function CopyButton({ text, className }: CopyButtonProps) {
-  const [copied, setCopied] = useState(false);
+  const { copy, isCopied } = useCopyWithFeedback();
+  const copied = isCopied();
 
-  const handleCopy = async () => {
-    const success = await copyToClipboard(text);
-    if (success) {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    }
-  };
+  const handleCopy = () => void copy(text);
 
   return (
     <button

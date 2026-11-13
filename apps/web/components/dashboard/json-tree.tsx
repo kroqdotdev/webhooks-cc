@@ -2,7 +2,7 @@
 
 import { useState, useCallback, useMemo, useEffect, useRef } from "react";
 import { ChevronRight, ChevronDown, Check, ChevronsUpDown } from "lucide-react";
-import { copyToClipboard } from "@/lib/clipboard";
+import { useCopyWithFeedback } from "@/hooks/use-copy-with-feedback";
 
 /** Valid JS identifier, hoisted to avoid recreation in render loops (js-hoist-regexp) */
 const JS_IDENT = /^[a-zA-Z_$][a-zA-Z0-9_$]*$/;
@@ -39,23 +39,15 @@ export function JsonTree({ data, defaultExpandDepth }: JsonTreeProps) {
   // true only when everything is open, so the button names what it will do.
   const [expandTarget, setExpandTarget] = useState(depth === Infinity);
   const [expandVersion, setExpandVersion] = useState(0);
-  const [copiedPath, setCopiedPath] = useState<string | null>(null);
-  const copyTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // The key is the path itself, so the node that was copied shows the check.
+  const { copy, copiedKey: copiedPath } = useCopyWithFeedback(1500);
 
-  useEffect(() => {
-    return () => {
-      if (copyTimeoutRef.current) clearTimeout(copyTimeoutRef.current);
-    };
-  }, []);
-
-  const handleCopyPath = useCallback(async (path: string) => {
-    const success = await copyToClipboard(path);
-    if (success) {
-      if (copyTimeoutRef.current) clearTimeout(copyTimeoutRef.current);
-      setCopiedPath(path);
-      copyTimeoutRef.current = setTimeout(() => setCopiedPath(null), 1500);
-    }
-  }, []);
+  const handleCopyPath = useCallback(
+    async (path: string) => {
+      await copy(path, path);
+    },
+    [copy]
+  );
 
   const toggleAll = useCallback(() => {
     setExpandTarget((prev) => !prev);

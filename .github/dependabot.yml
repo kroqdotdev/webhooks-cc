@@ -45,6 +45,22 @@ updates:
       - "release: none"
       - "rust"
 
+  # The other Rust crates, each with its own lockfile.
+  - package-ecosystem: "cargo"
+    directories:
+      - "/apps/mx-rs"
+      - "/apps/edge-rs"
+      - "/apps/parser-rs"
+      - "/crates/tunnel"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+      - "release: none"
+      - "rust"
+
   # Python SDK (uv.lock); the runtime dependency ranges in pyproject.toml are
   # what users get, so only the lock moves here.
   - package-ecosystem: "uv"

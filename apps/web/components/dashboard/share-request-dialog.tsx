@@ -12,7 +12,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { copyToClipboard } from "@/lib/clipboard";
+import { useCopyWithFeedback } from "@/hooks/use-copy-with-feedback";
 import { Segmented, SwitchRow } from "./settings-primitives";
 import { trackRequestShared } from "@/lib/analytics";
 import {
@@ -61,7 +61,7 @@ export function ShareRequestDialog({
   const [links, setLinks] = useState<RequestShareLink[] | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [copiedId, setCopiedId] = useState<string | null>(null);
+  const { copy: copyText, copiedKey: copiedId } = useCopyWithFeedback();
 
   const hidden = useMemo(
     () => [
@@ -91,12 +91,12 @@ export function ShareRequestDialog({
     };
   }, [open, accessToken, requestId]);
 
-  const copy = useCallback(async (link: RequestShareLink) => {
-    if (await copyToClipboard(shareUrl(link.token))) {
-      setCopiedId(link.id);
-      setTimeout(() => setCopiedId((current) => (current === link.id ? null : current)), 2000);
-    }
-  }, []);
+  const copy = useCallback(
+    async (link: RequestShareLink) => {
+      await copyText(shareUrl(link.token), link.id);
+    },
+    [copyText]
+  );
 
   const create = async () => {
     setBusy(true);

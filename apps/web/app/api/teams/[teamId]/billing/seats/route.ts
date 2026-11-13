@@ -9,6 +9,10 @@ import {
 } from "@/lib/supabase/team-billing";
 import { ERROR_STATUS } from "../shared";
 import { reportError } from "@/lib/observability";
+import { parseJsonBodyWith } from "@/lib/request-validation";
+import { z } from "zod";
+
+const seatsBody = z.object({ seats: z.unknown().optional() });
 
 export async function POST(request: Request, { params }: { params: Promise<{ teamId: string }> }) {
   const auth = await authenticateSessionRequest(request);
@@ -18,13 +22,10 @@ export async function POST(request: Request, { params }: { params: Promise<{ tea
 
   // A missing or non-numeric seat count becomes NaN, which updateTeamSeats
   // rejects as invalid_seats — one place owns the seat range.
-  let seats: number;
-  try {
-    const body = (await request.json()) as { seats?: unknown };
-    seats = typeof body.seats === "number" ? body.seats : NaN;
-  } catch {
-    seats = NaN;
-  }
+  // A body that cannot be read counts as an empty one.
+  const parsed = await parseJsonBodyWith(request, seatsBody);
+  const sent = "data" in parsed ? parsed.data.seats : undefined;
+  const seats = typeof sent === "number" ? sent : NaN;
 
   try {
     await updateTeamSeats(auth.userId, teamId, seats);

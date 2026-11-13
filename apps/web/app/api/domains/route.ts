@@ -1,6 +1,8 @@
 import { auditDomain, domainAccount, domainErrorResponse } from "@/lib/domain-route";
 import { checkRateLimitByKeyWithInfo } from "@/lib/rate-limit";
 import { addDomain, listDomains } from "@/lib/supabase/inbound-domains";
+import { parseJsonBodyWith } from "@/lib/request-validation";
+import { z } from "zod";
 
 /**
  * GET /api/domains[?team=<id>]: the account's custom inbound domains, with
@@ -17,18 +19,17 @@ export async function GET(request: Request) {
   }
 }
 
+const addDomainBody = z.object({ domain: z.unknown().optional() });
+
 export async function POST(request: Request) {
   const context = await domainAccount(request);
   if (context instanceof Response) return context;
   const limited = await checkRateLimitByKeyWithInfo(`user:domains-add:${context.userId}`, 10);
   if (limited.response) return limited.response;
 
-  let domain: unknown;
-  try {
-    domain = ((await request.json()) as { domain?: unknown } | null)?.domain;
-  } catch {
-    domain = undefined;
-  }
+  const parsed = await parseJsonBodyWith(request, addDomainBody, { message: "Send { domain }." });
+  if ("error" in parsed) return parsed.error;
+  const { domain } = parsed.data;
   if (typeof domain !== "string" || domain.length > 300) {
     return Response.json({ error: "Send { domain }." }, { status: 400 });
   }

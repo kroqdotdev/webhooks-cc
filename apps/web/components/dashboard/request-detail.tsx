@@ -15,7 +15,7 @@ import {
   X,
 } from "lucide-react";
 import { ReplayDialog } from "./replay-dialog";
-import { copyToClipboard } from "@/lib/clipboard";
+import { useCopyWithFeedback } from "@/hooks/use-copy-with-feedback";
 import { formatBytes, formatFullTimestamp } from "@/types/request";
 import { hexDump, requestBodyBytes } from "@/lib/body-bytes";
 import type { Request, ClickHouseRequest } from "@/types/request";
@@ -195,33 +195,12 @@ export function RequestDetail({
     onTabChange?.(next);
   };
 
-  const [copied, setCopied] = useState<string | null>(null);
-  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const { copy: handleCopy, copiedKey: copied } = useCopyWithFeedback();
   const requestId = "id" in request ? request.id : request._id;
 
   useEffect(() => {
     trackRequestViewed(request.method);
   }, [requestId]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Cleanup timeout on unmount to prevent memory leaks
-  useEffect(() => {
-    return () => {
-      if (timeoutRef.current) {
-        clearTimeout(timeoutRef.current);
-      }
-    };
-  }, []);
-
-  const handleCopy = useCallback(async (text: string, key: string) => {
-    const success = await copyToClipboard(text);
-    if (success) {
-      setCopied(key);
-      if (timeoutRef.current) {
-        clearTimeout(timeoutRef.current);
-      }
-      timeoutRef.current = setTimeout(() => setCopied(null), 2000);
-    }
-  }, []);
 
   const tabCounts = {
     headers: Object.keys(request.headers).length,
@@ -730,16 +709,12 @@ interface RequestDetailEmptyProps {
 }
 
 export function RequestDetailEmpty({ slug, onSendTest, onOpenSettings }: RequestDetailEmptyProps) {
-  const [copied, setCopied] = useState(false);
+  const { copy, isCopied } = useCopyWithFeedback();
+  const copied = isCopied();
   const url = slug ? `${WEBHOOK_BASE_URL}/w/${slug}` : null;
 
-  const handleCopy = async () => {
-    if (!url) return;
-    const success = await copyToClipboard(url);
-    if (success) {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    }
+  const handleCopy = () => {
+    if (url) void copy(url);
   };
 
   // Minimal fallback when no slug is passed (shouldn't happen in practice)

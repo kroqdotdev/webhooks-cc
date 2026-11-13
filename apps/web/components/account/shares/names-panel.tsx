@@ -4,7 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { ExternalLink, Lock, LockOpen, Trash2 } from "lucide-react";
 import { InlineMessage, Panel, StatusTag, settingsLink } from "@/components/settings/panel";
-import { shortDate } from "@/components/settings/format";
+import { shortDate } from "@/lib/dates";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {

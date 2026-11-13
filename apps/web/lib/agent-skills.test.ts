@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
-import matter from "gray-matter";
+import { parseFrontmatter } from "@/lib/frontmatter";
 import { describe, expect, it } from "vitest";
 import {
   AGENT_SKILLS_SCHEMA,
@@ -20,7 +20,7 @@ const SKILL_PATH = path.resolve(
 describe("agent skills discovery", () => {
   it("lists the plugin's webhook-testing skill with a digest over the file's bytes", async () => {
     const bytes = fs.readFileSync(SKILL_PATH);
-    const { data } = matter(bytes.toString("utf8"));
+    const { data } = parseFrontmatter(bytes.toString("utf8"));
     const index = await buildAgentSkillsIndex();
 
     expect(index.$schema).toBe(AGENT_SKILLS_SCHEMA);

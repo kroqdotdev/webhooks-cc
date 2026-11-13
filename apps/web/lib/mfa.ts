@@ -1,3 +1,5 @@
+import { decodeJwt } from "jose";
+
 /**
  * Two-factor sign-in (GoTrue TOTP). Anyone can turn it on under Account,
  * Security; staff need it for /ops. A session that signed in with a password
@@ -13,12 +15,8 @@ interface UserWithFactors {
 
 /** The claims of a JWT that has already been validated. Null when unreadable. */
 export function jwtClaims(token: string): Record<string, unknown> | null {
-  const part = token.split(".")[1];
-  if (!part) return null;
   try {
-    const json = Buffer.from(part, "base64url").toString("utf8");
-    const claims: unknown = JSON.parse(json);
-    return claims && typeof claims === "object" ? (claims as Record<string, unknown>) : null;
+    return decodeJwt(token);
   } catch {
     return null;
   }

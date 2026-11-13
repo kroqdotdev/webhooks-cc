@@ -9,6 +9,7 @@
 use axum::http::HeaderMap;
 use hmac::{Hmac, KeyInit, Mac};
 use sha2::Sha256;
+use subtle::ConstantTimeEq;
 
 pub const TIMESTAMP_HEADER: &str = "x-mail-timestamp";
 pub const SIGNATURE_HEADER: &str = "x-mail-signature";
@@ -70,7 +71,7 @@ pub fn verify(
     let (timestamp, signature) = precheck(headers, now)?;
     let expected = sign(secret, timestamp, method, path, body);
     let provided = signature.trim().to_ascii_lowercase();
-    if constant_time_eq::constant_time_eq(expected.as_bytes(), provided.as_bytes()) {
+    if bool::from(expected.as_bytes().ct_eq(provided.as_bytes())) {
         Ok(())
     } else {
         Err(AuthError::BadSignature)

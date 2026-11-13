@@ -28,15 +28,18 @@ impl ApiClient {
 
     pub async fn revoke_api_key(&self, id: &str) -> Result<()> {
         self.require_auth()?;
-        self.delete(&format!("/api/api-keys?id={}", urlencoding::encode(id)))
-            .await?;
+        self.delete(&format!(
+            "/api/api-keys?id={}",
+            crate::util::url::encode(id)
+        ))
+        .await?;
         Ok(())
     }
 
     pub async fn get_approval(&self, id: &str) -> Result<Fetched<ApprovalAnswer>> {
         self.require_auth()?;
         let resp = self
-            .get(&format!("/api/approvals/{}", urlencoding::encode(id)))
+            .get(&format!("/api/approvals/{}", crate::util::url::encode(id)))
             .await?;
         resp.parse("approval")
     }

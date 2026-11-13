@@ -8,7 +8,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/components/providers/supabase-auth-provider";
 import { apiFetch } from "@/lib/support/client";
-import { copyToClipboard } from "@/lib/clipboard";
+import { useCopyWithFeedback } from "@/hooks/use-copy-with-feedback";
 import { CodeBox } from "@/components/ui/code";
 
 interface Factor {
@@ -307,7 +307,8 @@ export function TwoFactor() {
 
 /** The codes, once: copy, download, and a confirmation that they are kept. */
 function RecoveryCodes({ codes, onDone }: { codes: string[]; onDone: () => void }) {
-  const [copied, setCopied] = useState(false);
+  const { copy, isCopied } = useCopyWithFeedback();
+  const copied = isCopied();
   const text = `webhooks.cc recovery codes\nEach code signs you in once, without your authenticator.\n\n${codes.join("\n")}\n`;
   const download = () => {
     const url = URL.createObjectURL(new Blob([text], { type: "text/plain" }));
@@ -333,15 +334,7 @@ function RecoveryCodes({ codes, onDone }: { codes: string[]; onDone: () => void 
         ))}
       </ol>
       <div className="flex flex-wrap gap-2">
-        <Button
-          variant="outline"
-          onClick={async () => {
-            if (await copyToClipboard(codes.join("\n"))) {
-              setCopied(true);
-              setTimeout(() => setCopied(false), 2000);
-            }
-          }}
-        >
+        <Button variant="outline" onClick={() => void copy(codes.join("\n"))}>
           {copied ? "Copied" : "Copy codes"}
         </Button>
         <Button variant="outline" onClick={download}>

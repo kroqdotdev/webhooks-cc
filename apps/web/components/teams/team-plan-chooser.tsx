@@ -12,7 +12,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
-import { longDate } from "@/components/settings/format";
+import { longDate } from "@/lib/dates";
 import type { Team } from "@/lib/supabase/teams-types";
 import { changeTeamPlan, keepTeamPlan, quoteTeamPlan } from "@/lib/team-billing-api";
 import {

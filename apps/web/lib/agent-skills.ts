@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
-import matter from "gray-matter";
+import { parseFrontmatter } from "@/lib/frontmatter";
 
 /**
  * Agent Skills discovery (agent-skills-discovery RFC v0.2.0): the index at
@@ -140,7 +140,7 @@ export async function buildAgentSkillsIndex(): Promise<AgentSkillsIndex> {
   for (const name of await listSkillNames()) {
     const bytes = await readSkillFile(name, ["SKILL.md"]);
     if (!bytes) continue;
-    const { data } = matter(bytes.toString("utf8"));
+    const { data } = parseFrontmatter(bytes.toString("utf8"));
     if (data.name !== name) {
       throw new Error(`Agent skill ${name}: frontmatter name must equal the directory name`);
     }

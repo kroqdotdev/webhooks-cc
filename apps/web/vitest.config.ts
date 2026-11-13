@@ -1,9 +1,10 @@
 import { defineConfig } from "vitest/config";
+import { existsSync } from "node:fs";
 import path from "path";
-import dotenv from "dotenv";
 
 // Load .env.local from the monorepo root (symlinked into apps/web)
-dotenv.config({ path: path.resolve(__dirname, ".env.local") });
+const envFile = path.resolve(__dirname, ".env.local");
+if (existsSync(envFile)) process.loadEnvFile(envFile);
 
 // Integration tests exercise encrypted signing-secret paths. Use a deterministic
 // test-only key when local development env does not provide one.

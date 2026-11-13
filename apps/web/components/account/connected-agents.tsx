@@ -16,7 +16,7 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
-import { shortDate } from "@/components/settings/format";
+import { shortDate } from "@/lib/dates";
 
 interface ConnectedAgent {
   id: string;
