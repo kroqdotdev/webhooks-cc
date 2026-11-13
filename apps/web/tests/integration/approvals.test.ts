@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { createClient } from "@supabase/supabase-js";
 import {
   ApprovalError,
@@ -10,6 +10,7 @@ import {
   withdrawApproval,
 } from "@/lib/approvals/store";
 import { generateApiKey, hashApiKey } from "@/lib/supabase/api-keys";
+import { actionSpec } from "@/lib/approvals/actions";
 
 if (!process.env.SUPABASE_URL) throw new Error("SUPABASE_URL env var required");
 const admin = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY!, {
@@ -154,6 +155,48 @@ describe("approvals", () => {
     await expect(withdrawApproval(second.code, other)).rejects.toMatchObject({ status: 403 });
     const prefix = (collected?.result as { keyPrefix: string }).keyPrefix;
     await admin.from("api_keys").delete().eq("key_prefix", prefix);
+  });
+
+  it("undoes a collection the owner withdrew while it ran", async () => {
+    const spec = actionSpec("api_keys.create");
+    const run = spec.run.bind(spec);
+
+    // Withdrawn while the key was being made: the key is deleted again.
+    const first = (await ask()).approval;
+    await decideApproval(first.code, owner, true);
+    let made: string | undefined;
+    const spy = vi.spyOn(spec, "run").mockImplementationOnce(async (userId, params) => {
+      const out = await run(userId, params);
+      made = (out.stored as { keyPrefix: string }).keyPrefix;
+      expect(await withdrawApproval(first.code, owner)).toMatchObject({ collected: false });
+      return out;
+    });
+    await expect(pollApproval(first.id, { userId: owner, keyId })).rejects.toMatchObject({
+      status: 410,
+    });
+    const { count } = await admin
+      .from("api_keys")
+      .select("id", { count: "exact", head: true })
+      .eq("key_prefix", made!);
+    expect(count).toBe(0);
+    expect((await pollApproval(first.id, { userId: owner, keyId }))?.approval.status).toBe(
+      "denied"
+    );
+
+    // Withdrawn while a collection failed: it does not come back.
+    const second = (await ask()).approval;
+    await decideApproval(second.code, owner, true);
+    spy.mockImplementationOnce(async () => {
+      await withdrawApproval(second.code, owner);
+      throw new Error("key creation failed");
+    });
+    await expect(pollApproval(second.id, { userId: owner, keyId })).rejects.toThrow(
+      "key creation failed"
+    );
+    expect((await pollApproval(second.id, { userId: owner, keyId }))?.approval.status).toBe(
+      "denied"
+    );
+    spy.mockRestore();
   });
 
   it("caps the approvals an account may have waiting", async () => {

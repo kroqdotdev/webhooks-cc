@@ -1,3 +1,4 @@
+import { createAdminClient } from "@/lib/supabase/admin";
 import type { Json } from "@/lib/supabase/database";
 import {
   createApiKeyForUser,
@@ -25,6 +26,8 @@ interface ActionSpec<P> {
   details(params: P): ActionDetail[];
   /** What the asker gets (may hold a secret) and what the row keeps (never one). */
   run(userId: string, params: P): Promise<{ result: Record<string, unknown>; stored: Json }>;
+  /** Takes back what `run` did, when the owner withdrew while it ran. */
+  undo(userId: string, stored: Json): Promise<void>;
 }
 
 /** An agent's key lives 90 days unless it asks for another lifetime (at most a year). */
@@ -62,6 +65,17 @@ const createApiKey: ActionSpec<KeyParams> = {
       result: { ...created },
       stored: { keyPrefix: created.keyPrefix, expiresAt: created.expiresAt, name: created.name },
     };
+  },
+  async undo(userId, stored) {
+    const prefix = (stored as { keyPrefix?: string } | null)?.keyPrefix;
+    if (!prefix) return;
+    const { error } = await createAdminClient()
+      .from("api_keys")
+      .delete()
+      .eq("user_id", userId)
+      .eq("key_prefix", prefix)
+      .is("agent_registration_id", null);
+    if (error) throw error;
   },
 };
 

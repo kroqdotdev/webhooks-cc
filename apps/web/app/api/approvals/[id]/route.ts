@@ -1,6 +1,6 @@
 import { auditUserAction } from "@/lib/audit";
 import { authenticateRequestRequireUser } from "@/lib/api-auth";
-import { pollApproval } from "@/lib/approvals/store";
+import { ApprovalError, pollApproval } from "@/lib/approvals/store";
 import { reportError } from "@/lib/observability";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { ApiKeyLimitError } from "@/lib/supabase/api-keys";
@@ -43,6 +43,9 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     }
     return Response.json(polled);
   } catch (err) {
+    if (err instanceof ApprovalError) {
+      return Response.json({ error: err.message }, { status: err.status });
+    }
     if (err instanceof ApiKeyLimitError) {
       return Response.json(
         { error: `${err.message}. Revoke one, then poll again before the approval expires.` },

@@ -1007,7 +1007,10 @@ export class WebhooksCC {
           if (
             attempt < this.retry.maxAttempts &&
             this.retry.retryOn.has(response.status) &&
-            (repeatable || response.status === 429)
+            (repeatable || response.status === 429) &&
+            // A call with its own time budget is not retried: a backoff would
+            // run past it.
+            timeoutMs === undefined
           ) {
             const retryDelayMs =
               response.status === 429 && parseRetryAfterHeader(response) !== undefined
@@ -1036,6 +1039,8 @@ export class WebhooksCC {
         if (contentType && !contentType.includes("application/json")) {
           throw new Error(`Unexpected content type: ${contentType}`);
         }
+        // With a budget of its own, reading the body counts against it too.
+        if (timeoutMs !== undefined) return (await response.json()) as T;
         return response.json() as Promise<T>;
       } catch (error) {
         if (error instanceof WebhooksCCError) {
@@ -2023,9 +2028,17 @@ export class WebhooksCC {
       options: { timeout?: number } = {}
     ): Promise<{ approval: Approval; result?: T }> => {
       validatePathSegment(id, "id");
-      return this.request<{ approval: Approval; result?: T }>("GET", `/approvals/${id}`, undefined, {
-        timeoutMs: options.timeout,
-      });
+      // Never retried: a poll may collect the result, which is handed over
+      // once, so a retry after a lost answer would find it gone.
+      return this.request<{ approval: Approval; result?: T }>(
+        "GET",
+        `/approvals/${id}`,
+        undefined,
+        {
+          repeatable: false,
+          timeoutMs: options.timeout,
+        }
+      );
     },
 
     /**

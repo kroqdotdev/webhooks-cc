@@ -84,6 +84,23 @@ describe("apiKeys and approvals", () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
+  it("does not retry a poll that may have collected the result", async () => {
+    const fetchMock = vi.fn().mockRejectedValue(new TypeError("fetch failed"));
+    globalThis.fetch = fetchMock;
+    await expect(client().approvals.get(ID)).rejects.toThrow();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not retry a rate-limited poll inside a wait", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ...answer({ error: "slow down" }, 429),
+      headers: new Headers({ "content-type": "application/json", "retry-after": "30" }),
+    });
+    globalThis.fetch = fetchMock;
+    await expect(client().approvals.wait(ID, { timeout: 5_000 })).rejects.toThrow();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
   it("refuses to hand over a result twice", async () => {
     globalThis.fetch = vi.fn().mockResolvedValue(answer({ approval: approval("completed") }));
     await expect(client().approvals.wait(ID)).rejects.toThrow("already collected");

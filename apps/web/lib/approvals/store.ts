@@ -230,12 +230,14 @@ export async function withdrawApproval(
   const row = data as Row | null;
   if (!row) throw new ApprovalError(400, "This code has expired or was already answered.");
   if (row.user_id !== userId) throw new ApprovalError(403, OTHER_ACCOUNT);
-  if (row.status === "completed") return { id: row.id, action: row.action, collected: true };
+  // Collected for good once its result is recorded. A completed row
+  // without one is still being collected: withdrawing it then makes that
+  // collection undo itself (pollApproval).
   const { data: updated, error: updateError } = await admin
     .from("approvals")
     .update({ status: "denied" })
     .eq("id", row.id)
-    .eq("status", "approved")
+    .or("status.eq.approved,and(status.eq.completed,result.is.null)")
     .select("id")
     .maybeSingle();
   if (updateError) throw updateError;
@@ -317,10 +319,10 @@ export async function pollApproval(
   if (claimError) throw claimError;
   if (!claimed) return pollApproval(id, asker);
 
+  const spec = actionSpec(row.action);
+  let ran: { result: Record<string, unknown>; stored: Json };
   try {
-    const { result, stored } = await actionSpec(row.action).run(row.user_id, row.params);
-    await admin.from("approvals").update({ result: stored }).eq("id", row.id);
-    return { approval: view(claimed as Row), result };
+    ran = await spec.run(row.user_id, row.params);
   } catch (err) {
     // Give the approval back, so the asker can try again in its window
     // (after freeing a key slot, say).
@@ -331,6 +333,22 @@ export async function pollApproval(
       .eq("status", "completed");
     throw err;
   }
+
+  // Record the result, unless the owner withdrew while it ran: then take
+  // the action back (a new key is deleted before anyone sees it).
+  const { data: recorded, error: recordError } = await admin
+    .from("approvals")
+    .update({ result: ran.stored })
+    .eq("id", row.id)
+    .eq("status", "completed")
+    .select("id")
+    .maybeSingle();
+  if (recordError || !recorded) {
+    await spec.undo(row.user_id, ran.stored);
+    if (recordError) throw recordError;
+    throw new ApprovalError(410, "The account's owner withdrew this approval.");
+  }
+  return { approval: view(claimed as Row), result: ran.result };
 }
 
 /** The account's owner, when they asked to hear of every approval. */
