@@ -12,7 +12,6 @@ vi.mock("@/lib/rate-limit", async (importOriginal) => ({
 }));
 vi.mock("@/lib/device-session", () => ({ deviceApprover: mocks.deviceApprover }));
 vi.mock("@/lib/supabase/device-auth", () => ({ describeDeviceCode: mocks.describeDeviceCode }));
-vi.mock("@/lib/env", () => ({ serverEnv: () => ({}) }));
 
 import { GET } from "./route";
 

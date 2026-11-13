@@ -419,7 +419,6 @@ export interface Database {
           user_id: string | null;
           client: string | null;
           country: string | null;
-          city: string | null;
           network: string | null;
           remote: boolean;
           created_at: string;
@@ -433,7 +432,6 @@ export interface Database {
           user_id?: string | null;
           client?: string | null;
           country?: string | null;
-          city?: string | null;
           network?: string | null;
           remote?: boolean;
           created_at?: string;
@@ -447,7 +445,6 @@ export interface Database {
           user_id?: string | null;
           client?: string | null;
           country?: string | null;
-          city?: string | null;
           network?: string | null;
           remote?: boolean;
           created_at?: string;

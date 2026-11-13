@@ -30,7 +30,7 @@ export const TRACK_LABELS: Record<ChangelogTrack, string> = {
 const RELEASE = release as { version: string | null; entries: ChangelogEntry[] };
 
 export const APP_VERSION: string = RELEASE.version ?? "dev";
-export const CLI_VERSION = "1.12.0";
+export const CLI_VERSION = "1.13.0";
 export const SDK_VERSION = "1.23.0";
 export const PYTHON_SDK_VERSION = "0.7.0";
 export const GO_SDK_VERSION = "0.7.0";
@@ -2144,6 +2144,18 @@ export const CHANGELOG: ChangelogEntry[] = [
   },
 
   // ─── CLI ────────────────────────────────────────────────────────────
+  {
+    version: "1.13.0",
+    date: "2026-11-13",
+    title: "Compare, Don't Type",
+    track: "cli",
+    items: [
+      "`whk auth login` opens the approval page with the code already in it: check that it matches your terminal and approve, nothing to type",
+      "On another machine (a server over SSH, a container), `whk auth login` prints the link to open in your own browser instead of starting one; it notices SSH and Linux without a display, and `--remote` says so outright. `--no-browser` only skips opening the browser",
+      'A login someone refuses with "This wasn\'t me" ends at once, with the error code `login_denied` (exit status 3)',
+      "With `--json`, the pending line also carries `verification_url_complete` and `remote`",
+    ],
+  },
   {
     version: "1.12.0",
     date: "2026-11-13",

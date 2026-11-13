@@ -1,4 +1,3 @@
-import { serverEnv } from "@/lib/env";
 import { getClientIp, rateLimitWideIpBucket } from "@/lib/rate-limit";
 
 /**
@@ -12,7 +11,6 @@ export interface DeviceRequester {
   client: string | null;
   /** ISO 3166 code from Cloudflare (CF-IPCountry); T1 is Tor. */
   country: string | null;
-  city: string | null;
   /** The /24 (IPv4) or /48 (IPv6) the request came from, never the address. */
   network: string | null;
   /** The login said it runs on another machine (`whk auth login --remote`). */
@@ -27,20 +25,6 @@ function cleanAscii(value: unknown, max: number): string | null {
     .replace(/\s+/g, " ")
     .trim();
   return text ? text.slice(0, max) : null;
-}
-
-/** Printable text, trimmed and cut to `max` characters (not halfway through one). */
-function clean(value: unknown, max: number): string | null {
-  if (typeof value !== "string") return null;
-  // Control characters (a line break among them, so they become spaces) and
-  // the bidi overrides that could reorder what the page shows.
-  const text = value
-    // eslint-disable-next-line no-control-regex -- removing them is the point
-    .replace(/[\u0000-\u001f\u007f-\u009f\u200e\u200f\u202a-\u202e\u2066-\u2069]/g, " ")
-    .replace(/[\u061c\u200b-\u200d\u2060-\u2064\ufeff]/g, "")
-    .replace(/\s+/g, " ")
-    .trim();
-  return text ? Array.from(text).slice(0, max).join("") : null;
 }
 
 export function networkOf(request: Request): string | null {
@@ -58,12 +42,10 @@ export function deviceRequester(
   body: { client?: unknown; remote?: unknown }
 ): DeviceRequester {
   const country = request.headers.get("cf-ipcountry")?.trim().toUpperCase() ?? "";
-  const cityHeader = serverEnv().LOCATION_CITY_HEADER;
   return {
     client: cleanAscii(body.client, 120) ?? cleanAscii(request.headers.get("user-agent"), 120),
     // XX is Cloudflare's "unknown".
     country: /^[A-Z][A-Z0-9]$/.test(country) && country !== "XX" ? country : null,
-    city: cityHeader ? clean(request.headers.get(cityHeader), 80) : null,
     network: networkOf(request),
     remote: body.remote === true,
   };

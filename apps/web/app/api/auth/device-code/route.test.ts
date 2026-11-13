@@ -12,7 +12,6 @@ vi.mock("@/lib/rate-limit", async (importOriginal) => ({
 vi.mock("@/lib/supabase/device-auth", () => ({
   createDeviceCodeRecord: mocks.createDeviceCodeRecord,
 }));
-vi.mock("@/lib/env", () => ({ serverEnv: () => ({}) }));
 
 import { POST } from "./route";
 
