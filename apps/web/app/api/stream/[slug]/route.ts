@@ -3,8 +3,9 @@ import { serverEnv } from "@/lib/env";
 import { resolveEndpointAccess } from "@/lib/supabase/teams";
 import type { Database } from "@/lib/supabase/database";
 import {
-  getRetainedRequestsByIds,
+  getStreamRequestsByIds,
   listRequestsAfterCursorForEndpointByUser,
+  listStreamRequestIdsInWindow,
   type RequestRecord,
 } from "@/lib/supabase/requests";
 import { createStreamDrainer } from "@/lib/stream/drainer";
@@ -168,12 +169,15 @@ export async function GET(request: Request, { params }: { params: Promise<{ slug
             cursor,
             limit,
           }),
-        readByIds: (ids) => getRetainedRequestsByIds(endpoint.id, ids),
+        readByIds: (ids) => getStreamRequestsByIds(endpoint.id, ids),
+        readIdsInWindow: (from, to, limit) =>
+          listStreamRequestIdsInWindow(endpoint.id, from, to, limit),
         send: enqueueRequest,
         gone: sendEndpointDeleted,
         isClosed: () => closed,
         onError: (error) => reportError("Failed to read SSE stream backlog", error),
         pageSize: BACKLOG_PAGE_SIZE,
+        recheckIntervalMs: KEEPALIVE_INTERVAL_MS,
       });
 
       abortSignal.addEventListener("abort", closeStream);

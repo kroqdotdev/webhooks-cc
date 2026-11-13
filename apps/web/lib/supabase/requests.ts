@@ -573,6 +573,53 @@ export async function getRetainedRequestsByIds(
   return (data ?? []).map(normalizeRequest);
 }
 
+/** The columns the live stream sends (see toStreamRequest in app/api/stream). */
+const STREAM_REQUEST_COLUMNS =
+  "id, endpoint_id, method, path, headers, body, body_raw, query_params, content_type, ip, size, received_at, team_id, signature_verified, signature_error, signing_provider, response_status, response_rule, live_response, kind, email";
+
+/** An endpoint's retained requests among `ids`, with only what the live stream sends. */
+export async function getStreamRequestsByIds(
+  endpointId: string,
+  ids: string[]
+): Promise<RequestRecord[]> {
+  if (ids.length === 0) return [];
+  const query = createAdminClient()
+    .from("requests")
+    .select(STREAM_REQUEST_COLUMNS)
+    .eq("endpoint_id", endpointId)
+    .in("id", ids);
+  await applyRequestRetention(query, endpointId);
+  const { data, error } = await query.returns<SelectedRequestRow[]>();
+  if (error) throw error;
+  return (data ?? []).map(normalizeRequest);
+}
+
+/**
+ * The ids of an endpoint's retained requests received after `fromMs` and up
+ * to `to` (a stored received_at, inclusive): the live stream's look-back for
+ * a capture that committed behind its cursor. Ids only, at most `limit`.
+ */
+export async function listStreamRequestIdsInWindow(
+  endpointId: string,
+  fromMs: number,
+  to: string,
+  limit: number
+): Promise<string[]> {
+  const query = createAdminClient()
+    .from("requests")
+    .select("id")
+    .eq("endpoint_id", endpointId)
+    .gt("received_at", new Date(fromMs).toISOString())
+    .lte("received_at", to);
+  await applyRequestRetention(query, endpointId);
+  const { data, error } = await query
+    .order("received_at", { ascending: true })
+    .limit(limit)
+    .returns<{ id: string }[]>();
+  if (error) throw error;
+  return (data ?? []).map((row) => row.id);
+}
+
 /** Whether one of an endpoint's requests is within retention (an id check, no body read). */
 export async function isRequestRetained(endpointId: string, requestId: string): Promise<boolean> {
   const query = createAdminClient()
@@ -765,6 +812,9 @@ export async function listRequestsAfterCursorForEndpointByUser(input: {
   if (input.cursor) {
     const at = `"${input.cursor.receivedAt}"`;
     query.or(`received_at.gt.${at},and(received_at.eq.${at},id.gt.${input.cursor.id})`);
+    // Implied by the filter above, but a plain range is what lets Postgres
+    // start the index scan at the cursor rather than filter its way there.
+    query.gte("received_at", input.cursor.receivedAt);
   } else {
     query.gt("received_at", new Date(input.after).toISOString());
   }
@@ -840,6 +890,9 @@ export async function listPaginatedRequestsForEndpointByUser(input: {
   if (decoded?.at !== undefined) {
     const at = `"${decoded.at}"`;
     query.or(`received_at.lt.${at},and(received_at.eq.${at},id.lt.${decoded.id})`);
+    // Implied by the filter above; a plain range lets the index scan start
+    // at the cursor, so a deep page costs what the first one does.
+    query.lte("received_at", decoded.at);
   }
 
   // One row more than the page says whether another page follows.
