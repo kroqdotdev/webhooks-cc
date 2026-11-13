@@ -1,10 +1,10 @@
-import { authenticateSessionRequest } from "@/lib/api-auth";
+import { authenticateRequestRequireUser } from "@/lib/api-auth";
 import { reportError } from "@/lib/observability";
 import { listUserShares } from "@/lib/supabase/request-shares";
 
-/** All of the user's live share links, for the account page. */
+/** All of the account's live share links, for any key of the account or a session. */
 export async function GET(request: Request) {
-  const auth = await authenticateSessionRequest(request);
+  const auth = await authenticateRequestRequireUser(request);
   if (!auth.success) return auth.response;
 
   try {

@@ -296,9 +296,12 @@ describe("agent claim ceremony", () => {
     ).json();
     expect(agents).toHaveLength(1);
     expect(agents[0]).toMatchObject({ id: agent.registrationId, clientName: "claim-agent" });
-    expect(
-      (await registrationsGet(bearer("GET", "/api/agent/registrations", accountToken))).status
-    ).toBe(403);
+    // The agent's own token reads the list too (a read never needs a person).
+    const seenByAgent = await registrationsGet(
+      bearer("GET", "/api/agent/registrations", accountToken)
+    );
+    expect(seenByAgent.status).toBe(200);
+    expect(await seenByAgent.json()).toHaveLength(1);
     const bobRevoke = await registrationDelete(
       bearer("DELETE", `/api/agent/registrations/${agent.registrationId}`, bob.session),
       { params: Promise.resolve({ id: agent.registrationId }) }

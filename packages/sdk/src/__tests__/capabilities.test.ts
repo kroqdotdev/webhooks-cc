@@ -119,8 +119,8 @@ function internalEntry(route: string): string | undefined {
 }
 
 // Session-only is read per handler (handlerSource).
-const SESSION_AUTH = /authenticateSessionRequest\(|domainAccount\(/;
-const KEY_AUTH = /authenticateRequest(?:RequireUser)?\(/;
+const SESSION_AUTH = /authenticateSessionRequest\(/;
+const KEY_AUTH = /authenticateRequest(?:RequireUser)?\(|domainAccount\(/;
 // A route that answers an API key with an approval (lib/approvals/request.ts).
 const ASKS_APPROVAL = /requestApproval\(/;
 

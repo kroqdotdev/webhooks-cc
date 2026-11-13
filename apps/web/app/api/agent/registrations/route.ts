@@ -1,10 +1,10 @@
-import { authenticateSessionRequest } from "@/lib/api-auth";
+import { authenticateRequestRequireUser } from "@/lib/api-auth";
 import { listConnectedAgents } from "@/lib/agent/claims";
 import { reportError } from "@/lib/observability";
 
-/** GET /api/agent/registrations: the account's connected agents. Session only. */
+/** GET /api/agent/registrations: the account's connected agents, for any key of the account or a session. */
 export async function GET(request: Request) {
-  const auth = await authenticateSessionRequest(request);
+  const auth = await authenticateRequestRequireUser(request);
   if (!auth.success) return auth.response;
   try {
     return Response.json(await listConnectedAgents(auth.userId));

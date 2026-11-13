@@ -1,0 +1,11 @@
+{
+  "title": "Share links, domains and agents without the dashboard",
+  "items": [
+    "Connected agents can be listed and disconnected with an API key or a connected agent",
+    "Share links to requests can be listed and revoked with a key, and an agent can ask for a new one: it is published only once you approve it",
+    "Custom inbound domains can be listed, added, checked and routed with a key; removing one is an approval, since its mail is refused from then on",
+    "An agent can ask to rename the account, and you approve it",
+    "These approvals take effect the moment you approve, and the page says so",
+    "whk agents, whk share-links, whk domains and whk account rename; client.agents, client.shareLinks, client.domains and client.account in the TypeScript SDK; eleven new MCP tools"
+  ]
+}

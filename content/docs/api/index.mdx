@@ -33,9 +33,10 @@ Authorization: Bearer whcc_...
 API keys are generated from the [API keys page](/account/api-keys). Keys use the `whcc_` prefix and are stored as SHA-256 hashes; the raw key is shown only once at creation time.
 
 <Callout type="warning">
-  Some sensitive operations (account settings and deletion, API key management, billing, share
-  links, AI setup) require a Supabase session token instead of an API key. These operations return
-  `403` when called with an API key.
+  A few things are for the account's owner to allow. A new API key, a new share link, removing a
+  custom domain and a rename answer an API key with `202` and an [approval](#approvals) the owner
+  answers in the browser. Account deletion, changing a plan or paying, and AI setup take a
+  browser session and answer `403` to an API key.
 </Callout>
 
 The machine-readable version of this page is the [OpenAPI document](/openapi.yaml), which lists every route below with its parameters and response shapes.
@@ -79,6 +80,13 @@ Every route an API key can call. Timestamps are Unix milliseconds unless a field
 | `GET` `POST /api/tunnel-names`                                           | [List](#list-reserved-names) or [reserve](#reserve-a-name) preview names                       |
 | `DELETE /api/tunnel-names/:name`                                         | [Release a name](#release-a-name)                                                              |
 | `PUT` `DELETE /api/tunnel-names/:name/password`                          | [Set or remove a name's password](#name-passwords)                                             |
+| `GET` `POST` `DELETE /api/api-keys`                                      | [API keys](#api-keys): list, ask for one (an approval), revoke                                 |
+| `GET /api/approvals/:id`                                                 | [Poll an approval](#approvals)                                                                 |
+| `GET /api/billing`                                                       | What the account pays for, read only                                                           |
+| `PATCH /api/account`                                                     | [Set the display name](#display-name) (an approval)                                            |
+| `GET /api/agent/registrations`, `DELETE .../:id`                         | [Connected agents](#connected-agents): list, disconnect                                        |
+| `GET /api/request-shares`, `DELETE .../:id`, `GET` `POST /api/requests/:id/shares` | [Share links](#share-links): list, revoke, ask for one (an approval)                 |
+| `GET` `POST /api/domains`, `PATCH` `DELETE /api/domains/:id`, `POST .../verify` | [Custom domains](#custom-domains): list, add, route, verify, remove (an approval)       |
 
 Agents that register themselves use the routes in [/auth.md](/auth.md); they are in the OpenAPI document too.
 
@@ -1215,22 +1223,64 @@ curl -X DELETE https://webhooks.cc/api/tunnel-names/acme-demo/password \
 
 Returns `{ "ok": true, "password": true }` (or `false` after `DELETE`). Every preview under the name asks visitors for it, a running one included. Passwords are 8 to 200 characters and come with Pro and Business; only a hash is kept, and the API never returns it.
 
-## Session-token-only routes
+## Account
 
-Some routes require a Supabase session token (from browser login) instead of an API key. These return `403` when called with an API key.
+### Approvals
 
-- `GET /api/api-keys`: list your API keys
-- `POST /api/api-keys`: create a new API key
-- `DELETE /api/api-keys?id=...`: delete an API key
-- `PATCH /api/account`: change account settings
-- `DELETE /api/account`: delete your account and all data
-- `/api/billing/*` and `/api/teams/:id/billing/*`: plans, seats, extra capacity, checkout and cancellation
-- `/api/requests/:id/shares` and `/api/request-shares`: create, list and revoke [share links](/docs/dashboard-features#share-a-request)
+A new API key, a new share link, removing a custom domain and a rename are the account owner's to allow. Called with an API key or an agent token, those routes answer `202` and act only once the owner approves:
+
+```json
+{
+  "approval": {
+    "id": "0b8d6a5e-...",
+    "status": "pending",
+    "action": "request_shares.create",
+    "summary": "Publish a read-only copy of the request POST /stripe at a public link for 7 days.",
+    "code": "ABCD-EFGH",
+    "url": "https://webhooks.cc/approve?code=ABCD-EFGH",
+    "expiresAt": "2026-11-14T10:15:00.000Z"
+  }
+}
+```
+
+Show the owner `url`; the page shows the same `code` to compare. Then poll `GET /api/approvals/:id` with the same key (or any token of the same connected agent), at most every two seconds, until `status` is `completed` (with `result`), `denied` or `expired`. A new key is made on the poll after the approval and handed over that once; the other actions run when the owner approves, and every later poll carries their `result`. The owner has 15 minutes to answer. An account can have 10 approvals waiting. See [Approvals](/docs/agents#approvals).
+
+### API keys
+
+`GET /api/api-keys` lists the keys (`id`, `name`, `key_prefix`, `created_at`, `expires_at`, `last_used_at`); a key itself is never shown again. `POST /api/api-keys` with `{ "name": "GitHub Actions", "expiresInDays": 90 }` (1 to 365, default 90) asks for one: the result is `{ key, name, keyPrefix, expiresAt }`. `DELETE /api/api-keys?id=<id>` revokes one.
+
+### Display name
+
+`PATCH /api/account` with `{ "name": "Acme Ops" }`, or `null` to clear it, asks to set the display name; the result is `{ name }`. The setting that emails the owner about approvals (`approvalEmails`) takes a browser session.
+
+### Connected agents
+
+`GET /api/agent/registrations` lists the agents connected to the account, claimed agents and apps connected with OAuth (`id`, `clientName`, `kind`, `connectedAt`, `lastUsedAt`). `DELETE /api/agent/registrations/:id` disconnects one with `204`: its tokens stop working at once, and the endpoints it brought stay. An agent may disconnect itself.
+
+### Share links
+
+A share link is a public, read-only copy of one request at `https://webhooks.cc/s/<token>` (see [Share a request](/docs/dashboard-features#share-a-request)). `GET /api/request-shares` lists the account's live links with the request each one copies; `GET /api/requests/:id/shares` lists one request's. `DELETE /api/request-shares/:id` revokes a link with `204`.
+
+`POST /api/requests/:id/shares` with `{ "expiresInDays": 7, "hideSensitive": true }` asks for a link (1, 7 or 30 days). Credential headers are always left out, and `hideSensitive` (the default) leaves out signature and token headers too. Only the endpoint's owner can share, and emails cannot be shared. The result is `{ id, url, expiresAt, redactedHeaders }`.
+
+### Custom domains
+
+Business accounts and Team Business teams receive mail at [their own domains](/docs/email-capture#your-own-domain). Add `?team=<id>` to act on a team's domains (its owner only).
+
+- `GET /api/domains` lists them with the DNS records to publish, their routes and their catch-all endpoint.
+- `POST /api/domains` with `{ "domain": "mail.example.com" }` adds one and answers `201` with the records.
+- `POST /api/domains/:id/verify` looks the TXT and MX records up now: `{ domain, records: { txt, mx }, tookOver }`.
+- `PATCH /api/domains/:id` with `{ "catchAllEndpointId": "<id or null>", "routes": [{ "localPart": "billing", "endpointId": "<id>" }] }` replaces the routing.
+- `DELETE /api/domains/:id` asks to remove it (an approval); the result is `{ removed, domainId }`.
+
+## Routes that need a browser session
+
+These answer `403` to an API key, because they are for a person at a browser:
+
+- `DELETE /api/account`: delete the account and all its data
+- `PATCH /api/account` with `approvalEmails`: whether approvals are emailed to the owner
+- `/api/billing/*` and `/api/teams/:id/billing/*` except reads and quotes: plans, seats, extra capacity, checkout and cancellation
 - `/api/endpoints/:slug/layouts/assist`: [AI setup](/docs/layouts#set-it-up-with-ai) for layouts and email fields
-- `/api/agent/registrations`: list and disconnect [connected agents](/docs/agents)
-- `/api/domains`: add, verify and remove [custom inbound domains](/docs/email-capture#your-own-domain)
-
-These routes are designed for the web dashboard, not programmatic access.
 
 ## Error handling
 

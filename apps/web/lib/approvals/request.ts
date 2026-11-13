@@ -20,10 +20,11 @@ export async function requestApproval(
   action: ApprovalAction,
   input: unknown
 ): Promise<Response> {
-  const parsed = actionSpec(action).parse(input);
-  if (!parsed.ok) return Response.json({ error: parsed.error }, { status: 400 });
-
   try {
+    const parsed = await actionSpec(action).parse(input, asker.userId);
+    if (!parsed.ok) {
+      return Response.json({ error: parsed.error }, { status: parsed.status ?? 400 });
+    }
     const { approval, requester } = await createApproval({
       asker,
       action,

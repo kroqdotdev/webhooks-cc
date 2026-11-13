@@ -1,13 +1,15 @@
 import { auditUserAction } from "@/lib/audit";
-import { authenticateSessionRequest } from "@/lib/api-auth";
+import { authenticateRequestRequireUser } from "@/lib/api-auth";
+import { requestApproval } from "@/lib/approvals/request";
 import { reportError } from "@/lib/observability";
 import { checkRateLimitByKey } from "@/lib/rate-limit";
 import { MAX_ACTIVE_SHARES, SHARE_EXPIRY_DAYS, type ShareExpiryDays } from "@/lib/request-share";
 import { createRequestShare, listRequestShares } from "@/lib/supabase/request-shares";
 import { isUuid } from "@/lib/uuid";
 
-// Share links publish a request to anyone holding the link, so they take a
-// signed-in session, never an API key.
+// Share links publish a request to anyone holding the link: a session makes
+// one at once, an API key or agent token asks the account's owner first (an
+// approval, lib/approvals). Listing them takes any key of the account.
 
 const SHARE_ERRORS = {
   not_found: { status: 404, message: "not_found" },
@@ -20,7 +22,7 @@ const SHARE_ERRORS = {
 } as const;
 
 export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
-  const auth = await authenticateSessionRequest(request);
+  const auth = await authenticateRequestRequireUser(request);
   if (!auth.success) return auth.response;
 
   const { id } = await params;
@@ -35,7 +37,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
 }
 
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
-  const auth = await authenticateSessionRequest(request);
+  const auth = await authenticateRequestRequireUser(request);
   if (!auth.success) return auth.response;
 
   const limited = await checkRateLimitByKey(`request-share:${auth.userId}`, 20, 60_000);
@@ -61,6 +63,16 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   const hideSensitive = body.hideSensitive !== false;
 
   if (!isUuid(id)) return Response.json({ error: "not_found" }, { status: 404 });
+
+  // An API key or agent token: the account's owner approves the link first.
+  if (auth.keyId) {
+    return requestApproval(
+      request,
+      { userId: auth.userId, keyId: auth.keyId, agentRegistrationId: auth.agentRegistrationId },
+      "request_shares.create",
+      { requestId: id, expiresInDays, hideSensitive }
+    );
+  }
 
   try {
     const result = await createRequestShare({

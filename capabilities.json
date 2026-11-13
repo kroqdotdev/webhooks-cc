@@ -440,10 +440,21 @@
       "mcp": ["get_usage"]
     },
     {
-      "id": "account.manage",
-      "does": "Change or delete the account",
-      "routes": ["PATCH /api/account", "DELETE /api/account"],
-      "sessionOnly": "changing or deleting the account is a person's decision, and connected agents are promised they cannot",
+      "id": "account.rename",
+      "does": "Set or clear the account's display name",
+      "routes": ["PATCH /api/account"],
+      "approval": "the account's owner approves a new display name an API key or agent asks for",
+      "sdk": ["account.rename"],
+      "python": "testing-focused SDK: added on demand",
+      "go": "testing-focused SDK: added on demand",
+      "cli": ["account rename"],
+      "mcp": ["rename_account"]
+    },
+    {
+      "id": "account.delete",
+      "does": "Delete the account",
+      "routes": ["DELETE /api/account"],
+      "sessionOnly": "deleting the account is a person's decision, made in a browser",
       "sdk": "session only",
       "python": "session only",
       "go": "session only",
@@ -492,15 +503,24 @@
       "mcp": ["wait_for_approval"]
     },
     {
-      "id": "account.connected-agents",
-      "does": "List and disconnect connected agents",
-      "routes": ["GET /api/agent/registrations", "DELETE /api/agent/registrations/[id]"],
-      "sessionOnly": "planned: the agent asks, a person approves",
-      "sdk": "session only",
-      "python": "session only",
-      "go": "session only",
-      "cli": "session only",
-      "mcp": "session only"
+      "id": "account.connected-agents.list",
+      "does": "List the agents connected to the account",
+      "routes": ["GET /api/agent/registrations"],
+      "sdk": ["agents.list"],
+      "python": "testing-focused SDK: added on demand",
+      "go": "testing-focused SDK: added on demand",
+      "cli": ["agents list"],
+      "mcp": ["list_connected_agents"]
+    },
+    {
+      "id": "account.connected-agents.disconnect",
+      "does": "Disconnect a connected agent",
+      "routes": ["DELETE /api/agent/registrations/[id]"],
+      "sdk": ["agents.disconnect"],
+      "python": "testing-focused SDK: added on demand",
+      "go": "testing-focused SDK: added on demand",
+      "cli": ["agents disconnect"],
+      "mcp": ["disconnect_agent"]
     },
     {
       "id": "billing.read",
@@ -562,20 +582,29 @@
     },
     {
       "id": "domain.manage",
-      "does": "Add, verify, change and remove custom inbound domains",
+      "does": "List, add, verify and route custom inbound domains",
       "routes": [
         "GET /api/domains",
         "POST /api/domains",
         "PATCH /api/domains/[id]",
-        "DELETE /api/domains/[id]",
         "POST /api/domains/[id]/verify"
       ],
-      "sessionOnly": "planned: the agent asks, a person approves",
-      "sdk": "session only",
-      "python": "session only",
-      "go": "session only",
-      "cli": "session only",
-      "mcp": "session only"
+      "sdk": ["domains.list", "domains.add", "domains.verify", "domains.route"],
+      "python": "testing-focused SDK: added on demand",
+      "go": "testing-focused SDK: added on demand",
+      "cli": ["domains list", "domains add", "domains verify", "domains route"],
+      "mcp": ["list_domains", "add_domain", "verify_domain", "route_domain"]
+    },
+    {
+      "id": "domain.remove",
+      "does": "Remove a custom inbound domain",
+      "routes": ["DELETE /api/domains/[id]"],
+      "approval": "removing a domain refuses its mail from then on, so the account's owner approves each removal an API key or agent asks for",
+      "sdk": ["domains.remove"],
+      "python": "testing-focused SDK: added on demand",
+      "go": "testing-focused SDK: added on demand",
+      "cli": ["domains remove"],
+      "mcp": ["remove_domain"]
     },
     {
       "id": "google.connections",
@@ -605,20 +634,35 @@
       "mcp": "session only"
     },
     {
-      "id": "request.share-link",
-      "does": "Make, list and revoke public links to a frozen copy of a request",
-      "routes": [
-        "GET /api/requests/[id]/shares",
-        "POST /api/requests/[id]/shares",
-        "GET /api/request-shares",
-        "DELETE /api/request-shares/[id]"
-      ],
-      "sessionOnly": "a link publishes data to anyone who holds it; planned: the agent asks, a person approves",
-      "sdk": "session only",
-      "python": "session only",
-      "go": "session only",
-      "cli": "session only",
-      "mcp": "session only"
+      "id": "request.share-link.list",
+      "does": "List live public links to frozen copies of requests",
+      "routes": ["GET /api/request-shares", "GET /api/requests/[id]/shares"],
+      "sdk": ["shareLinks.list", "shareLinks.forRequest"],
+      "python": "testing-focused SDK: added on demand",
+      "go": "testing-focused SDK: added on demand",
+      "cli": ["share-links list"],
+      "mcp": ["list_share_links"]
+    },
+    {
+      "id": "request.share-link.create",
+      "does": "Make a public link to a frozen copy of a request",
+      "routes": ["POST /api/requests/[id]/shares"],
+      "approval": "a link publishes the request to anyone who holds it, so the account's owner approves each one an API key or agent asks for",
+      "sdk": ["shareLinks.create"],
+      "python": "testing-focused SDK: added on demand",
+      "go": "testing-focused SDK: added on demand",
+      "cli": ["share-links create"],
+      "mcp": ["create_share_link"]
+    },
+    {
+      "id": "request.share-link.revoke",
+      "does": "Revoke a public link to a request",
+      "routes": ["DELETE /api/request-shares/[id]"],
+      "sdk": ["shareLinks.revoke"],
+      "python": "testing-focused SDK: added on demand",
+      "go": "testing-focused SDK: added on demand",
+      "cli": ["share-links revoke"],
+      "mcp": ["revoke_share_link"]
     },
     {
       "id": "share.start",

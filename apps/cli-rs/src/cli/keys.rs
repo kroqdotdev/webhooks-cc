@@ -117,7 +117,7 @@ pub async fn revoke(client: &ApiClient, id: &str, yes: bool, json: bool) -> Resu
     Ok(())
 }
 
-fn deadline(timeout: &str) -> Result<Instant> {
+pub(crate) fn deadline(timeout: &str) -> Result<Instant> {
     let ms = crate::cli::wait::parse_timeout(timeout)?;
     Ok(Instant::now() + Duration::from_millis(ms.max(0) as u64))
 }
@@ -125,7 +125,13 @@ fn deadline(timeout: &str) -> Result<Instant> {
 /// Shows the person what to approve, as `whk auth login` does: the link,
 /// and the code the page shows. The browser opens on this machine's own
 /// desktop only.
-fn show_approval(approval: &Approval, raw: &Value, remote: bool, no_browser: bool, json: bool) {
+pub(crate) fn show_approval(
+    approval: &Approval,
+    raw: &Value,
+    remote: bool,
+    no_browser: bool,
+    json: bool,
+) {
     let remote = remote || remote_session(|name| std::env::var(name).ok());
     if json {
         println!("{}", json!({ "status": "pending", "approval": raw }));
@@ -150,7 +156,12 @@ fn show_approval(approval: &Approval, raw: &Value, remote: bool, no_browser: boo
 }
 
 /// Polls the approval until the person answers, then prints what it granted.
-async fn collect(client: &ApiClient, id: &str, deadline: Instant, json: bool) -> Result<()> {
+pub(crate) async fn collect(
+    client: &ApiClient,
+    id: &str,
+    deadline: Instant,
+    json: bool,
+) -> Result<()> {
     use anyhow::Context;
     loop {
         // A poll may collect the result, which is handed over once: never
@@ -174,7 +185,7 @@ async fn collect(client: &ApiClient, id: &str, deadline: Instant, json: bool) ->
                     )
                     .into());
                 };
-                print_key(result, Some(&answer.raw["approval"]), json);
+                print_result(result, Some(&answer.raw["approval"]), json);
                 return Ok(());
             }
             "denied" => return Err(CliError::ApprovalDenied.into()),
@@ -186,7 +197,49 @@ async fn collect(client: &ApiClient, id: &str, deadline: Instant, json: bool) ->
     }
 }
 
-/// The new key, printed once.
+/// What an approved action handed back: a new key (printed once), a share
+/// link, a removed domain or the new display name.
+fn print_result(result: &Value, approval: Option<&Value>, json: bool) {
+    if json || result.get("key").is_some() {
+        print_key(result, approval, json);
+        return;
+    }
+    let text = |field: &str| result.get(field).and_then(Value::as_str).unwrap_or("");
+    if result.get("url").is_some() {
+        println!("\n  {} Share link:\n", green("Approved."));
+        println!("    {}\n", bold(text("url")));
+        println!(
+            "  {}",
+            dim(&format!(
+                "Anyone with the link can read the copy until {}.",
+                format_timestamp_str(text("expiresAt"))
+            ))
+        );
+    } else if result.get("removed").is_some() {
+        println!(
+            "\n  {} Removed the domain {}; mail to it is refused now.",
+            green("Approved."),
+            bold(&sanitize(text("removed")))
+        );
+    } else if let Some(name) = result.get("name") {
+        match name.as_str() {
+            Some(name) => println!(
+                "\n  {} The display name is now {}.",
+                green("Approved."),
+                bold(&sanitize(name))
+            ),
+            None => println!("\n  {} The display name was cleared.", green("Approved.")),
+        }
+    } else {
+        println!(
+            "\n  {} {}",
+            green("Approved."),
+            sanitize(&result.to_string())
+        );
+    }
+}
+
+/// The new key, printed once (and, with --json, any approval's result).
 fn print_key(result: &Value, approval: Option<&Value>, json: bool) {
     if json {
         let mut line = json!({ "status": "completed", "result": result });

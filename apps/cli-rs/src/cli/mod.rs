@@ -1,3 +1,4 @@
+pub mod account;
 pub mod api;
 pub mod auth;
 pub mod billing;
@@ -404,7 +405,32 @@ deletion) refuse API keys.")]
         action: KeysAction,
     },
 
-    /// Follow an approval asked for with `whk keys create --no-wait`
+    /// The account's display name (a rename needs the account's owner to approve it)
+    Account {
+        #[command(subcommand)]
+        action: AccountAction,
+    },
+
+    /// List and disconnect the agents connected to the account
+    Agents {
+        #[command(subcommand)]
+        action: AgentsAction,
+    },
+
+    /// Public links to a frozen copy of a request (a new one needs the account's owner to approve it)
+    #[command(name = "share-links")]
+    ShareLinks {
+        #[command(subcommand)]
+        action: ShareLinksAction,
+    },
+
+    /// Custom inbound domains for email capture (Business; removing one needs the account's owner to approve it)
+    Domains {
+        #[command(subcommand)]
+        action: DomainsAction,
+    },
+
+    /// Follow an approval asked for with --no-wait (`whk keys create`, `whk share-links create` and the like)
     Approvals {
         #[command(subcommand)]
         action: ApprovalsAction,
@@ -641,6 +667,164 @@ pub enum KeysAction {
         /// Revoke without asking (needed without a terminal)
         #[arg(short = 'y', long = "yes", visible_alias = "force", short_alias = 'f')]
         yes: bool,
+    },
+}
+
+fn parse_share_days(value: &str) -> Result<u32, String> {
+    match value {
+        "1" | "7" | "30" => Ok(value.parse().unwrap_or(7)),
+        _ => Err("a share link works for 1, 7 or 30 days".into()),
+    }
+}
+
+/// How whk shows and follows an approval the account's owner answers.
+#[derive(clap::Args, Debug)]
+pub struct ApprovalArgs {
+    /// This machine is not the one with your browser: print the link, never open a browser
+    #[arg(long)]
+    pub remote: bool,
+
+    /// Print the link without opening a browser
+    #[arg(long)]
+    pub no_browser: bool,
+
+    /// Print the approval and exit; follow it later with `whk approvals wait <id>`
+    #[arg(long)]
+    pub no_wait: bool,
+
+    /// How long to wait for the answer, such as 10m
+    #[arg(long, default_value = "16m")]
+    pub timeout: String,
+}
+
+#[derive(Subcommand, Debug)]
+pub enum AccountAction {
+    /// Set the account's display name: prints a link for the account's owner to approve, then waits
+    Rename {
+        /// The new display name
+        #[arg(required_unless_present = "clear", conflicts_with = "clear")]
+        name: Option<String>,
+
+        /// Clear the display name instead
+        #[arg(long)]
+        clear: bool,
+
+        #[command(flatten)]
+        approval: ApprovalArgs,
+    },
+}
+
+#[derive(Subcommand, Debug)]
+pub enum AgentsAction {
+    /// List the connected agents (claimed agents and OAuth sign-ins)
+    List,
+
+    /// Disconnect an agent by its id: its tokens stop working at once (its endpoints stay)
+    Disconnect {
+        /// The agent's id, from `whk agents list`
+        id: String,
+
+        /// Disconnect without asking (needed without a terminal)
+        #[arg(short = 'y', long = "yes", visible_alias = "force", short_alias = 'f')]
+        yes: bool,
+    },
+}
+
+#[derive(Subcommand, Debug)]
+pub enum ShareLinksAction {
+    /// List the account's live share links, or one request's
+    List {
+        /// Only the links to this request (its id)
+        #[arg(long)]
+        request: Option<String>,
+    },
+
+    /// Ask for a public link to a read-only copy of a request: prints a link for the account's owner to approve, then waits
+    Create {
+        /// The request's id
+        request: String,
+
+        /// How long the link works: 1, 7 or 30 days
+        #[arg(long, default_value_t = 7, value_parser = parse_share_days)]
+        days: u32,
+
+        /// Keep signature and token headers in the copy (credentials are always left out)
+        #[arg(long)]
+        show_signatures: bool,
+
+        #[command(flatten)]
+        approval: ApprovalArgs,
+    },
+
+    /// Revoke a share link by its id: its page answers 404 from then on
+    Revoke {
+        /// The link's id, from `whk share-links list`
+        id: String,
+
+        /// Revoke without asking (needed without a terminal)
+        #[arg(short = 'y', long = "yes", visible_alias = "force", short_alias = 'f')]
+        yes: bool,
+    },
+}
+
+#[derive(Subcommand, Debug)]
+pub enum DomainsAction {
+    /// List the custom domains, with the DNS records to publish and their routes
+    List {
+        /// A Team Business team's id (its owner only)
+        #[arg(long)]
+        team: Option<String>,
+    },
+
+    /// Add a domain, then publish the DNS records it prints
+    Add {
+        /// The domain, such as mail.example.com
+        domain: String,
+
+        /// A Team Business team's id (its owner only)
+        #[arg(long)]
+        team: Option<String>,
+    },
+
+    /// Look a domain's TXT and MX records up now
+    Verify {
+        /// The domain's id, from `whk domains list`
+        id: String,
+
+        /// A Team Business team's id (its owner only)
+        #[arg(long)]
+        team: Option<String>,
+    },
+
+    /// Set where a domain's mail goes; what you leave out stays as it is
+    Route {
+        /// The domain's id, from `whk domains list`
+        id: String,
+
+        /// Endpoint (slug or id) for mail no route matches, or "none" to refuse it
+        #[arg(long)]
+        catch_all: Option<String>,
+
+        /// local=endpoint, such as billing=my-endpoint; repeat for more (replaces every route)
+        #[arg(long = "route")]
+        routes: Vec<String>,
+
+        /// A Team Business team's id (its owner only)
+        #[arg(long)]
+        team: Option<String>,
+    },
+
+    /// Ask to remove a domain (mail to it is refused from then on): prints a link for the account's owner to approve, then waits
+    Remove {
+        /// The domain's id, from `whk domains list`
+        id: String,
+
+        /// A Team Business team's id (its owner only)
+        #[arg(long)]
+        team: Option<String>,
+
+        #[command(flatten)]
+        approval: ApprovalArgs,
     },
 }
 

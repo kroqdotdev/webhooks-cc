@@ -5,8 +5,9 @@ use clap::Parser;
 
 use whk::api::ApiClient;
 use whk::cli::{
-    self, ApprovalsAction, AuthAction, Cli, Command, KeysAction, NamesAction, RequestsAction,
-    SandboxAction, SharesAction, TeamsAction,
+    self, AccountAction, AgentsAction, ApprovalsAction, AuthAction, Cli, Command, DomainsAction,
+    KeysAction, NamesAction, RequestsAction, SandboxAction, ShareLinksAction, SharesAction,
+    TeamsAction,
 };
 use whk::error::{classify, error_json};
 
@@ -416,6 +417,84 @@ async fn run(args: Cli) -> Result<()> {
             }
             KeysAction::Revoke { id, yes } => {
                 cli::keys::revoke(&client, &id, yes, args.json).await?
+            }
+        },
+
+        Some(Command::Account { action }) => match action {
+            AccountAction::Rename {
+                name,
+                clear: _,
+                approval,
+            } => cli::account::rename(&client, name.as_deref(), approval.into(), args.json).await?,
+        },
+
+        Some(Command::Agents { action }) => match action {
+            AgentsAction::List => cli::account::agents_list(&client, args.json).await?,
+            AgentsAction::Disconnect { id, yes } => {
+                cli::account::agents_disconnect(&client, &id, yes, args.json).await?
+            }
+        },
+
+        Some(Command::ShareLinks { action }) => match action {
+            ShareLinksAction::List { request } => {
+                cli::account::share_links_list(&client, request.as_deref(), args.json).await?
+            }
+            ShareLinksAction::Create {
+                request,
+                days,
+                show_signatures,
+                approval,
+            } => {
+                cli::account::share_links_create(
+                    &client,
+                    &request,
+                    days,
+                    show_signatures,
+                    approval.into(),
+                    args.json,
+                )
+                .await?
+            }
+            ShareLinksAction::Revoke { id, yes } => {
+                cli::account::share_links_revoke(&client, &id, yes, args.json).await?
+            }
+        },
+
+        Some(Command::Domains { action }) => match action {
+            DomainsAction::List { team } => {
+                cli::account::domains_list(&client, team.as_deref(), args.json).await?
+            }
+            DomainsAction::Add { domain, team } => {
+                cli::account::domains_add(&client, &domain, team.as_deref(), args.json).await?
+            }
+            DomainsAction::Verify { id, team } => {
+                cli::account::domains_verify(&client, &id, team.as_deref(), args.json).await?
+            }
+            DomainsAction::Route {
+                id,
+                catch_all,
+                routes,
+                team,
+            } => {
+                cli::account::domains_route(
+                    &client,
+                    &id,
+                    team.as_deref(),
+                    catch_all.as_deref(),
+                    &routes,
+                    args.json,
+                )
+                .await?
+            }
+            DomainsAction::Remove { id, team, approval } => {
+                cli::account::domains_remove(
+                    &client,
+                    &id,
+                    team.as_deref(),
+                    approval.into(),
+                    args.json,
+                )
+                .await?
             }
         },
 

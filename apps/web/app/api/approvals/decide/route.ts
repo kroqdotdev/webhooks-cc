@@ -55,12 +55,49 @@ export async function POST(request: Request) {
       targetId: decided.id,
       metadata: { action: decided.action },
     });
-    return Response.json({ status: approve ? "approved" : "denied" });
+    if (decided.done) await auditDone(request, approver.userId, decided);
+    // "done": the action ran on approval; "approved": the asker collects it.
+    return Response.json({ status: approve ? (decided.done ? "done" : "approved") : "denied" });
   } catch (err) {
     if (err instanceof ApprovalError) {
       return Response.json({ error: err.message }, { status: err.status });
     }
     reportError("POST /api/approvals/decide failed", err);
     return Response.json({ error: "Internal server error" }, { status: 500 });
+  }
+}
+
+/**
+ * The event the action's own route writes when a session does it directly,
+ * so the trail (and what mirrors it) reads the same either way.
+ */
+async function auditDone(
+  request: Request,
+  userId: string,
+  decided: { id: string; action: string; result?: unknown; params?: unknown }
+): Promise<void> {
+  const result = (decided.result ?? {}) as Record<string, unknown>;
+  const params = (decided.params ?? {}) as Record<string, unknown>;
+  const via = { approvalId: decided.id };
+  if (decided.action === "request_shares.create") {
+    await auditUserAction(request, userId, {
+      action: "request.share_created",
+      status: 200,
+      targetId: typeof result.id === "string" ? result.id : null,
+      metadata: { ...via, expiresInDays: params.expiresInDays },
+    });
+  } else if (decided.action === "domains.remove") {
+    await auditUserAction(request, userId, {
+      action: "domain.deleted",
+      status: 204,
+      teamId: typeof params.teamId === "string" ? params.teamId : null,
+      metadata: { ...via, id: result.domainId },
+    });
+  } else if (decided.action === "account.rename") {
+    await auditUserAction(request, userId, {
+      action: "account.name_updated",
+      status: 200,
+      metadata: { ...via, cleared: result.name === null },
+    });
   }
 }

@@ -154,7 +154,7 @@ describe("request share links", () => {
     expect(shared?.snapshot.headers.authorization).toBe(REDACTED);
   });
 
-  it("refuses strangers, API keys and odd lifetimes", async () => {
+  it("refuses strangers and odd lifetimes, and turns an API key's ask into an approval", async () => {
     expect((await share(stranger.accessToken, { expiresInDays: 7 })).status).toBe(404);
     expect((await share(owner.accessToken, { expiresInDays: 365 })).status).toBe(400);
     expect((await share(owner.accessToken, { expiresInDays: 7 }, "not-a-uuid")).status).toBe(404);
@@ -168,9 +168,21 @@ describe("request share links", () => {
       expires_at: new Date(Date.now() + 60_000).toISOString(),
     });
     expect(error).toBeNull();
+    const sharesOf = async () =>
+      (
+        await admin
+          .from("request_shares")
+          .select("id", { count: "exact", head: true })
+          .eq("request_id", requestId)
+      ).count;
+    const before = await sharesOf();
     const withKey = await share(apiKey, { expiresInDays: 7 });
-    expect(withKey.status).toBeGreaterThanOrEqual(401);
-    expect(withKey.status).toBeLessThan(404);
+    expect(withKey.status).toBe(202);
+    const asked = (await withKey.json()) as { approval: { id: string; action: string } };
+    expect(asked.approval.action).toBe("request_shares.create");
+    // Nothing is published until the owner approves.
+    expect(await sharesOf()).toBe(before);
+    await admin.from("approvals").delete().eq("id", asked.approval.id);
   });
 
   it("lets only the endpoint's owner share, not a team member who can read it", async () => {

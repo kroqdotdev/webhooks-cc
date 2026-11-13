@@ -100,7 +100,7 @@ When you want to keep what an agent set up, or let it work in your account, conn
 After you connect it:
 
 - Its sandbox endpoints become ordinary endpoints in your account, with the same URLs and the requests they already captured. They no longer expire, and new captures count against your plan.
-- The agent can use the API on your behalf, like an API key: manage endpoints and read what they capture, and list or revoke API keys. It cannot change your billing or account settings, and a new API key needs your approval (see [Approvals](#approvals)).
+- The agent can use the API on your behalf, like an API key: manage endpoints and read what they capture, list or revoke API keys, share links and connected agents, and add and route custom domains. A new API key, a new share link, removing a domain and renaming the account need your approval (see [Approvals](#approvals)). It cannot pay for anything, change your plan or delete the account.
 - The connection lasts 90 days and is saved in [the agent credential file](#the-agent-credential-file), so later sessions of the MCP server, the CLI and the SDKs on that machine start connected. You approve the agent once, not every session.
 - You get an email saying an agent was connected.
 
@@ -116,7 +116,7 @@ Any client that can add a remote MCP server, coding agents such as Claude Code, 
 2. The client opens webhooks.cc in your browser. Sign in, or sign up.
 3. The page shows which app asks, where it will send you back to, and what it gets. An app that publishes a Client ID Metadata Document is identified by its own host; an app that registered itself shows its name as unverified. Click **Connect**, or **Decline**. There is no code to type.
 
-The app then appears under **Account, Connected agents**, labelled as an app connected with OAuth. It gets the same access as a connected agent: your endpoints and what they capture, and listing or revoking your API keys, never your billing or account settings, and a new API key only with your [approval](#approvals). Its access tokens last an hour, and it renews them with a refresh token that changes on every use and stops working after 90 days unused. When a refresh token that was already replaced turns up again, the connection ends, since that points to a copy. OAuth apps count toward the 10 connected agents; at the limit, the page asks you to disconnect one first.
+The app then appears under **Account, Connected agents**, labelled as an app connected with OAuth. It gets the same access as a connected agent: your endpoints and what they capture, listing and revoking keys, links and agents, never paying or deleting the account, and the things only you allow (a new API key or share link, removing a domain, a rename) only with your [approval](#approvals). Its access tokens last an hour, and it renews them with a refresh token that changes on every use and stops working after 90 days unused. When a refresh token that was already replaced turns up again, the connection ends, since that points to a copy. OAuth apps count toward the 10 connected agents; at the limit, the page asks you to disconnect one first.
 
 For client developers: the authorization server takes the authorization code grant with PKCE (`S256`) from public clients, which identify themselves with a Client ID Metadata Document (preferred) or dynamic client registration at `/api/oauth2/register`. An unauthenticated request to `/mcp` answers `401` with a `WWW-Authenticate` header pointing to the protected resource metadata at `/.well-known/oauth-protected-resource/mcp`, which names the authorization server and its metadata at `/.well-known/oauth-authorization-server`. A client that can send headers may use an API key instead: `Authorization: Bearer whcc_...`. The remote server needs an account, so it refuses a sandbox token with `403`.
 
@@ -189,7 +189,7 @@ auth.md also lets an agent present a signed statement from an identity provider 
 
 ## Approvals
 
-Some things only you should allow, even when an agent or an API key asks for them: today, a new API key. The route answers such a request with `202` and an approval instead of acting:
+Some things only you should allow, even when an agent or an API key asks for them: a new API key, a new [share link](/docs/dashboard-features#share-a-request) (it publishes a request to anyone with the link), removing a [custom domain](/docs/email-capture#your-own-domain) (its mail is refused from then on) and renaming the account. The route answers such a request with `202` and an approval instead of acting:
 
 ```json
 {
@@ -207,7 +207,7 @@ Some things only you should allow, even when an agent or an API key asks for the
 
 The agent shows you the link. The page asks you to sign in as that account, shows the same code to compare, who asked and from which country, and warns when the request came from another network than your browser. Approve it, or choose **This wasn't me** to refuse it.
 
-The asker polls `GET /api/approvals/{id}` with the same API key (or any token of the same connected agent). Once you approve, its next poll carries the result, once: for a key, the key itself, which is never stored and never shown again. You have 15 minutes to answer, and the asker 15 minutes after that to collect it. An account can have 10 approvals waiting at once. The CLI (`whk keys create`), the TypeScript SDK (`client.apiKeys.create()` then `approval.wait()`) and the MCP server (`create_api_key`, `wait_for_approval`) do the polling for you.
+The asker polls `GET /api/approvals/{id}` with the same API key (or any token of the same connected agent). For a key, its next poll after you approve makes the key and carries it, once: it is never stored and never shown again, and the asker has 15 minutes to collect it. The other actions happen the moment you approve, and the page says so; every later poll carries what was done (the share link's URL, the removed domain, the new name), so there is nothing to withdraw afterwards. You have 15 minutes to answer. An account can have 10 approvals waiting at once. The CLI (`whk keys create`, `whk share-links create`, `whk domains remove`, `whk account rename`), the TypeScript SDK (`client.apiKeys.create()`, `client.shareLinks.create()`, `client.domains.remove()`, `client.account.rename()`, then `approval.wait()`) and the MCP server (`create_api_key`, `create_share_link`, `remove_domain`, `rename_account`, then `wait_for_approval`) do the polling for you.
 
 Billing is read only for agents: `GET /api/billing` (`whk billing`, `client.billing.get()`, the `get_billing` tool) says what the account pays for, and the price of a change to a team's plan or seats can be quoted (`client.billing.quoteTeamPlan()`, `quoteTeamSeats()`), but paying for anything stays with you in the browser.
 
@@ -215,7 +215,7 @@ To get the link by email as well, for an agent that runs where nobody sees its o
 
 ## Revocation and expiry
 
-- Disconnect a connected agent or an app connected with OAuth under **Account, Connected agents**. Its access stops at once; endpoints it brought stay in your account. Tools that saved the connection remove it from the credential file on their next call; the local MCP server then offers the sandbox tools again.
+- Disconnect a connected agent or an app connected with OAuth under **Account, Connected agents**, or with `whk agents disconnect <id>` (`client.agents.disconnect()`, the `disconnect_agent` tool), which any key of the account may do. Its access stops at once; endpoints it brought stay in your account. Tools that saved the connection remove it from the credential file on their next call; the local MCP server then offers the sandbox tools again.
 - A connected agent's connection ends after 90 days, and you connect it again the same way. An app connected with OAuth stays connected while it keeps using its refresh token, and stops after 90 days unused.
 - An agent can drop one of its access tokens at `POST /api/oauth2/revoke`. To forget what is saved on a machine, delete the credential file, or run `whk sandbox forget --all`.
 - An unclaimed registration stops working 24 hours after registration; its tokens, endpoints and captured requests are deleted within minutes after that. There is nothing to clean up.

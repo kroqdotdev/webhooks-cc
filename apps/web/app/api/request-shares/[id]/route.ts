@@ -1,12 +1,12 @@
 import { auditUserAction } from "@/lib/audit";
-import { authenticateSessionRequest } from "@/lib/api-auth";
+import { authenticateRequestRequireUser } from "@/lib/api-auth";
 import { reportError } from "@/lib/observability";
 import { deleteRequestShare } from "@/lib/supabase/request-shares";
 import { isUuid } from "@/lib/uuid";
 
-/** Revoke a share link: the page answers 404 from now on. */
+/** Revoke a share link (any key of the account): the page answers 404 from now on. */
 export async function DELETE(request: Request, { params }: { params: Promise<{ id: string }> }) {
-  const auth = await authenticateSessionRequest(request);
+  const auth = await authenticateRequestRequireUser(request);
   if (!auth.success) return auth.response;
 
   const { id } = await params;

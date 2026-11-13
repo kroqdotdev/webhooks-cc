@@ -1,3 +1,4 @@
+pub mod account;
 pub mod billing;
 pub mod client;
 pub mod device_auth;

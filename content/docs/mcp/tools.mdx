@@ -664,11 +664,11 @@ Ask for a new key. Returns the approval's link and code to show the person (the 
 
 ### wait_for_approval
 
-Wait for the person to answer and collect what the approval grants: the new key, shown once. If they have not answered when the wait ends, it says so; call it again. It also says when the approval was refused or expired.
+Wait for the person to answer and collect what the approval grants or did: the new key (shown once), the share link, the removed domain or the new name. If they have not answered when the wait ends, it says so; call it again. It also says when the approval was refused or expired.
 
 | Parameter | Type     | Required | Description                                         |
 | --------- | -------- | -------- | --------------------------------------------------- |
-| `id`      | `string` | yes      | The approval id, from `create_api_key`              |
+| `id`      | `string` | yes      | The approval id, from the tool that asked           |
 | `timeout` | `string` | no       | How long to wait, such as `"45s"` (50 s at most on the remote server) |
 
 ### revoke_api_key
@@ -678,6 +678,74 @@ Revoke a key by its id, from `list_api_keys`. Anything using it stops working at
 | Parameter | Type     | Required | Description                     |
 | --------- | -------- | -------- | ------------------------------- |
 | `id`      | `string` | yes      | The key's id, from `list_api_keys` |
+
+## Account
+
+### rename_account
+
+Ask to set the account's display name, or clear it with `null`. Returns an approval to show the person; then call `wait_for_approval`.
+
+| Parameter | Type             | Required | Description                     |
+| --------- | ---------------- | -------- | ------------------------------- |
+| `name`    | `string \| null` | yes      | The new display name, or `null` |
+
+### list_connected_agents
+
+The agents connected to the account (claimed agents and OAuth sign-ins): id, client name, when each connected and was last used.
+
+### disconnect_agent
+
+Disconnect an agent by its id: its tokens stop working at once, and its endpoints stay. Disconnecting the agent you run as ends your own access.
+
+| Parameter | Type     | Required | Description                               |
+| --------- | -------- | -------- | ----------------------------------------- |
+| `id`      | `string` | yes      | The agent's id, from `list_connected_agents` |
+
+## Share links
+
+Public links to a read-only copy of one request, at `/s/<token>`. Not the same as `list_shares`, which lists port previews.
+
+### list_share_links
+
+The account's live links, or one request's with `requestId`.
+
+### create_share_link
+
+Ask for a link to an HTTP request (not an email). Anyone with the link can read it, so the person approves it first: returns an approval to show them, then `wait_for_approval` returns the link.
+
+| Parameter       | Type      | Required | Description                                                          |
+| --------------- | --------- | -------- | -------------------------------------------------------------------- |
+| `requestId`     | `string`  | yes      | The request's id                                                     |
+| `expiresInDays` | `number`  | no       | 1, 7 or 30 (default 7)                                               |
+| `hideSensitive` | `boolean` | no       | Also leave out signature and token headers (default `true`)          |
+
+### revoke_share_link
+
+Revoke a link by its id, from `list_share_links`: its page answers 404 from then on.
+
+## Custom domains
+
+[Your own inbound domains](/docs/email-capture#your-own-domain), on Business. Every tool takes an optional `teamId` for a Team Business team's domains (its owner only).
+
+### list_domains
+
+Each domain's status, the DNS records to publish, its routes and its catch-all endpoint.
+
+### add_domain
+
+Add a domain (`domain`, such as `mail.example.com`). Returns the TXT and MX records to publish; then call `verify_domain`.
+
+### verify_domain
+
+Look a domain's TXT and MX records up now (`id`, from `list_domains`).
+
+### route_domain
+
+Replace a domain's routing: `routes` (`[{ localPart, endpointId }]`) send mail by the part before `@`, and `catchAllEndpointId` takes the rest, or `null` refuses it.
+
+### remove_domain
+
+Ask to remove a domain (`id`). Its mail is refused from then on, so the person approves it first: returns an approval to show them, then call `wait_for_approval`.
 
 ## Utilities
 

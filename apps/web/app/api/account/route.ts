@@ -1,5 +1,6 @@
 import { auditUserAction } from "@/lib/audit";
-import { authenticateSessionRequest } from "@/lib/api-auth";
+import { authenticateRequestRequireUser, authenticateSessionRequest } from "@/lib/api-auth";
+import { requestApproval } from "@/lib/approvals/request";
 import { loggablePolarError } from "@/lib/polar";
 import { applyRateLimitHeaders, checkRateLimitByKeyWithInfo } from "@/lib/rate-limit";
 import { AccountDeletionBillingError, deleteAccountForUser } from "@/lib/supabase/account";
@@ -21,12 +22,14 @@ const NAME_RATE_LIMIT_MAX = 20;
 const NAME_RATE_LIMIT_WINDOW_MS = 10 * 60_000;
 
 /**
- * Sets or clears the display name. Session-only, like every account change:
- * connected agents are promised they cannot change the account, and their
- * tokens are API keys.
+ * Sets or clears the display name, or the approval-email setting. With a
+ * browser session both apply at once. With an API key (or an agent token) a
+ * rename becomes an approval the account's owner answers (`account.rename`),
+ * and the approval-email setting is refused: it decides whether the owner
+ * hears about approvals at all, so only the owner changes it.
  */
 export async function PATCH(request: Request) {
-  const auth = await authenticateSessionRequest(request);
+  const auth = await authenticateRequestRequireUser(request);
   if (!auth.success) return auth.response;
 
   const rateLimit = await checkRateLimitByKeyWithInfo(
@@ -43,11 +46,32 @@ export async function PATCH(request: Request) {
   if ("error" in read) return applyRateLimitHeaders(read.error, rateLimit);
 
   if ("approvalEmails" in read.data) {
+    if (auth.keyId) {
+      return applyRateLimitHeaders(
+        Response.json(
+          { error: "approvalEmails can only be changed from a signed-in browser session" },
+          { status: 403 }
+        ),
+        rateLimit
+      );
+    }
     return setApprovalEmails(request, auth.userId, read.data.approvalEmails, rateLimit);
   }
   if (!("name" in read.data)) {
     return applyRateLimitHeaders(
       Response.json({ error: NAME_REQUIRED }, { status: 400 }),
+      rateLimit
+    );
+  }
+
+  if (auth.keyId) {
+    return applyRateLimitHeaders(
+      await requestApproval(
+        request,
+        { userId: auth.userId, keyId: auth.keyId, agentRegistrationId: auth.agentRegistrationId },
+        "account.rename",
+        { name: read.data.name }
+      ),
       rateLimit
     );
   }

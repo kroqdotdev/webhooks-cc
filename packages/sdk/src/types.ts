@@ -1860,6 +1860,84 @@ export interface WaitForApprovalOptions {
   signal?: AbortSignal;
 }
 
+/** An agent connected to the account (claimed, or signed in through OAuth). */
+export interface ConnectedAgent {
+  id: string;
+  clientName: string | null;
+  kind: string;
+  /** Milliseconds since the epoch. */
+  connectedAt: number;
+  lastUsedAt: number | null;
+}
+
+/**
+ * A public link to a frozen copy of one request, at `/s/{token}`. Anyone who
+ * has the link can read it until `expiresAt` (milliseconds since the epoch).
+ */
+export interface ShareLink {
+  id: string;
+  token: string;
+  createdAt: number;
+  expiresAt: number;
+  /** Headers left out of the copy. */
+  redactedHeaders: string[];
+}
+
+/** A share link as the account lists them, with the request it copies. */
+export interface AccountShareLink extends ShareLink {
+  method: string;
+  path: string;
+  detectedProvider: string | null;
+  detectedEvent: string | null;
+  /** Null once the request is gone; the link still works. */
+  requestId: string | null;
+  endpointSlug: string | null;
+}
+
+/** A share link made through an approval. */
+export interface CreatedShareLink {
+  id: string;
+  url: string;
+  expiresAt: string;
+  redactedHeaders: string[];
+}
+
+/** Mail to `localPart@domain` goes to the endpoint. */
+export interface InboundDomainRoute {
+  localPart: string;
+  endpointId: string;
+}
+
+/** A custom domain that receives mail (Business, or Team Business). */
+export interface InboundDomain {
+  id: string;
+  domain: string;
+  status: "pending" | "verified" | "lapsed";
+  verifiedAt: string | null;
+  lastCheckedAt: string | null;
+  failedChecks: number;
+  catchAllEndpointId: string | null;
+  routes: InboundDomainRoute[];
+  /** The DNS records to add. */
+  records: { txt: { name: string; value: string }; mx: { name: string; value: string } };
+  /** Receives mail now: verified and within what the plan allows. */
+  active: boolean;
+}
+
+/** What a DNS check of a domain found. */
+export interface DomainVerification {
+  domain: InboundDomain;
+  records: { txt: boolean; mx: boolean };
+  /** Another account had the domain, and lost it to this one. */
+  tookOver: boolean;
+}
+
+/** A domain removed through an approval. */
+export interface RemovedDomain {
+  removed: string;
+  domainId: string;
+}
+
 /** An add-on's state for one account or team (extra requests, parsed pages or domains). */
 export type CapacityResource = "requests" | "pages" | "domains";
 
