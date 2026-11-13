@@ -67,6 +67,7 @@ const EXPECTED_TOOLS = [
   "test_forwarding",
   "list_deliveries",
   "redeliver",
+  "get_billing",
   "list_api_keys",
   "create_api_key",
   "wait_for_approval",
@@ -264,7 +265,7 @@ describe("registerTools", () => {
     const waitFor = vi.fn().mockResolvedValue({ id: "req1", method: "POST", headers: {} });
     const client = createMockClient({ requests: { waitFor } as unknown as WebhooksCC["requests"] });
     const tools = getRegisteredTools(client, { remote: true });
-    expect(Object.keys(tools)).toHaveLength(58);
+    expect(Object.keys(tools)).toHaveLength(59);
     expect(tools).not.toHaveProperty("send_to");
     expect(tools).not.toHaveProperty("replay_request");
     expect(tools).not.toHaveProperty("share_port");
@@ -319,7 +320,7 @@ describe("registerTools", () => {
   it("registers all wrapper and legacy tools", () => {
     const tools = getRegisteredTools(createMockClient());
 
-    expect(Object.keys(tools)).toHaveLength(61);
+    expect(Object.keys(tools)).toHaveLength(62);
     for (const name of EXPECTED_TOOLS) {
       expect(tools).toHaveProperty(name);
     }
@@ -2711,5 +2712,14 @@ describe("API keys and approvals", () => {
     const tools = getRegisteredTools(client, { remote: true });
     await tools.wait_for_approval.handler({ id: "appr_1", timeout: "10m" });
     expect(wait).toHaveBeenCalledWith("appr_1", { timeout: 50_000 });
+  });
+});
+
+describe("get_billing", () => {
+  it("returns the billing summary as JSON", async () => {
+    const get = vi.fn().mockResolvedValue({ plan: "pro", subscription: null, teams: [] });
+    const client = createMockClient({ billing: { get } as unknown as WebhooksCC["billing"] });
+    const result = await getRegisteredTools(client).get_billing.handler({});
+    expect(JSON.parse(result.content[0].text)).toMatchObject({ plan: "pro" });
   });
 });

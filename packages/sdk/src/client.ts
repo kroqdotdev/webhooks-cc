@@ -15,6 +15,11 @@
  */
 import { apiUserAgent } from "./user-agent";
 import type {
+  BillingSummary,
+  CapacityResource,
+  CapacityState,
+  TeamPlanQuote,
+  TeamSeatQuote,
   ApiKey,
   Approval,
   CreatedApiKey,
@@ -1647,6 +1652,29 @@ export class WebhooksCC {
           params: { inviteId: "string" },
         },
       },
+      billing: {
+        get: {
+          description:
+            "What the account pays for: plan, subscription (status, interval, renewsAt, pendingChange), add-ons, and every team's",
+          params: {},
+        },
+        capacity: {
+          description: "The add-ons of the account or a team for one resource",
+          params: { resource: '"requests" | "pages" | "domains"?', teamId: "string?" },
+        },
+        quoteTeamPlan: {
+          description: "What changing a team's plan would cost (owner only)",
+          params: {
+            teamId: "string",
+            plan: '"team" | "team_business"',
+            interval: '"month" | "year"?',
+          },
+        },
+        quoteTeamSeats: {
+          description: "What changing a team's seat count would cost (owner only)",
+          params: { teamId: "string", seats: "number" },
+        },
+      },
       apiKeys: {
         list: { description: "List the account's API keys", params: {} },
         create: {
@@ -2031,6 +2059,55 @@ export class WebhooksCC {
     revoke: async (id: string): Promise<void> => {
       validatePathSegment(id, "id");
       await this.request("DELETE", `/api-keys?id=${encodeURIComponent(id)}`);
+    },
+  };
+
+  /**
+   * What the account pays for: the plan, its subscription, the add-ons and
+   * every team's. Reads only; changing a plan, seats or add-ons takes a
+   * person in a browser.
+   */
+  billing = {
+    /** The plan, its subscription and add-ons, and every team's. */
+    get: async (): Promise<BillingSummary> => {
+      return this.request<BillingSummary>("GET", "/billing");
+    },
+
+    /** The add-ons of the account, or of a team it belongs to, for one resource. */
+    capacity: async (
+      options: { resource?: CapacityResource; teamId?: string } = {}
+    ): Promise<CapacityState> => {
+      const query = `?resource=${encodeURIComponent(options.resource ?? "requests")}`;
+      if (options.teamId) {
+        validatePathSegment(options.teamId, "teamId");
+        return this.request<CapacityState>(
+          "GET",
+          `/teams/${options.teamId}/billing/capacity${query}`
+        );
+      }
+      return this.request<CapacityState>("GET", `/billing/capacity${query}`);
+    },
+
+    /** What changing a team's plan would cost (the team's owner only). */
+    quoteTeamPlan: async (
+      teamId: string,
+      plan: "team" | "team_business",
+      interval: "month" | "year" = "month"
+    ): Promise<TeamPlanQuote> => {
+      validatePathSegment(teamId, "teamId");
+      return this.request<TeamPlanQuote>(
+        "GET",
+        `/teams/${teamId}/billing/plan?plan=${encodeURIComponent(plan)}&interval=${encodeURIComponent(interval)}`
+      );
+    },
+
+    /** What changing a team's seat count would cost (the team's owner only). */
+    quoteTeamSeats: async (teamId: string, seats: number): Promise<TeamSeatQuote> => {
+      validatePathSegment(teamId, "teamId");
+      return this.request<TeamSeatQuote>(
+        "GET",
+        `/teams/${teamId}/billing/seats?seats=${encodeURIComponent(String(seats))}`
+      );
     },
   };
 

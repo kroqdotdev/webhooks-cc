@@ -118,8 +118,7 @@ function internalEntry(route: string): string | undefined {
   );
 }
 
-// Session-only is read per file: a file that mixed both kinds of handler
-// would need a smarter check, and the test below refuses one.
+// Session-only is read per handler (handlerSource).
 const SESSION_AUTH = /authenticateSessionRequest\(|domainAccount\(/;
 const KEY_AUTH = /authenticateRequest(?:RequireUser)?\(/;
 // A route that answers an API key with an approval (lib/approvals/request.ts).
@@ -184,10 +183,12 @@ describe("capabilities.json", () => {
   it("marks the capabilities whose routes take only a session", () => {
     for (const c of capabilities) {
       for (const route of c.routes) {
-        const source = routes.get(route) ?? "";
+        // Per handler: a file can hold a GET any key may read beside a POST
+        // only a session may send.
+        const source = handlerSource(route);
         expect(
           SESSION_AUTH.test(source) && KEY_AUTH.test(source),
-          `${route}: its file has handlers of both kinds, which this check cannot tell apart`
+          `${route}: its handler takes both kinds of auth, which this check cannot tell apart`
         ).toBe(false);
         expect(
           SESSION_AUTH.test(source),

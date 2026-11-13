@@ -393,6 +393,8 @@ async fn run(args: Cli) -> Result<()> {
             }
         },
 
+        Some(Command::Billing) => cli::billing::show(&client, args.json).await?,
+
         Some(Command::Keys { action }) => match action {
             KeysAction::List => cli::keys::list(&client, args.json).await?,
             KeysAction::Create {

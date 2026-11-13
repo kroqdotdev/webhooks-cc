@@ -503,13 +503,32 @@
       "mcp": "session only"
     },
     {
+      "id": "billing.read",
+      "does": "Read what the account pays for: the plan, its subscription, the add-ons, and every team's",
+      "routes": ["GET /api/billing"],
+      "sdk": ["billing.get"],
+      "python": "testing-focused SDK: added on demand",
+      "go": "testing-focused SDK: added on demand",
+      "cli": ["billing"],
+      "mcp": ["get_billing"]
+    },
+    {
+      "id": "billing.addons",
+      "does": "Read the add-ons of the account or a team for one resource",
+      "routes": ["GET /api/billing/capacity", "GET /api/teams/[teamId]/billing/capacity"],
+      "sdk": ["billing.capacity"],
+      "python": "testing-focused SDK: added on demand",
+      "go": "testing-focused SDK: added on demand",
+      "cli": "`whk billing` shows every add-on",
+      "mcp": "get_billing returns every add-on"
+    },
+    {
       "id": "billing.manage",
       "does": "Subscribe, change plan, buy extra capacity, open the billing portal, cancel",
       "routes": [
         "POST /api/billing/checkout",
         "POST /api/billing/change-plan",
         "DELETE /api/billing/change-plan",
-        "GET /api/billing/capacity",
         "POST /api/billing/capacity",
         "POST /api/billing/portal",
         "POST /api/billing/cancel",
@@ -793,15 +812,22 @@
       "mcp": "no tool yet"
     },
     {
+      "id": "team.billing-quotes",
+      "does": "Price a change to a team's plan or seats (the owner only)",
+      "routes": ["GET /api/teams/[teamId]/billing/plan", "GET /api/teams/[teamId]/billing/seats"],
+      "sdk": ["billing.quoteTeamPlan", "billing.quoteTeamSeats"],
+      "python": "testing-focused SDK: added on demand",
+      "go": "testing-focused SDK: added on demand",
+      "cli": "no command yet: `whk api` reaches it",
+      "mcp": "no tool yet"
+    },
+    {
       "id": "team.billing",
       "does": "Subscribe a team, change its plan or seats, buy capacity, open its billing portal, cancel",
       "routes": [
         "POST /api/teams/[teamId]/billing/checkout",
-        "GET /api/teams/[teamId]/billing/plan",
         "POST /api/teams/[teamId]/billing/plan",
-        "GET /api/teams/[teamId]/billing/seats",
         "POST /api/teams/[teamId]/billing/seats",
-        "GET /api/teams/[teamId]/billing/capacity",
         "POST /api/teams/[teamId]/billing/capacity",
         "POST /api/teams/[teamId]/billing/portal",
         "POST /api/teams/[teamId]/billing/cancel",

@@ -1,9 +1,10 @@
-import { authenticateSessionRequest } from "@/lib/api-auth";
+import { authenticateRequestRequireUser, authenticateSessionRequest } from "@/lib/api-auth";
 import { handleCapacityGet, handleCapacityPost } from "@/lib/capacity-route";
 
 /** Extra request capacity for the signed-in user's own account (lib/capacity-route.ts). */
+// A read: any key of the account, or a session. Changes (POST) take a session.
 export async function GET(request: Request) {
-  const auth = await authenticateSessionRequest(request);
+  const auth = await authenticateRequestRequireUser(request);
   if (!auth.success) return auth.response;
   return handleCapacityGet({ kind: "user", userId: auth.userId }, request);
 }

@@ -1,0 +1,8 @@
+{
+  "title": "Billing you can read from the API, CLI and MCP",
+  "items": [
+    "GET /api/billing answers what the account pays for with an API key: the plan and its subscription, the add-ons, and the same for every team you belong to",
+    "The add-ons and the price of a team plan or seat change can be read with an API key too; paying for a change still takes the browser",
+    "whk billing, client.billing in the TypeScript SDK and get_billing in the MCP server"
+  ]
+}

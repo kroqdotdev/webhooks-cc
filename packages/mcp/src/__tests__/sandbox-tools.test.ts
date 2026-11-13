@@ -322,7 +322,7 @@ describe("sandbox tools (no API key)", () => {
     expect(connected.body.message).toContain("now that account's endpoints");
 
     const after = await names();
-    expect(after).toHaveLength(61);
+    expect(after).toHaveLength(62);
     expect(after).toEqual(expect.arrayContaining(["send_webhook", "describe", "list_teams"]));
     expect(after).not.toContain("connect_account");
     expect(after).not.toContain("about_sandbox");
@@ -352,7 +352,7 @@ describe("sandbox tools (no API key)", () => {
     });
     try {
       const { call, names } = await connect();
-      expect(await names()).toHaveLength(61);
+      expect(await names()).toHaveLength(62);
 
       // The human disconnects the agent: the token dies and the assertion is refused.
       vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {

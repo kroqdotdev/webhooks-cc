@@ -19,9 +19,14 @@ const mocks = vi.hoisted(() => {
   };
 });
 
+// The GET (a quote) takes any key of the account; the POST a session. Both
+// resolve the same way here.
 vi.mock("@/lib/api-auth", () => ({
   authenticateSessionRequest: mocks.authenticateSessionRequest,
+  authenticateRequestRequireUser: mocks.authenticateSessionRequest,
 }));
+
+vi.mock("@/lib/rate-limit", () => ({ checkRateLimit: async () => null }));
 
 vi.mock("@/lib/supabase/team-billing", () => ({
   TeamBillingError: mocks.TeamBillingError,
