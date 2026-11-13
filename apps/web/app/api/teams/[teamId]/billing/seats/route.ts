@@ -1,5 +1,6 @@
+import { checkRateLimit } from "@/lib/rate-limit";
 import { auditUserAction } from "@/lib/audit";
-import { authenticateSessionRequest } from "@/lib/api-auth";
+import { authenticateRequestRequireUser, authenticateSessionRequest } from "@/lib/api-auth";
 import { loggablePolarError, PolarConfigError } from "@/lib/polar";
 import {
   quoteTeamSeatChange,
@@ -65,8 +66,12 @@ export async function POST(request: Request, { params }: { params: Promise<{ tea
 }
 
 /** Quotes a seat change for the confirmation dialog: `GET ...?seats=5`. */
+// A read: any key of the account, or a session. Changes (POST) take a session.
 export async function GET(request: Request, { params }: { params: Promise<{ teamId: string }> }) {
-  const auth = await authenticateSessionRequest(request);
+  // Each quote asks Polar, so keys get a limit of their own.
+  const rateLimited = await checkRateLimit(request, "team-billing-quote", 20);
+  if (rateLimited) return rateLimited;
+  const auth = await authenticateRequestRequireUser(request);
   if (!auth.success) return auth.response;
 
   const { teamId } = await params;

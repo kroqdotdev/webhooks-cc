@@ -2401,6 +2401,82 @@ paths:
         "500":
           $ref: "#/components/responses/InternalError"
 
+  /api/billing:
+    get:
+      operationId: getBilling
+      tags: [Usage]
+      summary: Get billing
+      description: >-
+        What the account pays for, read only: the plan and its subscription (status, interval,
+        when it renews, a change waiting for the renewal, whether it cancels at the period's
+        end), the add-ons (extra requests, parsed pages, domains), and every team the account
+        belongs to with its subscription and add-ons. Works with an API key. Changing a plan,
+        seats or add-ons takes a browser session.
+      responses:
+        "200":
+          description: The billing summary
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [plan, subscription, quotaPeriod, addons, teams]
+                properties:
+                  plan:
+                    type: string
+                    enum: [free, pro, business]
+                  subscription:
+                    type: object
+                    nullable: true
+                    properties:
+                      status:
+                        type: string
+                        nullable: true
+                        enum: [active, canceled, past_due]
+                      interval:
+                        type: string
+                        nullable: true
+                        enum: [month, year]
+                      renewsAt:
+                        type: string
+                        format: date-time
+                        nullable: true
+                      cancelAtPeriodEnd:
+                        type: boolean
+                      pendingChange:
+                        type: object
+                        nullable: true
+                        properties:
+                          plan:
+                            type: string
+                          interval:
+                            type: string
+                            nullable: true
+                  quotaPeriod:
+                    type: object
+                    properties:
+                      start:
+                        type: string
+                        format: date-time
+                        nullable: true
+                      end:
+                        type: string
+                        format: date-time
+                        nullable: true
+                  addons:
+                    type: object
+                    description: The add-on state for requests, pages and domains.
+                    additionalProperties: true
+                  teams:
+                    type: array
+                    description: Every team, as the teams list returns it, with its add-ons.
+                    items:
+                      type: object
+                      additionalProperties: true
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
   # -- Teams -------------------------------------------------------------------
 
   /api/teams:

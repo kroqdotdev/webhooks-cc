@@ -2057,6 +2057,13 @@ export function registerTools(
   );
 
   server.tool(
+    "get_billing",
+    "What the account pays for: the plan and its subscription (status, monthly or annual, when it renews, a pending change, whether it cancels at the period's end), the add-ons (extra requests, parsed pages, domains), and every team's subscription and add-ons. Read only: changing a plan, seats or add-ons takes the person in a browser.",
+    {},
+    withErrorHandling(async () => jsonContent(await client.billing.get()))
+  );
+
+  server.tool(
     "get_usage",
     "Check current request usage, remaining quota, plan, and period end; parsed pages, preview data (whk share) and AI assists, each with when it resets; and the pooled quota of every subscribed team you belong to.",
     {},

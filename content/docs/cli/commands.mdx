@@ -328,6 +328,14 @@ whk teams decline <invite-id>
 
 Sharing moves the endpoint's requests onto the team's pooled quota. Only the endpoint owner can share or unshare, and only the team owner can invite. Every subcommand supports `--json`.
 
+## billing
+
+What the account pays for, read only: the plan and its subscription (monthly or annual, its status, when it renews, a change waiting for the renewal, whether it ends), the add-ons (extra requests, parsed pages, domains), and every team you belong to with its seats, status and add-ons. With `--json` you get the whole `/api/billing` answer. Changing a plan, seats or add-ons is done in the browser, under Account > Plan.
+
+```bash
+whk billing
+```
+
 ## keys
 
 The account's API keys. Listing and revoking act at once. A new key needs the account's owner to approve it, even when you are that owner: `whk keys create` prints a link and a code, the page shows the same code to compare, and once it is approved whk prints the key, the only time it is ever shown.

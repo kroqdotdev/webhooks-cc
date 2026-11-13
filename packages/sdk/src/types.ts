@@ -1212,6 +1212,8 @@ export interface SDKDescription {
   destinations: Record<string, OperationDescription>;
   alerts: Record<string, OperationDescription>;
   teams: Record<string, OperationDescription>;
+  /** What the account pays for (reads only). */
+  billing: Record<string, OperationDescription>;
   /** The account's API keys; creating one asks the owner first (an approval). */
   apiKeys: Record<string, OperationDescription>;
   /** Approvals asked for by this key or agent. */
@@ -1843,4 +1845,71 @@ export interface WaitForApprovalOptions {
   /** Milliseconds between polls (default 2000, at least 1000). */
   pollInterval?: number;
   signal?: AbortSignal;
+}
+
+/** An add-on's state for one account or team (extra requests, parsed pages or domains). */
+export type CapacityResource = "requests" | "pages" | "domains";
+
+/**
+ * The add-ons of one account or team for one resource, as the API reads them
+ * (`GET /api/billing/capacity`). Fields beyond these may appear.
+ */
+export interface CapacityState {
+  /** False until the add-on products are configured. */
+  offered: boolean;
+  /** The account has a live plan that allows add-ons. */
+  eligible: boolean;
+  /** The plan is set to end; add-ons end with it. */
+  planEnding: boolean;
+  periodStart: string | null;
+  periodEnd: string | null;
+  [field: string]: unknown;
+}
+
+/** What the account pays for (`GET /api/billing`). Changing it still takes a browser session. */
+export interface BillingSummary {
+  plan: "free" | "pro" | "business";
+  /** The plan's subscription; null on Free. */
+  subscription: {
+    status: "active" | "canceled" | "past_due" | null;
+    interval: "month" | "year" | null;
+    /** When it renews, or ends with `cancelAtPeriodEnd`. */
+    renewsAt: string | null;
+    cancelAtPeriodEnd: boolean;
+    pendingChange: { plan: string; interval: "month" | "year" | null } | null;
+  } | null;
+  quotaPeriod: { start: string | null; end: string | null };
+  addons: Record<CapacityResource, CapacityState>;
+  /** Every team the account belongs to, with its subscription and add-ons. */
+  teams: (Team & { addons: Record<CapacityResource, CapacityState> })[];
+}
+
+/** The price of changing a team's plan (the team's owner only). */
+export interface TeamPlanQuote {
+  plan: "team" | "team_business";
+  interval: "month" | "year";
+  seats: number;
+  /** "now" for an upgrade, charged at once; "renewal" for a downgrade. */
+  applies: "now" | "renewal";
+  creditCents: number;
+  chargeCents: number;
+  creditAppliedCents: number;
+  dueNowCents: number;
+  renewalCents: number;
+  periodEnd: string;
+}
+
+/** The price of changing a team's seat count (the team's owner only). */
+export interface TeamSeatQuote {
+  currentSeats: number;
+  newSeats: number;
+  pendingSeats: number | null;
+  /** A reduction waits for the renewal; nothing is charged now. */
+  appliesAtRenewal: boolean;
+  pricePerSeatCents: number;
+  prorationCents: number;
+  creditAppliedCents: number;
+  dueNowCents: number;
+  renewalCents: number;
+  [field: string]: unknown;
 }

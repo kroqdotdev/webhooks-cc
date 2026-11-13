@@ -1,4 +1,4 @@
-import { authenticateSessionRequest } from "@/lib/api-auth";
+import { authenticateRequestRequireUser, authenticateSessionRequest } from "@/lib/api-auth";
 import { handleCapacityGet, handleCapacityPost } from "@/lib/capacity-route";
 import { createAdminClient } from "@/lib/supabase/admin";
 
@@ -12,8 +12,9 @@ function notFound(): Response {
  * A team pool's extra request capacity (lib/capacity-route.ts). Members may
  * look; only the owner may change it.
  */
+// A read: any key of the account, or a session. Changes (POST) take a session.
 export async function GET(request: Request, { params }: { params: Promise<{ teamId: string }> }) {
-  const auth = await authenticateSessionRequest(request);
+  const auth = await authenticateRequestRequireUser(request);
   if (!auth.success) return auth.response;
 
   const { teamId } = await params;

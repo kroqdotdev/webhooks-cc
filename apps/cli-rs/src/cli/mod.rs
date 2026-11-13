@@ -1,5 +1,6 @@
 pub mod api;
 pub mod auth;
+pub mod billing;
 #[cfg(test)]
 mod capabilities;
 pub mod confirm;
@@ -393,6 +394,9 @@ deletion) refuse API keys.")]
         #[command(subcommand)]
         action: TeamsAction,
     },
+
+    /// What the account pays for: the plan, its subscription, add-ons, and every team's (read only)
+    Billing,
 
     /// Manage the account's API keys (a new one needs the account's owner to approve it)
     Keys {

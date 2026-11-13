@@ -685,6 +685,10 @@ Revoke a key by its id, from `list_api_keys`. Anything using it stops working at
 
 Your plan's request usage, remaining quota, and period end; `parsedPages`, `previewData` and `aiAssists`, each with when it resets (null where it is not offered); and a `teams` array with the pooled quota of every subscribed team you belong to. No parameters.
 
+### get_billing
+
+What the account pays for, read only: `plan`, `subscription` (`status`, `interval`, `renewsAt`, `cancelAtPeriodEnd`, `pendingChange`; null on Free), `quotaPeriod`, `addons` for requests, pages and domains, and `teams` with each team's subscription, seats and add-ons. Changing a plan, seats or add-ons takes the person in a browser. No parameters.
+
 ### list_provider_templates
 
 List supported webhook providers, available templates, and signing metadata. Use this before `send_webhook` when an agent needs to pick a realistic provider payload.

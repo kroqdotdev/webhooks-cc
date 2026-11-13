@@ -209,6 +209,8 @@ The agent shows you the link. The page asks you to sign in as that account, show
 
 The asker polls `GET /api/approvals/{id}` with the same API key (or any token of the same connected agent). Once you approve, its next poll carries the result, once: for a key, the key itself, which is never stored and never shown again. You have 15 minutes to answer, and the asker 15 minutes after that to collect it. An account can have 10 approvals waiting at once. The CLI (`whk keys create`), the TypeScript SDK (`client.apiKeys.create()` then `approval.wait()`) and the MCP server (`create_api_key`, `wait_for_approval`) do the polling for you.
 
+Billing is read only for agents: `GET /api/billing` (`whk billing`, `client.billing.get()`, the `get_billing` tool) says what the account pays for, and the price of a change to a team's plan or seats can be quoted (`client.billing.quoteTeamPlan()`, `quoteTeamSeats()`), but paying for anything stays with you in the browser.
+
 To get the link by email as well, for an agent that runs where nobody sees its output, turn on **Email me when an agent asks for approval** under **Account, Connected agents**.
 
 ## Revocation and expiry
