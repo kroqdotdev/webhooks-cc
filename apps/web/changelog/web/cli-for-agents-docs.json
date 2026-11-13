@@ -1,7 +1,8 @@
 {
-  "title": "CLI docs for scripts and agents",
+  "title": "CLI docs for scripts and agents, and no missed requests on live streams",
   "items": [
     "The CLI docs describe whk's JSON output, its exit statuses and error codes, whk wait and whk api",
-    "The interactive TUI is gone from the docs: whk prints its commands when run on its own"
+    "The interactive TUI is gone from the docs: whk prints its commands when run on its own",
+    "A live stream (whk listen, whk wait) no longer misses a request that finished saving after a newer one had already been sent"
   ]
 }

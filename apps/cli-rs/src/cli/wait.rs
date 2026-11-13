@@ -23,7 +23,7 @@ use tokio::time::Instant;
 
 use crate::api::ApiClient;
 use crate::cli::output::{dim, print_request_detail, print_request_line};
-use crate::error::{ApiError, CliError};
+use crate::error::{ApiError, CliError, classify};
 use crate::types::{CapturedRequest, SseEvent};
 use crate::util::format::parse_duration;
 
@@ -32,6 +32,9 @@ const LOOKBACK_MS: i64 = 5 * 60 * 1000;
 /// Slack for the start when the server sent no `Date` header and this
 /// machine's clock is all there is.
 const CLOCK_MARGIN_MS: i64 = 2000;
+/// How long past `--timeout` the full read of a match that did arrive may
+/// take before the stream's copy is printed instead.
+const FULL_READ_GRACE: Duration = Duration::from_secs(10);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
 pub enum Kind {
@@ -131,16 +134,53 @@ fn now_ms() -> i64 {
 /// `Date` less the time it took is the start. `Date` counts whole seconds,
 /// so this is at or before the true start: nothing sent after the command
 /// started is missed, and at most a second before it can count.
-async fn server_start(client: &ApiClient, slug: &str) -> Result<i64> {
-    let started = std::time::Instant::now();
-    let local = now_ms();
-    let resp = client
-        .get(&format!("/api/endpoints/{}", urlencoding::encode(slug)))
-        .await?;
+async fn server_start(client: &ApiClient, slug: &str, deadline: Instant) -> Result<i64> {
+    let path = format!("/api/endpoints/{}", urlencoding::encode(slug));
+    let (resp, started, local) = retrying(deadline, || async {
+        // Timed per try, so a retried read measures its own round trip.
+        let started = std::time::Instant::now();
+        let local = now_ms();
+        Ok((client.get(&path).await?, started, local))
+    })
+    .await?;
     Ok(match resp.server_time_ms {
         Some(t) => t - started.elapsed().as_millis() as i64,
         None => local - CLOCK_MARGIN_MS,
     })
+}
+
+/// Whether a failed read is worth another try: rate limits, our side, the
+/// network. A missing endpoint or refused credentials are final.
+fn transient(error: &anyhow::Error) -> bool {
+    matches!(
+        classify(error).code,
+        "rate_limited" | "server_error" | "network_error" | "request_timeout"
+    )
+}
+
+/// Runs `call` until it succeeds, a failure is final, or `deadline` passes
+/// (then `timeout`), waiting a second between tries or as long as the server
+/// asked (`Retry-After`).
+async fn retrying<T, F, Fut>(deadline: Instant, mut call: F) -> Result<T>
+where
+    F: FnMut() -> Fut,
+    Fut: std::future::Future<Output = Result<T>>,
+{
+    loop {
+        let error = match tokio::time::timeout_at(deadline, call()).await {
+            Ok(Ok(value)) => return Ok(value),
+            Ok(Err(error)) if transient(&error) => error,
+            Ok(Err(error)) => return Err(error),
+            Err(_) => {
+                return Err(CliError::Timeout("the wait ran out of time".into()).into());
+            }
+        };
+        let pause = Duration::from_secs(classify(&error).retry_after.unwrap_or(1).max(1));
+        if Instant::now() + pause >= deadline {
+            return Err(error);
+        }
+        tokio::time::sleep(pause).await;
+    }
 }
 
 /// `--timeout`: a duration with a unit. A bare number would be milliseconds
@@ -172,7 +212,7 @@ pub async fn run(client: &ApiClient, options: WaitOptions, json: bool) -> Result
     // The arguments are checked before any request goes out; a duration
     // back is then counted from the server's start, as `now` is.
     let since = parse_since(options.since.as_deref())?;
-    let start = server_start(client, slug).await?;
+    let start = server_start(client, slug, deadline).await?;
     let since = match since {
         Since::Now => start,
         Since::Back(back) => start - back,
@@ -204,7 +244,8 @@ pub async fn run(client: &ApiClient, options: WaitOptions, json: bool) -> Result
     });
 
     let mut seen: HashSet<String> = HashSet::new();
-    let mut matched: Vec<String> = Vec::new();
+    // Each match's id and the stream's copy of it.
+    let mut matched: Vec<(String, Value)> = Vec::new();
     let outcome: Result<()> = loop {
         let event = match tokio::time::timeout_at(deadline, rx.recv()).await {
             Ok(event) => event,
@@ -224,7 +265,7 @@ pub async fn run(client: &ApiClient, options: WaitOptions, json: bool) -> Result
                     continue;
                 };
                 if seen.insert(id.clone()) && filter.matches(&value) {
-                    matched.push(id);
+                    matched.push((id, value));
                     if matched.len() >= count {
                         break Ok(());
                     }
@@ -266,24 +307,42 @@ pub async fn run(client: &ApiClient, options: WaitOptions, json: bool) -> Result
     outcome?;
 
     // Each match in full: the stream leaves out the parsed email, the
-    // signature check and the answer the sender got.
-    let mut full = Vec::with_capacity(matched.len());
-    for id in &matched {
-        full.push(client.get_request(id).await?);
+    // signature check and the answer the sender got. A match that arrived
+    // is never lost to a failed read: within a few seconds past the wait's
+    // own limit, else the stream's copy is printed.
+    let read_by = deadline.max(Instant::now()) + FULL_READ_GRACE;
+    let mut values = Vec::with_capacity(matched.len());
+    for (id, streamed) in matched {
+        match retrying(read_by, || client.get_request(&id)).await {
+            Ok(full) => values.push(full.json()),
+            Err(error) => {
+                if !json {
+                    eprintln!(
+                        "  {}",
+                        dim(&format!("Showing the streamed copy of {id}: {error:#}"))
+                    );
+                }
+                values.push(streamed);
+            }
+        }
     }
     if json {
-        let values: Vec<Value> = full.iter().map(|r| r.json()).collect();
         let out = if count == 1 {
             values.into_iter().next().unwrap_or(Value::Null)
         } else {
             Value::Array(values)
         };
         println!("{}", serde_json::to_string_pretty(&out)?);
-    } else if let [one] = full.as_slice() {
+        return Ok(());
+    }
+    let parsed: Vec<CapturedRequest> = values
+        .into_iter()
+        .filter_map(|v| serde_json::from_value(v).ok())
+        .collect();
+    if let [one] = parsed.as_slice() {
         print_request_detail(one);
     } else {
-        for request in &full {
-            let request: &CapturedRequest = request;
+        for request in &parsed {
             print_request_line(request);
         }
     }
@@ -293,7 +352,6 @@ pub async fn run(client: &ApiClient, options: WaitOptions, json: bool) -> Result
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::error::classify;
     use serde_json::json;
 
     #[test]
@@ -307,6 +365,56 @@ mod tests {
         );
         let error = parse_since(Some("soon")).unwrap_err();
         assert_eq!(classify(&error).code, "usage");
+    }
+
+    #[tokio::test]
+    async fn transient_failures_are_retried_until_the_deadline() {
+        let tries = std::cell::Cell::new(0);
+        let deadline = Instant::now() + Duration::from_secs(5);
+        let value = retrying(deadline, || {
+            tries.set(tries.get() + 1);
+            let n = tries.get();
+            async move {
+                if n < 2 {
+                    Err(anyhow::Error::new(ApiError {
+                        status: 503,
+                        message: "busy".into(),
+                        retry_after: None,
+                    }))
+                } else {
+                    Ok(n)
+                }
+            }
+        })
+        .await
+        .unwrap();
+        assert_eq!(value, 2);
+
+        // A final failure is not retried.
+        tries.set(0);
+        let error = retrying(deadline, || {
+            tries.set(tries.get() + 1);
+            async {
+                Err::<(), _>(anyhow::Error::new(ApiError {
+                    status: 404,
+                    message: "gone".into(),
+                    retry_after: None,
+                }))
+            }
+        })
+        .await
+        .unwrap_err();
+        assert_eq!(classify(&error).code, "not_found");
+        assert_eq!(tries.get(), 1);
+
+        // Past the deadline the wait times out.
+        let error = retrying(Instant::now(), || async {
+            tokio::time::sleep(Duration::from_secs(1)).await;
+            Ok::<_, anyhow::Error>(())
+        })
+        .await
+        .unwrap_err();
+        assert_eq!(classify(&error).code, "timeout");
     }
 
     #[test]

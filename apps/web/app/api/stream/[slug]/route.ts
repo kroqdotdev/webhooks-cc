@@ -3,6 +3,7 @@ import { serverEnv } from "@/lib/env";
 import { resolveEndpointAccess } from "@/lib/supabase/teams";
 import type { Database } from "@/lib/supabase/database";
 import {
+  getRetainedRequestsByIds,
   listRequestsAfterCursorForEndpointByUser,
   type RequestCursor,
   type RequestRecord,
@@ -15,6 +16,8 @@ export const dynamic = "force-dynamic";
 const KEEPALIVE_INTERVAL_MS = 30_000;
 const MAX_CONNECTION_DURATION_MS = 30 * 60 * 1000;
 const BACKLOG_PAGE_SIZE = 100;
+/** Signalled request ids held for the next read, at most. */
+const MAX_PENDING_SIGNALS = 1000;
 
 function createRealtimeAdminClient() {
   const env = serverEnv();
@@ -104,6 +107,11 @@ export async function GET(request: Request, { params }: { params: Promise<{ slug
       const abortSignal = request.signal;
       const supabase = createRealtimeAdminClient();
       const sentIds = new Set<string>();
+      // Request ids from signals. The receiver stamps received_at before the
+      // capture commits, so a request can commit after a newer one has
+      // already gone out, behind the cursor where the keyset read never
+      // looks; each read also fetches the signalled ids it did not send.
+      const signalled = new Set<string>();
       const afterTimestamp = since ?? connectionStart;
       // Last streamed row; reads resume strictly after it.
       let cursor: RequestCursor | null = null;
@@ -193,6 +201,15 @@ export async function GET(request: Request, { params }: { params: Promise<{ slug
               cursor = page.cursor;
               if (page.records.length < BACKLOG_PAGE_SIZE) break;
             }
+            const late = [...signalled].filter((id) => !sentIds.has(id));
+            signalled.clear();
+            if (late.length > 0 && !closed) {
+              const records = await getRetainedRequestsByIds(endpoint.id, late);
+              records
+                .filter((record) => record.receivedAt > afterTimestamp)
+                .sort((a, b) => a.receivedAt - b.receivedAt)
+                .forEach(enqueueRequest);
+            }
           } while (drainAgain && !closed);
         } catch (error) {
           reportError("Failed to read SSE stream backlog", error);
@@ -236,8 +253,12 @@ export async function GET(request: Request, { params }: { params: Promise<{ slug
       // endpoint was checked above.
       channel = supabase
         .channel(`endpoint:${endpoint.id}`, { config: { private: true } })
-        .on("broadcast", { event: "*" }, ({ event }) => {
+        .on("broadcast", { event: "*" }, ({ event, payload }) => {
           if (event === "request_created") {
+            const id = (payload as { request_id?: unknown } | undefined)?.request_id;
+            if (typeof id === "string" && signalled.size < MAX_PENDING_SIGNALS) {
+              signalled.add(id);
+            }
             void drain();
           } else if (event === "endpoint_deleted") {
             sendEndpointDeleted();
