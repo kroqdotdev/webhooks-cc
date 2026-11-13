@@ -22,8 +22,13 @@ import type { RequestCursor, RequestRecord } from "@/lib/supabase/requests";
  *    of lost signals is read in full. `recheck()` (the stream's look-back
  *    timer, every 10 s) runs only this step, which reads ids, so an idle
  *    stream costs little; an overflow or a failure asks for it at most once
- *    per `recheckIntervalMs`. A capture stamped further back than the window
- *    (an email whose MX delivery was retried) relies on its signal alone.
+ *    per `recheckIntervalMs`.
+ *
+ * Two cases rely on the signal alone, because covering them would put a
+ * full read of the window on every open stream every 10 s: a capture stamped
+ * further back than the window (an email whose MX delivery was retried), and
+ * one behind the cursor while more than `maxWindowIds` newer captures arrived
+ * within the window.
  *
  * Every row is sent once (by id), and only rows received from
  * `afterTimestamp` on (the stream's `since`, or its start). A failed read is
