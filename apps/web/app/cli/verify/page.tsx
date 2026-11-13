@@ -34,7 +34,6 @@ interface LoginRequest {
   userCode: string;
   client: string | null;
   country: string | null;
-  city: string | null;
   remote: boolean;
   network: "same" | "different" | "unknown";
   createdAt: number;
@@ -263,8 +262,7 @@ function countryName(code: string): string {
 
 function place(login: LoginRequest): string {
   if (!login.country) return "Unknown";
-  const country = countryName(login.country);
-  return login.city ? `${login.city}, ${country}` : country;
+  return countryName(login.country);
 }
 
 function ago(timestamp: number): string {

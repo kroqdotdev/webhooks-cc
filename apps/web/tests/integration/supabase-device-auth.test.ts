@@ -83,7 +83,6 @@ describe("Supabase Device Auth Integration", () => {
     const created = await createDeviceCodeRecord({
       client: "whk 1.13.0 on linux",
       country: "DK",
-      city: null,
       network: "203.0.113.0/24",
       remote: false,
     });
@@ -93,7 +92,6 @@ describe("Supabase Device Auth Integration", () => {
       userCode: created.userCode,
       client: "whk 1.13.0 on linux",
       country: "DK",
-      city: null,
       remote: false,
       network: "same",
     });

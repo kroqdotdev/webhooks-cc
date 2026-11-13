@@ -1,8 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
-
-const env = vi.hoisted(() => ({ LOCATION_CITY_HEADER: undefined as string | undefined }));
-vi.mock("@/lib/env", () => ({ serverEnv: () => env }));
-
+import { describe, expect, it } from "vitest";
 import { compareNetworks, deviceRequester } from "./device-requester";
 
 function request(headers: Record<string, string>): Request {
@@ -22,7 +18,6 @@ describe("deviceRequester", () => {
     expect(requester).toEqual({
       client: "whk 1.13.0 on linux",
       country: "DK",
-      city: null,
       network: "203.0.113.0/24",
       remote: true,
     });
@@ -43,17 +38,6 @@ describe("deviceRequester", () => {
       client: "whk\u0000 on ‮linux\n\nnow",
     });
     expect(requester.client).toBe("whk on linux now");
-  });
-
-  it("reads the city only from the header the edge is configured to set", () => {
-    const headers = { "cf-ipcountry": "DK", "x-visitor-city": "Copenhagen" };
-    expect(deviceRequester(request(headers), {}).city).toBeNull();
-    env.LOCATION_CITY_HEADER = "x-visitor-city";
-    try {
-      expect(deviceRequester(request(headers), {}).city).toBe("Copenhagen");
-    } finally {
-      env.LOCATION_CITY_HEADER = undefined;
-    }
   });
 
   it("counts an IPv6 client by its /48", () => {

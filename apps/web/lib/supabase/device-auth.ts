@@ -29,7 +29,6 @@ export interface DeviceLoginRequest {
   userCode: string;
   client: string | null;
   country: string | null;
-  city: string | null;
   remote: boolean;
   /** The approving browser's network against the requester's. */
   network: NetworkMatch;
@@ -57,14 +56,13 @@ type DeviceCodeRow = {
   user_id: string | null;
   client: string | null;
   country: string | null;
-  city: string | null;
   network: string | null;
   remote: boolean;
   created_at: string;
 };
 
 const ROW_COLUMNS =
-  "id, device_code, user_code, expires_at, status, user_id, client, country, city, network, remote, created_at";
+  "id, device_code, user_code, expires_at, status, user_id, client, country, network, remote, created_at";
 
 function isExpired(timestamp: string): boolean {
   return new Date(timestamp).getTime() < Date.now();
@@ -127,7 +125,6 @@ export async function createDeviceCodeRecord(
     expires_at: new Date(expiresAt).toISOString(),
     client: requester?.client ?? null,
     country: requester?.country ?? null,
-    city: requester?.city ?? null,
     network: requester?.network ?? null,
     remote: requester?.remote ?? false,
   });
@@ -218,7 +215,6 @@ export async function describeDeviceCode(
     userCode: code.user_code,
     client: code.client,
     country: code.country,
-    city: code.city,
     remote: code.remote,
     network: compareNetworks(code.network, approverNetwork),
     createdAt: new Date(code.created_at).getTime(),
