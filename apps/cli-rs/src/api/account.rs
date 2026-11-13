@@ -17,7 +17,7 @@ fn body(resp: super::client::ApiResponse) -> Result<Value> {
 }
 
 fn team_query(team: Option<&str>) -> String {
-    team.map(|t| format!("?team={}", urlencoding::encode(t)))
+    team.map(|t| format!("?team={}", crate::util::url::encode(t)))
         .unwrap_or_default()
 }
 
@@ -36,7 +36,7 @@ impl ApiClient {
         self.require_auth()?;
         self.delete(&format!(
             "/api/agent/registrations/{}",
-            urlencoding::encode(id)
+            crate::util::url::encode(id)
         ))
         .await?;
         Ok(())
@@ -46,7 +46,7 @@ impl ApiClient {
     pub async fn list_share_links(&self, request_id: Option<&str>) -> Result<Value> {
         self.require_auth()?;
         let path = match request_id {
-            Some(id) => format!("/api/requests/{}/shares", urlencoding::encode(id)),
+            Some(id) => format!("/api/requests/{}/shares", crate::util::url::encode(id)),
             None => "/api/request-shares".to_string(),
         };
         body(self.get(&path).await?)
@@ -61,7 +61,10 @@ impl ApiClient {
         self.require_auth()?;
         body(
             self.post(
-                &format!("/api/requests/{}/shares", urlencoding::encode(request_id)),
+                &format!(
+                    "/api/requests/{}/shares",
+                    crate::util::url::encode(request_id)
+                ),
                 &json!({ "expiresInDays": expires_in_days, "hideSensitive": hide_sensitive }),
             )
             .await?,
@@ -70,8 +73,11 @@ impl ApiClient {
 
     pub async fn revoke_share_link(&self, id: &str) -> Result<()> {
         self.require_auth()?;
-        self.delete(&format!("/api/request-shares/{}", urlencoding::encode(id)))
-            .await?;
+        self.delete(&format!(
+            "/api/request-shares/{}",
+            crate::util::url::encode(id)
+        ))
+        .await?;
         Ok(())
     }
 
@@ -100,7 +106,7 @@ impl ApiClient {
             self.post(
                 &format!(
                     "/api/domains/{}/verify{}",
-                    urlencoding::encode(id),
+                    crate::util::url::encode(id),
                     team_query(team)
                 ),
                 &json!({}),
@@ -120,7 +126,7 @@ impl ApiClient {
             self.patch(
                 &format!(
                     "/api/domains/{}{}",
-                    urlencoding::encode(id),
+                    crate::util::url::encode(id),
                     team_query(team)
                 ),
                 routing,
@@ -134,7 +140,7 @@ impl ApiClient {
         body(
             self.delete(&format!(
                 "/api/domains/{}{}",
-                urlencoding::encode(id),
+                crate::util::url::encode(id),
                 team_query(team)
             ))
             .await?,
