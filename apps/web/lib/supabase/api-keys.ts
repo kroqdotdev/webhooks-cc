@@ -66,6 +66,7 @@ export function parseKeyName(
     .replace(/[\u0000-\u001f\u007f]/g, " ")
     .replace(/\s+/g, " ")
     .trim();
+  if (!name) return { ok: false, error: "Name is required" };
   if (name.length > KEY_NAME_MAX) {
     return { ok: false, error: `Keep the name under ${KEY_NAME_MAX} characters` };
   }

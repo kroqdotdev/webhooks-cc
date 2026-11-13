@@ -951,7 +951,10 @@ export class WebhooksCC {
     method: string,
     path: string,
     body?: unknown,
-    { repeatable = IDEMPOTENT_METHODS.has(method) }: { repeatable?: boolean } = {}
+    {
+      repeatable = IDEMPOTENT_METHODS.has(method),
+      timeoutMs,
+    }: { repeatable?: boolean; timeoutMs?: number } = {}
   ): Promise<T> {
     const url = `${this.baseUrl}/api${path}`;
     let attempt = 0;
@@ -960,7 +963,10 @@ export class WebhooksCC {
     while (true) {
       attempt++;
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), this.timeout);
+      const timeoutId = setTimeout(
+        () => controller.abort(),
+        Math.min(this.timeout, timeoutMs ?? this.timeout)
+      );
       const start = Date.now();
 
       try {
@@ -1639,7 +1645,7 @@ export class WebhooksCC {
         },
         wait: {
           description:
-            "Wait until the person answers and collect the result; throws ApprovalDeniedError or ApprovalExpiredError",
+            "Wait until the person answers and collect the result; throws ApprovalDeniedError or ApprovalExpiredError (polls at least a second apart)",
           params: { id: "string", timeout: "number?", pollInterval: "number?" },
         },
       },
@@ -2013,10 +2019,13 @@ export class WebhooksCC {
   approvals = {
     /** The approval's state; once approved, the first call also carries `result`, once. */
     get: async <T = Record<string, unknown>>(
-      id: string
+      id: string,
+      options: { timeout?: number } = {}
     ): Promise<{ approval: Approval; result?: T }> => {
       validatePathSegment(id, "id");
-      return this.request<{ approval: Approval; result?: T }>("GET", `/approvals/${id}`);
+      return this.request<{ approval: Approval; result?: T }>("GET", `/approvals/${id}`, undefined, {
+        timeoutMs: options.timeout,
+      });
     },
 
     /**
@@ -2028,11 +2037,21 @@ export class WebhooksCC {
       id: string,
       options: WaitForApprovalOptions = {}
     ): Promise<T> => {
-      const interval = Math.max(500, options.pollInterval ?? 2_000);
-      const start = Date.now();
+      // At least a second apart: the poll route allows two a second.
+      const interval = Math.max(1_000, options.pollInterval ?? 2_000);
+      const deadline = options.timeout === undefined ? Infinity : Date.now() + options.timeout;
+      const timedOut = () =>
+        new TimeoutError(options.timeout ?? 0, "Timed out waiting for the approval");
       for (;;) {
         options.signal?.throwIfAborted();
-        const { approval, result } = await this.approvals.get<T>(id);
+        // A poll can collect the result, which is handed over once: never
+        // start one past the deadline, and give it only the time left, so a
+        // late answer is not collected after the caller stopped listening.
+        const left = deadline - Date.now();
+        if (left <= 0) throw timedOut();
+        const { approval, result } = await this.approvals.get<T>(id, {
+          timeout: Number.isFinite(left) ? left : undefined,
+        });
         if (approval.status === "completed") {
           if (result !== undefined) return result;
           throw new WebhooksCCError(
@@ -2042,10 +2061,9 @@ export class WebhooksCC {
         }
         if (approval.status === "denied") throw new ApprovalDeniedError(id);
         if (approval.status === "expired") throw new ApprovalExpiredError(id);
-        if (options.timeout !== undefined && Date.now() - start >= options.timeout) {
-          throw new TimeoutError(options.timeout, "Timed out waiting for the approval");
-        }
-        await sleep(interval);
+        const remaining = deadline - Date.now();
+        if (remaining <= 0) throw timedOut();
+        await sleep(Math.min(interval, remaining));
       }
     },
   };

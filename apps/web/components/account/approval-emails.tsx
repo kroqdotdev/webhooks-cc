@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { SwitchRow } from "@/components/dashboard/settings-primitives";
 import { InlineMessage, Panel } from "@/components/settings/panel";
 import { createClient } from "@/lib/supabase/client";
@@ -21,15 +21,25 @@ export function ApprovalEmails({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
+  const [loadFailed, setLoadFailed] = useState(false);
+
+  // The switch stays off-limits until the stored value is known: showing
+  // "off" after a failed read would misstate a setting that is on.
+  const load = useCallback(() => {
     if (!userId) return;
+    setLoadFailed(false);
     createClient()
       .from("users")
       .select("approval_emails")
       .eq("id", userId)
       .single<{ approval_emails: boolean }>()
-      .then(({ data }) => setEnabled(data?.approval_emails ?? false));
+      .then(({ data, error: readError }) => {
+        if (readError || !data) setLoadFailed(true);
+        else setEnabled(data.approval_emails);
+      });
   }, [userId]);
+
+  useEffect(() => load(), [load]);
 
   const change = async (next: boolean) => {
     if (!accessToken) return;
@@ -66,6 +76,14 @@ export function ApprovalEmails({
         onChange={(next) => void change(next)}
       />
       {error && <InlineMessage tone="error">{error}</InlineMessage>}
+      {loadFailed && (
+        <InlineMessage tone="error">
+          Could not read this setting.{" "}
+          <button type="button" className="underline" onClick={load}>
+            Try again
+          </button>
+        </InlineMessage>
+      )}
     </Panel>
   );
 }

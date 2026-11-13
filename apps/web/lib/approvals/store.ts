@@ -211,6 +211,43 @@ export async function reviewApproval(
   };
 }
 
+/**
+ * Takes back an approval the owner gave by mistake, while its asker has not
+ * collected it yet (its key does not exist until then). Once collected,
+ * there is nothing to withdraw: the key is revoked instead.
+ */
+export async function withdrawApproval(
+  code: string,
+  userId: string
+): Promise<{ id: string; action: ApprovalAction; collected: boolean }> {
+  const admin = createAdminClient();
+  const { data, error } = await admin
+    .from("approvals")
+    .select(COLUMNS)
+    .eq("user_code", code.trim().toUpperCase())
+    .maybeSingle();
+  if (error) throw error;
+  const row = data as Row | null;
+  if (!row) throw new ApprovalError(400, "This code has expired or was already answered.");
+  if (row.user_id !== userId) throw new ApprovalError(403, OTHER_ACCOUNT);
+  if (row.status === "completed") return { id: row.id, action: row.action, collected: true };
+  const { data: updated, error: updateError } = await admin
+    .from("approvals")
+    .update({ status: "denied" })
+    .eq("id", row.id)
+    .eq("status", "approved")
+    .select("id")
+    .maybeSingle();
+  if (updateError) throw updateError;
+  if (!updated) {
+    // Collected in the meantime, or never approved.
+    const { data: now } = await admin.from("approvals").select("status").eq("id", row.id).single();
+    if (now?.status === "completed") return { id: row.id, action: row.action, collected: true };
+    throw new ApprovalError(400, "Only an approved request can be withdrawn.");
+  }
+  return { id: row.id, action: row.action, collected: false };
+}
+
 /** The person's answer. Approving starts the asker's window to collect. */
 export async function decideApproval(
   code: string,

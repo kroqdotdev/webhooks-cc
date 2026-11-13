@@ -15,7 +15,8 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
  * registration that asked gets an answer; anyone else gets 404.
  */
 export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
-  const rateLimited = await checkRateLimit(request, "approval-poll", 60);
+  // Two a second at most: the SDK polls at least a second apart.
+  const rateLimited = await checkRateLimit(request, "approval-poll", 120);
   if (rateLimited) return rateLimited;
 
   const auth = await authenticateRequestRequireUser(request);

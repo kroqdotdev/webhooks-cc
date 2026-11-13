@@ -56,7 +56,7 @@ describe("apiKeys and approvals", () => {
     const pending = await client().apiKeys.create({ name: "CI", expiresInDays: 30 });
     expect(pending.url).toBe("https://webhooks.cc/approve?code=ABCD-EFGH");
     expect(pending.code).toBe("ABCD-EFGH");
-    expect(await pending.wait({ pollInterval: 500 })).toEqual(created);
+    expect(await pending.wait({ pollInterval: 1_000 })).toEqual(created);
 
     expect(fetchMock.mock.calls[0][0]).toBe(`${BASE_URL}/api/api-keys`);
     expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({ name: "CI", expiresInDays: 30 });
@@ -75,6 +75,13 @@ describe("apiKeys and approvals", () => {
     await expect(client().approvals.wait(ID, { timeout: 0 })).rejects.toThrow(
       "Timed out waiting for the approval"
     );
+  });
+
+  it("never polls past its deadline, since a poll may collect the result", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(answer({ approval: approval("pending") }));
+    globalThis.fetch = fetchMock;
+    await expect(client().approvals.wait(ID, { timeout: 0 })).rejects.toThrow("Timed out");
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it("refuses to hand over a result twice", async () => {

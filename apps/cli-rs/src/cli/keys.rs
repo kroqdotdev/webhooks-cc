@@ -151,8 +151,19 @@ fn show_approval(approval: &Approval, raw: &Value, remote: bool, no_browser: boo
 
 /// Polls the approval until the person answers, then prints what it granted.
 async fn collect(client: &ApiClient, id: &str, deadline: Instant, json: bool) -> Result<()> {
+    use anyhow::Context;
     loop {
-        let answer = client.get_approval(id).await?;
+        // A poll may collect the result, which is handed over once: never
+        // start one past the deadline.
+        if Instant::now() >= deadline {
+            return Err(CliError::Timeout(format!(
+                "Not answered yet. Run `whk approvals wait {id}` to keep waiting."
+            ))
+            .into());
+        }
+        let answer = client.get_approval(id).await.with_context(|| {
+            format!("could not check approval {id}; run `whk approvals wait {id}` to try again")
+        })?;
         let ApprovalAnswer { approval, result } = &answer.value;
         match approval.status.as_str() {
             "completed" => {
@@ -170,13 +181,8 @@ async fn collect(client: &ApiClient, id: &str, deadline: Instant, json: bool) ->
             "expired" => return Err(CliError::ApprovalExpired.into()),
             _ => {}
         }
-        if Instant::now() >= deadline {
-            return Err(CliError::Timeout(format!(
-                "Not answered yet. Run `whk approvals wait {id}` to keep waiting."
-            ))
-            .into());
-        }
-        tokio::time::sleep(POLL_EVERY).await;
+        let left = deadline.saturating_duration_since(Instant::now());
+        tokio::time::sleep(POLL_EVERY.min(left)).await;
     }
 }
 

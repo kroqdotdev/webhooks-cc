@@ -7,6 +7,7 @@ import {
   MAX_PENDING_APPROVALS,
   pollApproval,
   reviewApproval,
+  withdrawApproval,
 } from "@/lib/approvals/store";
 import { generateApiKey, hashApiKey } from "@/lib/supabase/api-keys";
 
@@ -136,6 +137,23 @@ describe("approvals", () => {
       "expired"
     );
     expect(await reviewApproval(late.code, owner, null)).toBeNull();
+  });
+
+  it("lets the owner withdraw an approval until it is collected", async () => {
+    const first = (await ask()).approval;
+    await decideApproval(first.code, owner, true);
+    expect(await withdrawApproval(first.code, owner)).toMatchObject({ collected: false });
+    expect((await pollApproval(first.id, { userId: owner, keyId }))?.approval.status).toBe(
+      "denied"
+    );
+
+    const second = (await ask()).approval;
+    await decideApproval(second.code, owner, true);
+    const collected = await pollApproval(second.id, { userId: owner, keyId });
+    expect(await withdrawApproval(second.code, owner)).toMatchObject({ collected: true });
+    await expect(withdrawApproval(second.code, other)).rejects.toMatchObject({ status: 403 });
+    const prefix = (collected?.result as { keyPrefix: string }).keyPrefix;
+    await admin.from("api_keys").delete().eq("key_prefix", prefix);
   });
 
   it("caps the approvals an account may have waiting", async () => {

@@ -47,7 +47,9 @@ type Phase =
   | { kind: "enter" }
   | { kind: "loading" }
   | { kind: "review"; review: Review }
-  | { kind: "approved" }
+  | { kind: "approved"; code: string }
+  | { kind: "withdrawn" }
+  | { kind: "collected" }
   | { kind: "denied" }
   | { kind: "gone"; message: string }
   | { kind: "failed"; message: string };
@@ -112,7 +114,26 @@ function ApproveContent() {
       });
       const result = (await response.json()) as { error?: string };
       if (!response.ok) throw new Error(result.error || "That did not work. Try again.");
-      setPhase({ kind: approve ? "approved" : "denied" });
+      setPhase(approve ? { kind: "approved", code: userCode } : { kind: "denied" });
+    } catch (err) {
+      setProblem(err instanceof Error ? err.message : "That did not work. Try again.");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const withdraw = async (userCode: string) => {
+    setSubmitting(true);
+    setProblem(null);
+    try {
+      const response = await fetch("/api/approvals/decide", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ code: userCode, decision: "withdraw" }),
+      });
+      const result = (await response.json()) as { status?: string; error?: string };
+      if (!response.ok) throw new Error(result.error || "That did not work. Try again.");
+      setPhase({ kind: result.status === "collected" ? "collected" : "withdrawn" });
     } catch (err) {
       setProblem(err instanceof Error ? err.message : "That did not work. Try again.");
     } finally {
@@ -148,13 +169,40 @@ function ApproveContent() {
           )}
 
           {phase.kind === "approved" && (
-            <Notice title="Approved">
-              Whoever asked can now collect it. You can close this page. If that was a mistake,
-              revoke the key under{" "}
+            <div className="text-center">
+              <h1 className="text-2xl font-bold mb-3">Approved</h1>
+              <p className="text-muted-foreground mb-6">
+                Whoever asked can now collect it, within 15 minutes. Approved by mistake? Withdraw
+                it now, before it is collected.
+              </p>
+              {problem && (
+                <p className="text-sm text-destructive-ink mb-4" role="alert">
+                  {problem}
+                </p>
+              )}
+              <Button
+                variant="surface"
+                disabled={submitting}
+                onClick={() => void withdraw(phase.code)}
+              >
+                Withdraw
+              </Button>
+            </div>
+          )}
+
+          {phase.kind === "withdrawn" && (
+            <Notice title="Withdrawn">
+              Whoever asked gets nothing, and the code no longer works.
+            </Notice>
+          )}
+
+          {phase.kind === "collected" && (
+            <Notice title="Already collected">
+              The key was already handed over, so there is nothing left to withdraw. Revoke it under{" "}
               <Link href="/account/api-keys" className="text-primary underline">
                 API keys
               </Link>
-              .
+              ; anything using it stops working at once.
             </Notice>
           )}
 

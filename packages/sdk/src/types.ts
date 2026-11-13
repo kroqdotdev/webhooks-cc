@@ -1840,7 +1840,7 @@ export interface PendingApproval<T> extends Approval {
 export interface WaitForApprovalOptions {
   /** Give up after this many milliseconds (default: until the approval expires). */
   timeout?: number;
-  /** Milliseconds between polls (default 2000, at least 500). */
+  /** Milliseconds between polls (default 2000, at least 1000). */
   pollInterval?: number;
   signal?: AbortSignal;
 }

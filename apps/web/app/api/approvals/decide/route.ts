@@ -1,14 +1,16 @@
 import { auditUserAction } from "@/lib/audit";
 import { deviceApprover } from "@/lib/device-session";
-import { ApprovalError, decideApproval } from "@/lib/approvals/store";
+import { ApprovalError, decideApproval, withdrawApproval } from "@/lib/approvals/store";
 import { reportError } from "@/lib/observability";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { parseJsonBody } from "@/lib/request-validation";
 
 /**
- * POST /api/approvals/decide { code, decision: "approve" | "deny" }: the
- * person's answer on the approval page, from a browser session of the
+ * POST /api/approvals/decide { code, decision: "approve" | "deny" | "withdraw" }:
+ * the person's answer on the approval page, from a browser session of the
  * account the approval is for (past two-factor sign-in when it has one).
+ * "withdraw" takes back an approval its asker has not collected yet; the
+ * answer says "collected" when it already was (revoke the key instead).
  */
 export async function POST(request: Request) {
   const rateLimited = await checkRateLimit(request, "approval-decide", 10);
@@ -17,14 +19,35 @@ export async function POST(request: Request) {
   const parsed = await parseJsonBody(request, 1024);
   if ("error" in parsed) return parsed.error;
   const body = parsed.data as Record<string, unknown>;
-  if (typeof body.code !== "string" || (body.decision !== "approve" && body.decision !== "deny")) {
-    return Response.json({ error: 'Send { code, decision: "approve" | "deny" }' }, { status: 400 });
+  const decision = body.decision;
+  if (
+    typeof body.code !== "string" ||
+    (decision !== "approve" && decision !== "deny" && decision !== "withdraw")
+  ) {
+    return Response.json(
+      { error: 'Send { code, decision: "approve" | "deny" | "withdraw" }' },
+      { status: 400 }
+    );
   }
 
   try {
     const approver = await deviceApprover();
     if ("error" in approver) return approver.error;
-    const approve = body.decision === "approve";
+
+    if (decision === "withdraw") {
+      const withdrawn = await withdrawApproval(body.code, approver.userId);
+      if (!withdrawn.collected) {
+        await auditUserAction(request, approver.userId, {
+          action: "approval.denied",
+          status: 200,
+          targetId: withdrawn.id,
+          metadata: { action: withdrawn.action, withdrawn: true },
+        });
+      }
+      return Response.json({ status: withdrawn.collected ? "collected" : "withdrawn" });
+    }
+
+    const approve = decision === "approve";
     const decided = await decideApproval(body.code, approver.userId, approve);
     await auditUserAction(request, approver.userId, {
       action: approve ? "approval.approved" : "approval.denied",
