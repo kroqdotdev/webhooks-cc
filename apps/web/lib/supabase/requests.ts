@@ -595,25 +595,21 @@ export async function getStreamRequestsByIds(
 }
 
 /**
- * The ids of an endpoint's retained requests received after `fromMs` and up
- * to `to` (a stored received_at, inclusive): the live stream's look-back for
- * a capture that committed behind its cursor. Ids only, the newest `limit`.
+ * The ids of an endpoint's retained requests received after `fromMs`, newest
+ * first, at most `limit`: the live stream's look-back for a capture whose
+ * signal it never got (behind its cursor or ahead of it). Ids only.
  */
-export async function listStreamRequestIdsInWindow(
+export async function listStreamRequestIdsSince(
   endpointId: string,
   fromMs: number,
-  to: string,
   limit: number
 ): Promise<string[]> {
   const query = createAdminClient()
     .from("requests")
     .select("id")
     .eq("endpoint_id", endpointId)
-    .gt("received_at", new Date(fromMs).toISOString())
-    .lte("received_at", to);
+    .gt("received_at", new Date(fromMs).toISOString());
   await applyRequestRetention(query, endpointId);
-  // Newest first: a capture that committed late is most likely just behind
-  // the cursor, so the cap leaves out the oldest of the window.
   const { data, error } = await query
     .order("received_at", { ascending: false })
     .limit(limit)

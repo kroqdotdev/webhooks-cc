@@ -5,7 +5,7 @@ import type { Database } from "@/lib/supabase/database";
 import {
   getStreamRequestsByIds,
   listRequestsAfterCursorForEndpointByUser,
-  listStreamRequestIdsInWindow,
+  listStreamRequestIdsSince,
   type RequestRecord,
 } from "@/lib/supabase/requests";
 import { createStreamDrainer } from "@/lib/stream/drainer";
@@ -179,8 +179,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ slug
             limit,
           }),
         readByIds: (ids) => getStreamRequestsByIds(endpoint.id, ids),
-        readIdsInWindow: (from, to, limit) =>
-          listStreamRequestIdsInWindow(endpoint.id, from, to, limit),
+        readIdsSince: (from, limit) => listStreamRequestIdsSince(endpoint.id, from, limit),
         send: enqueueRequest,
         gone: sendEndpointDeleted,
         isClosed: () => closed,

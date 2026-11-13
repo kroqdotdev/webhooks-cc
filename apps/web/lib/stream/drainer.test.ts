@@ -14,7 +14,7 @@ function fakeStore() {
   };
   let failByIds = 0;
   let gone = false;
-  const calls = { byIds: [] as string[][], window: 0 };
+  const calls = { byIds: [] as string[][], window: 0, forward: 0 };
   return {
     insert(id: string, at: number) {
       rows.push({ id, at });
@@ -36,6 +36,7 @@ function fakeStore() {
         pageSize: 2,
         lateWindowMs: 60_000,
         readAfter: async ({ after: since, cursor, limit }) => {
+          calls.forward += 1;
           if (gone) return null;
           const page = rows
             .filter((row) => (cursor ? after(row, cursor) : row.at > since))
@@ -55,11 +56,10 @@ function fakeStore() {
           }
           return rows.filter((row) => ids.includes(row.id)).map(record);
         },
-        readIdsInWindow: async (from, to, limit) => {
+        readIdsSince: async (from, limit) => {
           calls.window += 1;
-          const until = Date.parse(to);
           return rows
-            .filter((row) => row.at > from && row.at <= until)
+            .filter((row) => row.at > from)
             .sort((a, b) => b.at - a.at)
             .slice(0, limit)
             .map((row) => row.id);
@@ -252,6 +252,72 @@ describe("createStreamDrainer", () => {
     expect(store.calls.byIds).toEqual([]);
     // A failed fetch asked for a look-back too.
     expect(store.calls.window).toBeGreaterThan(0);
+  });
+
+  it("finds a new request whose signal was lost on an idle stream, reading ids only", async () => {
+    const store = fakeStore();
+    store.insert("a", 1_000);
+    const { deps, sent } = store.deps();
+    const drainer = createStreamDrainer(deps);
+    await drainer.drain();
+    // Ahead of the cursor, but no signal came and none follows.
+    store.insert("b", 2_000);
+    store.calls.forward = 0;
+    drainer.recheck();
+    await drainer.drain().catch(() => undefined);
+    expect(sent).toEqual(["a", "b"]);
+  });
+
+  it("a recheck alone does not read forward", async () => {
+    const store = fakeStore();
+    store.insert("a", 1_000);
+    const { deps } = store.deps();
+    const drainer = createStreamDrainer(deps);
+    await drainer.drain();
+    store.calls.forward = 0;
+    drainer.recheck();
+    // Let the recheck's pass finish without starting another.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(store.calls.forward).toBe(0);
+    expect(store.calls.window).toBeGreaterThan(0);
+  });
+
+  it("backs off while reads keep failing, and resets after a clean pass", async () => {
+    const store = fakeStore();
+    store.insert("a", 1_000);
+    const delays: number[] = [];
+    const retries: (() => void)[] = [];
+    let failing = true;
+    const { deps } = store.deps({
+      retryDelayMs: 1_000,
+      maxRetryDelayMs: 4_000,
+      schedule: (run, ms) => {
+        delays.push(ms);
+        retries.push(run);
+      },
+    });
+    const readAfter = deps.readAfter;
+    deps.readAfter = async (input) => {
+      if (failing) throw new Error("down");
+      return readAfter(input);
+    };
+    const drainer = createStreamDrainer(deps);
+    await drainer.drain();
+    await drainer.drain(); // one retry pending at a time
+    expect(delays).toEqual([1_000]);
+    // Each retry that fails again waits twice as long, up to the maximum.
+    for (let i = 0; i < 3; i++) {
+      retries.shift()!();
+      await drainer.drain();
+    }
+    expect(delays).toEqual([1_000, 2_000, 4_000, 4_000]);
+    // A clean pass resets it.
+    failing = false;
+    retries.shift()!();
+    await drainer.drain();
+    failing = true;
+    await drainer.drain();
+    expect(delays.at(-1)).toBe(1_000);
   });
 
   it("leaves out rows from before the start", async () => {

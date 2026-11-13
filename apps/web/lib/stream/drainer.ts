@@ -13,18 +13,20 @@ import type { RequestCursor, RequestRecord } from "@/lib/supabase/requests";
  *    newer one has gone out, behind the cursor where step 1 never looks. Ids
  *    are fetched in chunks and stay pending until their fetch succeeds, for
  *    a few tries.
- * 3. A look-back: the ids received in the last `lateWindowMs` up to the
- *    cursor, and the full rows of those not sent yet, for a capture behind
- *    the cursor whose signal Realtime dropped (at its rate limit) or this
- *    stream could not hold. It runs on every `recheck()` (the stream's
- *    look-back timer, every 10 s), and at most once per `recheckIntervalMs`
- *    for an overflow or a failed read. A capture stamped further back than
- *    the window (an email whose MX delivery was retried) relies on its
- *    signal alone.
+ * 3. A look-back: the ids received from `lateWindowMs` before the cursor
+ *    on (from the start before anything was sent), newest first, and the
+ *    full rows of those not sent yet. It finds a capture whose signal
+ *    Realtime dropped (at its rate limit) or this stream could not hold,
+ *    behind the cursor or ahead of it. `recheck()` (the stream's look-back
+ *    timer, every 10 s) runs only this step, which reads ids, so an idle
+ *    stream costs little; an overflow or a failure asks for it at most once
+ *    per `recheckIntervalMs`. A capture stamped further back than the window
+ *    (an email whose MX delivery was retried) relies on its signal alone.
  *
  * Every row is sent once (by id), and only rows received from
  * `afterTimestamp` on (the stream's `since`, or its start). A failed read is
- * tried again after `retryDelayMs`.
+ * tried again after `retryDelayMs`, doubling up to `maxRetryDelayMs` while
+ * reads keep failing.
  */
 export interface StreamDrainerDeps {
   afterTimestamp: number;
@@ -36,8 +38,8 @@ export interface StreamDrainerDeps {
   }): Promise<{ records: RequestRecord[]; cursor: RequestCursor | null } | null>;
   /** The endpoint's retained rows among `ids`. */
   readByIds(ids: string[]): Promise<RequestRecord[]>;
-  /** Ids received after `from` (ms) and up to `to` (a stored received_at), at most `limit`. */
-  readIdsInWindow(from: number, to: string, limit: number): Promise<string[]>;
+  /** Ids received after `from` (ms), newest first, at most `limit`. */
+  readIdsSince(from: number, limit: number): Promise<string[]>;
   send(record: RequestRecord): void;
   /** The endpoint was deleted. */
   gone(): void;
@@ -49,6 +51,7 @@ export interface StreamDrainerDeps {
   lateWindowMs?: number;
   recheckIntervalMs?: number;
   retryDelayMs?: number;
+  maxRetryDelayMs?: number;
   maxPendingSignals?: number;
   idChunkSize?: number;
   maxWindowIds?: number;
@@ -69,6 +72,7 @@ export function createStreamDrainer(deps: StreamDrainerDeps): StreamDrainer {
   const lateWindowMs = deps.lateWindowMs ?? 60_000;
   const recheckIntervalMs = deps.recheckIntervalMs ?? 30_000;
   const retryDelayMs = deps.retryDelayMs ?? 2_000;
+  const maxRetryDelayMs = deps.maxRetryDelayMs ?? 30_000;
   const maxPending = deps.maxPendingSignals ?? 1000;
   const idChunkSize = deps.idChunkSize ?? 100;
   const maxWindowIds = deps.maxWindowIds ?? 5_000;
@@ -87,6 +91,10 @@ export function createStreamDrainer(deps: StreamDrainerDeps): StreamDrainer {
   let recheckWanted = false;
   let lastRecheck = Number.NEGATIVE_INFINITY;
   let retryScheduled = false;
+  let retryDelay = retryDelayMs;
+  let passFailed = false;
+  // A signal or a drain() wants the forward read; a recheck() only looks back.
+  let forwardWanted = false;
   let running: Promise<void> | null = null;
   let again = false;
 
@@ -102,13 +110,16 @@ export function createStreamDrainer(deps: StreamDrainerDeps): StreamDrainer {
 
   const failed = (error: unknown) => {
     recheckWanted = true;
+    passFailed = true;
     deps.onError(error);
     if (!retryScheduled && !deps.isClosed()) {
       retryScheduled = true;
+      const delay = retryDelay;
+      retryDelay = Math.min(retryDelay * 2, maxRetryDelayMs);
       schedule(() => {
         retryScheduled = false;
         void drain();
-      }, retryDelayMs);
+      }, delay);
     }
   };
 
@@ -153,7 +164,7 @@ export function createStreamDrainer(deps: StreamDrainerDeps): StreamDrainer {
     }
   };
 
-  /** The look-back: ids behind the cursor, within the window, not sent yet. */
+  /** The look-back: ids from the window on, not sent yet. */
   const lookBack = async () => {
     const at = now();
     const due = recheckForced || (recheckWanted && at - lastRecheck >= recheckIntervalMs);
@@ -161,28 +172,34 @@ export function createStreamDrainer(deps: StreamDrainerDeps): StreamDrainer {
     recheckForced = false;
     recheckWanted = false;
     lastRecheck = at;
-    if (!cursor) return; // Nothing behind a cursor yet: the forward read covers it all.
-    const newest = Date.parse(cursor.receivedAt);
-    const from = Math.max(deps.afterTimestamp, newest - lateWindowMs);
-    const ids = await deps.readIdsInWindow(from, cursor.receivedAt, maxWindowIds);
+    const from = cursor
+      ? Math.max(deps.afterTimestamp, Date.parse(cursor.receivedAt) - lateWindowMs)
+      : deps.afterTimestamp;
+    // Rows older than the window are never read again but by a signal for
+    // a new id, so their ids need not be kept; pruned first, so a read that
+    // keeps failing cannot let them pile up.
+    for (const [id, receivedAt] of sent) {
+      if (receivedAt < from) sent.delete(id);
+    }
+    const ids = await deps.readIdsSince(from, maxWindowIds);
     for (const id of ids) {
       if (!sent.has(id) && !pending.has(id)) pending.set(id, 0);
     }
     await fetchPending();
-    // Rows older than the window are never read again but by a signal for
-    // a new id, so their ids need not be kept.
-    for (const [id, receivedAt] of sent) {
-      if (receivedAt < from) sent.delete(id);
-    }
   };
 
   const run = async (): Promise<void> => {
     do {
       again = false;
-      try {
-        if (!(await readForward())) return;
-      } catch (error) {
-        failed(error);
+      passFailed = false;
+      if (forwardWanted) {
+        forwardWanted = false;
+        try {
+          if (!(await readForward())) return;
+        } catch (error) {
+          forwardWanted = true;
+          failed(error);
+        }
       }
       await fetchPending();
       try {
@@ -190,10 +207,11 @@ export function createStreamDrainer(deps: StreamDrainerDeps): StreamDrainer {
       } catch (error) {
         failed(error);
       }
+      if (!passFailed) retryDelay = retryDelayMs;
     } while (again && !deps.isClosed());
   };
 
-  const drain = (): Promise<void> => {
+  const start = (): Promise<void> => {
     if (running) {
       again = true;
       return running;
@@ -202,6 +220,11 @@ export function createStreamDrainer(deps: StreamDrainerDeps): StreamDrainer {
       running = null;
     });
     return running;
+  };
+
+  const drain = (): Promise<void> => {
+    forwardWanted = true;
+    return start();
   };
 
   return {
@@ -217,7 +240,7 @@ export function createStreamDrainer(deps: StreamDrainerDeps): StreamDrainer {
     },
     recheck() {
       recheckForced = true;
-      void drain();
+      void start();
     },
     drain,
   };
