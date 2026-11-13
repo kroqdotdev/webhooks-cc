@@ -263,7 +263,9 @@ function Review(props: {
   onDeny: () => void;
 }) {
   const { login } = props;
-  const elsewhere = login.network === "different" && !login.remote;
+  // The warning never depends on `remote`: the requester sets that flag, and
+  // a phisher would set it to make the warning go away. It only adds context.
+  const elsewhere = login.network === "different";
 
   return (
     <div>
@@ -309,20 +311,19 @@ function Review(props: {
         </div>
       </Card>
 
-      {elsewhere ? (
+      {elsewhere && (
         <div
           className="text-sm text-destructive-ink bg-destructive/10 border border-destructive/40 rounded-md p-3 mb-4"
           role="alert"
         >
-          This login was started on a different network from this browser. Approve it only if you
-          started it yourself, just now, on another machine.
+          This login was started on a different network from this browser.
+          {login.remote
+            ? " Its terminal says it runs on another machine, such as a server you reach over SSH. "
+            : " "}
+          Approve it only if you started it yourself, just now. If someone sent you this link,
+          choose This wasn&apos;t me.
         </div>
-      ) : login.remote ? (
-        <p className="text-sm text-muted-foreground mb-4">
-          It was started with <code className="font-mono">--remote</code>, on another machine such
-          as a server you reach over SSH, so a different network is expected.
-        </p>
-      ) : null}
+      )}
 
       <p className="text-sm text-muted-foreground mb-6">
         Approving gives that terminal an API key with access to your account for 90 days. You can
