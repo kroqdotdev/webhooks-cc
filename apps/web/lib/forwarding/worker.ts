@@ -26,6 +26,7 @@ import {
 import { retryDelaySeconds } from "./schedule";
 import { sendOptions } from "./config";
 import { resolveFormat, type ForwardFormat } from "./format";
+import { inQueueOrder } from "./queue-order";
 import { decryptOwnerHeaders } from "./owner-headers";
 import { buildRelay, isoMillis, requestBodyBytes, type Outgoing } from "./relay";
 import { buildRequestJson } from "./request-json";
@@ -631,7 +632,7 @@ async function admitBatch(
   fail: (target: Claim, error: string, retry: boolean) => Promise<void>,
   onItem: (item: BatchItem) => Promise<void>
 ): Promise<void> {
-  const extra = more.filter((row) => row.delivery_id !== claim.delivery_id);
+  const extra = inQueueOrder(more.filter((row) => row.delivery_id !== claim.delivery_id));
   const fields = storedEmailFields(claim.email_fields);
   const admit = async (itemClaim: Claim, itemRequest: RequestRecord | undefined) => {
     try {
