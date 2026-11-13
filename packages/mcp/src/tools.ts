@@ -2060,7 +2060,12 @@ export function registerTools(
     "get_billing",
     "What the account pays for: the plan and its subscription (status, monthly or annual, when it renews, a pending change, whether it cancels at the period's end), the add-ons (extra requests, parsed pages, domains), and every team's subscription and add-ons. Read only: changing a plan, seats or add-ons takes the person in a browser.",
     {},
-    withErrorHandling(async () => jsonContent(await client.billing.get()))
+    withErrorHandling(async () => {
+      // An account in many teams could pass the output budget: trim the
+      // teams, so the answer stays JSON and says it was cut.
+      const billing = (await client.billing.get()) as unknown as Record<string, unknown>;
+      return jsonContent(fitArrayField(billing, "teams"));
+    })
   );
 
   server.tool(

@@ -575,6 +575,19 @@ export interface Team {
   periodEnd: number | null;
   /** True when the subscription ends at the current period end */
   cancelAtPeriodEnd: boolean;
+  /** Requests monthly blocks add to requestLimit this period */
+  blockRequests?: number;
+  /** True on Team Business: Business's limits per seat */
+  business?: boolean;
+  /** The subscription's interval; null when unsubscribed */
+  billingInterval?: "month" | "year" | null;
+  /** A plan change waiting for the renewal, or null */
+  pendingPlan?: "team" | "team_business" | null;
+  pendingInterval?: "month" | "year" | null;
+  /** When the subscription renews (ms): the year's end on annual billing; null when unsubscribed */
+  billingPeriodEnd?: number | null;
+  /** Seat count a scheduled reduction applies at the next renewal; null when none */
+  pendingSeats?: number | null;
 }
 
 /** A member of a team. */
@@ -1863,6 +1876,25 @@ export interface CapacityState {
   planEnding: boolean;
   periodStart: string | null;
   periodEnd: string | null;
+  /** Monthly blocks: units this period and what the renewal brings; null when none */
+  blocks?: {
+    units: number;
+    pendingUnits: number | null;
+    cancelAtPeriodEnd: boolean;
+    pastDue: boolean;
+    periodEnd: string | null;
+  } | null;
+  /** One-time blocks left, in the resource's units */
+  creditRequests?: number;
+  /** Metered overage */
+  overage?: {
+    subscribed: boolean;
+    active: boolean;
+    cancelAtPeriodEnd: boolean;
+    pastDue: boolean;
+    maxRequests: number;
+    usedRequests: number;
+  };
   [field: string]: unknown;
 }
 
