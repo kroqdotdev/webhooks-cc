@@ -1,0 +1,9 @@
+{
+  "title": "Approving a CLI login without typing its code",
+  "items": [
+    "whk auth login opens a page that already holds the code: check that it matches your terminal, and approve",
+    "The page says which client asked, from which country, and warns when the login came from another network than your browser",
+    "This wasn't me ends a login you did not start, at once",
+    "On a server over SSH, whk auth login prints the link to open in your own browser (--remote, detected by itself)"
+  ]
+}

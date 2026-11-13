@@ -61,7 +61,7 @@ Exit status:
   1  any other failure, or the server refused the input (bad_request)
   2  bad arguments (usage)
   3  not logged in, or the credentials were refused (not_logged_in, unauthorized,
-     connection_revoked, login_expired)
+     connection_revoked, login_expired, login_denied)
   4  not found (not_found)
   5  not allowed by the plan, a limit or a permission (forbidden)
   6  rate limited; wait and retry (rate_limited)
@@ -466,7 +466,16 @@ pub enum NamesAction {
 #[derive(Subcommand, Debug)]
 pub enum AuthAction {
     /// Log in via browser-based device auth
-    Login,
+    Login {
+        /// This machine is not the one with your browser (a server over SSH, a
+        /// container): print the link to open elsewhere, never open a browser.
+        /// Detected over SSH and on Linux without a display.
+        #[arg(long)]
+        remote: bool,
+        /// Print the link without opening a browser
+        #[arg(long)]
+        no_browser: bool,
+    },
     /// Show current login status
     Status,
     /// Log out and clear stored token

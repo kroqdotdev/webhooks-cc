@@ -33,7 +33,7 @@ Running `whk` on its own prints the list of commands. Every command is a plain s
 whk auth login
 ```
 
-Opens your browser to verify a device code. Credentials are stored at `~/.config/whk/token.json`. With `--json`, the first line carries `user_code` and `verification_url`, so a program can show them to whoever approves the login.
+Opens a page in your browser that shows the login's code: check that it matches the code in your terminal, and approve. Credentials are stored at `~/.config/whk/token.json`. On another machine (a server over SSH, a container), `whk` prints the link to open in your own browser instead; it notices SSH and Linux without a display by itself, and `--remote` says so outright. With `--json`, the first line carries `user_code` and `verification_url_complete` (the page with the code in it), so a program can show the link to whoever approves the login.
 
 ### Forward to localhost
 
@@ -74,7 +74,7 @@ Puts your local site at a public link on sharehooks.cc, for showing work in prog
 | 0 | | Success |
 | 1 | `error`, `bad_request` | Any other failure, or the server refused the input |
 | 2 | `usage` | Bad arguments |
-| 3 | `not_logged_in`, `unauthorized`, `connection_revoked`, `login_expired` | No credentials, they were refused, an agent's connection was revoked, or a login code expired |
+| 3 | `not_logged_in`, `unauthorized`, `connection_revoked`, `login_expired`, `login_denied` | No credentials, they were refused, an agent's connection was revoked, or a login code expired or was refused on its page |
 | 4 | `not_found` | No such endpoint, request, team or share |
 | 5 | `forbidden` | Not allowed by the plan, a limit or a permission |
 | 6 | `rate_limited` | Too many requests: wait and retry |

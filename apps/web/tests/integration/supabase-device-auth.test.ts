@@ -4,6 +4,8 @@ import {
   authorizeDeviceCodeForUser,
   claimDeviceCode,
   createDeviceCodeRecord,
+  denyDeviceCode,
+  describeDeviceCode,
   DEVICE_AUTH_KEY_NAME,
   pollDeviceCodeStatus,
 } from "@/lib/supabase/device-auth";
@@ -75,6 +77,62 @@ describe("Supabase Device Auth Integration", () => {
 
     const afterClaim = await pollDeviceCodeStatus(created.deviceCode);
     expect(afterClaim).toEqual({ status: "expired" });
+  });
+
+  it("describes a pending login for its approval page", async () => {
+    const created = await createDeviceCodeRecord({
+      client: "whk 1.13.0 on linux",
+      country: "DK",
+      city: null,
+      network: "203.0.113.0/24",
+      remote: false,
+    });
+
+    const sameNetwork = await describeDeviceCode(created.userCode, "203.0.113.0/24");
+    expect(sameNetwork).toMatchObject({
+      userCode: created.userCode,
+      client: "whk 1.13.0 on linux",
+      country: "DK",
+      city: null,
+      remote: false,
+      network: "same",
+    });
+    expect(sameNetwork!.expiresAt).toBe(created.expiresAt);
+    // Lower case as typed finds it too.
+    expect((await describeDeviceCode(created.userCode.toLowerCase(), null))?.network).toBe(
+      "unknown"
+    );
+    expect((await describeDeviceCode(created.userCode, "198.51.100.0/24"))?.network).toBe(
+      "different"
+    );
+
+    await authorizeDeviceCodeForUser(testUserId, created.userCode);
+    // Answered: the page has nothing left to show.
+    expect(await describeDeviceCode(created.userCode, null)).toBeNull();
+    await admin.from("device_codes").delete().eq("device_code", created.deviceCode);
+  });
+
+  it("ends a login someone refused", async () => {
+    const created = await createDeviceCodeRecord();
+    await denyDeviceCode(created.userCode);
+
+    expect(await pollDeviceCodeStatus(created.deviceCode)).toEqual({ status: "denied" });
+    expect(await describeDeviceCode(created.userCode, null)).toBeNull();
+    await expect(authorizeDeviceCodeForUser(testUserId, created.userCode)).rejects.toThrow(
+      "Code already used"
+    );
+    await expect(claimDeviceCode(created.deviceCode)).rejects.toThrow("Code not yet authorized");
+    await expect(denyDeviceCode(created.userCode)).rejects.toThrow("Code already used");
+    await expect(denyDeviceCode("ZZZZ-ZZZZ")).rejects.toThrow("Invalid code");
+    await admin.from("device_codes").delete().eq("device_code", created.deviceCode);
+  });
+
+  it("cannot refuse a login that was already approved", async () => {
+    const created = await createDeviceCodeRecord();
+    await authorizeDeviceCodeForUser(testUserId, created.userCode);
+    await expect(denyDeviceCode(created.userCode)).rejects.toThrow("Code already used");
+    expect(await pollDeviceCodeStatus(created.deviceCode)).toEqual({ status: "authorized" });
+    await admin.from("device_codes").delete().eq("device_code", created.deviceCode);
   });
 
   describe("API key cap", () => {

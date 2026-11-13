@@ -8,7 +8,7 @@
 //! | 0      |                         | Success                                         |
 //! | 1      | `error`, `bad_request`  | Any other failure, or the server refused input   |
 //! | 2      | `usage`                 | Bad arguments (clap answers these itself)        |
-//! | 3      | `not_logged_in`, `unauthorized`, `connection_revoked`, `login_expired` | No credentials, or they were refused |
+//! | 3      | `not_logged_in`, `unauthorized`, `connection_revoked`, `login_expired`, `login_denied` | No credentials, or they were refused |
 //! | 4      | `not_found`             | No such endpoint, request, team or share         |
 //! | 5      | `forbidden`             | Not allowed: the plan, a limit, or a permission  |
 //! | 6      | `rate_limited`          | Too many requests; wait and retry                |
@@ -51,6 +51,8 @@ pub enum CliError {
     Timeout(String),
     /// The device login's code expired before anyone approved it.
     LoginExpired,
+    /// The person refused the device login on its approval page.
+    LoginDenied,
     /// Arguments that parse but make no sense together.
     Usage(String),
 }
@@ -64,6 +66,7 @@ impl std::fmt::Display for CliError {
             | CliError::Usage(m) => f.write_str(m),
             CliError::Cancelled => f.write_str("Cancelled."),
             CliError::LoginExpired => f.write_str("The login code expired before it was approved."),
+            CliError::LoginDenied => f.write_str("The login was refused on its approval page."),
         }
     }
 }
@@ -138,6 +141,9 @@ pub fn classify(error: &anyhow::Error) -> Classified {
                 CliError::LoginExpired => {
                     Classified::new("login_expired", 3).hint("Run `whk auth login` again.")
                 }
+                CliError::LoginDenied => Classified::new("login_denied", 3).hint(
+                    "Someone chose \"This wasn't me\". Run `whk auth login` again if it was you.",
+                ),
                 CliError::Usage(_) => Classified::new("usage", 2),
             };
         }
@@ -241,6 +247,8 @@ mod tests {
         let c = classify(&anyhow::Error::new(CliError::Timeout("x".into())));
         assert_eq!((c.code, c.exit), ("timeout", 8));
         assert_eq!(classify(&anyhow::anyhow!("plain")).code, "error");
+        let c = classify(&anyhow::Error::new(CliError::LoginDenied));
+        assert_eq!((c.code, c.exit), ("login_denied", 3));
     }
 
     #[test]
