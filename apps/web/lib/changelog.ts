@@ -30,7 +30,7 @@ export const TRACK_LABELS: Record<ChangelogTrack, string> = {
 const RELEASE = release as { version: string | null; entries: ChangelogEntry[] };
 
 export const APP_VERSION: string = RELEASE.version ?? "dev";
-export const CLI_VERSION = "1.11.0";
+export const CLI_VERSION = "1.12.0";
 export const SDK_VERSION = "1.23.0";
 export const PYTHON_SDK_VERSION = "0.7.0";
 export const GO_SDK_VERSION = "0.7.0";
@@ -2144,6 +2144,20 @@ export const CHANGELOG: ChangelogEntry[] = [
   },
 
   // ─── CLI ────────────────────────────────────────────────────────────
+  {
+    version: "1.12.0",
+    date: "2026-11-13",
+    title: "Made for Agents",
+    track: "cli",
+    items: [
+      "`--json` prints the API's own answers in full, so new fields reach scripts without a CLI release",
+      "Failures have a stable error code and exit status (listed in `whk --help`), and under `--json` an error object on stderr with a hint for the next step",
+      "Nothing waits for input without a terminal: `whk delete` and `whk requests clear` ask only on a terminal and take `--yes` otherwise",
+      "`whk wait <slug>` blocks until a request or email arrives (filters for method, kind and path, `--count`, `--since`, `--timeout`), prints it and exits",
+      "`whk api <path>` calls any API route with your credentials, like `gh api`",
+      "The full-screen TUI is gone: `whk` on its own prints its commands, and `whk listen` and `whk tunnel` print one line per request (or JSON with `--json`)",
+    ],
+  },
   {
     version: "1.11.0",
     date: "2026-11-12",
