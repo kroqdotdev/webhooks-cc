@@ -101,6 +101,23 @@ describe("apiKeys and approvals", () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
+  it("does not start a poll after a token renewal used up its time", async () => {
+    let calls = 0;
+    const getAccessToken = vi.fn(async (options?: { forceRefresh?: boolean }) => {
+      // The renewal after the 401 takes longer than the budget left.
+      if (options?.forceRefresh) await new Promise((resolve) => setTimeout(resolve, 80));
+      return "whcc_token";
+    });
+    const fetchMock = vi.fn(async () => {
+      calls++;
+      return answer({ error: "expired" }, 401);
+    });
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+    const agent = new WebhooksCC({ baseUrl: BASE_URL, getAccessToken });
+    await expect(agent.approvals.get(ID, { timeout: 50 })).rejects.toThrow("timed out");
+    expect(calls).toBe(1);
+  });
+
   it("refuses to hand over a result twice", async () => {
     globalThis.fetch = vi.fn().mockResolvedValue(answer({ approval: approval("completed") }));
     await expect(client().approvals.wait(ID)).rejects.toThrow("already collected");

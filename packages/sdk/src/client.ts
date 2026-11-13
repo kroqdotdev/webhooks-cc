@@ -959,13 +959,18 @@ export class WebhooksCC {
     const url = `${this.baseUrl}/api${path}`;
     let attempt = 0;
     let refreshed = false;
+    // A call with a budget of its own has one deadline for all of it: the
+    // token, a renewal after a 401, every attempt and reading the body.
+    const deadline = timeoutMs === undefined ? undefined : Date.now() + timeoutMs;
 
     while (true) {
       attempt++;
       const controller = new AbortController();
       const timeoutId = setTimeout(
         () => controller.abort(),
-        Math.min(this.timeout, timeoutMs ?? this.timeout)
+        deadline === undefined
+          ? this.timeout
+          : Math.min(this.timeout, Math.max(0, deadline - Date.now()))
       );
       const start = Date.now();
 
@@ -976,9 +981,18 @@ export class WebhooksCC {
       }
 
       try {
+        const headers = {
+          ...this.apiHeaders(await this.bearer()),
+          "Content-Type": "application/json",
+        };
+        // Never start a request past the deadline (a slow token or renewal
+        // may have used it up).
+        if (deadline !== undefined && Date.now() >= deadline) {
+          throw new TimeoutError(timeoutMs ?? 0);
+        }
         const response = await this.fetchImpl(url, {
           method,
-          headers: { ...this.apiHeaders(await this.bearer()), "Content-Type": "application/json" },
+          headers,
           body: body ? JSON.stringify(body) : undefined,
           signal: controller.signal,
         });
