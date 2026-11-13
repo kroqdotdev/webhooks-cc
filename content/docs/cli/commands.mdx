@@ -241,9 +241,9 @@ whk wait <slug> --method POST --path /stripe --count 3 --json
 
 | Flag | Description |
 | --- | --- |
-| `--timeout` | How long to wait (default `30s`) |
+| `--timeout` | How long to wait, with a unit: `30s`, `5m`, `1h` (default `30s`) |
 | `--count` | How many matching requests to wait for (1 to 100); more than one prints a JSON array |
-| `--since` | `now` (only what arrives after the command starts), a duration back such as `2m`, or a timestamp in milliseconds |
+| `--since` | `now` (only what arrives after the command starts, by the server's clock), a duration back such as `2m`, or a timestamp in milliseconds |
 | `--method` | Only this HTTP method |
 | `--kind` | `http` or `email` |
 | `--path` | Only requests whose path (for an email, the recipient address) contains this text |

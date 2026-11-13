@@ -37,7 +37,7 @@ pub async fn run(client: &ApiClient, slug: &str, json: bool) -> Result<()> {
                 match event {
                     SseEvent::Request(req) => {
                         if json {
-                            println!("{}", serde_json::to_string(&req.raw).unwrap_or_default());
+                            println!("{}", serde_json::to_string(&req.json()).unwrap_or_default());
                         } else {
                             println!("{}", listen_line(&req));
                         }

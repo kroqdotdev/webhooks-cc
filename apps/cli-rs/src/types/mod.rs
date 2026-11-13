@@ -389,9 +389,13 @@ pub struct RequestList {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PaginatedRequestList {
+    /// The route answers `{ items, cursor, hasMore }`.
+    #[serde(alias = "items")]
     pub requests: Vec<CapturedRequest>,
-    #[serde(rename = "nextCursor", default)]
+    #[serde(rename = "nextCursor", alias = "cursor", default)]
     pub next_cursor: Option<String>,
+    #[serde(rename = "hasMore", default)]
+    pub has_more: Option<bool>,
 }
 
 /// One row from `GET /api/search/requests`. Search rows carry the endpoint
@@ -818,6 +822,17 @@ impl std::ops::Deref for Streamed {
 }
 
 impl Streamed {
+    /// What `whk listen --json` prints: the stream's JSON, plus the fields
+    /// the CLI always printed (`id` for the stream's `_id`, the signature
+    /// fields as null), so the output only ever gains fields.
+    pub fn json(&self) -> serde_json::Value {
+        let mut out = self.raw.clone();
+        if let Ok(typed) = serde_json::to_value(&self.request) {
+            crate::api::client::fill_missing(&mut out, &typed);
+        }
+        out
+    }
+
     pub fn parse(data: &str) -> Option<Self> {
         let raw: serde_json::Value = serde_json::from_str(data).ok()?;
         let request = serde_json::from_value(raw.clone()).ok()?;

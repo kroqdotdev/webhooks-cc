@@ -8,7 +8,7 @@
 //! | 0      |                         | Success                                         |
 //! | 1      | `error`, `bad_request`  | Any other failure, or the server refused input   |
 //! | 2      | `usage`                 | Bad arguments (clap answers these itself)        |
-//! | 3      | `not_logged_in`, `unauthorized`, `connection_revoked` | No credentials, or they were refused |
+//! | 3      | `not_logged_in`, `unauthorized`, `connection_revoked`, `login_expired` | No credentials, or they were refused |
 //! | 4      | `not_found`             | No such endpoint, request, team or share         |
 //! | 5      | `forbidden`             | Not allowed: the plan, a limit, or a permission  |
 //! | 6      | `rate_limited`          | Too many requests; wait and retry                |

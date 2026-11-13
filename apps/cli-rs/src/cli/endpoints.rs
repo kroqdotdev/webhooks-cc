@@ -68,7 +68,7 @@ pub async fn create(
     }
 
     if json {
-        println!("{}", serde_json::to_string_pretty(&endpoint.raw)?);
+        println!("{}", serde_json::to_string_pretty(&endpoint.json())?);
     } else {
         let url = client.webhook_url_for(&endpoint.slug);
         println!(
@@ -127,7 +127,7 @@ pub async fn list(client: &ApiClient, team: Option<&str>, json: bool) -> Result<
     }
 
     if json {
-        println!("{}", serde_json::to_string_pretty(&list.raw)?);
+        println!("{}", serde_json::to_string_pretty(&list.json())?);
         return Ok(());
     }
 
@@ -159,7 +159,7 @@ pub async fn get(client: &ApiClient, slug: &str, json: bool) -> Result<()> {
     let endpoint = client.get_endpoint(slug).await?;
 
     if json {
-        println!("{}", serde_json::to_string_pretty(&endpoint.raw)?);
+        println!("{}", serde_json::to_string_pretty(&endpoint.json())?);
         return Ok(());
     }
 
@@ -230,7 +230,7 @@ pub async fn update_endpoint(
     let endpoint = client.update_endpoint(slug, &req).await?;
 
     if json {
-        println!("{}", serde_json::to_string_pretty(&endpoint.raw)?);
+        println!("{}", serde_json::to_string_pretty(&endpoint.json())?);
     } else {
         println!("  {} Updated endpoint {}", green("✓"), bold(&endpoint.slug));
     }

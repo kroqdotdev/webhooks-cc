@@ -13,6 +13,7 @@ use anyhow::Result;
 use serde_json::Value;
 
 use crate::api::ApiClient;
+use crate::api::requests::RawPage;
 use crate::cli::output::{dim, print_request_detail, print_request_line};
 use crate::error::{CliError, classify};
 use crate::types::CapturedRequest;
@@ -28,6 +29,9 @@ const PAGE: u32 = 100;
 /// Pages one poll follows back at most (newest first), so a burst of more
 /// than a page between polls is still read in full, within reason.
 const MAX_PAGES: usize = 20;
+/// Slack for `--since now` when the server sent no `Date` header and this
+/// machine's clock is all there is.
+const CLOCK_MARGIN_MS: i64 = 2000;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
 pub enum Kind {
@@ -133,10 +137,26 @@ fn transient(error: &anyhow::Error) -> bool {
     )
 }
 
+/// `--timeout`: a duration with a unit. A bare number would be milliseconds
+/// (as everywhere `parse_duration` reads one), which ends a wait at once, so
+/// it is refused here.
+fn parse_timeout(timeout: &str) -> Result<i64> {
+    if timeout.trim().parse::<i64>().is_ok() {
+        return Err(CliError::Usage(format!(
+            "--timeout needs a unit, such as {}s or {}m",
+            timeout.trim(),
+            timeout.trim()
+        ))
+        .into());
+    }
+    parse_duration(timeout).map_err(|e| CliError::Usage(format!("--timeout: {e}")).into())
+}
+
 pub async fn run(client: &ApiClient, options: WaitOptions, json: bool) -> Result<()> {
+    let started = Instant::now();
+    let started_ms = now_ms();
     client.require_auth()?;
-    let timeout_ms =
-        parse_duration(&options.timeout).map_err(|e| CliError::Usage(format!("--timeout: {e}")))?;
+    let timeout_ms = parse_timeout(&options.timeout)?;
     let deadline = Instant::now() + Duration::from_millis(timeout_ms.max(0) as u64);
     let filter = Filter {
         method: options.method.clone(),
@@ -146,10 +166,14 @@ pub async fn run(client: &ApiClient, options: WaitOptions, json: bool) -> Result
     let count = options.count.max(1) as usize;
     let slug = options.slug.as_str();
 
-    let since = parse_since(options.since.as_deref(), now_ms())?;
-    let mut skip_first = since == Since::Now;
+    let since = parse_since(options.since.as_deref(), started_ms)?;
+    // `--since now`: requests received from the moment the command started,
+    // on the server's clock (the first answer's `Date` less the time since
+    // the start), or on this machine's when the server sent none. Until the
+    // first answer, the poll looks back as far as a default wait does.
+    let mut since_now: Option<i64> = None;
     let mut last_checked = match since {
-        Since::Now => now_ms() - LOOKBACK_MS,
+        Since::Now => started_ms - LOOKBACK_MS,
         Since::At(at) => at,
     };
     let mut seen: HashSet<String> = HashSet::new();
@@ -187,7 +211,20 @@ pub async fn run(client: &ApiClient, options: WaitOptions, json: bool) -> Result
         )
         .await;
         match fetched {
-            Ok(mut items) => {
+            Ok((mut items, server_time_ms)) => {
+                if since == Since::Now && since_now.is_none() {
+                    let elapsed = started.elapsed().as_millis() as i64;
+                    // `Date` counts whole seconds, so this is at or before
+                    // the true start: nothing sent after it is missed, and
+                    // at most a second before it can count.
+                    since_now = Some(match server_time_ms {
+                        Some(t) => t - elapsed,
+                        None => started_ms - CLOCK_MARGIN_MS,
+                    });
+                }
+                if let Some(floor) = since_now {
+                    items.retain(|r| received_at(r).is_none_or(|at| at >= floor));
+                }
                 items.sort_by_key(|r| received_at(r).unwrap_or(0));
                 for item in &items {
                     if let Some(at) = received_at(item) {
@@ -198,7 +235,7 @@ pub async fn run(client: &ApiClient, options: WaitOptions, json: bool) -> Result
                     let Some(id) = request_id(&item) else {
                         continue;
                     };
-                    if !seen.insert(id) || skip_first || !filter.matches(&item) {
+                    if !seen.insert(id) || !filter.matches(&item) {
                         continue;
                     }
                     collected.push(item);
@@ -206,7 +243,6 @@ pub async fn run(client: &ApiClient, options: WaitOptions, json: bool) -> Result
                         return print(&collected, count, json);
                     }
                 }
-                skip_first = false;
             }
             Err(error) if transient(&error) => {
                 if let Some(seconds) = classify(&error).retry_after {
@@ -232,15 +268,25 @@ pub async fn run(client: &ApiClient, options: WaitOptions, json: bool) -> Result
 /// pages until one reaches back past `since` (or the pages run out), so
 /// nothing between the last poll and this one is skipped however many
 /// arrived. Stops after `max_pages`.
-async fn poll_since<F, Fut>(mut fetch: F, since: i64, max_pages: usize) -> Result<Vec<Value>>
+async fn poll_since<F, Fut>(
+    mut fetch: F,
+    since: i64,
+    max_pages: usize,
+) -> Result<(Vec<Value>, Option<i64>)>
 where
     F: FnMut(Option<String>) -> Fut,
-    Fut: std::future::Future<Output = Result<(Vec<Value>, Option<String>)>>,
+    Fut: std::future::Future<Output = Result<RawPage>>,
 {
     let mut out = Vec::new();
     let mut cursor = None;
+    let mut server_time = None;
     for _ in 0..max_pages.max(1) {
-        let (items, next) = fetch(cursor.take()).await?;
+        let RawPage {
+            items,
+            next,
+            server_time_ms,
+        } = fetch(cursor.take()).await?;
+        server_time = server_time.or(server_time_ms);
         let mut reached = items.is_empty();
         for item in items {
             match received_at(&item) {
@@ -253,7 +299,7 @@ where
             _ => break,
         }
     }
-    Ok(out)
+    Ok((out, server_time))
 }
 
 fn print(collected: &[Value], count: usize, json: bool) -> Result<()> {
@@ -318,9 +364,16 @@ mod tests {
             let start: usize = cursor.map(|c| c.parse().unwrap()).unwrap_or(0);
             let page = all[start..(start + 100).min(all.len())].to_vec();
             let next = (start + 100 < all.len()).then(|| (start + 100).to_string());
-            async move { Ok((page, next)) }
+            async move {
+                Ok(RawPage {
+                    items: page,
+                    next,
+                    server_time_ms: Some(42),
+                })
+            }
         };
-        let items = poll_since(fetch, 1_050, 20).await.unwrap();
+        let (items, server_time) = poll_since(fetch, 1_050, 20).await.unwrap();
+        assert_eq!(server_time, Some(42));
         assert_eq!(items.len(), 250);
         assert_eq!(calls.get(), 3, "stops once a page reaches back past since");
         assert!(items.iter().all(|r| received_at(r).unwrap() >= 1_050));
@@ -329,10 +382,24 @@ mod tests {
         calls.set(0);
         let fetch = |_: Option<String>| {
             calls.set(calls.get() + 1);
-            async { Ok((vec![json!({"id":"a","receivedAt":5})], None)) }
+            async {
+                Ok(RawPage {
+                    items: vec![json!({"id":"a","receivedAt":5})],
+                    ..RawPage::default()
+                })
+            }
         };
-        assert_eq!(poll_since(fetch, 0, 20).await.unwrap().len(), 1);
+        assert_eq!(poll_since(fetch, 0, 20).await.unwrap().0.len(), 1);
         assert_eq!(calls.get(), 1);
+    }
+
+    #[test]
+    fn a_timeout_needs_a_unit() {
+        assert_eq!(parse_timeout("30s").unwrap(), 30_000);
+        assert_eq!(parse_timeout("2m").unwrap(), 120_000);
+        let error = parse_timeout("30").unwrap_err();
+        assert_eq!(classify(&error).code, "usage");
+        assert!(error.to_string().contains("30s"));
     }
 
     #[test]

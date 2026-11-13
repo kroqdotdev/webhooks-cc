@@ -44,14 +44,15 @@ impl ApiClient {
     }
 
     /// One page of an endpoint's requests, newest first, as the server sent
-    /// them, and the cursor for the next (older) page.
+    /// them (`GET .../requests/paginated`), with the cursor for the next,
+    /// older page and the server's clock.
     pub async fn requests_page_raw(
         &self,
         slug: &str,
         limit: u32,
         cursor: Option<&str>,
         kind: Option<&str>,
-    ) -> Result<(Vec<serde_json::Value>, Option<String>)> {
+    ) -> Result<RawPage> {
         self.require_auth()?;
         let mut params = vec![format!("limit={limit}")];
         if let Some(c) = cursor {
@@ -67,17 +68,9 @@ impl ApiClient {
                 params.join("&")
             ))
             .await?;
-        let mut page: serde_json::Value =
-            serde_json::from_str(&resp.body).context("failed to parse request page")?;
-        let items = match page.get_mut("requests").map(serde_json::Value::take) {
-            Some(serde_json::Value::Array(items)) => items,
-            _ => Vec::new(),
-        };
-        let next = page
-            .get("nextCursor")
-            .and_then(serde_json::Value::as_str)
-            .map(String::from);
-        Ok((items, next))
+        let mut page = parse_page(&resp.body)?;
+        page.server_time_ms = resp.server_time_ms;
+        Ok(page)
     }
 
     pub async fn list_requests_paginated(
@@ -229,5 +222,67 @@ impl ApiClient {
         self.delete(&format!("/api/endpoints/{}/requests{qs}", encode(slug)))
             .await?;
         Ok(())
+    }
+}
+
+/// A page of requests as the paginated route sent it.
+#[derive(Debug, Default)]
+pub struct RawPage {
+    pub items: Vec<serde_json::Value>,
+    /// The cursor for the next (older) page; none on the last page.
+    pub next: Option<String>,
+    pub server_time_ms: Option<i64>,
+}
+
+/// Reads the paginated route's `{ items, cursor, hasMore }`.
+pub fn parse_page(body: &str) -> Result<RawPage> {
+    let mut page: serde_json::Value =
+        serde_json::from_str(body).context("failed to parse request page")?;
+    let items = match page.get_mut("items").map(serde_json::Value::take) {
+        Some(serde_json::Value::Array(items)) => items,
+        _ => anyhow::bail!("failed to parse request page: no items"),
+    };
+    let more = page
+        .get("hasMore")
+        .and_then(serde_json::Value::as_bool)
+        .unwrap_or(false);
+    let next = page
+        .get("cursor")
+        .and_then(serde_json::Value::as_str)
+        .filter(|_| more)
+        .map(String::from);
+    Ok(RawPage {
+        items,
+        next,
+        server_time_ms: None,
+    })
+}
+
+#[cfg(test)]
+mod page_tests {
+    use super::*;
+
+    #[test]
+    fn pages_are_read_as_the_route_sends_them() {
+        let page = parse_page(r#"{"items":[{"id":"a"},{"id":"b"}],"cursor":"c1","hasMore":true}"#)
+            .unwrap();
+        assert_eq!(page.items.len(), 2);
+        assert_eq!(page.next.as_deref(), Some("c1"));
+        let last = parse_page(r#"{"items":[{"id":"a"}],"cursor":"c2","hasMore":false}"#).unwrap();
+        assert_eq!(last.next, None);
+        let empty = parse_page(r#"{"items":[],"hasMore":false}"#).unwrap();
+        assert!(empty.items.is_empty() && empty.next.is_none());
+        assert!(parse_page(r#"{"requests":[]}"#).is_err());
+    }
+
+    #[test]
+    fn a_cursor_page_parses_as_the_typed_list() {
+        let list: PaginatedRequestList = serde_json::from_str(
+            r#"{"items":[{"id":"r1","endpointId":"e","method":"POST","path":"/","headers":{},"queryParams":{},"ip":"192.0.2.1","size":0,"receivedAt":1}],"cursor":"c","hasMore":true}"#,
+        )
+        .unwrap();
+        assert_eq!(list.requests.len(), 1);
+        assert_eq!(list.next_cursor.as_deref(), Some("c"));
+        assert_eq!(list.has_more, Some(true));
     }
 }

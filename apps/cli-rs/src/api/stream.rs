@@ -9,6 +9,7 @@ use tokio::task::JoinHandle;
 
 use super::{ApiClient, extract_error};
 use crate::agent::AgentError;
+use crate::error::ApiError;
 use crate::types::{SseEvent, Streamed};
 
 const MAX_BUFFER_SIZE: usize = 1024 * 1024; // 1 MB
@@ -45,6 +46,9 @@ enum ConnectError {
     Transient(String),
     /// A 401: terminal, unless a new token can be exchanged.
     Unauthorized(String),
+    /// A refusal with its HTTP status (403, 404, ...), so the command exits
+    /// with the matching status.
+    Rejected(u16, String),
 }
 
 impl ApiClient {
@@ -108,8 +112,22 @@ impl ApiClient {
                         refresh = true;
                         continue;
                     }
-                    Err(ConnectError::Terminal(msg) | ConnectError::Unauthorized(msg)) => {
-                        anyhow::bail!(msg)
+                    Err(ConnectError::Terminal(msg)) => anyhow::bail!(msg),
+                    Err(ConnectError::Unauthorized(message)) => {
+                        return Err(ApiError {
+                            status: 401,
+                            message,
+                            retry_after: None,
+                        }
+                        .into());
+                    }
+                    Err(ConnectError::Rejected(status, message)) => {
+                        return Err(ApiError {
+                            status,
+                            message,
+                            retry_after: None,
+                        }
+                        .into());
                     }
                     Err(ConnectError::Transient(msg)) => StreamEnd::Failed(msg),
                 },
@@ -217,6 +235,7 @@ async fn connect(
         ConnectError::Terminal(msg) if status == StatusCode::UNAUTHORIZED => {
             Err(ConnectError::Unauthorized(msg))
         }
+        ConnectError::Terminal(msg) => Err(ConnectError::Rejected(status.as_u16(), msg)),
         other => Err(other),
     }
 }

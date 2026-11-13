@@ -10,6 +10,8 @@ use crate::error::ApiError;
 /// HTTP response with body pre-read.
 pub struct ApiResponse {
     pub body: String,
+    /// The server's clock from the `Date` header, in ms (whole seconds).
+    pub server_time_ms: Option<i64>,
 }
 
 impl ApiResponse {
@@ -30,6 +32,43 @@ impl ApiResponse {
 pub struct Fetched<T> {
     pub value: T,
     pub raw: Value,
+}
+
+impl<T: serde::Serialize> Fetched<T> {
+    /// What `--json` prints: the server's JSON, plus any key the CLI's own
+    /// type always printed that the server left out (an `id` the stream
+    /// sends as `_id`, a field it omits instead of sending null), so output
+    /// only ever gains fields.
+    pub fn json(&self) -> Value {
+        let mut out = self.raw.clone();
+        if let Ok(typed) = serde_json::to_value(&self.value) {
+            fill_missing(&mut out, &typed);
+        }
+        out
+    }
+}
+
+/// Adds to `out` every key `extra` has and `out` lacks, in nested objects
+/// and in arrays of the same length too. Values `out` has are kept.
+pub fn fill_missing(out: &mut Value, extra: &Value) {
+    match (out, extra) {
+        (Value::Object(out), Value::Object(extra)) => {
+            for (key, value) in extra {
+                match out.get_mut(key) {
+                    Some(existing) => fill_missing(existing, value),
+                    None => {
+                        out.insert(key.clone(), value.clone());
+                    }
+                }
+            }
+        }
+        (Value::Array(out), Value::Array(extra)) if out.len() == extra.len() => {
+            for (o, e) in out.iter_mut().zip(extra) {
+                fill_missing(o, e);
+            }
+        }
+        _ => {}
+    }
 }
 
 impl<T> std::ops::Deref for Fetched<T> {
@@ -197,13 +236,22 @@ impl ApiClient {
 async fn read_response(resp: Response) -> Result<ApiResponse> {
     let status = resp.status();
     let retry_after = retry_after(resp.headers());
+    let server_time_ms = resp
+        .headers()
+        .get(reqwest::header::DATE)
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| chrono::DateTime::parse_from_rfc2822(v).ok())
+        .map(|t| t.timestamp() * 1000);
     let body = resp.text().await.context("failed to read response body")?;
 
     if status.is_client_error() || status.is_server_error() {
         return Err(api_error(status, &body, retry_after).into());
     }
 
-    Ok(ApiResponse { body })
+    Ok(ApiResponse {
+        body,
+        server_time_ms,
+    })
 }
 
 /// The error for an answer with a failing status.
@@ -221,4 +269,24 @@ pub fn retry_after(headers: &HeaderMap) -> Option<u64> {
         .get(RETRY_AFTER)
         .and_then(|v| v.to_str().ok())
         .and_then(|v| v.trim().parse().ok())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn printed_json_keeps_server_fields_and_the_old_ones() {
+        let mut out =
+            json!({"_id": "r1", "method": "POST", "nested": {"a": 1}, "list": [{"x": 1}]});
+        let typed = json!({"id": "r1", "method": "POST", "signatureVerified": null,
+            "nested": {"a": 1, "b": null}, "list": [{"x": 1, "y": null}]});
+        fill_missing(&mut out, &typed);
+        assert_eq!(
+            out,
+            json!({"_id": "r1", "id": "r1", "method": "POST", "signatureVerified": null,
+                "nested": {"a": 1, "b": null}, "list": [{"x": 1, "y": null}]})
+        );
+    }
 }

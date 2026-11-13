@@ -29,13 +29,15 @@ pub async fn list(
         for req in &result.requests {
             print_request_line(req);
         }
-        if let Some(ref next) = result.next_cursor {
+        if let Some(ref next) = result.next_cursor
+            && result.has_more != Some(false)
+        {
             println!("\n  {} --cursor {}", dim("Next page:"), next);
         }
     } else {
         let result = client.list_requests(slug, Some(limit), since).await?;
         if json {
-            println!("{}", serde_json::to_string_pretty(&result.raw)?);
+            println!("{}", serde_json::to_string_pretty(&result.json())?);
             return Ok(());
         }
         if result.requests.is_empty() {
@@ -58,7 +60,7 @@ pub async fn list(
 pub async fn get(client: &ApiClient, id: &str, json: bool) -> Result<()> {
     let req = client.get_request(id).await?;
     if json {
-        println!("{}", serde_json::to_string_pretty(&req.raw)?);
+        println!("{}", serde_json::to_string_pretty(&req.json())?);
     } else {
         print_request_detail(&req);
     }
@@ -95,7 +97,7 @@ pub async fn search(
         .await?;
 
     if json {
-        println!("{}", serde_json::to_string_pretty(&result.raw)?);
+        println!("{}", serde_json::to_string_pretty(&result.json())?);
         return Ok(());
     }
 
