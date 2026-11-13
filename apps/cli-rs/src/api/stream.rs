@@ -65,6 +65,18 @@ impl ApiClient {
     /// connection the token endpoint refused). A token endpoint that cannot
     /// be reached or answers 408, 429 or 5xx goes through the backoff.
     pub async fn stream_requests(&self, slug: &str, tx: mpsc::Sender<SseEvent>) -> Result<()> {
+        self.stream_requests_from(slug, None, tx).await
+    }
+
+    /// [`Self::stream_requests`], starting from the requests received after
+    /// `since` (ms; the server sends those first, oldest first), or from the
+    /// stream's own start on the server's clock when `None`.
+    pub async fn stream_requests_from(
+        &self,
+        slug: &str,
+        since: Option<i64>,
+        tx: mpsc::Sender<SseEvent>,
+    ) -> Result<()> {
         self.require_auth()?;
 
         let sse_client = reqwest::Client::builder()
@@ -73,7 +85,10 @@ impl ApiClient {
             .context("failed to create SSE client")?;
 
         let base_url = self.url(&format!("/api/stream/{}", urlencoding::encode(slug)));
-        let mut cursor = ResumeCursor::default();
+        let mut cursor = ResumeCursor {
+            floor: since,
+            ..ResumeCursor::default()
+        };
         let mut attempt: u32 = 0;
         let mut rapid_rotations: u32 = 0;
         // An agent connection's token lives an hour, so each connection asks

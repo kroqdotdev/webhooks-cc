@@ -2,34 +2,34 @@
 //! it and exit. Built for agents: run it in the background, trigger the
 //! sender, and the command's exit is the signal that something arrived.
 //!
-//! It polls like the SDKs' `waitFor`: requests from the last five minutes
-//! count unless `--since` says otherwise, each poll starts a little before the
-//! newest request seen (on the server's clock), and repeats are skipped by id.
+//! It reads the endpoint's live stream (`/api/stream/{slug}`, as `whk listen`
+//! does) from a start time: the server first sends every request after it in
+//! (received_at, id) order and then each new one as it lands, so a wait
+//! never skips or repeats a request however many arrive, and it wakes at
+//! once. The start is taken on the server's clock (see [`server_start`]):
+//! five minutes back by default (as the SDKs' `waitFor` does), or the moment
+//! the command started with `--since now`, so a request sent while the
+//! stream connects still counts. A match is then read in full from
+//! `/api/requests/{id}`, since the stream leaves out the parsed email and the
+//! signature check.
 
 use std::collections::HashSet;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use anyhow::Result;
 use serde_json::Value;
+use tokio::sync::mpsc;
+use tokio::time::Instant;
 
 use crate::api::ApiClient;
-use crate::api::requests::RawPage;
 use crate::cli::output::{dim, print_request_detail, print_request_line};
-use crate::error::{CliError, classify};
-use crate::types::CapturedRequest;
+use crate::error::{ApiError, CliError};
+use crate::types::{CapturedRequest, SseEvent};
 use crate::util::format::parse_duration;
 
 /// How far back a wait looks when `--since` is not given (as the SDKs do).
 const LOOKBACK_MS: i64 = 5 * 60 * 1000;
-/// How far before the newest request seen the next poll starts: a capture
-/// can commit after a newer one.
-const OVERLAP_MS: i64 = 30 * 1000;
-const POLL: Duration = Duration::from_secs(1);
-const PAGE: u32 = 100;
-/// Pages one poll follows back at most (newest first), so a burst of more
-/// than a page between polls is still read in full, within reason.
-const MAX_PAGES: usize = 20;
-/// Slack for `--since now` when the server sent no `Date` header and this
+/// Slack for the start when the server sent no `Date` header and this
 /// machine's clock is all there is.
 const CLOCK_MARGIN_MS: i64 = 2000;
 
@@ -52,21 +52,23 @@ pub struct WaitOptions {
 /// Where the wait starts.
 #[derive(Debug, PartialEq)]
 enum Since {
-    /// Only what arrives after the command started, on the server's clock
-    /// (the first answer's `Date` less the time it took to come).
+    /// Only what arrives after the command started, on the server's clock.
     Now,
+    /// This long (ms) before the command started, on the server's clock.
+    Back(i64),
     /// Requests received at or after this server time (ms).
     At(i64),
 }
 
-fn parse_since(since: Option<&str>, now_ms: i64) -> Result<Since> {
+/// `--since`: unset is the default lookback, `now`, a duration back, or a
+/// bare number as a timestamp (as for the other `--since` flags).
+fn parse_since(since: Option<&str>) -> Result<Since> {
     let Some(since) = since.map(str::trim) else {
-        return Ok(Since::At(now_ms - LOOKBACK_MS));
+        return Ok(Since::Back(LOOKBACK_MS));
     };
     if since.eq_ignore_ascii_case("now") {
         return Ok(Since::Now);
     }
-    // A bare number is a timestamp, as for the other --since flags.
     if let Ok(at) = since.parse::<i64>() {
         return Ok(Since::At(at));
     }
@@ -75,7 +77,7 @@ fn parse_since(since: Option<&str>, now_ms: i64) -> Result<Since> {
             "--since takes \"now\", a duration such as 2m, or a timestamp in ms ({e})"
         ))
     })?;
-    Ok(Since::At(now_ms - back))
+    Ok(Since::Back(back))
 }
 
 struct Filter {
@@ -120,21 +122,25 @@ fn request_id(request: &Value) -> Option<String> {
         .map(String::from)
 }
 
-fn received_at(request: &Value) -> Option<i64> {
-    request.get("receivedAt").and_then(Value::as_i64)
-}
-
 fn now_ms() -> i64 {
     chrono::Utc::now().timestamp_millis()
 }
 
-/// Whether a failed poll is worth another try: rate limits, our side, the
-/// network. A missing endpoint or refused credentials end the wait.
-fn transient(error: &anyhow::Error) -> bool {
-    matches!(
-        classify(error).code,
-        "rate_limited" | "server_error" | "network_error" | "request_timeout"
-    )
+/// The server's clock when the command started: the endpoint is read once
+/// (which also fails early for a slug that does not exist), and its answer's
+/// `Date` less the time it took is the start. `Date` counts whole seconds,
+/// so this is at or before the true start: nothing sent after the command
+/// started is missed, and at most a second before it can count.
+async fn server_start(client: &ApiClient, slug: &str) -> Result<i64> {
+    let started = std::time::Instant::now();
+    let local = now_ms();
+    let resp = client
+        .get(&format!("/api/endpoints/{}", urlencoding::encode(slug)))
+        .await?;
+    Ok(match resp.server_time_ms {
+        Some(t) => t - started.elapsed().as_millis() as i64,
+        None => local - CLOCK_MARGIN_MS,
+    })
 }
 
 /// `--timeout`: a duration with a unit. A bare number would be milliseconds
@@ -153,8 +159,6 @@ fn parse_timeout(timeout: &str) -> Result<i64> {
 }
 
 pub async fn run(client: &ApiClient, options: WaitOptions, json: bool) -> Result<()> {
-    let started = Instant::now();
-    let started_ms = now_ms();
     client.require_auth()?;
     let timeout_ms = parse_timeout(&options.timeout)?;
     let deadline = Instant::now() + Duration::from_millis(timeout_ms.max(0) as u64);
@@ -165,23 +169,15 @@ pub async fn run(client: &ApiClient, options: WaitOptions, json: bool) -> Result
     };
     let count = options.count.max(1) as usize;
     let slug = options.slug.as_str();
-
-    let since = parse_since(options.since.as_deref(), started_ms)?;
-    // `--since now`: requests received from the moment the command started,
-    // on the server's clock (the first answer's `Date` less the time since
-    // the start), or on this machine's when the server sent none. Until the
-    // first answer, the poll looks back as far as a default wait does.
-    let mut since_now: Option<i64> = None;
-    let mut last_checked = match since {
-        Since::Now => started_ms - LOOKBACK_MS,
+    // The arguments are checked before any request goes out; a duration
+    // back is then counted from the server's start, as `now` is.
+    let since = parse_since(options.since.as_deref())?;
+    let start = server_start(client, slug).await?;
+    let since = match since {
+        Since::Now => start,
+        Since::Back(back) => start - back,
         Since::At(at) => at,
     };
-    let mut seen: HashSet<String> = HashSet::new();
-    let mut collected: Vec<Value> = Vec::new();
-    // A poll that stopped at MAX_PAGES goes on from here next time.
-    let mut resume: Option<String> = None;
-    // The newest request read since the start of the next poll last moved.
-    let mut newest = i64::MIN;
 
     if !json {
         let what = if count == 1 {
@@ -198,187 +194,96 @@ pub async fn run(client: &ApiClient, options: WaitOptions, json: bool) -> Result
         );
     }
 
-    loop {
-        let mut pause = POLL;
-        let kind = filter.kind.map(|k| match k {
-            Kind::Http => "http",
-            Kind::Email => "email",
-        });
-        let start_at = resume.take();
-        let fetched = poll_since(
-            |cursor| async move {
-                client
-                    .requests_page_raw(slug, PAGE, cursor.as_deref(), kind)
-                    .await
-            },
-            last_checked,
-            MAX_PAGES,
-            start_at.clone(),
-        )
-        .await;
-        match fetched {
-            Ok(Polled {
-                mut items,
-                server_time,
-                resume: more,
+    let (tx, mut rx) = mpsc::channel(256);
+    let stream_client = client.clone();
+    let stream_slug = slug.to_string();
+    let mut stream = tokio::spawn(async move {
+        stream_client
+            .stream_requests_from(&stream_slug, Some(since), tx)
+            .await
+    });
+
+    let mut seen: HashSet<String> = HashSet::new();
+    let mut matched: Vec<String> = Vec::new();
+    let outcome: Result<()> = loop {
+        let event = match tokio::time::timeout_at(deadline, rx.recv()).await {
+            Ok(event) => event,
+            Err(_) => {
+                break Err(CliError::Timeout(format!(
+                    "{} of {count} matching request(s) arrived at {slug} within {}",
+                    matched.len(),
+                    options.timeout
+                ))
+                .into());
+            }
+        };
+        match event {
+            Some(SseEvent::Request(req)) => {
+                let value = req.json();
+                let Some(id) = request_id(&value) else {
+                    continue;
+                };
+                if seen.insert(id.clone()) && filter.matches(&value) {
+                    matched.push(id);
+                    if matched.len() >= count {
+                        break Ok(());
+                    }
+                }
+            }
+            Some(SseEvent::EndpointDeleted) => {
+                break Err(ApiError {
+                    status: 404,
+                    message: format!("Endpoint {slug} was deleted while waiting."),
+                    retry_after: None,
+                }
+                .into());
+            }
+            Some(SseEvent::Reconnecting {
+                attempt, reason, ..
             }) => {
-                if since == Since::Now && since_now.is_none() {
-                    // The server's clock at the start: the first answer's
-                    // `Date` less the time from the start to that answer.
-                    // `Date` counts whole seconds, so this is at or before
-                    // the true start: nothing sent after it is missed, and
-                    // at most a second before it can count.
-                    let floor = match server_time {
-                        Some((t, at)) => t - at.duration_since(started).as_millis() as i64,
-                        None => started_ms - CLOCK_MARGIN_MS,
-                    };
-                    since_now = Some(floor);
-                    // Nothing before the start counts, so later polls need
-                    // not read back past it.
-                    last_checked = last_checked.max(floor);
-                }
-                if let Some(floor) = since_now {
-                    items.retain(|r| received_at(r).is_none_or(|at| at >= floor));
-                }
-                items.sort_by_key(|r| received_at(r).unwrap_or(0));
-                // The start of the next poll moves forward only once a poll
-                // (or a run of them, resumed page by page) has read back to
-                // where the last one stopped; until then older requests may
-                // still be unread.
-                for item in &items {
-                    if let Some(at) = received_at(item) {
-                        newest = newest.max(at);
-                    }
-                }
-                if more.is_none() && newest > i64::MIN {
-                    last_checked = last_checked.max(newest - OVERLAP_MS);
-                }
-                if more.is_some() {
-                    pause = Duration::ZERO;
-                }
-                resume = more;
-                for item in items {
-                    let Some(id) = request_id(&item) else {
-                        continue;
-                    };
-                    if !seen.insert(id) || !filter.matches(&item) {
-                        continue;
-                    }
-                    collected.push(item);
-                    if collected.len() >= count {
-                        return print(&collected, count, json);
-                    }
+                if !json {
+                    eprintln!(
+                        "  {}",
+                        dim(&format!("Reconnecting (attempt {attempt}): {reason}"))
+                    );
                 }
             }
-            Err(error) if transient(&error) => {
-                // A run of pages goes on where it was after a failed try.
-                resume = start_at;
-                if let Some(seconds) = classify(&error).retry_after {
-                    pause = pause.max(Duration::from_secs(seconds));
-                }
+            Some(SseEvent::Connected | SseEvent::Timeout) => {}
+            // The stream ended: its error (a missing endpoint, refused
+            // credentials) says why.
+            None => {
+                break match (&mut stream).await {
+                    Ok(Err(error)) => Err(error),
+                    _ => Err(anyhow::anyhow!("the request stream ended unexpectedly")),
+                };
             }
-            Err(error) => return Err(error),
         }
-        let left = deadline.saturating_duration_since(Instant::now());
-        if left.is_zero() {
-            return Err(CliError::Timeout(format!(
-                "{} of {count} matching request(s) arrived at {slug} within {}",
-                collected.len(),
-                options.timeout
-            ))
-            .into());
-        }
-        tokio::time::sleep(left.min(pause)).await;
+    };
+    drop(rx);
+    if !stream.is_finished() {
+        stream.abort();
     }
-}
+    outcome?;
 
-/// What one poll read.
-struct Polled {
-    items: Vec<Value>,
-    /// The first answer's clock (`Date`), in ms, and when it came.
-    server_time: Option<(i64, Instant)>,
-    /// Set when the poll stopped at `max_pages` before reaching back to
-    /// `since`: the cursor of the next older page, where the next poll goes
-    /// on (rather than starting from the newest again and never getting
-    /// further back).
-    resume: Option<String>,
-}
-
-/// The requests received at or after `since`: the newest page (or the page
-/// at `start`, to go on with a run that stopped), then older pages until one
-/// reaches back past `since` or the pages run out, so nothing between the
-/// last poll and this one is skipped however many arrived. Stops after
-/// `max_pages` and says where to go on.
-///
-/// The route's cursor is an offset: requests arriving meanwhile only repeat
-/// rows (skipped by id), but requests deleted during a long run (deliver,
-/// then delete) can move unread rows past it. That needs a burst of more
-/// than `max_pages` pages and a deletion inside it.
-async fn poll_since<F, Fut>(
-    mut fetch: F,
-    since: i64,
-    max_pages: usize,
-    start: Option<String>,
-) -> Result<Polled>
-where
-    F: FnMut(Option<String>) -> Fut,
-    Fut: std::future::Future<Output = Result<RawPage>>,
-{
-    let mut out = Vec::new();
-    let mut cursor = start;
-    let mut server_time = None;
-    for _ in 0..max_pages.max(1) {
-        let RawPage {
-            items,
-            next,
-            server_time_ms,
-        } = fetch(cursor.take()).await?;
-        if server_time.is_none() {
-            server_time = server_time_ms.map(|t| (t, Instant::now()));
-        }
-        let mut reached = items.is_empty();
-        for item in items {
-            match received_at(&item) {
-                Some(at) if at < since => reached = true,
-                _ => out.push(item),
-            }
-        }
-        match next {
-            Some(next) if !reached => cursor = Some(next),
-            _ => {
-                return Ok(Polled {
-                    items: out,
-                    server_time,
-                    resume: None,
-                });
-            }
-        }
+    // Each match in full: the stream leaves out the parsed email, the
+    // signature check and the answer the sender got.
+    let mut full = Vec::with_capacity(matched.len());
+    for id in &matched {
+        full.push(client.get_request(id).await?);
     }
-    Ok(Polled {
-        items: out,
-        server_time,
-        resume: cursor,
-    })
-}
-
-fn print(collected: &[Value], count: usize, json: bool) -> Result<()> {
     if json {
+        let values: Vec<Value> = full.iter().map(|r| r.json()).collect();
         let out = if count == 1 {
-            collected[0].clone()
+            values.into_iter().next().unwrap_or(Value::Null)
         } else {
-            Value::Array(collected.to_vec())
+            Value::Array(values)
         };
         println!("{}", serde_json::to_string_pretty(&out)?);
-        return Ok(());
-    }
-    let parsed: Vec<CapturedRequest> = collected
-        .iter()
-        .filter_map(|v| serde_json::from_value(v.clone()).ok())
-        .collect();
-    if let [one] = parsed.as_slice() {
+    } else if let [one] = full.as_slice() {
         print_request_detail(one);
     } else {
-        for request in &parsed {
+        for request in &full {
+            let request: &CapturedRequest = request;
             print_request_line(request);
         }
     }
@@ -388,102 +293,20 @@ fn print(collected: &[Value], count: usize, json: bool) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::error::classify;
     use serde_json::json;
 
     #[test]
     fn since_reads_now_durations_and_timestamps() {
-        let now = 1_000_000_000;
+        assert_eq!(parse_since(None).unwrap(), Since::Back(LOOKBACK_MS));
+        assert_eq!(parse_since(Some("now")).unwrap(), Since::Now);
+        assert_eq!(parse_since(Some("2m")).unwrap(), Since::Back(120_000));
         assert_eq!(
-            parse_since(None, now).unwrap(),
-            Since::At(now - LOOKBACK_MS)
-        );
-        assert_eq!(parse_since(Some("now"), now).unwrap(), Since::Now);
-        assert_eq!(
-            parse_since(Some("2m"), now).unwrap(),
-            Since::At(now - 120_000)
-        );
-        assert_eq!(
-            parse_since(Some("1774866106592"), now).unwrap(),
+            parse_since(Some("1774866106592")).unwrap(),
             Since::At(1774866106592)
         );
-        let error = parse_since(Some("soon"), now).unwrap_err();
+        let error = parse_since(Some("soon")).unwrap_err();
         assert_eq!(classify(&error).code, "usage");
-    }
-
-    #[tokio::test]
-    async fn a_poll_pages_back_to_where_the_last_one_stopped() {
-        // 250 requests since the last poll, newest first, in pages of 100.
-        let all: Vec<Value> = (0..300)
-            .rev()
-            .map(|i| json!({"id": format!("r{i}"), "receivedAt": 1_000 + i}))
-            .collect();
-        let calls = std::cell::Cell::new(0);
-        let fetch = |cursor: Option<String>| {
-            calls.set(calls.get() + 1);
-            let start: usize = cursor.map(|c| c.parse().unwrap()).unwrap_or(0);
-            let page = all[start..(start + 100).min(all.len())].to_vec();
-            let next = (start + 100 < all.len()).then(|| (start + 100).to_string());
-            async move {
-                Ok(RawPage {
-                    items: page,
-                    next,
-                    server_time_ms: Some(42),
-                })
-            }
-        };
-        let Polled {
-            items,
-            server_time,
-            resume,
-        } = poll_since(fetch, 1_050, 20, None).await.unwrap();
-        assert_eq!(server_time.map(|(t, _)| t), Some(42));
-        assert!(resume.is_none(), "read back to since");
-        assert_eq!(items.len(), 250);
-        assert_eq!(calls.get(), 3, "stops once a page reaches back past since");
-        assert!(items.iter().all(|r| received_at(r).unwrap() >= 1_050));
-
-        // One page that does not fill is one call.
-        calls.set(0);
-        let fetch = |_: Option<String>| {
-            calls.set(calls.get() + 1);
-            async {
-                Ok(RawPage {
-                    items: vec![json!({"id":"a","receivedAt":5})],
-                    ..RawPage::default()
-                })
-            }
-        };
-        assert_eq!(poll_since(fetch, 0, 20, None).await.unwrap().items.len(), 1);
-        assert_eq!(calls.get(), 1);
-    }
-
-    #[tokio::test]
-    async fn a_poll_that_hits_the_page_cap_goes_on_where_it_stopped() {
-        // 2,500 requests since the last poll, in pages of 100, 20 pages a poll.
-        let all: Vec<Value> = (0..2_500)
-            .rev()
-            .map(|i| json!({"id": format!("r{i}"), "receivedAt": 10_000 + i}))
-            .collect();
-        let fetch = |cursor: Option<String>| {
-            let start: usize = cursor.map(|c| c.parse().unwrap()).unwrap_or(0);
-            let page = all[start..(start + 100).min(all.len())].to_vec();
-            let next = (start + 100 < all.len()).then(|| (start + 100).to_string());
-            async move {
-                Ok(RawPage {
-                    items: page,
-                    next,
-                    server_time_ms: None,
-                })
-            }
-        };
-        let first = poll_since(fetch, 10_000, 20, None).await.unwrap();
-        assert_eq!(first.items.len(), 2_000);
-        let resume = first.resume.expect("stopped at the cap");
-        let second = poll_since(fetch, 10_000, 20, Some(resume)).await.unwrap();
-        assert_eq!(second.items.len(), 500);
-        assert!(second.resume.is_none());
-        let oldest = second.items.iter().filter_map(received_at).min();
-        assert_eq!(oldest, Some(10_000), "the oldest request is read too");
     }
 
     #[test]
