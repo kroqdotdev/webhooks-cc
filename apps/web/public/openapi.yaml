@@ -417,8 +417,9 @@ paths:
       tags: [Requests]
       summary: List requests (paginated)
       description: |
-        Cursor-based paginated listing of captured requests. Pass the returned `cursor`
-        to fetch the next page.
+        Cursor-based paginated listing of captured requests, newest first. Pass the
+        returned `cursor` to fetch the next page. The cursor marks the last request on
+        the page, so requests arriving or deleted while paging never skip or repeat one.
       parameters:
         - name: limit
           in: query

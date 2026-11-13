@@ -355,26 +355,42 @@ function clampLimit(limit: number | undefined, fallback: number): number {
   return Math.min(Math.max(1, Math.floor(limit ?? fallback)), MAX_LIST_LIMIT);
 }
 
-function encodeCursor(offset: number, cutoff: number): string {
-  return Buffer.from(JSON.stringify({ offset, cutoff }), "utf8").toString("base64url");
+/**
+ * A page cursor: the last row's position in (received_at, id) order and the
+ * retention cutoff pinned for the walk. The next page reads strictly after
+ * that row, so requests arriving or deleted while someone pages through
+ * never shift a page: none is skipped, none comes twice. Cursors written
+ * before this hold an offset instead and are still read, the old way.
+ */
+type PageCursor =
+  | { at: string; id: string; cutoff: number; offset?: undefined }
+  | { offset: number; cutoff: number; at?: undefined; id?: undefined };
+
+function encodeCursor(at: string, id: string, cutoff: number): string {
+  return Buffer.from(JSON.stringify({ at, id, cutoff }), "utf8").toString("base64url");
 }
 
 /** How far back a page cursor may hold the retention cutoff (see listPaginatedRequestsForEndpointByUser). */
 const CURSOR_PIN_MS = DAY_MS;
 
-function decodeCursor(cursor: string | undefined): { offset: number; cutoff: number } | null {
+// A cursor is the client's to forge, and its position goes into a PostgREST
+// filter, so only a plain timestamp and a uuid are accepted.
+const CURSOR_TIMESTAMP =
+  /^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}(\.\d{1,6})?(Z|[+-]\d{2}(:?\d{2})?)?$/;
+const CURSOR_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function decodeCursor(cursor: string | undefined): PageCursor | null {
   if (!cursor) return null;
 
   try {
     const parsed = JSON.parse(Buffer.from(cursor, "base64url").toString("utf8")) as {
       offset?: unknown;
+      at?: unknown;
+      id?: unknown;
       cutoff?: unknown;
     };
 
     if (
-      typeof parsed.offset !== "number" ||
-      !Number.isFinite(parsed.offset) ||
-      parsed.offset < 0 ||
       typeof parsed.cutoff !== "number" ||
       !Number.isFinite(parsed.cutoff) ||
       parsed.cutoff < 0 ||
@@ -384,10 +400,26 @@ function decodeCursor(cursor: string | undefined): { offset: number; cutoff: num
       return null;
     }
 
-    return {
-      offset: parsed.offset,
-      cutoff: parsed.cutoff,
-    };
+    if (
+      typeof parsed.at === "string" &&
+      typeof parsed.id === "string" &&
+      CURSOR_TIMESTAMP.test(parsed.at) &&
+      Number.isFinite(Date.parse(parsed.at)) &&
+      CURSOR_ID.test(parsed.id)
+    ) {
+      return { at: parsed.at, id: parsed.id, cutoff: parsed.cutoff };
+    }
+
+    if (
+      parsed.at === undefined &&
+      typeof parsed.offset === "number" &&
+      Number.isInteger(parsed.offset) &&
+      parsed.offset >= 0
+    ) {
+      return { offset: parsed.offset, cutoff: parsed.cutoff };
+    }
+
+    return null;
   } catch {
     return null;
   }
@@ -805,9 +837,15 @@ export async function listPaginatedRequestsForEndpointByUser(input: {
   if (input.kind) {
     query.eq("kind", input.kind);
   }
+  if (decoded?.at !== undefined) {
+    const at = `"${decoded.at}"`;
+    query.or(`received_at.lt.${at},and(received_at.eq.${at},id.lt.${decoded.id})`);
+  }
 
+  // One row more than the page says whether another page follows.
   const { data, error } = await query
     .order("received_at", { ascending: false })
+    .order("id", { ascending: false })
     .range(offset, offset + limit)
     .returns<SelectedRequestRow[]>();
 
@@ -816,12 +854,13 @@ export async function listPaginatedRequestsForEndpointByUser(input: {
   }
 
   const rows = data ?? [];
-  const items = rows.slice(0, limit).map(normalizeRequest);
+  const page = rows.slice(0, limit);
   const hasMore = rows.length > limit;
+  const last = page[page.length - 1];
 
   return {
-    items,
-    cursor: hasMore ? encodeCursor(offset + limit, cutoff) : undefined,
+    items: page.map(normalizeRequest),
+    cursor: hasMore && last ? encodeCursor(last.received_at, last.id, cutoff) : undefined,
     hasMore,
   };
 }

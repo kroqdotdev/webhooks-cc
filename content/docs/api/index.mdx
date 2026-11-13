@@ -3,7 +3,7 @@ title: "REST API"
 description: "Language-agnostic REST API reference for webhooks.cc. Use any HTTP client to manage endpoints, inspect requests and captured emails, configure forwarding, and stream webhooks."
 section: getting-started
 order: 5
-lastUpdated: 2026-11-10
+lastUpdated: 2026-11-13
 schema: none
 keywords:
   ["webhook API", "REST API", "webhook HTTP API", "curl webhook", "webhook Python", "webhook Go"]
@@ -325,7 +325,7 @@ curl "https://webhooks.cc/api/endpoints/abc123/requests/paginated?limit=20&curso
 }
 ```
 
-Pass the returned `cursor` to the next request to fetch the next page.
+Pass the returned `cursor` to the next request to fetch the next page. The cursor marks the last request on the page, so requests that arrive or are deleted while you page through never shift a page: none is skipped and none comes twice.
 
 ### Get single request
 
