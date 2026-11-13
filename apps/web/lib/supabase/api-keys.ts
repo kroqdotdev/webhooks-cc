@@ -45,6 +45,73 @@ export function hashApiKey(apiKey: string): string {
   return createHash("sha256").update(apiKey).digest("hex");
 }
 
+/** The longest an API key may live, whoever creates it. */
+export const MAX_KEY_TTL_DAYS = 365;
+const KEY_NAME_MAX = 64;
+
+export class ApiKeyLimitError extends Error {
+  constructor() {
+    super(`Maximum of ${MAX_KEYS_PER_USER} API keys allowed`);
+    this.name = "ApiKeyLimitError";
+  }
+}
+
+/** The name an API key may have, or why not. */
+export function parseKeyName(
+  value: unknown
+): { ok: true; name: string } | { ok: false; error: string } {
+  if (typeof value !== "string" || !value.trim()) return { ok: false, error: "Name is required" };
+  const name = value
+    .replace(/[\u0000-\u001f\u007f]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (name.length > KEY_NAME_MAX) {
+    return { ok: false, error: `Keep the name under ${KEY_NAME_MAX} characters` };
+  }
+  return { ok: true, name };
+}
+
+export interface CreatedApiKey {
+  /** The key itself; shown once, never stored. */
+  key: string;
+  name: string;
+  keyPrefix: string;
+  expiresAt: string;
+}
+
+/**
+ * Creates an API key for an account: the account's own keys (not agent
+ * tokens) count against MAX_KEYS_PER_USER. Throws ApiKeyLimitError at the cap.
+ */
+export async function createApiKeyForUser(
+  userId: string,
+  name: string,
+  ttlDays: number
+): Promise<CreatedApiKey> {
+  const admin = createAdminClient();
+  const { count, error: countError } = await admin
+    .from("api_keys")
+    .select("id", { count: "exact", head: true })
+    .eq("user_id", userId)
+    .is("agent_registration_id", null);
+  if (countError) throw countError;
+  if ((count ?? 0) >= MAX_KEYS_PER_USER) throw new ApiKeyLimitError();
+
+  const key = generateApiKey();
+  const keyPrefix = key.slice(0, 12);
+  const days = Math.min(Math.max(Math.floor(ttlDays), 1), MAX_KEY_TTL_DAYS);
+  const expiresAt = new Date(Date.now() + days * 86_400_000).toISOString();
+  const { error } = await admin.from("api_keys").insert({
+    user_id: userId,
+    name,
+    key_hash: hashApiKey(key),
+    key_prefix: keyPrefix,
+    expires_at: expiresAt,
+  });
+  if (error) throw error;
+  return { key, name, keyPrefix, expiresAt };
+}
+
 function isExpired(timestamp: string | null): boolean {
   if (!timestamp) return false;
   return new Date(timestamp).getTime() < Date.now();
