@@ -414,7 +414,56 @@ async fn run(args: Cli) -> Result<()> {
             }
         },
 
-        Some(Command::Billing) => cli::billing::show(&client, args.json).await?,
+        Some(Command::Billing { action }) => {
+            use cli::BillingAction as B;
+            use cli::billing::Change;
+            let (change, target) = match action {
+                None | Some(B::Show) => {
+                    cli::billing::show(&client, args.json).await?;
+                    return Ok(());
+                }
+                Some(B::Plan {
+                    plan,
+                    interval,
+                    target,
+                }) => (Change::Plan { plan, interval }, target),
+                Some(B::KeepPlan { target }) => (Change::KeepPlan, target),
+                Some(B::Seats { seats, target }) => (Change::Seats(seats), target),
+                Some(B::Blocks {
+                    blocks,
+                    resource,
+                    target,
+                }) => (Change::MonthlyBlocks { blocks, resource }, target),
+                Some(B::Buy {
+                    blocks,
+                    resource,
+                    target,
+                }) => (Change::BuyBlocks { blocks, resource }, target),
+                Some(B::Overage {
+                    state,
+                    max,
+                    resource,
+                    target,
+                }) => (
+                    Change::Overage {
+                        enabled: state == "on",
+                        max_blocks: max,
+                        resource,
+                    },
+                    target,
+                ),
+                Some(B::Cancel { target }) => (Change::Cancel, target),
+                Some(B::Resume { target }) => (Change::Resume, target),
+            };
+            cli::billing::change(
+                &client,
+                target.team.as_deref(),
+                change,
+                target.approval.into(),
+                args.json,
+            )
+            .await?
+        }
 
         Some(Command::Keys { action }) => match action {
             KeysAction::List => cli::keys::list(&client, args.json).await?,

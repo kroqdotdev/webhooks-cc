@@ -11,6 +11,11 @@ import {
 } from "@/lib/polar";
 import { planEntitlements } from "@/lib/entitlements";
 import { recordRefund } from "@/lib/billing/refunds";
+import {
+  creditBalanceFromOrders,
+  prorateProductSwitch,
+  type ProductSwitchPrice,
+} from "@/lib/team-pricing";
 import { reportError } from "@/lib/observability";
 import { returnOrigin } from "@/lib/site-server";
 import { createAdminClient } from "./admin";
@@ -36,7 +41,7 @@ class BillingActionError extends Error {
   }
 }
 
-type BillingUser = Pick<
+export type BillingUser = Pick<
   UserRow,
   | "id"
   | "email"
@@ -238,6 +243,33 @@ export async function changePlanForUser(
   interval: BillingInterval
 ): Promise<{ applied: "now" | "renewal" }> {
   const user = await getBillingUser(userId);
+  const { productId, applies } = planChangeFor(user, plan, interval);
+  const now = applies === "now";
+
+  await createPolarClient().subscriptions.update(user.polar_subscription_id!, {
+    product_id: productId,
+    proration_behavior: now ? "invoice" : "next_period",
+  });
+  if (!now) {
+    // The webhook records it too; this shows it before that arrives.
+    await updateUserById(user.id, { pending_plan: plan, pending_interval: interval });
+    // Page add-ons need Business: leaving it, they end with the period.
+    const { reconcileAddonsWithPlan } = await import("./capacity-billing");
+    await reconcileAddonsWithPlan({ kind: "user", userId });
+  }
+  return { applied: applies };
+}
+
+/**
+ * Whether the account may move to `plan` and `interval`, the product it
+ * moves to, and when the move applies: a monthly plan going up a tier now,
+ * everything else at the renewal. Shared by the change and its quote.
+ */
+export function planChangeFor(
+  user: BillingUser,
+  plan: PaidPlan,
+  interval: BillingInterval
+): { productId: string; applies: "now" | "renewal"; currentInterval: BillingInterval } {
   if (!user.polar_subscription_id || user.plan === "free") {
     throw new BillingActionError("no_subscription", "Choose a plan first");
   }
@@ -257,19 +289,101 @@ export async function changePlanForUser(
   }
   const now =
     PLAN_RANK[plan] > PLAN_RANK[user.plan] && interval === "month" && currentInterval === "month";
+  return { productId, applies: now ? "now" : "renewal", currentInterval };
+}
 
-  await createPolarClient().subscriptions.update(user.polar_subscription_id, {
-    product_id: productId,
-    proration_behavior: now ? "invoice" : "next_period",
-  });
-  if (!now) {
-    // The webhook records it too; this shows it before that arrives.
-    await updateUserById(user.id, { pending_plan: plan, pending_interval: interval });
-    // Page add-ons need Business: leaving it, they end with the period.
-    const { reconcileAddonsWithPlan } = await import("./capacity-billing");
-    await reconcileAddonsWithPlan({ kind: "user", userId });
+/** A plan's fixed price on a Polar product, in cents. */
+function fixedPriceFromProduct(product: unknown): number | null {
+  const prices = asRecord(product)?.prices;
+  if (!Array.isArray(prices)) return null;
+  for (const price of prices) {
+    const record = asRecord(price);
+    if (!record || record.is_archived === true) continue;
+    if (record.amount_type === "fixed" && typeof record.price_amount === "number") {
+      return record.price_amount;
+    }
   }
-  return { applied: now ? "now" : "renewal" };
+  return null;
+}
+
+/** A personal plan change priced as Polar bills it. All amounts are in cents. */
+export interface PersonalPlanQuote extends ProductSwitchPrice {
+  plan: PaidPlan;
+  interval: BillingInterval;
+  currentPlan: PaidPlan;
+  currentInterval: BillingInterval;
+  applies: "now" | "renewal";
+}
+
+/**
+ * A personal plan change's inputs, read once from the account and Polar,
+ * priced at any moment (`at`), with the subscription state behind it
+ * (`basis`). A change at the renewal costs nothing now; Pro to Business
+ * monthly is charged the difference for the rest of the period, after any
+ * unused account credit, the arithmetic a team's plan change uses.
+ */
+export async function loadPlanQuoteForUser(
+  userId: string,
+  plan: PaidPlan,
+  interval: BillingInterval
+): Promise<{
+  basis: Record<string, string | number | boolean | null>;
+  at(nowMs: number): PersonalPlanQuote;
+}> {
+  const user = await getBillingUser(userId);
+  const { productId, applies, currentInterval } = planChangeFor(user, plan, interval);
+  const polar = createPolarClient();
+  const [subscription, product] = await Promise.all([
+    polar.subscriptions.get(user.polar_subscription_id!),
+    polar.products.get(productId),
+  ]);
+  const newAmount = fixedPriceFromProduct(product);
+  if (newAmount === null) {
+    throw new BillingActionError("not_offered", "Could not read the plan's price");
+  }
+  let creditBalanceCents = 0;
+  if (applies === "now") {
+    const orders: Array<{ totalAmount: number; appliedBalanceAmount: number }> = [];
+    for await (const order of polar.orders.iterList({
+      customer_id: subscription.customer_id,
+      limit: 100,
+    })) {
+      orders.push({
+        totalAmount: order.total_amount,
+        appliedBalanceAmount: order.applied_balance_amount,
+      });
+    }
+    creditBalanceCents = creditBalanceFromOrders(orders);
+  }
+  const currentPlan = user.plan as PaidPlan;
+  return {
+    basis: {
+      subscriptionId: subscription.id,
+      status: subscription.status,
+      cancelAtPeriodEnd: subscription.cancel_at_period_end,
+      productId: subscription.product_id,
+      pendingPlan: user.pending_plan,
+      pendingProduct: subscription.pending_update?.product_id ?? null,
+    },
+    at: (nowMs) => ({
+      plan,
+      interval,
+      currentPlan,
+      currentInterval,
+      applies,
+      ...prorateProductSwitch({
+        interval,
+        currentInterval,
+        currentAmountCents: subscription.amount,
+        newAmountCents: newAmount,
+        applies,
+        periodStartMs: Date.parse(subscription.current_period_start),
+        periodEndMs: Date.parse(subscription.current_period_end),
+        creditBalanceCents,
+        nowMs,
+      }),
+    }),
+  };
 }
 
 /**

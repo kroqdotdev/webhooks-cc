@@ -2149,6 +2149,31 @@ export interface TeamPlanQuote {
   periodEnd: string;
 }
 
+/**
+ * What an approved billing change did. `executed: false` means nothing was
+ * changed (its price or the subscription moved after it was asked for, or
+ * Polar declined the card): ask again for a new quote.
+ */
+export type BillingChangeResult =
+  | {
+      executed: true;
+      /** "now": made at once; "renewal": from the period end; "checkout": the owner pays at a checkout. */
+      applied: "now" | "renewal" | "checkout";
+      /** The change, in one sentence. */
+      change?: string;
+      /** The checkout the owner was sent to, for a change paid there. */
+      checkoutUrl?: string;
+      /** A scheduled seat reduction a plan change dropped. */
+      seatReductionLost?: number;
+      [field: string]: unknown;
+    }
+  | { executed: false; code: string; reason: string; change?: string; [field: string]: unknown };
+
+/** Where a billing change goes: the account's own billing, or a team you own. */
+export interface BillingTarget {
+  teamId?: string;
+}
+
 /** The price of changing a team's seat count (the team's owner only). */
 export interface TeamSeatQuote {
   currentSeats: number;

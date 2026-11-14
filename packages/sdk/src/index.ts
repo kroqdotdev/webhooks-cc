@@ -300,6 +300,8 @@ export type {
   AiSetupStatus,
   AiSetupResult,
   BillingSummary,
+  BillingChangeResult,
+  BillingTarget,
   CapacityResource,
   CapacityState,
   TeamPlanQuote,

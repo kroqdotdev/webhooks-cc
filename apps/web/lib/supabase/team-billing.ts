@@ -777,6 +777,24 @@ export async function quoteTeamSeatChange(
   teamId: string,
   seats: number
 ): Promise<SeatChangeQuote> {
+  return (await loadTeamSeatQuote(userId, teamId, seats)).at(Date.now());
+}
+
+/**
+ * What a seat quote is computed from, read once from the team and Polar,
+ * with the quote at any moment (`at`): an approval prices it when asked and
+ * again, from a fresh read, at the moment it was asked, to see that nothing
+ * but the clock moved. `basis` is the subscription state behind it.
+ */
+export async function loadTeamSeatQuote(
+  userId: string,
+  teamId: string,
+  seats: number
+): Promise<{
+  team: BillingTeam;
+  basis: Record<string, string | number | boolean | null>;
+  at(nowMs: number): SeatChangeQuote;
+}> {
   const team = await getTeamForOwner(userId, teamId);
   assertValidSeatCount(seats, team.seats);
   if (!team.polar_subscription_id) {
@@ -802,16 +820,32 @@ export async function quoteTeamSeatChange(
   }
 
   const pendingSeats = subscription.pending_update?.seats ?? null;
+  const creditBalanceCents = creditBalanceFromOrders(orders);
 
-  return quoteSeatChange({
-    currentSeats,
-    pendingSeats,
-    newSeats: seats,
-    pricePerSeatCents: Math.round(subscription.amount / currentSeats),
-    periodStartMs: Date.parse(subscription.current_period_start),
-    periodEndMs: Date.parse(subscription.current_period_end),
-    creditBalanceCents: creditBalanceFromOrders(orders),
-  });
+  return {
+    team,
+    basis: {
+      subscriptionId: subscription.id,
+      status: subscription.status,
+      cancelAtPeriodEnd: subscription.cancel_at_period_end,
+      productId: subscription.product_id,
+      amount: subscription.amount,
+      teamSeats: team.seats,
+      teamPendingSeats: team.pending_seats,
+      pendingProduct: subscription.pending_update?.product_id ?? null,
+    },
+    at: (nowMs) =>
+      quoteSeatChange({
+        currentSeats,
+        pendingSeats,
+        newSeats: seats,
+        pricePerSeatCents: Math.round(subscription.amount / currentSeats),
+        periodStartMs: Date.parse(subscription.current_period_start),
+        periodEndMs: Date.parse(subscription.current_period_end),
+        creditBalanceCents,
+        nowMs,
+      }),
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -1057,6 +1091,21 @@ export async function quoteTeamPlanChange(
   plan: TeamPlan,
   interval: BillingInterval
 ): Promise<PlanChangeQuote> {
+  return (await loadTeamPlanQuote(userId, teamId, plan, interval)).at(Date.now());
+}
+
+/** A plan quote's inputs, read once, priced at any moment (as loadTeamSeatQuote). */
+export async function loadTeamPlanQuote(
+  userId: string,
+  teamId: string,
+  plan: TeamPlan,
+  interval: BillingInterval
+): Promise<{
+  team: BillingTeam;
+  current: { plan: TeamPlan; interval: BillingInterval };
+  basis: Record<string, string | number | boolean | null>;
+  at(nowMs: number): PlanChangeQuote;
+}> {
   const { team, current, productId, applies } = await teamForPlanChange(
     userId,
     teamId,
@@ -1089,18 +1138,33 @@ export async function quoteTeamPlanChange(
     creditBalanceCents = creditBalanceFromOrders(orders);
   }
 
-  return quotePlanChange({
-    plan,
-    interval,
-    seats,
-    currentInterval: current.interval,
-    currentAmountCents: subscription.amount,
-    newPricePerSeatCents: pricePerSeat,
-    applies,
-    periodStartMs: Date.parse(subscription.current_period_start),
-    periodEndMs: Date.parse(subscription.current_period_end),
-    creditBalanceCents,
-  });
+  return {
+    team,
+    current,
+    basis: {
+      subscriptionId: subscription.id,
+      status: subscription.status,
+      cancelAtPeriodEnd: subscription.cancel_at_period_end,
+      productId: subscription.product_id,
+      teamPendingSeats: team.pending_seats,
+      pendingProduct: subscription.pending_update?.product_id ?? null,
+      pendingSeats: subscription.pending_update?.seats ?? null,
+    },
+    at: (nowMs) =>
+      quotePlanChange({
+        plan,
+        interval,
+        seats,
+        currentInterval: current.interval,
+        currentAmountCents: subscription.amount,
+        newPricePerSeatCents: pricePerSeat,
+        applies,
+        periodStartMs: Date.parse(subscription.current_period_start),
+        periodEndMs: Date.parse(subscription.current_period_end),
+        creditBalanceCents,
+        nowMs,
+      }),
+  };
 }
 
 /** Cancels immediately. Used by team deletion, which revokes before deleting the row. */

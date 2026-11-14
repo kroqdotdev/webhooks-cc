@@ -572,6 +572,20 @@ function keyText(key: { key?: string; name?: string; expiresAt?: string }): stri
 /** What an approved action handed back, for the agent to tell the person. */
 function approvalResultText(result: Record<string, unknown>): string {
   if (typeof result.key === "string") return keyText(result);
+  if (result.executed === false) {
+    return `${String(result.reason ?? "Nothing was changed.")} Ask again for a new quote if the person still wants it.`;
+  }
+  if (result.executed === true) {
+    const change = typeof result.change === "string" ? ` ${result.change}` : "";
+    if (result.applied === "checkout") {
+      return `Approved.${change} The person was sent to a Polar checkout; it takes effect once they pay there${typeof result.checkoutUrl === "string" ? ` (${result.checkoutUrl})` : ""}. Check get_billing afterwards.`;
+    }
+    const lost =
+      typeof result.seatReductionLost === "number"
+        ? ` The scheduled reduction to ${result.seatReductionLost} seats was dropped; set the seats again if they still want it.`
+        : "";
+    return `Approved and done.${change} ${result.applied === "renewal" ? "It takes effect at the renewal." : "It took effect at once."}${lost}`;
+  }
   if (typeof result.spreadsheetId === "string") {
     const tabs = Array.isArray(result.tabs) ? result.tabs.join(", ") : "";
     return `Approved. The chosen spreadsheet is ${String(result.spreadsheetId)} (${String(result.url)}), on connection ${String(result.connectionId)}${tabs ? `; its tabs: ${tabs}` : ""}. Use them in a Sheets destination's config.`;
@@ -639,6 +653,11 @@ const APPROVAL_TOOLS = new Set([
   "connect_google",
   "pick_spreadsheet",
   "ai_setup",
+  "change_plan",
+  "set_seats",
+  "change_addons",
+  "cancel_subscription",
+  "resume_subscription",
 ]);
 /** How long a retried call waits for the person, within the hosted server's cap. */
 const APPROVAL_RETRY_WAIT_MS = 45_000;
@@ -1800,7 +1819,7 @@ export function registerTools(
 
   server.tool(
     "quote_team_change",
-    "What changing a team's seat count or plan would cost, read only (owner only): what is due now, any credit, and the price from the renewal. Give seats, or plan (with interval). The change itself is made by the person in the browser.",
+    "What changing a team's seat count or plan would cost, read only (owner only): what is due now, any credit, and the price from the renewal. Give seats, or plan (with interval). To make it, set_seats or change_plan asks the owner to approve it.",
     {
       teamId: z.string().min(1).describe("Team id (from list_teams)"),
       seats: z.number().int().min(1).optional().describe("Price this seat count"),
@@ -2643,7 +2662,7 @@ export function registerTools(
 
   server.tool(
     "get_billing",
-    "What the account pays for: the plan and its subscription (status, monthly or annual, when it renews, a pending change, whether it cancels at the period's end), the add-ons (extra requests, parsed pages, domains), and every team's subscription and add-ons. Read only: changing a plan, seats or add-ons takes the person in a browser.",
+    "What the account pays for: the plan and its subscription (status, monthly or annual, when it renews, a pending change, whether it cancels at the period's end), the add-ons (extra requests, parsed pages, domains), and every team's subscription and add-ons. Read only: change_plan, set_seats, change_addons and cancel_subscription ask the owner to approve a change.",
     {},
     withErrorHandling(async () => {
       // An account in many teams could pass the output budget: trim the
@@ -2651,6 +2670,113 @@ export function registerTools(
       const billing = (await client.billing.get()) as unknown as Record<string, unknown>;
       return jsonContent(fitArrayField(billing, "teams"));
     })
+  );
+
+  // Billing changes: each is quoted and waits for the owner's approval.
+  const billingAsk = (pending: Awaited<ReturnType<typeof client.billing.cancel>>) =>
+    pending.id ? approvalAsk(pending) : textContent("Done: the change was made at once.");
+  const BILLING_APPROVAL =
+    "The account's owner (the team's owner for a team) approves the quoted change, with what is charged now and when it applies: this returns a link and a code to show them, then call wait_for_approval. If the price or the subscription changed before they approve, nothing is changed and you ask again. Only when the person asks for it; never to spend money on your own.";
+  const teamIdShape = z
+    .string()
+    .min(1)
+    .optional()
+    .describe("A team you own (from list_teams); the account's own billing when left out");
+
+  server.tool(
+    "change_plan",
+    `Change the plan or its interval: pro or business for the account, team or team_business with teamId. A monthly move up a tier (Pro to Business, Teams to Team Business, or a team to annual) applies at once and charges the difference now; anything else waits for the renewal. keep: true instead drops a plan change waiting for the renewal. A first plan is a checkout the person starts in the browser. ${BILLING_APPROVAL}`,
+    {
+      plan: z
+        .enum(["pro", "business", "team", "team_business"])
+        .optional()
+        .describe("The plan to move to (team plans need teamId)"),
+      interval: z.enum(["month", "year"]).optional().describe("Billing interval (default month)"),
+      keep: z
+        .boolean()
+        .optional()
+        .describe("true: keep the current plan, dropping a change waiting for the renewal"),
+      teamId: teamIdShape,
+    },
+    withErrorHandling(async ({ plan, interval, keep, teamId }) => {
+      if (keep === true) {
+        if (plan !== undefined) throw new Error("Give plan or keep: true, not both.");
+        return billingAsk(await client.billing.keepPlan({ teamId }));
+      }
+      if (plan === undefined) throw new Error("Give plan, or keep: true.");
+      return billingAsk(await client.billing.changePlan({ plan, interval, teamId }));
+    })
+  );
+
+  server.tool(
+    "set_seats",
+    `Change a team's seat count: more seats apply at once and are charged pro rata now, fewer take effect at the renewal (and need no more members than seats). quote_team_change prices it first. ${BILLING_APPROVAL}`,
+    {
+      teamId: z.string().min(1).describe("Team id (from list_teams)"),
+      seats: z.number().int().min(1).max(1000).describe("The new seat count"),
+    },
+    withErrorHandling(async ({ teamId, seats }) =>
+      billingAsk(await client.billing.setSeats(teamId, seats))
+    )
+  );
+
+  server.tool(
+    "change_addons",
+    `Change add-ons: set_monthly_blocks sets the blocks renewed every period (0 ends them at the renewal; more than now are paid at a checkout the owner is sent to), buy_blocks buys one-time blocks at a checkout, set_overage turns overage on (with maxBlocks a period) or off. A block is 25,000 requests, 1,000 parsed pages (Business) or one extra domain (monthly only). ${BILLING_APPROVAL}`,
+    {
+      action: z.enum(["set_monthly_blocks", "buy_blocks", "set_overage"]),
+      resource: z
+        .enum(["requests", "pages", "domains"])
+        .optional()
+        .describe(
+          "What the add-on adds to (default requests; domains take set_monthly_blocks only)"
+        ),
+      blocks: z
+        .number()
+        .int()
+        .min(0)
+        .optional()
+        .describe("Blocks for set_monthly_blocks or buy_blocks"),
+      enabled: z.boolean().optional().describe("set_overage: on or off"),
+      maxBlocks: z
+        .number()
+        .int()
+        .min(1)
+        .optional()
+        .describe("set_overage: the most a period may add, in blocks"),
+      teamId: teamIdShape,
+    },
+    withErrorHandling(async ({ action, resource, blocks, enabled, maxBlocks, teamId }) => {
+      if (action === "set_overage") {
+        if (enabled === undefined) throw new Error("set_overage needs enabled.");
+        if (resource === "domains") throw new Error("Domains have no overage.");
+        return billingAsk(
+          await client.billing.setOverage({ enabled, maxBlocks, resource, teamId })
+        );
+      }
+      if (blocks === undefined) throw new Error(`${action} needs blocks.`);
+      if (action === "buy_blocks") {
+        if (resource === "domains") throw new Error("Domains are monthly only.");
+        return billingAsk(await client.billing.buyBlocks({ blocks, resource, teamId }));
+      }
+      return billingAsk(await client.billing.setMonthlyBlocks({ blocks, resource, teamId }));
+    })
+  );
+
+  server.tool(
+    "cancel_subscription",
+    `Cancel the plan (or a team's subscription) at the end of the period: it, its monthly add-ons and overage stay until then. ${BILLING_APPROVAL}`,
+    { teamId: teamIdShape },
+    withErrorHandling(async ({ teamId }) => billingAsk(await client.billing.cancel({ teamId })))
+  );
+
+  server.tool(
+    "resume_subscription",
+    `Undo a cancellation, so the plan (or a team's subscription) renews. ${BILLING_APPROVAL}`,
+    { teamId: teamIdShape },
+    withErrorHandling(async ({ teamId }) =>
+      billingAsk(await client.billing.resubscribe({ teamId }))
+    )
   );
 
   server.tool(
@@ -3323,7 +3449,7 @@ export function registerTools(
 
   server.tool(
     "wait_for_approval",
-    "Wait for the account's owner to answer an approval (from create_api_key, create_share_link, remove_domain, rename_account, delete_team, invite_to_team, connect_google, pick_spreadsheet or ai_setup) and collect what it grants or did, such as the new API key, the share link or AI setup's proposals. If they have not answered yet, call it again.",
+    "Wait for the account's owner to answer an approval (from create_api_key, create_share_link, remove_domain, rename_account, delete_team, invite_to_team, connect_google, pick_spreadsheet, ai_setup or a billing change) and collect what it grants or did, such as the new API key, the share link or AI setup's proposals. If they have not answered yet, call it again.",
     {
       id: z.string().describe("The approval id"),
       timeout: durationOrTimestampSchema

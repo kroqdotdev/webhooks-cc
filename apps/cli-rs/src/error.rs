@@ -13,7 +13,7 @@
 //! | 5      | `forbidden`             | Not allowed: the plan, a limit, or a permission  |
 //! | 6      | `rate_limited`          | Too many requests; wait and retry                |
 //! | 7      | `server_error`, `network_error`, `request_timeout` | Our side or the network failed; retry |
-//! | 8      | `timeout`, `approval_expired` | `whk wait` (or another wait) ran out of time, or an approval expired |
+//! | 8      | `timeout`, `approval_expired`, `quote_changed` | `whk wait` (or another wait) ran out of time, an approval expired, or an approved billing change was not made because its quote changed |
 //! | 9      | `confirmation_required`, `cancelled`, `approval_denied` | A destructive command was not confirmed, or an approval was refused |
 
 use serde_json::{Value, json};
@@ -59,6 +59,9 @@ pub enum CliError {
     ApprovalExpired,
     /// Arguments that parse but make no sense together.
     Usage(String),
+    /// An approved billing change was not made: its price or the
+    /// subscription moved after it was asked for.
+    QuoteChanged(String),
 }
 
 impl std::fmt::Display for CliError {
@@ -67,7 +70,8 @@ impl std::fmt::Display for CliError {
             CliError::NotLoggedIn(m)
             | CliError::ConfirmationRequired(m)
             | CliError::Timeout(m)
-            | CliError::Usage(m) => f.write_str(m),
+            | CliError::Usage(m)
+            | CliError::QuoteChanged(m) => f.write_str(m),
             CliError::Cancelled => f.write_str("Cancelled."),
             CliError::LoginExpired => f.write_str("The login code expired before it was approved."),
             CliError::LoginDenied => f.write_str("The login was refused on its approval page."),
@@ -159,6 +163,8 @@ pub fn classify(error: &anyhow::Error) -> Classified {
                     "Someone chose \"This wasn't me\". Run `whk auth login` again if it was you.",
                 ),
                 CliError::Usage(_) => Classified::new("usage", 2),
+                CliError::QuoteChanged(_) => Classified::new("quote_changed", 8)
+                    .hint("Nothing was changed. Ask again for a new quote."),
             };
         }
         if let Some(e) = cause.downcast_ref::<ApiError>() {

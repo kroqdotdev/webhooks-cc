@@ -188,6 +188,14 @@ pub(crate) async fn collect(
                     .into());
                 };
                 print_result(result, Some(&answer.raw["approval"]), json);
+                // A billing change refused on a fresh quote: nothing changed.
+                if result.get("executed").and_then(Value::as_bool) == Some(false) {
+                    let reason = result
+                        .get("reason")
+                        .and_then(Value::as_str)
+                        .unwrap_or("Nothing was changed.");
+                    return Err(CliError::QuoteChanged(reason.to_string()).into());
+                }
                 return Ok(());
             }
             "denied" => return Err(CliError::ApprovalDenied.into()),
@@ -229,6 +237,8 @@ fn print_result(result: &Value, approval: Option<&Value>, json: bool) {
                 sanitize(&tabs)
             ))
         );
+    } else if let Some(executed) = result.get("executed").and_then(Value::as_bool) {
+        crate::cli::billing::print_outcome(result, executed);
     } else if result.get("fields").is_some() {
         println!(
             "\n  {} AI setup proposed (nothing is saved until you apply it):\n",

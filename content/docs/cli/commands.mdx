@@ -348,15 +348,27 @@ whk teams quote <team> --plan team_business --interval year
 
 Sharing moves the endpoint's requests onto the team's pooled quota. Only the endpoint owner can share or unshare, and only the team owner can rename, invite, withdraw an invite, remove a member, or ask for a quote. Removing a member, or leaving, unshares the endpoints that member shared with the team; an owner deletes the team instead of leaving it. `remove`, `leave` and `withdraw` ask first, and need `--yes` without a terminal.
 
-Deleting a team ends its subscription at once and takes its shared endpoints from every member, and an invite emails the address you name, so both need the team's owner to approve them, as a new API key does; once an invite is approved, whk prints it, and accepting it claims one of the team's seats. `delete` and `invite` take the same `--remote`, `--no-browser`, `--no-wait` and `--timeout` as `keys create`. `quote` only prices a change (`--interval` is `month` unless you say `year`); seat and plan changes are made in the browser. Every subcommand supports `--json`.
+Deleting a team ends its subscription at once and takes its shared endpoints from every member, and an invite emails the address you name, so both need the team's owner to approve them, as a new API key does; once an invite is approved, whk prints it, and accepting it claims one of the team's seats. `delete` and `invite` take the same `--remote`, `--no-browser`, `--no-wait` and `--timeout` as `keys create`. `quote` only prices a change (`--interval` is `month` unless you say `year`); `whk billing seats` and `whk billing plan --team` ask for it. Every subcommand supports `--json`.
 
 ## billing
 
-What the account pays for, read only: the plan and its subscription (monthly or annual, its status, when it renews, a change waiting for the renewal, whether it ends), the add-ons (extra requests, parsed pages, domains), and every team you belong to with its seats, status and add-ons. With `--json` you get the whole `/api/billing` answer. Changing a plan, seats or add-ons is done in the browser, under Account > Plan.
+What the account pays for, read only: the plan and its subscription (monthly or annual, its status, when it renews, a change waiting for the renewal, whether it ends), the add-ons (extra requests, parsed pages, domains), and every team you belong to with its seats, status and add-ons. With `--json` you get the whole `/api/billing` answer.
 
 ```bash
-whk billing
+whk billing                                   # or: whk billing show
+whk billing plan business                     # Pro to Business: charged the difference now
+whk billing plan business --interval year     # at the renewal
+whk billing keep-plan                         # drop a change waiting for the renewal
+whk billing seats 5 --team Payments           # a team you own
+whk billing plan team_business --team Payments
+whk billing blocks 2                          # 2 x 25,000 requests every period (0 ends them)
+whk billing blocks 1 --resource pages         # 1,000 parsed pages (Business)
+whk billing buy 4                             # one-time blocks, paid at a checkout
+whk billing overage on --max 4                # at most 4 blocks a period; or: overage off
+whk billing cancel                            # at the period end; whk billing resume undoes it
 ```
+
+Each change is quoted and waits for the account's owner (the team's owner with `--team`) to approve it, as `keys create` does, with the same `--remote`, `--no-browser`, `--no-wait` and `--timeout`: the page shows what changes, when, and what is charged now. Approving makes it only while a fresh quote still matches; otherwise nothing is changed and whk exits with `quote_changed` (status 8), so ask again. Adding blocks or turning overage on for the first time sends the owner to a Polar checkout. A browser session's change is made at once.
 
 ## keys
 

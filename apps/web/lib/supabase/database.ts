@@ -422,7 +422,8 @@ export interface Database {
             | "google.pick"
             | "ai.assist"
             | "teams.delete"
-            | "teams.invite";
+            | "teams.invite"
+            | "billing.change";
           params: Json;
           summary: string;
           user_code: string;
@@ -451,7 +452,8 @@ export interface Database {
             | "google.pick"
             | "ai.assist"
             | "teams.delete"
-            | "teams.invite";
+            | "teams.invite"
+            | "billing.change";
           params?: Json;
           summary: string;
           user_code: string;
@@ -480,7 +482,8 @@ export interface Database {
             | "google.pick"
             | "ai.assist"
             | "teams.delete"
-            | "teams.invite";
+            | "teams.invite"
+            | "billing.change";
           params?: Json;
           summary?: string;
           user_code?: string;

@@ -1,5 +1,6 @@
-import { authenticateRequestRequireUser, authenticateSessionRequest } from "@/lib/api-auth";
-import { handleCapacityGet, handleCapacityPost } from "@/lib/capacity-route";
+import { authenticateRequestRequireUser } from "@/lib/api-auth";
+import { askForBillingChange } from "@/lib/billing/ask";
+import { handleCapacityGet, handleCapacityPost, readCapacityAction } from "@/lib/capacity-route";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -12,7 +13,8 @@ function notFound(): Response {
  * A team pool's extra request capacity (lib/capacity-route.ts). Members may
  * look; only the owner may change it.
  */
-// A read: any key of the account, or a session. Changes (POST) take a session.
+// A read: any key of the account, or a session. A change (POST) from an API
+// key or agent token of the owner is a quoted approval (202).
 export async function GET(request: Request, { params }: { params: Promise<{ teamId: string }> }) {
   const auth = await authenticateRequestRequireUser(request);
   if (!auth.success) return auth.response;
@@ -34,10 +36,17 @@ export async function GET(request: Request, { params }: { params: Promise<{ team
 }
 
 export async function POST(request: Request, { params }: { params: Promise<{ teamId: string }> }) {
-  const auth = await authenticateSessionRequest(request);
+  const auth = await authenticateRequestRequireUser(request);
   if (!auth.success) return auth.response;
 
   const { teamId } = await params;
   if (!UUID.test(teamId)) return notFound();
-  return handleCapacityPost(request, { kind: "team", teamId }, auth.userId);
+  const action = await readCapacityAction(request);
+  if (action instanceof Response) return action;
+  const asked = await askForBillingChange(request, auth, teamId, {
+    kind: "capacity",
+    capacity: action,
+  });
+  if (asked) return asked;
+  return handleCapacityPost(request, { kind: "team", teamId }, auth.userId, action);
 }

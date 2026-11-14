@@ -1,15 +1,19 @@
 import { auditUserAction } from "@/lib/audit";
-import { authenticateSessionRequest } from "@/lib/api-auth";
+import { authenticateRequestRequireUser } from "@/lib/api-auth";
+import { askForBillingChange } from "@/lib/billing/ask";
 import { loggablePolarError, PolarConfigError } from "@/lib/polar";
 import { cancelTeamSubscription, TeamBillingError } from "@/lib/supabase/team-billing";
 import { ERROR_STATUS } from "../shared";
 import { reportError } from "@/lib/observability";
 
 export async function POST(request: Request, { params }: { params: Promise<{ teamId: string }> }) {
-  const auth = await authenticateSessionRequest(request);
+  const auth = await authenticateRequestRequireUser(request);
   if (!auth.success) return auth.response;
 
   const { teamId } = await params;
+  // An API key or agent token of the owner: the owner approves it first (202).
+  const asked = await askForBillingChange(request, auth, teamId, { kind: "cancel" });
+  if (asked) return asked;
 
   try {
     await cancelTeamSubscription(auth.userId, teamId);

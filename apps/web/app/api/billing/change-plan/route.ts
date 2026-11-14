@@ -1,5 +1,6 @@
 import { auditUserAction } from "@/lib/audit";
-import { authenticateSessionRequest } from "@/lib/api-auth";
+import { authenticateRequestRequireUser } from "@/lib/api-auth";
+import { askForBillingChange } from "@/lib/billing/ask";
 import { loggablePolarError, PolarConfigError } from "@/lib/polar";
 import {
   BillingActionError,
@@ -24,10 +25,11 @@ const STATUS: Record<string, number> = {
  * moves a paying account to another plan. A monthly tier up applies now
  * (the difference is charged for the rest of the period, and the extra
  * capacity granted in proportion); anything else at the renewal. DELETE
- * drops a change waiting for the renewal. Takes a session, never an API key.
+ * drops a change waiting for the renewal. A session changes it at once; an
+ * API key or agent token gets a quoted approval for the owner (202).
  */
 export async function POST(request: Request) {
-  const auth = await authenticateSessionRequest(request);
+  const auth = await authenticateRequestRequireUser(request);
   if (!auth.success) return auth.response;
 
   // A body that cannot be read counts as an empty one, refused below.
@@ -37,6 +39,9 @@ export async function POST(request: Request) {
   if ((plan !== "pro" && plan !== "business") || (interval !== "month" && interval !== "year")) {
     return Response.json({ error: "Give a plan and an interval" }, { status: 400 });
   }
+  // An API key or agent token: the owner approves the quoted change.
+  const asked = await askForBillingChange(request, auth, null, { kind: "plan", plan, interval });
+  if (asked) return asked;
 
   try {
     const result = await changePlanForUser(auth.userId, plan, interval);
@@ -72,8 +77,10 @@ export async function POST(request: Request) {
 }
 
 export async function DELETE(request: Request) {
-  const auth = await authenticateSessionRequest(request);
+  const auth = await authenticateRequestRequireUser(request);
   if (!auth.success) return auth.response;
+  const asked = await askForBillingChange(request, auth, null, { kind: "keep_plan" });
+  if (asked) return asked;
 
   try {
     await keepCurrentPlanForUser(auth.userId);

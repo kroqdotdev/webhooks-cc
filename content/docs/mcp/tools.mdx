@@ -922,7 +922,11 @@ Your plan's request usage, remaining quota, and period end; `parsedPages`, `prev
 
 ### get_billing
 
-What the account pays for, read only: `plan`, `subscription` (`status`, `interval`, `renewsAt`, `cancelAtPeriodEnd`, `pendingChange`; null on Free), `quotaPeriod`, `addons` for requests, pages and domains, and `teams` with each team's subscription, seats and add-ons. Changing a plan, seats or add-ons takes the person in a browser. No parameters.
+What the account pays for, read only: `plan`, `subscription` (`status`, `interval`, `renewsAt`, `cancelAtPeriodEnd`, `pendingChange`; null on Free), `quotaPeriod`, `addons` for requests, pages and domains, and `teams` with each team's subscription, seats and add-ons. No parameters.
+
+### change_plan, set_seats, change_addons, cancel_subscription, resume_subscription
+
+Ask for a billing change: `change_plan` (`plan`: `pro` or `business`, or `team` or `team_business` with `teamId`; `interval`; or `keep: true` to drop a change waiting for the renewal), `set_seats` (`teamId`, `seats`), `change_addons` (`action`: `set_monthly_blocks`, `buy_blocks` or `set_overage`; `resource`, `blocks`, `enabled`, `maxBlocks`, `teamId`), `cancel_subscription` and `resume_subscription` (`teamId` for a team). Each is quoted and answers with an approval for the owner, whose page shows what changes, when and what is charged now; `wait_for_approval` then says what was done, or that nothing was changed because the price or the subscription moved, in which case ask again. See [Billing changes](/docs/agents#billing-changes).
 
 ### list_provider_templates
 

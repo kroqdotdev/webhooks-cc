@@ -36,8 +36,8 @@ API keys are generated from the [API keys page](/account/api-keys). Keys use the
   A few things are for the account's owner to allow. A new API key, a new share link, removing a
   custom domain, a rename, connecting a Google account, choosing a spreadsheet from Drive and AI
   setup answer an API key with `202` and an [approval](#approvals) the owner answers in the
-  browser. Account deletion and changing a plan or paying take a browser session and answer `403`
-  to an API key.
+  browser, and so do billing changes, with their quote. Account deletion, a first checkout and the
+  billing portal take a browser session and answer `403` to an API key.
 </Callout>
 
 The machine-readable version of this page is the [OpenAPI document](/openapi.yaml), which lists every route below with its parameters and response shapes.
@@ -84,6 +84,7 @@ Every route an API key can call. Timestamps are Unix milliseconds unless a field
 | `GET` `POST` `DELETE /api/api-keys`                                      | [API keys](#api-keys): list, ask for one (an approval), revoke                                 |
 | `GET /api/approvals/:id`                                                 | [Poll an approval](#approvals)                                                                 |
 | `GET /api/billing`                                                       | What the account pays for, read only                                                           |
+| `POST` `DELETE /api/billing/change-plan`, `POST /api/billing/capacity`, `.../cancel`, `.../resubscribe` | [Billing changes](#billing-changes) (an approval, with its quote)       |
 | `PATCH /api/account`                                                     | [Set the display name](#display-name) (an approval)                                            |
 | `GET /api/agent/registrations`, `DELETE .../:id`                         | [Connected agents](#connected-agents): list, disconnect                                        |
 | `GET /api/request-shares`, `DELETE .../:id`, `GET` `POST /api/requests/:id/shares` | [Share links](#share-links): list, revoke, ask for one (an approval)                 |
@@ -1360,6 +1361,10 @@ A new API key, a new share link, removing a custom domain and a rename are the a
 ```
 
 Show the owner `url`; the page shows the same `code` to compare. Then poll `GET /api/approvals/:id` with the same key (or any token of the same connected agent), at most every two seconds, until `status` is `completed` (with `result`), `denied` or `expired`. A new key is made on the poll after the approval and handed over that once; the other actions run when the owner approves, and every later poll carries their `result`. The owner has 15 minutes to answer. An account can have 10 approvals waiting. See [Approvals](/docs/agents#approvals).
+
+### Billing changes
+
+Changing the plan (`POST /api/billing/change-plan` with `{ "plan": "pro" | "business", "interval": "month" | "year" }`, `DELETE` to keep the plan and drop a change waiting for the renewal), add-ons (`POST /api/billing/capacity` with `{ "action": "set_monthly_blocks" | "buy_blocks" | "set_overage", "resource", "blocks", "enabled", "maxBlocks" }`), cancelling (`POST /api/billing/cancel`) and undoing it (`POST /api/billing/resubscribe`), and the same for a team you own under `/api/teams/:teamId/billing/` (`plan`, with `{ "action": "keep" }` to keep it, `seats` with `{ "seats" }`, `capacity`, `cancel`, `resubscribe`), answer an API key or agent token with `202` and an approval whose summary is the quote: what changes, when, and what is charged now. The owner (the team's owner) approves it, and the change is made then, only while a fresh quote still matches. The poll's `result` is `{ "executed": true, "applied": "now" | "renewal" | "checkout" }` (`checkoutUrl` when the owner pays at a checkout), or `{ "executed": false, "code", "reason" }` when the price or the subscription changed and nothing was changed: ask again. A member's key gets `403`, and a change that is not possible now (no subscription, already so, set to end) `409` before anyone is asked.
 
 ### API keys
 

@@ -1,6 +1,7 @@
 import { checkRateLimit } from "@/lib/rate-limit";
 import { auditUserAction } from "@/lib/audit";
-import { authenticateRequestRequireUser, authenticateSessionRequest } from "@/lib/api-auth";
+import { authenticateRequestRequireUser } from "@/lib/api-auth";
+import { askForBillingChange } from "@/lib/billing/ask";
 import { loggablePolarError, PolarConfigError } from "@/lib/polar";
 import { reportError } from "@/lib/observability";
 import {
@@ -17,7 +18,7 @@ import { z } from "zod";
  * Quotes a plan change for the confirmation dialog:
  * `GET ...?plan=team_business&interval=year`. The owner only, with a session.
  */
-// A read: any key of the account, or a session. Changes (POST) take a session.
+// A read: any key of the account, or a session.
 export async function GET(request: Request, { params }: { params: Promise<{ teamId: string }> }) {
   // Each quote asks Polar, so keys get a limit of their own.
   const rateLimited = await checkRateLimit(request, "team-billing-quote", 20);
@@ -59,11 +60,11 @@ const planBody = z.object({
  * { plan: "team" | "team_business", interval: "month" | "year" } changes the
  * team's plan: an upgrade at once (charged now), a downgrade at the renewal.
  * { action: "keep" } drops a change waiting for the renewal. Answers
- * { applied: "now" | "renewal" }, or 204 for "keep". The owner only, with a
- * session.
+ * { applied: "now" | "renewal" }, or 204 for "keep". The owner only: a
+ * session at once, an API key or agent token as a quoted approval (202).
  */
 export async function POST(request: Request, { params }: { params: Promise<{ teamId: string }> }) {
-  const auth = await authenticateSessionRequest(request);
+  const auth = await authenticateRequestRequireUser(request);
   if (!auth.success) return auth.response;
 
   const { teamId } = await params;
@@ -77,6 +78,20 @@ export async function POST(request: Request, { params }: { params: Promise<{ tea
   if (!keep && (!isTeamPlan(plan) || !isInterval(interval))) {
     return Response.json({ error: "Unknown plan" }, { status: 400 });
   }
+  // An API key or agent token of the owner: a quoted approval (202).
+  const asked = await askForBillingChange(
+    request,
+    auth,
+    teamId,
+    keep
+      ? { kind: "keep_plan" }
+      : {
+          kind: "plan",
+          plan: plan as "team" | "team_business",
+          interval: interval as "month" | "year",
+        }
+  );
+  if (asked) return asked;
   const action = keep ? "team.plan_kept" : "team.plan_changed";
   const metadata = keep ? {} : { plan, interval };
 

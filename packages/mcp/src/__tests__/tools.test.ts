@@ -81,6 +81,11 @@ const EXPECTED_TOOLS = [
   "list_deliveries",
   "redeliver",
   "get_billing",
+  "change_plan",
+  "set_seats",
+  "change_addons",
+  "cancel_subscription",
+  "resume_subscription",
   "list_api_keys",
   "create_api_key",
   "wait_for_approval",
@@ -295,7 +300,7 @@ describe("registerTools", () => {
     const waitFor = vi.fn().mockResolvedValue({ id: "req1", method: "POST", headers: {} });
     const client = createMockClient({ requests: { waitFor } as unknown as WebhooksCC["requests"] });
     const tools = getRegisteredTools(client, { remote: true });
-    expect(Object.keys(tools)).toHaveLength(91);
+    expect(Object.keys(tools)).toHaveLength(96);
     expect(tools).not.toHaveProperty("send_to");
     expect(tools).not.toHaveProperty("replay_request");
     expect(tools).not.toHaveProperty("share_port");
@@ -350,7 +355,7 @@ describe("registerTools", () => {
   it("registers all wrapper and legacy tools", () => {
     const tools = getRegisteredTools(createMockClient());
 
-    expect(Object.keys(tools)).toHaveLength(94);
+    expect(Object.keys(tools)).toHaveLength(99);
     for (const name of EXPECTED_TOOLS) {
       expect(tools).toHaveProperty(name);
     }
@@ -2988,6 +2993,61 @@ describe("get_billing", () => {
     const client = createMockClient({ billing: { get } as unknown as WebhooksCC["billing"] });
     const result = await getRegisteredTools(client).get_billing.handler({});
     expect(JSON.parse(result.content[0].text)).toMatchObject({ plan: "pro" });
+  });
+});
+
+describe("billing changes", () => {
+  const pending = {
+    id: "0b8d6a5e-1c2f-4f3a-9d7e-2a1b3c4d5e6f",
+    status: "pending",
+    action: "billing.change",
+    summary: 'Change the team "Acme" from 3 to 5 seats. $16.00 is charged now.',
+    code: "ABCD-EFGH",
+    url: "https://webhooks.cc/approve?code=ABCD-EFGH",
+    expiresAt: "2026-11-14T12:15:00.000Z",
+    wait: vi.fn(),
+  };
+
+  it("asks the owner to approve the quoted change", async () => {
+    const setSeats = vi.fn().mockResolvedValue(pending);
+    const client = createMockClient({ billing: { setSeats } as unknown as WebhooksCC["billing"] });
+    const result = await getRegisteredTools(client).set_seats.handler({ teamId: "t1", seats: 5 });
+    expect(setSeats).toHaveBeenCalledWith("t1", 5);
+    expect(result.content[0].text).toContain("Asked for approval: Change the team");
+    expect(result.content[0].text).toContain("ABCD-EFGH");
+  });
+
+  it("routes plan, keep and add-on changes to their SDK calls", async () => {
+    const billing = {
+      changePlan: vi.fn().mockResolvedValue(pending),
+      keepPlan: vi.fn().mockResolvedValue(pending),
+      setOverage: vi.fn().mockResolvedValue(pending),
+      setMonthlyBlocks: vi.fn().mockResolvedValue(pending),
+      buyBlocks: vi.fn().mockResolvedValue(pending),
+      cancel: vi.fn().mockResolvedValue(pending),
+      resubscribe: vi.fn().mockResolvedValue(pending),
+    };
+    const tools = getRegisteredTools(
+      createMockClient({ billing: billing as unknown as WebhooksCC["billing"] })
+    );
+    await tools.change_plan.handler({ plan: "business", interval: "year" });
+    expect(billing.changePlan).toHaveBeenCalledWith({
+      plan: "business",
+      interval: "year",
+      teamId: undefined,
+    });
+    await tools.change_plan.handler({ keep: true, teamId: "t1" });
+    expect(billing.keepPlan).toHaveBeenCalledWith({ teamId: "t1" });
+    await tools.change_addons.handler({ action: "set_overage", enabled: false });
+    expect(billing.setOverage).toHaveBeenCalledWith(expect.objectContaining({ enabled: false }));
+    await tools.change_addons.handler({ action: "set_monthly_blocks", blocks: 0 });
+    expect(billing.setMonthlyBlocks).toHaveBeenCalledWith(expect.objectContaining({ blocks: 0 }));
+    await tools.cancel_subscription.handler({});
+    await tools.resume_subscription.handler({ teamId: "t1" });
+    expect(billing.resubscribe).toHaveBeenCalledWith({ teamId: "t1" });
+    const bad = await tools.change_addons.handler({ action: "buy_blocks" });
+    expect(bad.isError).toBe(true);
+    expect(billing.buyBlocks).not.toHaveBeenCalled();
   });
 });
 

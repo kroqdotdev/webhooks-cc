@@ -1,6 +1,7 @@
 import { checkRateLimit } from "@/lib/rate-limit";
 import { auditUserAction } from "@/lib/audit";
-import { authenticateRequestRequireUser, authenticateSessionRequest } from "@/lib/api-auth";
+import { authenticateRequestRequireUser } from "@/lib/api-auth";
+import { askForBillingChange } from "@/lib/billing/ask";
 import { loggablePolarError, PolarConfigError } from "@/lib/polar";
 import {
   quoteTeamSeatChange,
@@ -15,7 +16,7 @@ import { z } from "zod";
 const seatsBody = z.object({ seats: z.unknown().optional() });
 
 export async function POST(request: Request, { params }: { params: Promise<{ teamId: string }> }) {
-  const auth = await authenticateSessionRequest(request);
+  const auth = await authenticateRequestRequireUser(request);
   if (!auth.success) return auth.response;
 
   const { teamId } = await params;
@@ -26,6 +27,14 @@ export async function POST(request: Request, { params }: { params: Promise<{ tea
   const parsed = await parseJsonBodyWith(request, seatsBody);
   const sent = "data" in parsed ? parsed.data.seats : undefined;
   const seats = typeof sent === "number" ? sent : NaN;
+  // An API key or agent token of the owner: a quoted approval (202).
+  if (auth.keyId) {
+    if (!Number.isInteger(seats)) {
+      return Response.json({ error: "Give seats as a whole number" }, { status: 400 });
+    }
+    const asked = await askForBillingChange(request, auth, teamId, { kind: "seats", seats });
+    if (asked) return asked;
+  }
 
   try {
     await updateTeamSeats(auth.userId, teamId, seats);
@@ -67,7 +76,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ tea
 }
 
 /** Quotes a seat change for the confirmation dialog: `GET ...?seats=5`. */
-// A read: any key of the account, or a session. Changes (POST) take a session.
+// A read: any key of the account, or a session.
 export async function GET(request: Request, { params }: { params: Promise<{ teamId: string }> }) {
   // Each quote asks Polar, so keys get a limit of their own.
   const rateLimited = await checkRateLimit(request, "team-billing-quote", 20);

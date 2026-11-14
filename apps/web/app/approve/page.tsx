@@ -53,6 +53,7 @@ type Phase =
   | { kind: "review"; review: Review }
   | { kind: "approved"; code: string }
   | { kind: "done"; summary: string }
+  | { kind: "unchanged"; reason: string }
   | { kind: "withdrawn" }
   | { kind: "collected" }
   | { kind: "denied" }
@@ -78,6 +79,7 @@ const GOOGLE_LATE =
 const WORKING: Record<string, string> = {
   "ai.assist": "Running AI setup, this can take up to a minute...",
   "google.connect": "Opening Google...",
+  "billing.change": "Making the change...",
   "google.pick": "Choose a spreadsheet in Google's window...",
 };
 
@@ -165,8 +167,18 @@ function ApproveContent() {
           ...(input ? { input } : {}),
         }),
       });
-      const result = (await response.json()) as { status?: string; error?: string; url?: string };
+      const result = (await response.json()) as {
+        status?: string;
+        error?: string;
+        url?: string;
+        reason?: string;
+      };
       if (!response.ok) throw new Error(result.error || "That did not work. Try again.");
+      // A billing change refused on a fresh quote: nothing was changed.
+      if (result.status === "unchanged") {
+        setPhase({ kind: "unchanged", reason: result.reason ?? "Nothing was changed." });
+        return;
+      }
       // A Google connection: on to Google, which comes back to this page.
       if (result.status === "redirect" && result.url) {
         window.location.assign(result.url);
@@ -289,6 +301,13 @@ function ApproveContent() {
             </Notice>
           )}
 
+          {phase.kind === "unchanged" && (
+            <Notice title="Nothing was changed">
+              <span className="block my-3 font-medium text-foreground">{phase.reason}</span>
+              Whoever asked sees this too, and can ask again for a new quote.
+            </Notice>
+          )}
+
           {phase.kind === "withdrawn" && (
             <Notice title="Withdrawn">
               Whoever asked gets nothing, and the code no longer works.
@@ -398,6 +417,15 @@ function ago(timestamp: number): string {
   return minutes === 1 ? "1 minute ago" : `${minutes} minutes ago`;
 }
 
+/** What approving a billing change does to the card, on its button. */
+function billingApproveLabel(page: Record<string, unknown> | null): string {
+  const cents = typeof page?.dueNowCents === "number" ? page.dueNowCents : 0;
+  if (page?.applies === "checkout") return "Approve and continue to the checkout";
+  if (cents <= 0) return "Approve";
+  const amount = `$${(cents / 100).toFixed(2)}`;
+  return `Approve and pay ${page?.approximate ? "about " : ""}${amount}`;
+}
+
 function ReviewPanel(props: {
   review: Review;
   email: string | null;
@@ -500,7 +528,9 @@ function ReviewPanel(props: {
               ? "Approve and continue to Google"
               : review.action === "google.pick"
                 ? "Approve and choose the spreadsheet"
-                : "Approve"}
+                : review.action === "billing.change"
+                  ? billingApproveLabel(review.page)
+                  : "Approve"}
         </Button>
         <Button
           variant="surface"

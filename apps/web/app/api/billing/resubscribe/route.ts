@@ -1,12 +1,16 @@
 import { auditUserAction } from "@/lib/audit";
-import { authenticateSessionRequest } from "@/lib/api-auth";
+import { authenticateRequestRequireUser } from "@/lib/api-auth";
+import { askForBillingChange } from "@/lib/billing/ask";
 import { loggablePolarError, PolarConfigError } from "@/lib/polar";
 import { BillingActionError, resubscribeForUser } from "@/lib/supabase/billing";
 import { reportError } from "@/lib/observability";
 
 export async function POST(request: Request) {
-  const auth = await authenticateSessionRequest(request);
+  const auth = await authenticateRequestRequireUser(request);
   if (!auth.success) return auth.response;
+  // An API key or agent token: the owner approves it first (202).
+  const asked = await askForBillingChange(request, auth, null, { kind: "resubscribe" });
+  if (asked) return asked;
 
   try {
     await resubscribeForUser(auth.userId);
