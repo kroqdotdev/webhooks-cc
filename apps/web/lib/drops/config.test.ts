@@ -120,6 +120,38 @@ describe("parseDropSecret, SFTP keys", () => {
     ).toMatch(/line breaks were lost/);
   });
 
+  it("keeps a long run of spaces between the markers fast", () => {
+    const started = performance.now();
+    const spaced = `-----BEGIN OPENSSH PRIVATE KEY-----${" ".repeat(8_000)}x${" ".repeat(8_000)}-----END OPENSSH PRIVATE KEY-----`;
+    expect(sftp(spaced)).toMatch(/line breaks were lost/);
+    expect(sftp(`-----BEGIN OPENSSH PRIVATE KEY-----${" ".repeat(16_000)}`)).toMatch(
+      /not a key drops can use/
+    );
+    expect(performance.now() - started).toBeLessThan(500);
+  });
+
+  it("refuses an EC key whose private value is out of range, without throwing", () => {
+    const pem = (label: string, der: Buffer) =>
+      `-----BEGIN ${label}-----\n${der
+        .toString("base64")
+        .match(/.{1,64}/g)!
+        .join("\n")}\n-----END ${label}-----\n`;
+    const sec1 = ec.export({ type: "sec1", format: "der" });
+    const pkcs8 = ec.export({ type: "pkcs8", format: "der" });
+    const scalar = sec1.subarray(7, 39);
+    for (const fill of [0x00, 0xff]) {
+      const badSec1 = Buffer.from(sec1);
+      badSec1.fill(fill, 7, 39);
+      expect(() => sftp(pem("EC PRIVATE KEY", badSec1))).not.toThrow();
+      expect(sftp(pem("EC PRIVATE KEY", badSec1))).toMatch(/not a key drops can use/);
+      const badPkcs8 = Buffer.from(pkcs8);
+      const at = badPkcs8.indexOf(scalar);
+      expect(at).toBeGreaterThan(0);
+      badPkcs8.fill(fill, at, at + 32);
+      expect(typeof sftp(pem("PRIVATE KEY", badPkcs8))).toBe("string");
+    }
+  });
+
   it("refuses a key cut off, made up or public", () => {
     expect(sftp("-----BEGIN OPENSSH PRIVATE KEY-----")).toMatch(/not a key drops can use/);
     expect(

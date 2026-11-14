@@ -266,10 +266,14 @@ function usablePrivateKey(value: string): string | { problem: string } {
       .join("\n")
       .trim() + "\n";
   // One line only: a key whose line breaks became spaces.
-  const oneLine = /^(-----BEGIN [A-Z0-9 ]+-----) *([^\n]*?) *(-----END [A-Z0-9 ]+-----)\n$/.exec(
-    key
-  );
-  if (oneLine) key = [oneLine[1], ...oneLine[2].split(/\s+/), oneLine[3]].join("\n") + "\n";
+  // The labels are bounded and nothing between the markers is matched
+  // twice, so a long line of spaces cannot make the match backtrack.
+  const oneLine =
+    /^(-----BEGIN [A-Z0-9 ]{1,64}-----)([^\n]*?)(-----END [A-Z0-9 ]{1,64}-----)\n$/.exec(key);
+  if (oneLine) {
+    const body = oneLine[2].trim().split(/\s+/).filter(Boolean);
+    key = [oneLine[1], ...body, oneLine[3]].join("\n") + "\n";
+  }
 
   const encrypted = {
     problem:
@@ -287,7 +291,14 @@ function usablePrivateKey(value: string): string | { problem: string } {
     key = converted;
   }
 
-  const parsed = sshUtils.parseKey(key);
+  let parsed: ReturnType<typeof sshUtils.parseKey>;
+  try {
+    parsed = sshUtils.parseKey(key);
+  } catch {
+    // ssh2 throws on some malformed keys (an EC scalar out of range) rather
+    // than answering with an error.
+    parsed = new Error("unparseable key");
+  }
   const first = Array.isArray(parsed) ? parsed[0] : parsed;
   if (first instanceof Error) {
     if (/passphrase|encrypted/i.test(first.message)) return encrypted;
