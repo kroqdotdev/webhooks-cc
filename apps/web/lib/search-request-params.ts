@@ -6,7 +6,11 @@
 import { randomUUID } from "node:crypto";
 import { captureServerEvent } from "@/lib/analytics-server";
 import { withSearchSlot } from "@/lib/search-gate";
-import { cancelRequestSearch, LEGACY_SEARCH_BUDGET_MS, SEARCH_BUDGET_MS } from "@/lib/supabase/search";
+import {
+  cancelRequestSearch,
+  LEGACY_SEARCH_BUDGET_MS,
+  SEARCH_BUDGET_MS,
+} from "@/lib/supabase/search";
 
 // The SDK's duration grammar (packages/sdk/src/utils.ts): "90s", "15m",
 // "1h", "7d", "1.5h", "500ms".

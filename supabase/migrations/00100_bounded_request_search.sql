@@ -26,11 +26,12 @@
 --   * A term made only of printable ASCII matches under COLLATE "C": ILIKE
 --     lower()s both sides, and lower() under the database's libc
 --     en_US.UTF-8 locale was ~63% of the cost a row. Under that locale only
---     two non-ASCII characters lower to ASCII letters (U+0130 to i, the
---     Kelvin sign U+212A to k), so a term with an i or a k also matches,
---     on the locale's ILIKE, the rare row that holds one of those two;
---     every other ASCII term gives exactly the old result. Other terms keep
---     the locale's case folding.
+--     two non-ASCII characters lower to ASCII letters (U+0130, the dotted
+--     capital I, to i; the Kelvin sign U+212A to k); under COLLATE "C" they
+--     match only themselves. That is the one difference from the old
+--     search, kept on purpose: every way of also matching them (a second
+--     pass, a regex with alternatives) cost 40 to 110% more a row for every
+--     term with an i or a k. Other terms keep the locale's case folding.
 --   * %, _ and \ in the term are literal (they were LIKE wildcards).
 --   * Emails also match their decoded subject, text and addresses, not only
 --     the raw MIME (which is base64 or quoted-printable for many messages).
@@ -246,28 +247,13 @@ begin
     if v_q ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' then
       v_q_id := v_q::uuid;
     end if;
-    -- Each field matched once under the chosen collation; for an ASCII
-    -- term with an i or a k, also on the locale's ILIKE when the field holds
-    -- U+0130 or U+212A (see the header).
-    v_match := ' and (' || array_to_string(array(
-      select case
-        when v_collate <> '' and v_q ~* '[ik]' then
-          format('(%1$s collate "C" ilike $5 or ((strpos(%1$s, %2$L) > 0 or strpos(%1$s, %3$L) > 0) and %1$s ilike $5))',
-                 f, chr(304), chr(8490))
-        else format('%s%s ilike $5', f, v_collate)
-      end
-      from unnest(array['r.path', 'r.headers::text', 'r.body']) f), ' or ')
+    v_match := format(
+      ' and (r.path%1$s ilike $5 or r.headers::text%1$s ilike $5 or r.body%1$s ilike $5'
       || ' or (r.kind = ''email'' and r.email is not null and ('
-      || array_to_string(array(
-      select case
-        when v_collate <> '' and v_q ~* '[ik]' then
-          format('(%1$s collate "C" ilike $5 or ((strpos(%1$s, %2$L) > 0 or strpos(%1$s, %3$L) > 0) and %1$s ilike $5))',
-                 f, chr(304), chr(8490))
-        else format('%s%s ilike $5', f, v_collate)
-      end
-      from unnest(array['(r.email->>''subject'')', '(r.email->>''text'')', '(r.email->''from'')::text',
-                        '(r.email->''to'')::text', '(r.email->''cc'')::text']) f), ' or ')
-      || ')))';
+      || '(r.email->>''subject'')%1$s ilike $5 or (r.email->>''text'')%1$s ilike $5'
+      || ' or (r.email->''from'')::text%1$s ilike $5 or (r.email->''to'')::text%1$s ilike $5'
+      || ' or (r.email->''cc'')::text%1$s ilike $5)))',
+      v_collate);
   end if;
 
   if v_method is not null then

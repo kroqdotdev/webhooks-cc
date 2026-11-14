@@ -120,7 +120,11 @@ export async function GET(request: Request) {
     // A search answers within its time budget with what it found and where it
     // stopped; the body stays the array older clients read, and the rest
     // travels in X-Search-* headers.
-    const { result: page, waitedMs, ranMs } = await runBoundedSearch({
+    const {
+      result: page,
+      waitedMs,
+      ranMs,
+    } = await runBoundedSearch({
       userId,
       signal: request.signal,
       paged,

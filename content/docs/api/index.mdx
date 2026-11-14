@@ -774,7 +774,7 @@ The response body is a JSON array of requests, as before.
 
 ### What a search matches
 
-`q` is found as a substring, not as words: `q=voice` matches `invoice`. It is case-insensitive, and every character is literal, `%`, `_` and `\` included (there are no wildcards). A request matches when the text appears in its path, its headers or its body. An email also matches on its decoded subject, its text and its from, to and cc addresses, so a message sent as base64 or quoted-printable is found by what it says. When `q` is a request id, that request comes first.
+`q` is found as a substring, not as words: `q=voice` matches `invoice`. It is case-insensitive (a term written only in ASCII folds ASCII letters only, so the dotted capital İ and the Kelvin sign match only themselves), and every character is literal, `%`, `_` and `\` included (there are no wildcards). A request matches when the text appears in its path, its headers or its body. An email also matches on its decoded subject, its text and its from, to and cc addresses, so a message sent as base64 or quoted-printable is found by what it says. When `q` is a request id, that request comes first.
 
 ### Partial pages and the cursor
 
