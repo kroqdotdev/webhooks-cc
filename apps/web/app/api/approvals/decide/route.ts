@@ -1,6 +1,12 @@
 import { auditUserAction } from "@/lib/audit";
 import { deviceApprover } from "@/lib/device-session";
-import { ApprovalError, decideApproval, withdrawApproval } from "@/lib/approvals/store";
+import {
+  ApprovalError,
+  decideApproval,
+  reopenBrowserApproval,
+  withdrawApproval,
+} from "@/lib/approvals/store";
+import { authorizationUrl, browserCookie, googleConfig } from "@/lib/integrations/google";
 import { reportError } from "@/lib/observability";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { parseJsonBodyWith } from "@/lib/request-validation";
@@ -9,10 +15,12 @@ import { z } from "zod";
 const decideBody = z.object({
   code: z.string(),
   decision: z.enum(["approve", "deny", "withdraw"]),
+  /** What the person chose on the page, for the action (a Drive pick's file). */
+  input: z.unknown().optional(),
 });
 
 /**
- * POST /api/approvals/decide { code, decision: "approve" | "deny" | "withdraw" }:
+ * POST /api/approvals/decide { code, decision: "approve" | "deny" | "withdraw", input? }:
  * the person's answer on the approval page, from a browser session of the
  * account the approval is for (past two-factor sign-in when it has one).
  * "withdraw" takes back an approval its asker has not collected yet; the
@@ -23,12 +31,12 @@ export async function POST(request: Request) {
   if (rateLimited) return rateLimited;
 
   const parsed = await parseJsonBodyWith(request, decideBody, {
-    maxSize: 1024,
+    maxSize: 2048,
     message: 'Send { code, decision: "approve" | "deny" | "withdraw" }',
     invalidJson: "Invalid JSON",
   });
   if ("error" in parsed) return parsed.error;
-  const { code, decision } = parsed.data;
+  const { code, decision, input } = parsed.data;
 
   try {
     const approver = await deviceApprover();
@@ -48,7 +56,9 @@ export async function POST(request: Request) {
     }
 
     const approve = decision === "approve";
-    const decided = await decideApproval(code, approver.userId, approve);
+    const decided = await decideApproval(code, approver.userId, approve, input);
+    // A Google connection: the browser goes on to Google to finish it.
+    if (decided.browser) return googleConsent(request, approver.userId, decided.id, code);
     await auditUserAction(request, approver.userId, {
       action: approve ? "approval.approved" : "approval.denied",
       status: 200,
@@ -93,6 +103,21 @@ async function auditDone(
       teamId: typeof params.teamId === "string" ? params.teamId : null,
       metadata: { ...via, id: result.domainId },
     });
+  } else if (decided.action === "ai.assist") {
+    const ask = params.ask as { kind?: string } | undefined;
+    await auditUserAction(request, userId, {
+      action: "endpoint.ai_assist",
+      status: 200,
+      targetId: typeof params.slug === "string" ? params.slug : null,
+      // What was asked and how it went; never the emails or the patterns.
+      metadata: {
+        ...via,
+        kind: ask?.kind,
+        samples: Array.isArray(params.requestIds) ? params.requestIds.length : 0,
+        proposed: Array.isArray(result.fields) ? result.fields.length : 0,
+        dropped: result.dropped,
+      },
+    });
   } else if (decided.action === "account.rename") {
     await auditUserAction(request, userId, {
       action: "account.name_updated",
@@ -100,4 +125,43 @@ async function auditDone(
       metadata: { ...via, cleared: result.name === null },
     });
   }
+}
+
+/**
+ * A Google connection an agent asked for: approving sends this browser to
+ * Google's consent page, and the callback completes the approval and comes
+ * back to its page. The cookie ties the callback to this browser, as when
+ * the dashboard connects.
+ */
+async function googleConsent(
+  request: Request,
+  userId: string,
+  approvalId: string,
+  code: string
+): Promise<Response> {
+  const config = googleConfig();
+  if (!config) {
+    await reopenBrowserApproval(approvalId, userId);
+    return Response.json({ error: "Google Sheets is not set up on this server." }, { status: 503 });
+  }
+  const { url, browserNonce } = authorizationUrl(
+    config,
+    userId,
+    `/approve?code=${encodeURIComponent(code.trim().toUpperCase())}`,
+    "webhooks",
+    undefined,
+    approvalId
+  );
+  await auditUserAction(request, userId, {
+    action: "approval.approved",
+    status: 200,
+    targetId: approvalId,
+    metadata: { action: "google.connect" },
+  });
+  const response = Response.json({ status: "redirect", url });
+  response.headers.append(
+    "set-cookie",
+    browserCookie(browserNonce, new URL(request.url).protocol === "https:")
+  );
+  return response;
 }

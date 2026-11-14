@@ -34,9 +34,10 @@ API keys are generated from the [API keys page](/account/api-keys). Keys use the
 
 <Callout type="warning">
   A few things are for the account's owner to allow. A new API key, a new share link, removing a
-  custom domain and a rename answer an API key with `202` and an [approval](#approvals) the owner
-  answers in the browser. Account deletion, changing a plan or paying, and AI setup take a
-  browser session and answer `403` to an API key.
+  custom domain, a rename, connecting a Google account, choosing a spreadsheet from Drive and AI
+  setup answer an API key with `202` and an [approval](#approvals) the owner answers in the
+  browser. Account deletion and changing a plan or paying take a browser session and answer `403`
+  to an API key.
 </Callout>
 
 The machine-readable version of this page is the [OpenAPI document](/openapi.yaml), which lists every route below with its parameters and response shapes.
@@ -732,7 +733,7 @@ curl -X POST https://webhooks.cc/api/endpoints/abc123/destinations \
 
 #### Google Sheets
 
-A [Google Sheets](/docs/forwarding#google-sheets) destination has `"format": "sheets"` and `config`: `{ "connectionId", "spreadsheetId", "sheet", "rows": "email" | "line_items", "columns": [{ "header", "value" }] }`. Connecting a Google account and picking the spreadsheet happen in the dashboard (Google's consent and file picker need a browser); after that the destination can be read and changed here like any other.
+A [Google Sheets](/docs/forwarding#google-sheets) destination has `"format": "sheets"` and `config`: `{ "connectionId", "spreadsheetId", "sheet", "rows": "email" | "line_items", "columns": [{ "header", "value" }] }`. Connecting a Google account and choosing an existing spreadsheet need the owner in a browser (Google's consent page and Drive picker), so with an API key they are [approvals](#approvals) whose page takes the owner there; a new spreadsheet can be made directly. After that the destination can be read and changed here like any other.
 
 ### Connected Google accounts
 
@@ -742,6 +743,12 @@ curl https://webhooks.cc/api/integrations/google/connections \
 ```
 
 Returns `{ "available": true, "connections": [{ "id": "...", "email": "ops@acme.example", "createdAt": 1791450602000 }] }`: the Google accounts a Sheets destination's `config.connectionId` can name. `available` is whether Google Sheets is set up on the server.
+
+- `POST /api/integrations/google/start` asks to connect an account (an approval). Approving takes the owner to Google, and the result is `{ connectionId, email }`.
+- `POST /api/integrations/google/pick` with `{ "connectionId" }` asks the owner to choose a spreadsheet from Drive (an approval whose page opens Google's picker). The result is `{ connectionId, spreadsheetId, url, tabs }`.
+- `POST /api/integrations/google/spreadsheets` with `{ "connectionId", "title", "sheet", "headers": [...] }` creates a spreadsheet with that header row and answers `201` with `{ id, url }`. With `spreadsheetId` instead of a title, it writes the header row of a spreadsheet the account reaches, and with a key only when row 1 is empty (`headerWritten`).
+- `GET /api/integrations/google/spreadsheets?connectionId=&spreadsheetId=` lists its tabs: `{ "tabs": [...] }`.
+- `DELETE /api/integrations/google/connections/:id` disconnects an account and revokes its access at Google.
 
 ## Search
 
@@ -1359,6 +1366,10 @@ Business accounts and Team Business teams receive mail at [their own domains](/d
 - `PATCH /api/domains/:id` with `{ "catchAllEndpointId": "<id or null>", "routes": [{ "localPart": "billing", "endpointId": "<id>" }] }` replaces the routing.
 - `DELETE /api/domains/:id` asks to remove it (an approval); the result is `{ removed, domainId }`.
 
+### AI setup
+
+`GET /api/endpoints/:slug/layouts/assist` says whether [AI setup](/docs/layouts#set-it-up-with-ai) is offered and how many assists are left: `{ offered, allowed, used, nextAt }`. `POST` with `{ "ask": { "kind": "field", "name": "order", "description": "the order number" }, "requestIds": ["..."] }` (1 to 5 of the endpoint's emails; `kind` may also be `layout` or `repair`) asks for proposals. Sending the emails to the model is the owner's consent, so with an API key it is an approval whose page lists the emails, and it runs when the owner approves; a browser session sends `"consent": true` instead. The result is `{ fields: [{ field, values }], match, layoutName, dropped, allowed, used }`. Nothing is saved: apply the fields with `PATCH /api/endpoints/:slug`.
+
 ## Routes that need a browser session
 
 These answer `403` to an API key, because they are for a person at a browser:
@@ -1366,7 +1377,6 @@ These answer `403` to an API key, because they are for a person at a browser:
 - `DELETE /api/account`: delete the account and all its data
 - `PATCH /api/account` with `approvalEmails`: whether approvals are emailed to the owner
 - `/api/billing/*` and `/api/teams/:id/billing/*` except reads and quotes: plans, seats, extra capacity, checkout and cancellation
-- `/api/endpoints/:slug/layouts/assist`: [AI setup](/docs/layouts#set-it-up-with-ai) for layouts and email fields
 
 ## Error handling
 

@@ -367,6 +367,8 @@ A **Google Sheets** destination adds a row to a spreadsheet for each email or re
 3. Set the columns: each has a header and a value written with the same [placeholders](#your-own-json) as templates, such as `{{ subject }}`, `{{ from.address }}` or one of your [fields](/docs/email-capture#fields-you-pick-out), `{{ fields.order }}`. **Write these headers to row 1** puts the headers into a spreadsheet you picked; webhooks.cc never changes your header row on its own.
 4. **One per email** adds a row for each email; **One per line item** adds a row for each [line item](/docs/layouts#line-items) a layout found, with `{{ item.sku }}` and the like for its values (an email without line items adds one row).
 
+An agent can do this too. It lists the Google accounts, creates a spreadsheet in one, and reads a spreadsheet's tabs with an API key (`whk google`, `client.google`, the `create_spreadsheet` tool). Connecting an account and choosing an existing spreadsheet are yours: the agent asks, and the [approval](/docs/agents#approvals) page takes you to Google's consent page or opens the Drive picker, then the agent reads the connection or the spreadsheet it gets back.
+
 Rows are written as plain text, so a value that starts with `=` stays text and never becomes a formula. Rows that arrive close together are added in one call, and a delivery Google refuses is retried like any other; if you disconnect the account or remove webhooks.cc's access in Google, connect it again and the waiting rows go through.
 
 An order email as a row per email and as a row per line item: [Email to Google Sheets](https://mailhooks.cc/google-sheets) on mailhooks.cc.

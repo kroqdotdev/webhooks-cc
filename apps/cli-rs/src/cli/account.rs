@@ -37,7 +37,7 @@ impl From<crate::cli::ApprovalArgs> for ApprovalOptions {
 /// Follows the answer of a route that asks for approval with an API key:
 /// shows the link and waits for the result, or prints what a browser
 /// session got at once.
-async fn ask(
+pub(crate) async fn ask(
     client: &ApiClient,
     answer: Value,
     opts: ApprovalOptions,
@@ -67,11 +67,11 @@ async fn ask(
     collect(client, &approval.id, deadline, json).await
 }
 
-fn text<'a>(value: &'a Value, field: &str) -> &'a str {
+pub(crate) fn text<'a>(value: &'a Value, field: &str) -> &'a str {
     value.get(field).and_then(Value::as_str).unwrap_or("")
 }
 
-fn when(value: &Value, field: &str) -> String {
+pub(crate) fn when(value: &Value, field: &str) -> String {
     match value.get(field) {
         Some(Value::Number(n)) => n.as_i64().map(format_timestamp).unwrap_or_default(),
         Some(Value::String(iso)) => chrono::DateTime::parse_from_rfc3339(iso)
@@ -81,7 +81,7 @@ fn when(value: &Value, field: &str) -> String {
     }
 }
 
-fn print_json(value: &Value) -> Result<()> {
+pub(crate) fn print_json(value: &Value) -> Result<()> {
     println!("{}", serde_json::to_string_pretty(value)?);
     Ok(())
 }

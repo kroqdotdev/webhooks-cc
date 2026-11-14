@@ -1,4 +1,4 @@
-import { authenticateSessionRequest } from "@/lib/api-auth";
+import { authenticateRequestRequireUser } from "@/lib/api-auth";
 import {
   accessToken,
   createSpreadsheet,
@@ -35,11 +35,11 @@ function googleFailure(error: GoogleError): { body: { error: string }; status: n
 
 /**
  * GET /api/integrations/google/spreadsheets?connectionId=&spreadsheetId=:
- * the spreadsheet's tabs, for choosing the one rows go to. A session, like
- * the rest of the Google routes.
+ * the spreadsheet's tabs, for choosing the one rows go to. Any key of the
+ * account may read them.
  */
 export async function GET(request: Request) {
-  const auth = await authenticateSessionRequest(request);
+  const auth = await authenticateRequestRequireUser(request);
   if (!auth.success) return auth.response;
   const rateLimit = await checkRateLimitWithInfo(request, "google-sheets-tabs", 60);
   if (rateLimit.response) return rateLimit.response;
@@ -72,11 +72,13 @@ export async function GET(request: Request) {
  * POST /api/integrations/google/spreadsheets {connectionId, title, sheet,
  * headers}: creates a spreadsheet in that Google account with the header
  * row, for a Sheets destination. With `spreadsheetId` instead of a title it
- * writes the header row of an existing one, when the owner asks. Takes a
- * session, never an API key: it writes to the person's Google Drive.
+ * writes the header row of an existing one, when the owner asks. Any key of
+ * the account may: the app reaches only spreadsheets it created or the
+ * person picked for it (drive.file), and a first row holding anything but
+ * the destination's own earlier headers is left as it is.
  */
 export async function POST(request: Request) {
-  const auth = await authenticateSessionRequest(request);
+  const auth = await authenticateRequestRequireUser(request);
   if (!auth.success) return auth.response;
   const rateLimit = await checkRateLimitWithInfo(request, "google-sheets", 20);
   if (rateLimit.response) return rateLimit.response;
@@ -121,9 +123,12 @@ export async function POST(request: Request) {
       // An existing sheet's first row is written only when it is empty or
       // still holds this destination's earlier headers: someone's own data
       // or header row is never overwritten.
-      const previous = Array.isArray(body.previousHeaders)
-        ? body.previousHeaders.filter((h): h is string => typeof h === "string")
-        : [];
+      // A key cannot vouch for what row 1 held (it could name the person's
+      // own header row): with one, only an empty first row is written.
+      const previous =
+        !auth.keyId && Array.isArray(body.previousHeaders)
+          ? body.previousHeaders.filter((h): h is string => typeof h === "string")
+          : [];
       const first = (await readFirstRow(token, body.spreadsheetId, sheet)).filter(
         (cell, i, row) => cell !== "" || row.slice(i).some((c) => c !== "")
       );

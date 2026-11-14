@@ -1,5 +1,5 @@
 import { auditUserAction } from "@/lib/audit";
-import { authenticateSessionRequest } from "@/lib/api-auth";
+import { authenticateRequestRequireUser } from "@/lib/api-auth";
 import { revokeToken } from "@/lib/integrations/google";
 import { reportError } from "@/lib/observability";
 import { deleteGoogleConnection } from "@/lib/supabase/google-connections";
@@ -10,7 +10,7 @@ import { deleteGoogleConnection } from "@/lib/supabase/google-connections";
  * fail until another account is chosen.
  */
 export async function DELETE(request: Request, { params }: { params: Promise<{ id: string }> }) {
-  const auth = await authenticateSessionRequest(request);
+  const auth = await authenticateRequestRequireUser(request);
   if (!auth.success) return auth.response;
   const { id } = await params;
   try {

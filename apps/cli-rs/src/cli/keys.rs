@@ -205,7 +205,45 @@ fn print_result(result: &Value, approval: Option<&Value>, json: bool) {
         return;
     }
     let text = |field: &str| result.get(field).and_then(Value::as_str).unwrap_or("");
-    if result.get("url").is_some() {
+    if result.get("spreadsheetId").is_some() {
+        let tabs = result
+            .get("tabs")
+            .and_then(Value::as_array)
+            .map(|t| {
+                t.iter()
+                    .filter_map(Value::as_str)
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            })
+            .unwrap_or_default();
+        println!("\n  {} Spreadsheet chosen:\n", green("Approved."));
+        println!("    {}", bold(text("url")));
+        println!(
+            "\n  {}",
+            dim(&format!(
+                "id {}  connection {}  tabs: {}",
+                text("spreadsheetId"),
+                text("connectionId"),
+                sanitize(&tabs)
+            ))
+        );
+    } else if result.get("fields").is_some() {
+        println!(
+            "\n  {} AI setup proposed (nothing is saved until you apply it):\n",
+            green("Approved.")
+        );
+        println!(
+            "{}",
+            sanitize(&serde_json::to_string_pretty(result).unwrap_or_default())
+        );
+    } else if result.get("connectionId").is_some() {
+        println!(
+            "\n  {} Google account {} connected (connection {}).",
+            green("Approved."),
+            bold(&sanitize(text("email"))),
+            text("connectionId")
+        );
+    } else if result.get("url").is_some() {
         println!("\n  {} Share link:\n", green("Approved."));
         println!("    {}\n", bold(text("url")));
         println!(

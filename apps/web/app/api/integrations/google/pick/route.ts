@@ -1,4 +1,5 @@
-import { authenticateSessionRequest } from "@/lib/api-auth";
+import { authenticateRequestRequireUser } from "@/lib/api-auth";
+import { requestApproval } from "@/lib/approvals/request";
 import { googleConfig, isPickNonce, pickerUrl } from "@/lib/integrations/google";
 import { reportError } from "@/lib/observability";
 import { applyRateLimitHeaders, checkRateLimitWithInfo } from "@/lib/rate-limit";
@@ -10,11 +11,12 @@ import { listGoogleConnections } from "@/lib/supabase/google-connections";
  * POST /api/integrations/google/pick {connectionId, nonce}: the URL of
  * Google's Drive picker for spreadsheets, for the dashboard to open in a
  * pop-up (lib/integrations/google.ts, pickerUrl). The picked file comes back
- * to the picked page of this site with the nonce. A session, not an API
- * key, like connecting.
+ * to the picked page of this site with the nonce. With an API key or agent
+ * token it is an approval instead (`google.pick`): the owner picks on the
+ * approval page, and the asker reads the chosen spreadsheet.
  */
 export async function POST(request: Request) {
-  const auth = await authenticateSessionRequest(request);
+  const auth = await authenticateRequestRequireUser(request);
   if (!auth.success) return auth.response;
   const rateLimit = await checkRateLimitWithInfo(request, "google-pick", 30);
   if (rateLimit.response) return rateLimit.response;
@@ -26,6 +28,19 @@ export async function POST(request: Request) {
   const parsed = await parseJsonBody(request);
   if ("error" in parsed) return parsed.error;
   const body = (parsed.data ?? {}) as { connectionId?: unknown; nonce?: unknown };
+  // An API key or agent token: the owner picks on the approval page, which
+  // opens the picker, and the asker reads the chosen spreadsheet.
+  if (auth.keyId) {
+    return applyRateLimitHeaders(
+      await requestApproval(
+        request,
+        { userId: auth.userId, keyId: auth.keyId, agentRegistrationId: auth.agentRegistrationId },
+        "google.pick",
+        { connectionId: body.connectionId }
+      ),
+      rateLimit
+    );
+  }
   if (!isPickNonce(body.nonce)) return reply({ error: "nonce is invalid" }, 400);
   try {
     const connection = (await listGoogleConnections(auth.userId)).find(

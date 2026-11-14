@@ -4,6 +4,8 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { createClient } from "@supabase/supabase-js";
 import { GET, POST } from "@/app/api/endpoints/[slug]/layouts/assist/route";
 import { getUsageForUser } from "@/lib/supabase/usage";
+import { decideApproval, pollApproval, reviewApproval } from "@/lib/approvals/store";
+import { generateApiKey, hashApiKey } from "@/lib/supabase/api-keys";
 
 /**
  * AI setup and repair (migration 00075, lib/ai) against the local database
@@ -236,6 +238,56 @@ describe("AI setup and repair", () => {
     ]);
     expect(result.fields[1].values).toEqual(["12.50", "8.00"]);
     expect(result.dropped).toBe(1);
+  });
+
+  it("asks the owner when an API key wants it, lists the emails, and runs on approval", async () => {
+    const owner = await signedIn();
+    const raw = generateApiKey();
+    const { data: key, error } = await admin
+      .from("api_keys")
+      .insert({
+        user_id: owner.userId,
+        name: "agent",
+        key_hash: hashApiKey(raw),
+        key_prefix: raw.slice(0, 12),
+      })
+      .select("id")
+      .single();
+    if (error) throw error;
+    const ids = [
+      await capture(owner.slug, "Order #4001 confirmed", "x"),
+      await capture(owner.slug, "Order #4002 confirmed", "y"),
+    ];
+    const ask = { kind: "field", name: "order", description: "the order number" };
+
+    // The status reads with a key.
+    expect((await call("GET", owner.slug, raw)).status).toBe(200);
+    // A key never consents: it gets an approval, and nothing reaches the model.
+    const response = await call("POST", owner.slug, raw, { ask, requestIds: ids, consent: true });
+    expect(response.status).toBe(202);
+    const { approval } = (await response.json()) as {
+      approval: { id: string; code: string; action: string };
+    };
+    expect(approval.action).toBe("ai.assist");
+    expect(asked).toHaveLength(0);
+
+    // The page names the emails that would be sent.
+    const review = await reviewApproval(approval.code, owner.userId, null);
+    const shown = JSON.stringify(review?.details);
+    expect(shown).toContain("Order #4001 confirmed");
+    expect(shown).toContain("orders@acme.example");
+    expect(shown).toContain("Attachments");
+
+    answers = [{ proposal: field("Order #(\\d+)") }];
+    expect(await decideApproval(approval.code, owner.userId, true)).toMatchObject({ done: true });
+    expect(asked).toHaveLength(1);
+    const polled = await pollApproval(approval.id, { userId: owner.userId, keyId: key.id });
+    expect(polled?.approval.status).toBe("completed");
+    expect((polled?.result as { fields: { values: string[] }[] }).fields[0].values).toEqual([
+      "4001",
+      "4002",
+    ]);
+    expect((await (await call("GET", owner.slug, raw)).json()).used).toBe(1);
   });
 
   it("needs consent and the endpoint's own emails, and sends nothing without them", async () => {

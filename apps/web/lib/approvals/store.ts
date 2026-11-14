@@ -172,6 +172,8 @@ export interface ApprovalReview {
   action: ApprovalAction;
   summary: string;
   details: ActionDetail[];
+  /** What the page needs to answer it (the connection a Drive pick is for). */
+  page: Record<string, unknown> | null;
   requester: string;
   client: string | null;
   country: string | null;
@@ -204,11 +206,13 @@ export async function reviewApproval(
   const row = await pendingByCode(code);
   if (!row) return null;
   if (row.user_id !== userId) throw new ApprovalError(403, OTHER_ACCOUNT);
+  const spec = actionSpec(row.action);
   return {
     code: row.user_code,
     action: row.action,
     summary: row.summary,
-    details: actionSpec(row.action).details(row.params),
+    details: await spec.details(row.params, row.user_id),
+    page: spec.page?.(row.params) ?? null,
     requester: row.requester,
     client: row.client,
     country: row.country,
@@ -238,7 +242,7 @@ export async function withdrawApproval(
   if (!row) throw new ApprovalError(400, "This code has expired or was already answered.");
   if (row.user_id !== userId) throw new ApprovalError(403, OTHER_ACCOUNT);
   // An action that runs on approval is done once approved: nothing to take back.
-  if (actionSpec(row.action).runAt === "approve") {
+  if (actionSpec(row.action).runAt !== "collect") {
     if (row.status === "completed") return { id: row.id, action: row.action, collected: true };
     throw new ApprovalError(400, "Only an approved request can be withdrawn.");
   }
@@ -271,11 +275,15 @@ export async function withdrawApproval(
 export async function decideApproval(
   code: string,
   userId: string,
-  approve: boolean
+  approve: boolean,
+  /** What the person chose on the page, for the action (a picked file). */
+  input?: unknown
 ): Promise<{
   id: string;
   action: ApprovalAction;
   done: boolean;
+  /** Approved, and the browser goes on to finish it (Google's consent page). */
+  browser?: boolean;
   /** For an action that ran on approval: what it did, and its parameters. */
   result?: Json;
   params?: unknown;
@@ -308,11 +316,18 @@ export async function decideApproval(
     .maybeSingle();
   if (error) throw error;
   if (!data) throw new ApprovalError(400, "This code has expired or was already answered.");
-  if (!runsNow) return { id: row.id, action: row.action, done: false };
+  if (!runsNow) {
+    return {
+      id: row.id,
+      action: row.action,
+      done: false,
+      browser: approve && spec.runAt === "browser",
+    };
+  }
 
   let stored: Json;
   try {
-    ({ stored } = await spec.run(row.user_id, row.params));
+    ({ stored } = await spec.run(row.user_id, row.params, input));
   } catch (err) {
     // Only a clean refusal (ActionError: checked, nothing done) gives the
     // approval back to approve again. Anything else may have failed after
@@ -375,9 +390,12 @@ export async function pollApproval(
     : row.requested_by_key !== null && row.requested_by_key === asker.keyId;
   if (!mine) return null;
 
+  const runAt = actionSpec(row.action).runAt;
+  // Finished in the person's browser (Google): nothing for a poll to run.
+  if (runAt === "browser" && row.status !== "completed") return { approval: view(row) };
   // An action that ran on approval: its result is kept, and read as often
   // as asked until the row expires.
-  if (row.status === "completed" && actionSpec(row.action).runAt === "approve") {
+  if (row.status === "completed" && runAt !== "collect") {
     if (row.result !== null) {
       return { approval: view(row), result: row.result as Record<string, unknown> };
     }
@@ -429,6 +447,42 @@ export async function pollApproval(
     throw new ApprovalError(410, "The account's owner withdrew this approval.");
   }
   return { approval: view(claimed as Row), result: ran.result };
+}
+
+/**
+ * Finishes an approval the person's browser carried on with (a Google
+ * connection): approved to completed, with its result for the asker. False
+ * when it is no longer approved (refused, withdrawn or gone meanwhile).
+ */
+export async function completeBrowserApproval(
+  id: string,
+  userId: string,
+  result: Json
+): Promise<boolean> {
+  const { data, error } = await createAdminClient()
+    .from("approvals")
+    .update({ status: "completed", completed_at: new Date().toISOString(), result })
+    .eq("id", id)
+    .eq("user_id", userId)
+    .eq("status", "approved")
+    .select("id")
+    .maybeSingle();
+  if (error) throw error;
+  return data !== null;
+}
+
+/**
+ * The browser came back without finishing it (cancelled at Google, or it
+ * failed): the approval waits again, so the person can try once more.
+ */
+export async function reopenBrowserApproval(id: string, userId: string): Promise<void> {
+  const { error } = await createAdminClient()
+    .from("approvals")
+    .update({ status: "pending", decided_at: null })
+    .eq("id", id)
+    .eq("user_id", userId)
+    .eq("status", "approved");
+  if (error) throw error;
 }
 
 /** The account's owner, when they asked to hear of every approval. */

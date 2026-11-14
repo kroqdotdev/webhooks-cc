@@ -400,6 +400,30 @@ whk domains remove <id>                        # asks, waits for the approval
 
 `route` takes endpoints by slug or id, and keeps what you leave out: `--catch-all` alone keeps the routes, and `--route` replaces every route but keeps the catch-all.
 
+
+## google
+
+Google accounts for [Google Sheets destinations](/docs/forwarding#google-sheets). Listing, tabs, new spreadsheets and disconnecting act at once. Connecting an account and choosing an existing spreadsheet need the account's owner: whk prints a link, and the page takes them to Google's consent page or opens the Drive picker.
+
+```bash
+whk google list                                    # connected accounts
+whk google connect                                 # asks, waits, prints the new connection's id
+whk google pick <connection>                       # the owner chooses a spreadsheet; prints its id and tabs
+whk google create-sheet <connection> --title "Orders" --header Received --header Subject
+whk google tabs <connection> <spreadsheet>
+whk google disconnect <connection> --yes
+```
+
+## ai
+
+[AI setup](/docs/layouts#set-it-up-with-ai): AI proposes email fields or a layout from 1 to 5 of an endpoint's emails. Sending them to Anthropic needs the account's owner, who sees each email by subject and sender on the approval page. whk prints the proposals once it ran; nothing is saved until you apply them.
+
+```bash
+whk ai status <slug>                               # offered, assists used and left
+whk ai setup <slug> --request <id> --request <id> --field order --description "the order number"
+whk ai setup <slug> --request <id> --layout --description "Acme order confirmations"
+whk ai setup <slug> --request <id> --repair '{"name":"order","from":"subject","pattern":"#(\\d+)"}'
+```
 ## usage
 
 Show your plan's request usage, then parsed pages, preview data and AI assists with when each resets, and below them the pooled quota of every subscribed team you belong to. With `--json` you get the whole `/api/usage` answer (`parsedPages`, `previewData`, `aiAssists`), and the team pools in a `teams` array.

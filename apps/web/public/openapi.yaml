@@ -855,6 +855,215 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
 
+  /api/integrations/google/start:
+    post:
+      operationId: connectGoogle
+      tags: [Forwarding]
+      summary: Ask to connect a Google account
+      description: >-
+        With an API key or agent token, answers 202 with an approval: approving sends the owner's
+        browser to Google's consent page, and the approval's result is `{ connectionId, email }`.
+        A browser session gets Google's consent URL directly.
+      responses:
+        "202":
+          $ref: "#/components/responses/ApprovalAsked"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /api/integrations/google/pick:
+    post:
+      operationId: pickSpreadsheet
+      tags: [Forwarding]
+      summary: Ask the owner to choose a spreadsheet from Drive
+      description: >-
+        With an API key or agent token, answers 202 with an approval whose page opens Google's
+        Drive picker for the connection's account. The result is `{ connectionId, spreadsheetId,
+        url, tabs }`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [connectionId]
+              properties:
+                connectionId:
+                  type: string
+                  format: uuid
+      responses:
+        "202":
+          $ref: "#/components/responses/ApprovalAsked"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /api/integrations/google/spreadsheets:
+    get:
+      operationId: listSheetTabs
+      tags: [Forwarding]
+      summary: List a spreadsheet's tabs
+      parameters:
+        - name: connectionId
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: spreadsheetId
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: The tabs
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  tabs:
+                    type: array
+                    items:
+                      type: string
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    post:
+      operationId: createSpreadsheet
+      tags: [Forwarding]
+      summary: Create a spreadsheet, or write an existing one's header row
+      description: >-
+        Creates a spreadsheet with the header row in the connection's account (201 `{ id, url }`).
+        With `spreadsheetId` instead of a title it writes the header row of a spreadsheet the
+        account reaches (`{ id, headerWritten }`); with an API key only when row 1 is empty.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [connectionId, headers]
+              properties:
+                connectionId:
+                  type: string
+                title:
+                  type: string
+                spreadsheetId:
+                  type: string
+                sheet:
+                  type: string
+                  default: Sheet1
+                headers:
+                  type: array
+                  items:
+                    type: string
+      responses:
+        "200":
+          description: The header row of an existing spreadsheet
+        "201":
+          description: Created
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /api/integrations/google/connections/{id}:
+    delete:
+      operationId: disconnectGoogle
+      tags: [Forwarding]
+      summary: Disconnect a Google account
+      description: Revokes its access at Google; Sheets destinations using it fail until another is chosen.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Disconnected
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /api/endpoints/{slug}/layouts/assist:
+    parameters:
+      - $ref: "#/components/parameters/slug"
+    get:
+      operationId: aiSetupStatus
+      tags: [Endpoints]
+      summary: AI setup status
+      description: Whether AI setup is offered, and the assists allowed and used in a rolling 30 days.
+      responses:
+        "200":
+          description: The status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  offered:
+                    type: boolean
+                  allowed:
+                    type: integer
+                  used:
+                    type: integer
+                  nextAt:
+                    type: [string, "null"]
+                    format: date-time
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    post:
+      operationId: aiSetup
+      tags: [Endpoints]
+      summary: Ask for AI setup
+      description: >-
+        Proposes email fields, a layout, or a repaired field from 1 to 5 of the endpoint's emails.
+        The emails go to Anthropic's model, so with an API key or agent token this answers 202 with
+        an approval whose page lists them, and it runs when the owner approves; a browser session
+        sends `consent: true`. The result is `{ fields: [{ field, values }], match, layoutName,
+        dropped, allowed, used }`. Nothing is saved.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ask, requestIds]
+              properties:
+                ask:
+                  type: object
+                  description: >-
+                    `{ kind: "field", name, description }`, `{ kind: "layout", description? }` or
+                    `{ kind: "repair", field }`
+                  additionalProperties: true
+                requestIds:
+                  type: array
+                  minItems: 1
+                  maxItems: 5
+                  items:
+                    type: string
+                    format: uuid
+                consent:
+                  type: boolean
+                  description: A browser session's consent; ignored for an API key
+      responses:
+        "200":
+          description: The proposals (a browser session)
+        "202":
+          $ref: "#/components/responses/ApprovalAsked"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/RateLimited"
   /api/endpoints/{slug}/layouts/template:
     parameters:
       - $ref: "#/components/parameters/slug"
@@ -1946,8 +2155,8 @@ paths:
       summary: List connected Google accounts
       description: |
         The Google accounts connected for Google Sheets destinations; a Sheets destination's
-        `config.connectionId` is one of these ids. Connecting and disconnecting an account happens
-        in the dashboard, with a session.
+        `config.connectionId` is one of these ids. Connecting one, or choosing an existing
+        spreadsheet, is an approval the owner finishes at Google; disconnecting works with any key.
       responses:
         "200":
           description: Connected accounts
@@ -4881,7 +5090,16 @@ components:
           enum: [pending, approved, denied, completed, expired]
         action:
           type: string
-          enum: [api_keys.create, request_shares.create, domains.remove, account.rename]
+          enum:
+            [
+              api_keys.create,
+              request_shares.create,
+              domains.remove,
+              account.rename,
+              google.connect,
+              google.pick,
+              ai.assist,
+            ]
         summary:
           type: string
           description: One sentence saying what the owner is asked to allow

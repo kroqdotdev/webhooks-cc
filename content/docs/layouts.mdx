@@ -53,6 +53,8 @@ Writing the patterns yourself is optional: **Draft a layout with AI** (under **A
 
 When an [alert](/docs/forwarding#alerts) says a field stopped matching, **Fix _field_ with AI** next to the alert proposes a corrected pattern from the latest emails, under the field's own name, and saves it when you accept it. Replay the emails afterwards to read them again.
 
+An agent can ask for it too (`whk ai setup`, `client.ai.setup()`, the `ai_setup` tool), naming the emails and what it needs. Sending the emails is your decision, so you [approve it](/docs/agents#approvals): the page lists each email that would be sent, by subject and sender, and AI setup runs when you approve. The agent then reads the proposals and applies them; nothing is saved by the ask itself.
+
 Each ask uses one AI assist: 5 every 30 days on Free, 20 on Pro and Teams, 250 on Business, and 250 per seat on Team Business. An ask that fails on our side or the AI service's is not counted. The patterns run on our servers with RE2 like any others; the AI only writes them, and never reads your mail after that. What is sent and what never is, in short: [AI setup](https://mailhooks.cc/ai-setup) on mailhooks.cc.
 
 ## Line items

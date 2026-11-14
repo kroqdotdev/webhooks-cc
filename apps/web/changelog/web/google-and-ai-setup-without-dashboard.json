@@ -1,0 +1,10 @@
+{
+  "title": "Google Sheets and AI setup without the dashboard",
+  "items": [
+    "An agent can ask to connect a Google account: you approve, the page takes you to Google's consent page, and the agent sees the new connection",
+    "An agent can ask you to choose an existing spreadsheet: the approval page opens Google's Drive picker, and the agent gets the spreadsheet and its tabs",
+    "With an API key, Google accounts can be listed and disconnected, spreadsheets created, and a spreadsheet's tabs read",
+    "An agent can ask for AI setup on an endpoint's emails: the approval page lists each email that would go to the AI by subject and sender, and it runs when you approve",
+    "whk google and whk ai; client.google and client.ai in the TypeScript SDK; eight new MCP tools"
+  ]
+}

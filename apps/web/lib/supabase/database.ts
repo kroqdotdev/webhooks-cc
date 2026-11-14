@@ -413,7 +413,14 @@ export interface Database {
         Row: {
           id: string;
           user_id: string;
-          action: "api_keys.create" | "request_shares.create" | "domains.remove" | "account.rename";
+          action:
+            | "api_keys.create"
+            | "request_shares.create"
+            | "domains.remove"
+            | "account.rename"
+            | "google.connect"
+            | "google.pick"
+            | "ai.assist";
           params: Json;
           summary: string;
           user_code: string;
@@ -433,7 +440,14 @@ export interface Database {
         Insert: {
           id?: string;
           user_id: string;
-          action: "api_keys.create" | "request_shares.create" | "domains.remove" | "account.rename";
+          action:
+            | "api_keys.create"
+            | "request_shares.create"
+            | "domains.remove"
+            | "account.rename"
+            | "google.connect"
+            | "google.pick"
+            | "ai.assist";
           params?: Json;
           summary: string;
           user_code: string;
@@ -454,7 +468,13 @@ export interface Database {
           id?: string;
           user_id?: string;
           action?:
-            "api_keys.create" | "request_shares.create" | "domains.remove" | "account.rename";
+            | "api_keys.create"
+            | "request_shares.create"
+            | "domains.remove"
+            | "account.rename"
+            | "google.connect"
+            | "google.pick"
+            | "ai.assist";
           params?: Json;
           summary?: string;
           user_code?: string;
