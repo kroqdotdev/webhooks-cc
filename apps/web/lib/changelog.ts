@@ -34,7 +34,7 @@ export const CLI_VERSION = "1.18.0";
 export const SDK_VERSION = "1.28.0";
 export const PYTHON_SDK_VERSION = "0.8.0";
 export const GO_SDK_VERSION = "0.8.0";
-export const MCP_VERSION = "1.24.0";
+export const MCP_VERSION = "2.0.0";
 
 export const CHANGELOG: ChangelogEntry[] = [
   ...RELEASE.entries,
@@ -3171,6 +3171,19 @@ export const CHANGELOG: ChangelogEntry[] = [
   },
 
   // ─── MCP ────────────────────────────────────────────────────────────
+  {
+    version: "2.0.0",
+    date: "2026-11-14",
+    title: "Tool Groups",
+    track: "mcp",
+    items: [
+      "The server loads a core of 39 tools by default, plus `enable_tools`, so clients that cap how many tools they load (Cursor takes about 40 across all servers) keep every core tool; Claude Code, Codex, claude.ai and ChatGPT, which load tools on demand, get all 94",
+      "`WHK_MCP_TOOLS=all`, or groups such as `core,teams`, chooses the groups up front; `enable_tools` loads one mid-session",
+      "`WHK_MCP_READ_ONLY=1` lists only the tools that change nothing",
+      "Every tool carries MCP annotations: whether it only reads, whether a change can be undone, and whether it reaches past webhooks.cc",
+      "Breaking for code that builds on the package: it now runs on version 2 of the MCP SDK (`@modelcontextprotocol/server`), so `createServer()`, `registerPrompts()`, `registerResources()` and `registerSandboxTools()` take and return its `McpServer`, and the bin serves the 2026-07-28 protocol revision as well as older clients. Running it with `npx @webhooks-cc/mcp` or from a client's config needs no change",
+    ],
+  },
   {
     version: "1.24.0",
     date: "2026-11-14",
