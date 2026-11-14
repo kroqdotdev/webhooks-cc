@@ -12,6 +12,7 @@ import {
 import { oauthError, oauthJson } from "@/lib/agent/errors";
 import { issuer, readAgentBody } from "@/lib/agent/http";
 import { exchangeAssertion, hashClaimToken, InvalidGrantError } from "@/lib/agent/registrations";
+import { acceptedResources, normalizeResource } from "@/lib/oauth/authorize";
 import { preflight, withCors } from "@/lib/oauth/cors";
 import {
   OAuthGrantError,
@@ -189,10 +190,12 @@ async function oauthTokenGrant(request: Request, body: Record<string, unknown>):
   if (!clientId) {
     return oauthError(400, "invalid_request", "client_id is required for public clients.");
   }
-  // RFC 8707: tokens are for the MCP server and the API, nothing else.
+  // RFC 8707: tokens are for the MCP server and the API, nothing else. The
+  // MCP server's address with its settings (`/mcp?tools=all`) is the MCP
+  // server, as at the authorization endpoint.
   const resource = text(body, "resource");
   const app = issuer();
-  if (resource && ![`${app}/mcp`, `${app}/mcp/`, `${app}/api/`, `${app}/api`].includes(resource)) {
+  if (resource && !acceptedResources().includes(normalizeResource(resource))) {
     return oauthError(400, "invalid_target", `resource must be ${app}/mcp or ${app}/api/.`);
   }
 

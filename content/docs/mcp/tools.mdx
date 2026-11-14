@@ -401,7 +401,7 @@ A captured email in the shape an inbound mail service posts it, to test the hand
 
 ## Forwarding
 
-[Forwarding](/docs/forwarding) sends what an endpoint captures to up to 10 destinations (servers, Slack or Discord channels, tools such as Zapier or n8n), each with its own kinds, conditions, format, timing and signing secret, queued, retried and logged. Only the endpoint's owner can manage it.
+[Forwarding](/docs/forwarding) sends what an endpoint captures to up to 10 destinations (servers, Slack or Discord channels, tools such as Zapier or n8n, Google Sheets), each with its own kinds, conditions, format, timing and signing secret, queued, retried and logged. Only the endpoint's owner can manage it.
 
 A typical agent session: `add_destination`, `preview_destination` to see the exact request it would send, `test_forwarding` with the destination's id to send one, then `list_deliveries` to watch it.
 
@@ -421,15 +421,16 @@ Add a destination; it is on at once unless `enabled: false`, and gets a signing 
 | Parameter         | Type                                                         | Required | Description                                                                                                         |
 | ----------------- | ------------------------------------------------------------ | -------- | ------------------------------------------------------------------------------------------------------------------- |
 | `slug`            | `string`                                                     | yes      | Endpoint slug                                                                                                       |
-| `url`             | `string`                                                     | yes      | `https` URL on a public host name, or a Slack or Discord webhook                                                    |
+| `url`             | `string`                                                     | yes      | `https` URL on a public host name, or a Slack or Discord webhook; left out for `sheets`                            |
 | `name`            | `string \| null`                                             | no       | A name for the list and the log                                                                                     |
 | `enabled`         | `boolean`                                                    | no       | Send to it (default `true`)                                                                                         |
 | `http`, `email`   | `boolean`                                                    | no       | Which kinds it takes (default both)                                                                                 |
 | `filter`          | `{ logic?, conditions } \| null`                             | no       | Send only matching captures; see [Send only some captures](/docs/forwarding#send-only-some-captures)                |
-| `format`          | `string`                                                     | no       | `auto` (chat for Slack and Discord URLs), `as_received`, `json`, `template`, `chat`, or for emails a mail provider's shape: `postmark`, `sendgrid`, `mailgun`, `cloudmailin` |
+| `format`          | `string`                                                     | no       | `auto` (chat for Slack and Discord URLs), `as_received`, `json`, `template`, `chat`, `sheets`, or for emails a mail provider's shape: `postmark`, `sendgrid`, `mailgun`, `cloudmailin` |
 | `mailgunSigningKey` | `string \| null`                                           | no       | With `mailgun`: your Mailgun signing key, so `signature` verifies; write-only                                       |
 | `bodyTemplate`    | JSON                                                         | no       | With `template`: the body, its strings holding `{{ placeholders }}` ([Your own JSON](/docs/forwarding#your-own-json)) |
 | `messageTemplate` | `string \| null`                                             | no       | With `chat`: your own message text; `null` sends the standard message                                               |
+| `config`          | `{ connectionId, spreadsheetId, sheet?, rows?, columns }`    | no       | With `sheets`: the spreadsheet and its columns, see below                                                           |
 | `headers`         | `{ name, value \| null }[]`                                  | no       | Your own headers (at most 10, not for chat)                                                                         |
 | `appendPath`      | `boolean`                                                    | no       | Add the captured path to the URL for relayed requests (default `true`)                                              |
 | `retrySeconds`    | `0 \| 3600 \| 86400`                                         | no       | How long failed deliveries are retried (default a day)                                                              |
@@ -440,9 +441,11 @@ Add a destination; it is on at once unless `enabled: false`, and gets a signing 
 
 A filter condition takes `field`, `op` and `value` like a response rule condition, plus `kind`, `email` (`name`: `subject`, `from`, `to`, `text` or `tag`), `email_field` (`name`: one of the endpoint's named fields), `spam_score`, `email_auth` (`name`: `spf`, `dkim` or `dmarc`) and `signature` (`verified`, `failed` or `missing`).
 
+A [Google Sheets](/docs/forwarding#google-sheets) destination takes `format: "sheets"` and a `config` instead of a `url`; its URL becomes the spreadsheet's. The agent never handles a Google credential: `connectionId` comes from [`list_google_connections`](#list_google_connections) (or [`connect_google`](#connect_google), which the person approves), and `spreadsheetId` from [`create_spreadsheet`](#create_spreadsheet) or [`pick_spreadsheet`](#pick_spreadsheet). `sheet` is the tab (default `Sheet1`), `rows` is `email` (a row per capture, the default) or `line_items` (a row per [line item](/docs/layouts#line-items)), and `columns` holds 1 to 50 `{ header, value }` pairs whose values use the [placeholders](/docs/forwarding#your-own-json), such as `{{ subject }}` or `{{ fields.order }}`. File drops hold a server password, so the MCP server does not create them.
+
 ### update_destination
 
-Change a destination; only the fields passed change. Takes `slug`, `destinationId` and any field of `add_destination`, `url` included. Switching it off or taking a kind away fails the deliveries still waiting for it.
+Change a destination; only the fields passed change. Takes `slug`, `destinationId` and any field of `add_destination`, `url` included. A Sheets destination's `config` is replaced as a whole and goes with `format: "sheets"`. Switching it off or taking a kind away fails the deliveries still waiting for it.
 
 ### remove_destination
 
@@ -872,7 +875,7 @@ Ask to remove a domain (`id`). Its mail is refused from then on, so the person a
 
 ## Google Sheets
 
-Google accounts for [Google Sheets destinations](/docs/forwarding#google-sheets).
+Google accounts and spreadsheets for [Google Sheets destinations](/docs/forwarding#google-sheets). Connect or list an account, create or pick a spreadsheet, then add the destination with [`add_destination`](#add_destination) and `format: "sheets"`.
 
 ### list_google_connections
 
@@ -888,7 +891,7 @@ Ask the person to choose an existing spreadsheet (`connectionId`). The approval 
 
 ### create_spreadsheet
 
-Create a spreadsheet with a header row in a connected account (`connectionId`, `headers`, optional `title` and `sheet`). Needs no approval: the app reaches only spreadsheets it created or that were chosen for it.
+Create a spreadsheet with a header row in a connected account (`connectionId`, `headers`, optional `title` and `sheet`), then pass its `id` to `add_destination` as `spreadsheetId`. With `spreadsheetId` (one from `pick_spreadsheet`) it writes the header row into that spreadsheet instead, only when its first row is empty. Needs no approval: the app reaches only spreadsheets it created or that were chosen for it.
 
 ### list_sheet_tabs
 

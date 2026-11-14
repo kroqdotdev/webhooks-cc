@@ -24,6 +24,7 @@ import {
   buildAuthorizationServerMetadata,
   buildMcpProtectedResourceMetadata,
   buildProtectedResourceMetadata,
+  mcpSettingsQuery,
 } from "@/lib/agent/metadata";
 
 const APP_URL = "https://webhooks.cc";
@@ -69,6 +70,19 @@ describe("remote MCP protected resource metadata", () => {
       resource_documentation: `${APP_URL}/docs/mcp`,
       scopes_supported: ["webhooks:read", "webhooks:write"],
     });
+  });
+
+  test("repeats the settings of the address the client was given (RFC 9728 3.3)", () => {
+    const settings = mcpSettingsQuery(new URL(`${APP_URL}/mcp?tools=core,teams&readonly=1`));
+    expect(settings).toBe("?tools=core,teams&readonly=1");
+    expect(buildMcpProtectedResourceMetadata(settings).resource).toBe(
+      `${APP_URL}/mcp?tools=core,teams&readonly=1`
+    );
+    expect(mcpSettingsQuery(new URL(`${APP_URL}/mcp`))).toBe("");
+    expect(mcpSettingsQuery(new URL(`${APP_URL}/mcp?`))).toBe("");
+    // Nothing that could leave the quoted header value it is put in.
+    expect(mcpSettingsQuery(new URL(`${APP_URL}/mcp?tools=all\\", x="y`))).toBe("");
+    expect(mcpSettingsQuery(new URL(`${APP_URL}/mcp?tools=${"a".repeat(300)}`))).toBe("");
   });
 });
 

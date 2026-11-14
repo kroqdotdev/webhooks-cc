@@ -97,14 +97,30 @@ export interface ProtectedResourceMetadata {
 }
 
 /**
+ * The MCP server's settings (`?tools=core,teams&readonly=1`) from an address,
+ * to carry over into its metadata URL and resource; empty when there are
+ * none, or when the query holds anything else than plain settings (it ends
+ * up in a WWW-Authenticate header).
+ */
+export function mcpSettingsQuery(url: URL): string {
+  const query = url.search;
+  return query.length > 1 && query.length <= 256 && /^\?[A-Za-z0-9_.,=&%-]+$/.test(query)
+    ? query
+    : "";
+}
+
+/**
  * Served at `/.well-known/oauth-protected-resource/mcp` (RFC 9728 3.1: the
  * resource's path appended): the remote MCP server, which takes the same
- * tokens as the API. Its 401s point here.
+ * tokens as the API. Its 401s point here. A client given the server's
+ * address with settings (`/mcp?tools=all`) checks that the metadata names
+ * that address (RFC 9728 3.3), so the settings come back in `resource`; the
+ * authorization and token endpoints take them as the same resource.
  */
-export function buildMcpProtectedResourceMetadata(): ProtectedResourceMetadata {
+export function buildMcpProtectedResourceMetadata(settings = ""): ProtectedResourceMetadata {
   const appUrl = publicEnv().NEXT_PUBLIC_APP_URL;
   return {
-    resource: `${appUrl}/mcp`,
+    resource: `${appUrl}/mcp${settings}`,
     resource_name: "webhooks.cc MCP server",
     resource_logo_uri: `${appUrl}/icon-512.png`,
     authorization_servers: [appUrl],

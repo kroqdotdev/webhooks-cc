@@ -440,6 +440,148 @@ describe("registerTools", () => {
     ).toBe(false);
   });
 
+  describe("Google Sheets destinations", () => {
+    const connectionId = "4b3a2f1e-0d9c-4b8a-9f7e-6d5c4b3a2f1e";
+    const spreadsheetId = "1AbCdEfGhIjKlMnOpQrStUvWxYz0123456789";
+    const columns = [
+      { header: "Received", value: "{{ receivedAt }}" },
+      { header: "Subject", value: "{{ subject }}" },
+    ];
+
+    function sheetsTools() {
+      const create = vi.fn().mockResolvedValue({ id: "d1", format: "sheets" });
+      const update = vi.fn().mockResolvedValue({ id: "d1", format: "sheets" });
+      const createSpreadsheet = vi.fn().mockResolvedValue({ id: spreadsheetId });
+      const tools = getRegisteredTools(
+        createMockClient({
+          destinations: { create, update },
+          google: { createSpreadsheet },
+        } as unknown as Partial<WebhooksCC>)
+      );
+      return { tools, create, update, createSpreadsheet };
+    }
+
+    it("adds one with its config and the spreadsheet's URL", async () => {
+      const { tools, create } = sheetsTools();
+      const schema = z.object(tools.add_destination.schema as z.ZodRawShape);
+      const args = schema.parse({
+        slug: "acme",
+        format: "sheets",
+        email: true,
+        http: false,
+        config: { connectionId, spreadsheetId, columns },
+      });
+      const result = await tools.add_destination.handler(args);
+      expect(result.isError).toBeUndefined();
+      expect(create).toHaveBeenCalledWith("acme", {
+        format: "sheets",
+        email: true,
+        http: false,
+        config: { connectionId, spreadsheetId, sheet: "Sheet1", rows: "email", columns },
+        url: `https://docs.google.com/spreadsheets/d/${spreadsheetId}/edit`,
+      });
+    });
+
+    it("refuses a Sheets destination without config, config without sheets, and a url", async () => {
+      const { tools, create } = sheetsTools();
+      const schema = z.object(tools.add_destination.schema as z.ZodRawShape);
+      const config = { connectionId, spreadsheetId, columns };
+      const cases = [
+        { args: { slug: "acme", format: "sheets" }, message: 'format "sheets" needs config' },
+        { args: { slug: "acme", config }, message: 'pass format: "sheets"' },
+        {
+          args: { slug: "acme", format: "json", url: "https://api.example.com/in", config },
+          message: 'pass format: "sheets"',
+        },
+        {
+          args: { slug: "acme", format: "sheets", url: "https://api.example.com/in", config },
+          message: "leave url out",
+        },
+        { args: { slug: "acme", format: "json" }, message: "Pass the url" },
+      ];
+      for (const { args, message } of cases) {
+        const result = await tools.add_destination.handler(schema.parse(args));
+        expect(result.isError).toBe(true);
+        expect(parseJsonResult(result).message).toContain(message);
+      }
+      expect(create).not.toHaveBeenCalled();
+    });
+
+    it("checks the config's ids and columns, and offers no file drops", () => {
+      const { tools } = sheetsTools();
+      const schema = z.object(tools.add_destination.schema as z.ZodRawShape);
+      const parse = (config: unknown, format = "sheets") =>
+        schema.safeParse({ slug: "acme", format, config }).success;
+      expect(parse({ connectionId, spreadsheetId, columns })).toBe(true);
+      expect(parse({ connectionId: "conn_1", spreadsheetId, columns })).toBe(false);
+      expect(parse({ connectionId, spreadsheetId: "short", columns })).toBe(false);
+      expect(parse({ connectionId, spreadsheetId, columns: [] })).toBe(false);
+      expect(parse({ connectionId, spreadsheetId, columns: [{ header: " ", value: "x" }] })).toBe(
+        false
+      );
+      expect(parse({ connectionId, spreadsheetId, rows: "attachments", columns })).toBe(false);
+      expect(
+        parse(
+          {
+            connectionId,
+            spreadsheetId,
+            columns: Array.from({ length: 51 }, (_, i) => ({ header: `c${i}`, value: "x" })),
+          },
+          "sheets"
+        )
+      ).toBe(false);
+      expect(
+        schema.safeParse({ slug: "acme", url: "https://api.example.com/in", format: "file_drop" })
+          .success
+      ).toBe(false);
+      const preview = z.object(tools.preview_destination.schema as z.ZodRawShape);
+      expect(
+        preview.safeParse({ slug: "acme", destination: { format: "file_drop" } }).success
+      ).toBe(false);
+    });
+
+    it("replaces a Sheets destination's config only with format sheets", async () => {
+      const { tools, update } = sheetsTools();
+      const schema = z.object(tools.update_destination.schema as z.ZodRawShape);
+      const config = { connectionId, spreadsheetId, sheet: "Orders", rows: "line_items", columns };
+      await tools.update_destination.handler(
+        schema.parse({ slug: "acme", destinationId: "d1", format: "sheets", config })
+      );
+      expect(update).toHaveBeenCalledWith("acme", "d1", {
+        format: "sheets",
+        config,
+        url: `https://docs.google.com/spreadsheets/d/${spreadsheetId}/edit`,
+      });
+
+      update.mockClear();
+      const missingFormat = await tools.update_destination.handler(
+        schema.parse({ slug: "acme", destinationId: "d1", config })
+      );
+      expect(missingFormat.isError).toBe(true);
+      expect(update).not.toHaveBeenCalled();
+
+      await tools.update_destination.handler(
+        schema.parse({ slug: "acme", destinationId: "d1", name: "Orders sheet" })
+      );
+      expect(update).toHaveBeenCalledWith("acme", "d1", { name: "Orders sheet" });
+    });
+
+    it("writes the header row into a picked spreadsheet", async () => {
+      const { tools, createSpreadsheet } = sheetsTools();
+      const schema = z.object(tools.create_spreadsheet.schema as z.ZodRawShape);
+      await tools.create_spreadsheet.handler(
+        schema.parse({ connectionId, spreadsheetId, headers: ["Received", "Subject"] })
+      );
+      expect(createSpreadsheet).toHaveBeenCalledWith({
+        connectionId,
+        title: undefined,
+        spreadsheetId,
+        sheet: undefined,
+        headers: ["Received", "Subject"],
+      });
+    });
+  });
+
   it("checks rule conditions with the SDK's rule language", () => {
     const tools = getRegisteredTools(createMockClient());
     const schema = z.object(tools.update_endpoint.schema as z.ZodRawShape);

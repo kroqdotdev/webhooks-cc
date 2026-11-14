@@ -53,10 +53,13 @@ export function acceptedResources(): string[] {
   return [`${app}/mcp`, `${app}/api/`];
 }
 
-function normalizeResource(value: string): string {
-  // `${app}/mcp/` and `${app}/api` name the same resources. The MCP server's
-  // address may carry settings (`?tools=all`, `?readonly=1`), and a client
-  // names the address it was given: they choose tools, not the resource.
+/**
+ * A resource as this server names it. `${app}/mcp/` and `${app}/api` name the
+ * same resources. The MCP server's address may carry settings (`?tools=all`,
+ * `?readonly=1`), and a client names the address it was given: they choose
+ * tools, not the resource. Used by the authorization and token endpoints.
+ */
+export function normalizeResource(value: string): string {
   const app = issuer();
   const query = value.indexOf("?");
   const base = query === -1 ? value : value.slice(0, query);

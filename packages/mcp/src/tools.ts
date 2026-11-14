@@ -39,6 +39,7 @@ import {
   type TunnelShareList,
   type PayloadSchemaFormat,
   type Request,
+  type SheetsConfig,
   type VerifyProvider,
 } from "@webhooks-cc/sdk";
 import {
@@ -285,6 +286,114 @@ const destinationFields = {
     .optional()
     .describe("Wait this long after the capture before sending, like a callback"),
 };
+
+/**
+ * A Google Sheets destination's settings, checked as the destinations API
+ * checks them. Every id in it comes from a tool (list_google_connections or
+ * connect_google, create_spreadsheet or pick_spreadsheet), so the agent never
+ * holds a Google credential. File drops are left out on purpose: they carry
+ * a server password.
+ */
+const sheetsConfigSchema = z
+  .object({
+    connectionId: z
+      .string()
+      .regex(/^[0-9a-f-]{36}$/i, "connectionId is a Google connection's id")
+      .describe("The Google account, from list_google_connections or connect_google"),
+    spreadsheetId: z
+      .string()
+      .regex(/^[A-Za-z0-9_-]{20,100}$/, "spreadsheetId is a Google Sheets id")
+      .describe("From create_spreadsheet (its id) or pick_spreadsheet (its spreadsheetId)"),
+    sheet: z
+      .string()
+      .trim()
+      .min(1)
+      .max(100)
+      .default("Sheet1")
+      .describe('The tab rows go to (default "Sheet1"; list_sheet_tabs lists them)'),
+    rows: z
+      .enum(["email", "line_items"])
+      .default("email")
+      .describe(
+        '"email": a row per capture (default); "line_items": a row per line item a layout found'
+      ),
+    columns: z
+      .array(
+        z.object({
+          header: z.string().trim().min(1).max(200).describe("The column's header"),
+          value: z
+            .string()
+            .max(1000)
+            .describe(
+              "The cell, with {{ placeholders }}: {{ receivedAt }}, {{ subject }}, {{ from.address }}, {{ fields.<name> }}, {{ json.<path> }}, {{ item.<key> }} for line items"
+            ),
+        })
+      )
+      .min(1)
+      .max(50)
+      .describe("1 to 50 columns in order; their headers should match the sheet's header row"),
+  })
+  .describe(
+    "For format \"sheets\": the spreadsheet and its columns. The destination's URL becomes the spreadsheet's, so leave url out"
+  );
+
+const destinationFormatWithSheetsSchema = z
+  .enum([
+    "auto",
+    "as_received",
+    "json",
+    "template",
+    "chat",
+    "sheets",
+    "postmark",
+    "sendgrid",
+    "mailgun",
+    "cloudmailin",
+  ])
+  .optional()
+  .describe(
+    "auto (pick from the URL), as_received (relay HTTP requests unchanged; emails as signed JSON), json (signed JSON envelope), template (your bodyTemplate, signed like json), chat (Slack or Discord message), sheets (a row in a Google Sheet, set by config), or an inbound mail provider's shape for emails (postmark, sendgrid, mailgun, cloudmailin; HTTP requests then go as received), to test the inbound handler you wrote for that provider"
+  );
+
+/** add_destination's and update_destination's arguments: destinationFields plus a Sheets config. */
+const destinationWriteFields = {
+  ...destinationFields,
+  format: destinationFormatWithSheetsSchema,
+  config: sheetsConfigSchema.optional(),
+};
+
+/**
+ * Checks a Sheets destination's arguments and gives it its spreadsheet's URL,
+ * which the API sets on the row whatever is sent (and needs to create one).
+ */
+function destinationWriteInput<T extends { url?: string; format?: string; config?: SheetsConfig }>(
+  input: T,
+  creating: boolean
+): T {
+  if (input.config) {
+    if (input.format !== "sheets") {
+      throw new Error('config is for Google Sheets destinations: pass format: "sheets" with it');
+    }
+    if (input.url !== undefined) {
+      throw new Error(
+        "A Google Sheets destination's URL is its spreadsheet's: leave url out and pass config"
+      );
+    }
+    return {
+      ...input,
+      url: `https://docs.google.com/spreadsheets/d/${input.config.spreadsheetId}/edit`,
+    };
+  }
+  if (creating && input.format === "sheets") {
+    throw new Error(
+      'format "sheets" needs config: a connectionId (list_google_connections or connect_google), a spreadsheetId (create_spreadsheet or pick_spreadsheet), the sheet and the columns'
+    );
+  }
+  if (creating && input.url === undefined) {
+    throw new Error("Pass the url to send to (a Google Sheets destination takes config instead)");
+  }
+  return input;
+}
 
 const responseRuleSchema = z.object({
   name: z
@@ -2942,28 +3051,37 @@ export function registerTools(
 
   server.tool(
     "add_destination",
-    "Add a destination for an endpoint's captures: your server (as received or signed JSON), a Slack or Discord channel (chat, optionally your own messageTemplate, throttleSeconds 1 for a heads-up), or a JSON body you shape with bodyTemplate (for Zapier, n8n or your API). filter sends only matching captures; delaySeconds makes it a callback. Each destination gets its own signing secret. Check it with preview_destination before relying on it. Owner only.",
+    "Add a destination for an endpoint's captures: your server (as received or signed JSON), a Slack or Discord channel (chat, optionally your own messageTemplate, throttleSeconds 1 for a heads-up), a JSON body you shape with bodyTemplate (for Zapier, n8n or your API), or a row per capture in a Google Sheet (format sheets with config instead of a url: get the connectionId from list_google_connections, or connect_google if there is none, and the spreadsheetId from create_spreadsheet or pick_spreadsheet). filter sends only matching captures; delaySeconds makes it a callback. Each destination gets its own signing secret. Check it with preview_destination before relying on it. Owner only.",
     {
       slug: z.string().describe("The endpoint slug"),
-      url: httpUrlSchema.describe("https URL on a public host name, or a Slack or Discord webhook"),
-      ...destinationFields,
+      url: httpUrlSchema
+        .optional()
+        .describe(
+          "https URL on a public host name, or a Slack or Discord webhook; leave it out for format sheets"
+        ),
+      ...destinationWriteFields,
     },
     withErrorHandling(async ({ slug, ...input }) => {
-      return jsonContent(await client.destinations.create(slug, input));
+      const create = destinationWriteInput(input, true);
+      return jsonContent(
+        await client.destinations.create(slug, { ...create, url: create.url as string })
+      );
     })
   );
 
   server.tool(
     "update_destination",
-    "Change a destination: any of its fields; only the ones you pass change. Owner only.",
+    "Change a destination: any of its fields; only the ones you pass change. A Google Sheets destination's config (spreadsheet, tab, rows, columns) is replaced as a whole: pass format sheets with it. Owner only.",
     {
       slug: z.string().describe("The endpoint slug"),
       destinationId: z.string().describe("The destination's id (from list_destinations)"),
-      url: httpUrlSchema.optional().describe("A new URL"),
-      ...destinationFields,
+      url: httpUrlSchema.optional().describe("A new URL (not for format sheets)"),
+      ...destinationWriteFields,
     },
     withErrorHandling(async ({ slug, destinationId, ...input }) => {
-      return jsonContent(await client.destinations.update(slug, destinationId, input));
+      return jsonContent(
+        await client.destinations.update(slug, destinationId, destinationWriteInput(input, false))
+      );
     })
   );
 
@@ -3536,15 +3654,30 @@ export function registerTools(
 
   server.tool(
     "create_spreadsheet",
-    "Create a new spreadsheet with a header row in a connected Google account, for a Sheets destination. Needs no approval: the app reaches only spreadsheets it created or that were chosen for it.",
+    "Create a new spreadsheet with a header row in a connected Google account, for a Sheets destination (then add_destination with format sheets and its id as spreadsheetId). With spreadsheetId (one from pick_spreadsheet), write the header row into that spreadsheet instead, only when its first row is empty. Needs no approval: the app reaches only spreadsheets it created or that were chosen for it.",
     {
       connectionId: z.string().describe("The Google connection's id, from list_google_connections"),
       title: z.string().max(200).optional().describe("The spreadsheet's title"),
+      spreadsheetId: z
+        .string()
+        .optional()
+        .describe("An existing spreadsheet (from pick_spreadsheet) to write the header row into"),
       sheet: z.string().max(100).optional().describe('The tab rows go to (default "Sheet1")'),
-      headers: z.array(z.string().max(200)).max(50).describe("The header row, one per column"),
+      headers: z
+        .array(z.string().max(200))
+        .max(50)
+        .describe("The header row, one per column: the destination's column headers, in order"),
     },
-    withErrorHandling(async ({ connectionId, title, sheet, headers }) =>
-      jsonContent(await client.google.createSpreadsheet({ connectionId, title, sheet, headers }))
+    withErrorHandling(async ({ connectionId, title, spreadsheetId, sheet, headers }) =>
+      jsonContent(
+        await client.google.createSpreadsheet({
+          connectionId,
+          title,
+          ...(spreadsheetId ? { spreadsheetId } : {}),
+          sheet,
+          headers,
+        })
+      )
     )
   );
 
