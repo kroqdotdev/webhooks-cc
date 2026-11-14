@@ -158,12 +158,15 @@ export function parseDestinationInput(
     changes.format = body.format as DestinationFormatSetting;
   }
 
-  // Only Sheets destinations and file drops carry a config. One that moves
-  // to another format needs a URL of its own (its current one is the
-  // spreadsheet's or the drop's), and leaves its config and its drop
-  // secret behind, so nothing of the old target stays on the row; one that
-  // moves into either needs the config in the same change, never a stale
-  // one left on the row.
+  // Only Sheets destinations and file drops carry a config, and their URL
+  // comes from it (the spreadsheet's, or the drop's server and folder).
+  // - Moving into either, from any other format or from one to the other,
+  //   needs the new config in the same change (never a stale one left on
+  //   the row); the URL is then set from that config below, so the other
+  //   format's URL never stays.
+  // - Moving out of both to a format without a config needs a URL of its
+  //   own in the same change, and the config is cleared.
+  // - Leaving a file drop, for whatever format, clears its secret.
   const currentFormat = options.current?.format;
   const nextFormat = changes.format ?? (options.creating ? "auto" : currentFormat);
   const configured = (format: DestinationFormatSetting | undefined) =>

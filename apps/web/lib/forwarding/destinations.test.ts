@@ -188,6 +188,19 @@ describe("parseDestinationInput", () => {
       });
     });
 
+    it("takes the spreadsheet's URL when a file drop becomes a Sheets destination", () => {
+      // (The other way round, a drop's config is checked against the
+      // server's environment: covered by the destinations integration suite.)
+      const spreadsheet = `https://docs.google.com/spreadsheets/d/${sheetsConfig.spreadsheetId}/edit`;
+      // A url sent with it never wins over the one the config gives.
+      for (const extra of [{}, { url: "https://a.example/in" }]) {
+        expect(change({ format: "sheets", config: sheetsConfig, ...extra }, drop)).toMatchObject({
+          ok: true,
+          changes: { format: "sheets", url: spreadsheet, dropSecret: null },
+        });
+      }
+    });
+
     it("needs the config in the change that switches into sheets or file_drop", () => {
       const json = { http: true, email: true, format: "json" as const, config: sheetsConfig };
       for (const format of ["sheets", "file_drop"]) {

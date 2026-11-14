@@ -556,6 +556,55 @@ describe("destinations through the API: formats and their configs", () => {
     });
   });
 
+  it("moves a Sheets destination to a file drop, its URL from the drop's config", async () => {
+    // File drops are part of Business.
+    await admin
+      .from("users")
+      .update({ plan: "business", subscription_status: "active" })
+      .eq("id", userId);
+    try {
+      const e = await endpoint();
+      const sheets = await createDestination(e.id, {
+        url: `https://docs.google.com/spreadsheets/d/${spreadsheetId}/edit`,
+        format: "sheets",
+        email: true,
+        http: false,
+        config: sheetsConfig,
+      });
+      const path = `/endpoints/${e.slug}/destinations/${sheets.id}`;
+      const dropConfig = {
+        protocol: "sftp",
+        host: "files.acme.example",
+        username: "acme",
+        folder: "in",
+        file: "json",
+        rows: "email",
+        columns: [],
+      };
+      // A new server needs its password, as for any drop.
+      const withoutSecret = await call("PATCH", path, { format: "file_drop", config: dropConfig });
+      expect(withoutSecret.status).toBe(400);
+      expect(await row(sheets.id)).toMatchObject({ format: "sheets", config: sheetsConfig });
+
+      const moved = await call("PATCH", path, {
+        format: "file_drop",
+        config: dropConfig,
+        dropSecret: { password: "x" },
+      });
+      expect(moved.status).toBe(200);
+      const stored = await row(sheets.id);
+      expect(stored).toMatchObject({
+        format: "file_drop",
+        url: "sftp://files.acme.example/in",
+        config: { protocol: "sftp", host: "files.acme.example", folder: "in" },
+      });
+      expect(stored.config).not.toHaveProperty("spreadsheetId");
+      expect(stored.drop_secret_encrypted).not.toBeNull();
+    } finally {
+      await admin.from("users").update({ plan: "free" }).eq("id", userId);
+    }
+  });
+
   it("needs the config in the change that switches into sheets or file_drop", async () => {
     const e = await endpoint();
     // A row left with a config its format does not use (as before the API
