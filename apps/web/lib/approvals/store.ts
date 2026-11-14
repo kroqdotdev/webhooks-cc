@@ -1,4 +1,5 @@
 import { userCodePart } from "@/lib/ids";
+import { reportError } from "@/lib/observability";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { Json } from "@/lib/supabase/database";
 import { compareNetworks, type DeviceRequester, type NetworkMatch } from "@/lib/device-requester";
@@ -313,6 +314,12 @@ export async function decideApproval(
   try {
     ({ stored } = await spec.run(row.user_id, row.params));
   } catch (err) {
+    // Only a clean refusal (ActionError: checked, nothing done) gives the
+    // approval back to approve again. Anything else may have failed after
+    // the action took effect (a timeout once the write landed), and
+    // approving again would run it twice: the row stays completed without
+    // a result, and the asker's poll ends at expiry.
+    if (!(err instanceof ActionError)) throw err;
     await admin
       .from("approvals")
       .update({
@@ -323,8 +330,7 @@ export async function decideApproval(
       })
       .eq("id", row.id)
       .eq("status", "completed");
-    if (err instanceof ActionError) throw new ApprovalError(err.status, err.message);
-    throw err;
+    throw new ApprovalError(err.status, err.message);
   }
   // The action is done whatever happens next, so the row never goes back
   // to pending from here: approving again would run it twice (a second
@@ -338,7 +344,9 @@ export async function decideApproval(
       .eq("id", row.id));
     if (!recordError) break;
   }
-  if (recordError) throw recordError;
+  // Done all the same: the person is told so and the trail records it; only
+  // the asker misses the result (its poll ends at expiry).
+  if (recordError) reportError("Recording an approval's result failed", recordError);
   return { id: row.id, action: row.action, done: true, result: stored, params: row.params };
 }
 

@@ -2241,8 +2241,9 @@ export class WebhooksCC {
   /**
    * Custom inbound domains (Business, or a Team Business team with
    * `teamId`, owner only). Listing, adding, checking DNS and routing work
-   * with any key; removing one stops its mail, so with an API key the
-   * account's owner approves it first.
+   * with any key; removing one gives it up (getting it back means
+   * verifying it again), so with an API key the account's owner approves it
+   * first.
    */
   domains = {
     /** The account's domains, or a team's. */

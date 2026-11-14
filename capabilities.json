@@ -599,7 +599,7 @@
       "id": "domain.remove",
       "does": "Remove a custom inbound domain",
       "routes": ["DELETE /api/domains/[id]"],
-      "approval": "removing a domain refuses its mail from then on, so the account's owner approves each removal an API key or agent asks for",
+      "approval": "removing a domain gives it up: getting it back means adding and verifying it again, so the account's owner approves each removal an API key or agent asks for (routing, which a key may change, can stop its mail without giving it up)",
       "sdk": ["domains.remove"],
       "python": "testing-focused SDK: added on demand",
       "go": "testing-focused SDK: added on demand",

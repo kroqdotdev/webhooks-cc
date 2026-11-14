@@ -12,6 +12,7 @@ import {
 import { DELETE as revokeShareRoute } from "@/app/api/request-shares/[id]/route";
 import { GET as listAllSharesRoute } from "@/app/api/request-shares/route";
 import { getRequestByIdForUser } from "@/lib/supabase/requests";
+import { actionSpec } from "@/lib/approvals/actions";
 
 if (!process.env.SUPABASE_URL) throw new Error("SUPABASE_URL env var required");
 const SUPABASE_URL = process.env.SUPABASE_URL;
@@ -224,6 +225,10 @@ describe("request share links", () => {
       expect(await getRequestByIdForUser(stranger.id, requestId)).not.toBeNull();
       const refused = await share(stranger.accessToken, { expiresInDays: 7 });
       expect(refused.status).toBe(403);
+      // With a key it is refused when asked, before the owner is asked.
+      await expect(
+        actionSpec("request_shares.create").parse({ requestId }, stranger.id)
+      ).resolves.toMatchObject({ ok: false, status: 403 });
     } finally {
       await admin.from("team_endpoints").delete().eq("team_id", teamId);
       await admin.from("teams").delete().eq("id", teamId);

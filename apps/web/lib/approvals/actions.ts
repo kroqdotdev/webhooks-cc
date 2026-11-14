@@ -160,6 +160,17 @@ const createShareLink: ActionSpec<ShareParams> = {
     const request = await getRequestByIdForUser(userId, requestId);
     if (!request) return { ok: false, error: "Request not found", status: 404 };
     if (request.kind === "email") return { ok: false, error: "Emails cannot be shared" };
+    // A team member can read the request but not share it: say so now, not
+    // after the owner was asked (createRequestShare checks again).
+    const { data: endpoint, error } = await createAdminClient()
+      .from("endpoints")
+      .select("user_id")
+      .eq("id", request.endpointId)
+      .maybeSingle();
+    if (error) throw error;
+    if (endpoint?.user_id !== userId) {
+      return { ok: false, error: SHARE_REFUSALS.not_owner.message, status: 403 };
+    }
     return {
       ok: true,
       params: {
