@@ -103,6 +103,7 @@ impl ApiClient {
     /// A GET that gives up after `timeout` when that is shorter than the
     /// client's own request timeout.
     pub async fn get_within(&self, path: &str, timeout: Option<Duration>) -> Result<ApiResponse> {
+        let timeout = timeout.map(|t| t.min(super::REQUEST_TIMEOUT));
         let mut resp = self
             .send_once_with(&Method::GET, path, &None, false, &HeaderMap::new(), timeout)
             .await?;
@@ -118,6 +119,28 @@ impl ApiClient {
     pub async fn post(&self, path: &str, body: &impl serde::Serialize) -> Result<ApiResponse> {
         let body = serde_json::to_vec(body).context("failed to encode request body")?;
         self.send(Method::POST, path, Some(body)).await
+    }
+
+    /// A POST with a JSON body that may take `timeout` rather than the
+    /// client's own request timeout: for a route that does slow work while
+    /// the caller waits, such as a destination's test delivery.
+    pub async fn post_within(
+        &self,
+        path: &str,
+        body: &impl serde::Serialize,
+        timeout: Duration,
+    ) -> Result<ApiResponse> {
+        let body = Some(serde_json::to_vec(body).context("failed to encode request body")?);
+        let none = HeaderMap::new();
+        let mut resp = self
+            .send_once_with(&Method::POST, path, &body, false, &none, Some(timeout))
+            .await?;
+        if resp.status() == StatusCode::UNAUTHORIZED && self.can_refresh() {
+            resp = self
+                .send_once_with(&Method::POST, path, &body, true, &none, Some(timeout))
+                .await?;
+        }
+        read_response(resp).await
     }
 
     /// Perform a PATCH request with a JSON body.
@@ -247,8 +270,9 @@ impl ApiClient {
         if let Some(body) = body {
             request = request.body(body.clone());
         }
+        // A request's own timeout replaces the client's, longer or shorter.
         if let Some(timeout) = timeout {
-            request = request.timeout(timeout.min(super::REQUEST_TIMEOUT));
+            request = request.timeout(timeout);
         }
         request.send().await.context("request failed")
     }

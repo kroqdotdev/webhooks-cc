@@ -2,11 +2,19 @@
 //! delivery log. Answers are read loosely and kept as the server's JSON, so
 //! `--json` prints them as is.
 
+use std::time::Duration;
+
 use anyhow::Result;
 use serde_json::{Value, json};
 
 use super::ApiClient;
 use super::client::Fetched;
+
+/// How long `whk destinations test` waits for the answer. The server gives a
+/// file drop's test a minute to connect, log in and write its file, longer
+/// than the client's usual timeout, so the CLI would otherwise report a
+/// timeout while the test is still running.
+pub const TEST_TIMEOUT: Duration = Duration::from_secs(90);
 
 fn destinations_path(slug: &str) -> String {
     format!(
@@ -134,7 +142,11 @@ impl ApiClient {
     ) -> Result<Fetched<Value>> {
         self.require_auth()?;
         let resp = self
-            .post(&format!("{}/test", destination_path(slug, id)), body)
+            .post_within(
+                &format!("{}/test", destination_path(slug, id)),
+                body,
+                TEST_TIMEOUT,
+            )
             .await?;
         resp.parse("test delivery")
     }
@@ -255,5 +267,48 @@ mod tests {
             query.query_string(),
             "?limit=20&status=failed&before=1700000000000%3Aabc%20def"
         );
+    }
+
+    #[test]
+    fn a_test_delivery_outlasts_the_servers_minute_for_a_file_drop() {
+        assert!(TEST_TIMEOUT > Duration::from_secs(60));
+        assert!(TEST_TIMEOUT > super::super::REQUEST_TIMEOUT);
+    }
+
+    async fn serve(app: axum::Router) -> String {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let base = format!("http://127.0.0.1:{}", listener.local_addr().unwrap().port());
+        tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        base
+    }
+
+    #[tokio::test]
+    async fn post_within_applies_its_own_timeout() {
+        let app = axum::Router::new().route(
+            "/slow",
+            axum::routing::post(|| async {
+                tokio::time::sleep(Duration::from_millis(400)).await;
+                axum::Json(json!({ "ok": true }))
+            }),
+        );
+        let base = serve(app).await;
+        let client =
+            ApiClient::with_credentials(Some(&base), Some(&base), Some("whcc_test".into()), None)
+                .unwrap();
+        let error = client
+            .post_within("/slow", &json!({}), Duration::from_millis(100))
+            .await
+            .err()
+            .expect("gives up after 100 ms");
+        let timed_out = error
+            .chain()
+            .filter_map(|e| e.downcast_ref::<reqwest::Error>())
+            .any(reqwest::Error::is_timeout);
+        assert!(timed_out, "{error:#}");
+        let answer = client
+            .post_within("/slow", &json!({}), Duration::from_secs(5))
+            .await
+            .unwrap();
+        assert!(answer.body.contains("ok"));
     }
 }

@@ -14,7 +14,7 @@ use serde_json::{Map, Value, json};
 
 use crate::api::ApiClient;
 use crate::cli::confirm::confirm;
-use crate::cli::output::{bold, dim, green, red, sanitize};
+use crate::cli::output::{bold, dim, green, red, sanitize_line};
 use crate::error::CliError;
 use crate::util::format::format_timestamp;
 
@@ -69,7 +69,7 @@ pub struct DestinationFields {
     #[arg(long, value_name = "JSON")]
     pub body_template: Option<String>,
 
-    /// For --format chat: the message text with {{ placeholders }}, or @file ("" sends the standard message)
+    /// For --format chat: the message text with {{ placeholders }}, or @file; start with @@ for a literal @ ("" sends the standard message)
     #[arg(long, value_name = "TEXT")]
     pub message_template: Option<String>,
 
@@ -117,7 +117,7 @@ pub struct DestinationFields {
 /// Secrets a destination keeps, which are never taken from a flag.
 #[derive(clap::Args, Debug, Default, Clone)]
 pub struct DestinationSecrets {
-    /// Send the file drop's password, private key or S3 secret key: from WHK_DROP_SECRET, else typed at the terminal (asked for on its own when adding a file drop)
+    /// Send the file drop's password, private key or S3 secret key: from WHK_DROP_SECRET (a key as WHK_DROP_SECRET="$(cat ~/.ssh/<key>)"), else typed or pasted at the terminal (asked for on its own when adding a file drop)
     #[arg(long)]
     pub drop_secret: bool,
 
@@ -139,15 +139,40 @@ fn parse_retry(value: &str) -> Result<u32, String> {
     }
 }
 
-/// A flag's text, or the contents of the file `@file` names.
+/// The most a flag's `@file` may hold. The server takes far less (a
+/// template is at most 64 KB); this only stops a wrong file being read whole.
+const MAX_FLAG_FILE_BYTES: u64 = 1024 * 1024;
+
+/// A flag's text, or the contents of the file `@file` names. A leading `@@`
+/// stands for a literal `@`, so `@@everyone` sends `@everyone`.
 fn text_or_file(flag: &str, value: &str) -> Result<String> {
+    if let Some(rest) = value.strip_prefix("@@") {
+        return Ok(format!("@{rest}"));
+    }
     match value.strip_prefix('@') {
         Some("") => Err(CliError::Usage(format!("{flag} @ needs a file name")).into()),
-        Some(file) => {
-            std::fs::read_to_string(file).with_context(|| format!("failed to read {file}"))
-        }
+        Some(file) => read_flag_file(flag, file),
         None => Ok(value.to_string()),
     }
+}
+
+fn read_flag_file(flag: &str, file: &str) -> Result<String> {
+    use std::io::Read;
+    let handle = std::fs::File::open(file).with_context(|| format!("failed to read {file}"))?;
+    let mut bytes = Vec::new();
+    handle
+        .take(MAX_FLAG_FILE_BYTES + 1)
+        .read_to_end(&mut bytes)
+        .with_context(|| format!("failed to read {file}"))?;
+    if bytes.len() as u64 > MAX_FLAG_FILE_BYTES {
+        return Err(CliError::Usage(format!(
+            "{file} is over 1 MB, too big for {flag}. (To send text starting with @, write @@.)"
+        ))
+        .into());
+    }
+    String::from_utf8(bytes).map_err(|_| {
+        CliError::Usage(format!("{file} is not UTF-8 text, which {flag} takes")).into()
+    })
 }
 
 /// A flag holding JSON, or `@file` with JSON in it.
@@ -264,7 +289,9 @@ pub fn fields_body(fields: &DestinationFields) -> Result<Map<String, Value>> {
 }
 
 /// A secret from `env`, else typed at the terminal without being shown.
-/// Never from a flag, and never repeated in an error.
+/// Never from a flag, and never repeated in an error. A pasted private key
+/// (a `-----BEGIN` line) is read on to its `-----END` line, so the rest of
+/// the paste never reaches the shell once whk exits.
 fn read_secret(env: &str, prompt: &str) -> Result<String> {
     if let Ok(value) = std::env::var(env)
         && !value.trim().is_empty()
@@ -277,11 +304,68 @@ fn read_secret(env: &str, prompt: &str) -> Result<String> {
         ))
         .into());
     }
-    let value = rpassword::prompt_password(prompt)?;
-    if value.trim().is_empty() {
+    let first = rpassword::prompt_password(prompt)?;
+    if first.trim().is_empty() {
         return Err(CliError::Usage("Nothing was typed.".into()).into());
     }
-    Ok(value)
+    pem_or_line(first, env, rpassword::read_password)
+}
+
+/// The most lines and bytes a pasted key may take. A 16384-bit RSA key in
+/// PEM is about 160 lines and 13 KB; an Ed25519 key is 7 lines.
+const MAX_PEM_LINES: usize = 200;
+const MAX_PEM_BYTES: usize = 16 * 1024;
+
+/// Whether the key so far ends with a PEM header line (`Name: value`).
+fn after_header(key: &str) -> bool {
+    key.trim_end()
+        .lines()
+        .last()
+        .is_some_and(|line| line.contains(':'))
+}
+
+/// The typed line as it is, or when it opens a PEM block (a private key), the
+/// whole block: further hidden lines from `next_line` up to the matching
+/// `-----END ...-----`, bounded so a paste that never ends is refused.
+fn pem_or_line(
+    first: String,
+    env: &str,
+    mut next_line: impl FnMut() -> std::io::Result<String>,
+) -> Result<String> {
+    let opening = first.trim();
+    let Some(label) = opening
+        .strip_prefix("-----BEGIN ")
+        .and_then(|rest| rest.strip_suffix("-----"))
+    else {
+        return Ok(first);
+    };
+    let end = format!("-----END {label}-----");
+    let too_long = || -> anyhow::Error {
+        CliError::Usage(format!(
+            "That key did not end with {end} within {MAX_PEM_LINES} lines and 16 KB. Pass the key from its file instead: {env}=\"$(cat ~/.ssh/<key>)\" whk ..."
+        ))
+        .into()
+    };
+    let mut key = String::from(opening);
+    key.push('\n');
+    for _ in 0..MAX_PEM_LINES {
+        let line = next_line()?;
+        let line = line.trim_end();
+        // One blank line belongs after the headers (`DEK-Info: ...`); other
+        // blanks are the second half of a pasted \r\n.
+        if line.is_empty() && (key.ends_with("\n\n") || !after_header(&key)) {
+            continue;
+        }
+        key.push_str(line);
+        key.push('\n');
+        if key.len() > MAX_PEM_BYTES {
+            return Err(too_long());
+        }
+        if line.trim() == end {
+            return Ok(key);
+        }
+    }
+    Err(too_long())
 }
 
 /// The API's `dropSecret` for a protocol: the S3 secret key, the FTP
@@ -408,16 +492,20 @@ fn table_lines(list: &[Value]) -> Vec<String> {
             position,
             on_off(d),
             kinds(d),
-            sanitize(text(d, "format")),
+            sanitize_line(text(d, "format")),
             last_24h(d),
             dim(text(d, "id")),
         ));
         let name = text(d, "name");
-        let target = sanitize(&target(d));
+        let target = sanitize_line(&target(d));
         if name.is_empty() {
             out.push(format!("      {target}"));
         } else {
-            out.push(format!("      {} {}", bold(&sanitize(name)), dim(&target)));
+            out.push(format!(
+                "      {} {}",
+                bold(&sanitize_line(name)),
+                dim(&target)
+            ));
         }
     }
     out
@@ -431,12 +519,12 @@ fn detail_lines(d: &Value) -> Vec<String> {
     };
     let name = text(d, "name");
     if !name.is_empty() {
-        line("Name", bold(&sanitize(name)));
+        line("Name", bold(&sanitize_line(name)));
     }
-    line("Target", sanitize(&target(d)));
+    line("Target", sanitize_line(&target(d)));
     line("State", on_off(d).into());
     line("Takes", kinds(d));
-    line("Format", sanitize(text(d, "format")));
+    line("Format", sanitize_line(text(d, "format")));
     match d.get("filter").filter(|f| !f.is_null()) {
         Some(filter) => {
             let n = filter
@@ -456,7 +544,7 @@ fn detail_lines(d: &Value) -> Vec<String> {
         .and_then(Value::as_array)
         .into_iter()
         .flatten()
-        .map(|h| sanitize(text(h, "name")))
+        .map(|h| sanitize_line(text(h, "name")))
         .collect();
     if !headers.is_empty() {
         line("Headers", headers.join(", "));
@@ -487,7 +575,7 @@ fn detail_lines(d: &Value) -> Vec<String> {
         );
     }
     if let Some(field) = d.get("sentField").and_then(Value::as_str) {
-        line("Sent field", sanitize(field));
+        line("Sent field", sanitize_line(field));
     }
     if d.get("hasDropSecret").and_then(Value::as_bool) == Some(true) {
         line("Drop secret", "saved (never shown)".into());
@@ -566,7 +654,7 @@ pub async fn add(
         "{} Added destination {} to {}",
         green("✓"),
         bold(text(&answer.value, "id")),
-        bold(&sanitize(slug))
+        bold(&sanitize_line(slug))
     );
     for line in detail_lines(&answer.value) {
         println!("{line}");
@@ -662,7 +750,11 @@ pub async fn reorder(client: &ApiClient, slug: &str, ids: &[String], json: bool)
     if json {
         return print_json(&answer);
     }
-    println!("{} New order for {}", green("✓"), bold(&sanitize(slug)));
+    println!(
+        "{} New order for {}",
+        green("✓"),
+        bold(&sanitize_line(slug))
+    );
     let list = answer.value.as_array().cloned().unwrap_or_default();
     for line in table_lines(&list) {
         println!("{line}");
@@ -718,12 +810,12 @@ pub async fn preview(
 fn request_label(request: &Value) -> String {
     let subject = text(request, "subject");
     let what = if text(request, "kind") == "email" || !subject.is_empty() {
-        format!("email \"{}\"", sanitize(subject))
+        format!("email \"{}\"", sanitize_line(subject))
     } else {
         format!(
             "{} {}",
-            sanitize(text(request, "method")),
-            sanitize(text(request, "path"))
+            sanitize_line(text(request, "method")),
+            sanitize_line(text(request, "path"))
         )
     };
     if request.get("sample").and_then(Value::as_bool) == Some(true) || request["id"].is_null() {
@@ -764,31 +856,31 @@ fn preview_lines(answer: &Value) -> Vec<String> {
     out.push(format!(
         "  {} {}",
         dim(&format!("{:<8}", "Format")),
-        sanitize(text(answer, "format"))
+        sanitize_line(text(answer, "format"))
     ));
     if let Some(error) = answer.get("error").and_then(Value::as_str) {
-        out.push(format!("  {} {}", red("!"), sanitize(error)));
+        out.push(format!("  {} {}", red("!"), sanitize_line(error)));
     }
     if let Some(delivery) = answer.get("delivery").filter(|d| !d.is_null()) {
         out.push(String::new());
         out.push(format!(
             "  {} {}",
-            bold(&sanitize(text(delivery, "method"))),
-            sanitize(text(delivery, "url"))
+            bold(&sanitize_line(text(delivery, "method"))),
+            sanitize_line(text(delivery, "url"))
         ));
         if let Some(headers) = delivery.get("headers").and_then(Value::as_object) {
             for (name, value) in headers {
                 out.push(format!(
                     "  {}: {}",
-                    dim(&sanitize(name)),
-                    sanitize(value.as_str().unwrap_or(""))
+                    dim(&sanitize_line(name)),
+                    sanitize_line(value.as_str().unwrap_or(""))
                 ));
             }
         }
         if let Some(body) = delivery.get("body").and_then(Value::as_str) {
             out.push(String::new());
             for line in body.lines() {
-                out.push(format!("  {}", crate::cli::output::sanitize_line(line)));
+                out.push(format!("  {}", sanitize_line(line)));
             }
         } else if delivery.get("bodyBase64").and_then(Value::as_str).is_some() {
             out.push(String::new());
@@ -858,14 +950,14 @@ fn test_failure(id: &str, answer: &Value) -> Option<CliError> {
         .get("error")
         .and_then(Value::as_str)
         .filter(|e| !e.is_empty());
-    let id = sanitize(id);
+    let id = sanitize_line(id);
     Some(CliError::DeliveryFailed(match (status, error) {
         (Some(status), _) => {
             format!("The test delivery to destination {id} was not accepted: it answered {status}.")
         }
         (None, Some(error)) => format!(
             "The test delivery to destination {id} failed: {}",
-            crate::cli::output::sanitize_line(error)
+            sanitize_line(error)
         ),
         (None, None) => format!("The test delivery to destination {id} failed."),
     }))
@@ -893,7 +985,7 @@ fn test_lines(answer: &Value) -> Vec<String> {
         out.push(format!(
             "  {} {}",
             dim(&format!("{:<8}", "Error")),
-            sanitize(error)
+            sanitize_line(error)
         ));
     }
     let to = answer
@@ -904,14 +996,14 @@ fn test_lines(answer: &Value) -> Vec<String> {
         out.push(format!(
             "  {} {}",
             dim(&format!("{:<8}", "To")),
-            sanitize(to)
+            sanitize_line(to)
         ));
     }
     if let Some(file) = answer.get("file").and_then(Value::as_str) {
         out.push(format!(
             "  {} {}",
             dim(&format!("{:<8}", "File")),
-            sanitize(file)
+            sanitize_line(file)
         ));
     }
     if let Some(request) = answer.get("request").filter(|r| !r.is_null()) {
@@ -1099,6 +1191,133 @@ mod tests {
     }
 
     #[test]
+    fn a_double_at_is_a_literal_at() {
+        let body = fields_body(&DestinationFields {
+            message_template: Some("@@everyone deploy failed".into()),
+            ..fields()
+        })
+        .unwrap();
+        assert_eq!(body["messageTemplate"], "@everyone deploy failed");
+        assert_eq!(text_or_file("--message-template", "@@").unwrap(), "@");
+        assert_eq!(
+            text_or_file("--message-template", "plain @ text").unwrap(),
+            "plain @ text"
+        );
+    }
+
+    #[test]
+    fn a_flag_file_is_capped() {
+        let dir = std::env::temp_dir().join(format!("whk-dest-cap-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let big = dir.join("big.txt");
+        std::fs::write(&big, vec![b'a'; MAX_FLAG_FILE_BYTES as usize + 1]).unwrap();
+        let error = text_or_file("--message-template", &format!("@{}", big.display())).unwrap_err();
+        assert_eq!(classify(&error).code, "usage");
+        assert!(format!("{error}").contains("over 1 MB"), "{error}");
+
+        let fits = dir.join("fits.txt");
+        std::fs::write(&fits, vec![b'a'; MAX_FLAG_FILE_BYTES as usize]).unwrap();
+        let text = text_or_file("--message-template", &format!("@{}", fits.display())).unwrap();
+        assert_eq!(text.len(), MAX_FLAG_FILE_BYTES as usize);
+
+        let binary = dir.join("binary.bin");
+        std::fs::write(&binary, [0xff, 0xfe, 0x00]).unwrap();
+        let error =
+            text_or_file("--message-template", &format!("@{}", binary.display())).unwrap_err();
+        assert_eq!(classify(&error).code, "usage");
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// Lines as the hidden prompt hands them over, then end of input.
+    fn lines(list: &[&str]) -> impl FnMut() -> std::io::Result<String> {
+        let mut rest: std::collections::VecDeque<String> =
+            list.iter().map(|l| (*l).to_string()).collect();
+        move || Ok(rest.pop_front().unwrap_or_default())
+    }
+
+    #[test]
+    fn a_typed_password_is_one_line() {
+        let mut called = false;
+        let secret = pem_or_line("hunter2".into(), "WHK_DROP_SECRET", || {
+            called = true;
+            Ok(String::new())
+        })
+        .unwrap();
+        assert_eq!(secret, "hunter2");
+        assert!(!called, "a password reads no further lines");
+    }
+
+    #[test]
+    fn a_pasted_key_is_read_to_its_end_line() {
+        let key = pem_or_line(
+            "-----BEGIN OPENSSH PRIVATE KEY-----".into(),
+            "WHK_DROP_SECRET",
+            lines(&[
+                "made-up first line",
+                "",
+                "made-up second line",
+                "-----END OPENSSH PRIVATE KEY-----",
+                "echo this stays unread",
+            ]),
+        )
+        .unwrap();
+        assert_eq!(
+            key,
+            "-----BEGIN OPENSSH PRIVATE KEY-----\n\
+             made-up first line\n\
+             made-up second line\n\
+             -----END OPENSSH PRIVATE KEY-----\n"
+        );
+        assert_eq!(
+            drop_secret_value("sftp", &key).unwrap()["privateKey"],
+            json!(key)
+        );
+    }
+
+    #[test]
+    fn a_pem_header_keeps_its_blank_line() {
+        let key = pem_or_line(
+            "-----BEGIN RSA PRIVATE KEY-----".into(),
+            "WHK_DROP_SECRET",
+            lines(&[
+                "Proc-Type: 4,ENCRYPTED",
+                "DEK-Info: AES-128-CBC,0011",
+                "",
+                "",
+                "made-up body",
+                "",
+                "-----END RSA PRIVATE KEY-----",
+            ]),
+        )
+        .unwrap();
+        assert!(key.contains("0011\n\nmade-up body"), "{key}");
+        assert!(key.contains("body\n-----END"), "{key}");
+    }
+
+    #[test]
+    fn a_key_without_its_end_line_is_refused() {
+        let error = pem_or_line(
+            "-----BEGIN OPENSSH PRIVATE KEY-----".into(),
+            "WHK_DROP_SECRET",
+            lines(&["abc", "def"]),
+        )
+        .unwrap_err();
+        assert_eq!(classify(&error).code, "usage");
+        let message = format!("{error}");
+        assert!(message.contains("WHK_DROP_SECRET=\"$(cat"), "{message}");
+        assert!(!message.contains("abc"), "never repeats the key: {message}");
+
+        let mut endless = || Ok("A".repeat(70));
+        let error = pem_or_line(
+            "-----BEGIN OPENSSH PRIVATE KEY-----".into(),
+            "WHK_DROP_SECRET",
+            &mut endless,
+        )
+        .unwrap_err();
+        assert_eq!(classify(&error).code, "usage");
+    }
+
+    #[test]
     fn a_drop_secret_goes_where_its_protocol_reads_it() {
         assert_eq!(
             drop_secret_value("s3", "k").unwrap(),
@@ -1218,6 +1437,18 @@ mod tests {
         assert!(lines.contains("https://example.com/hooks"), "{lines}");
         assert!(lines.contains("{\"a\":1}"), "{lines}");
         assert!(lines.contains("nothing was sent"), "{lines}");
+    }
+
+    #[test]
+    fn a_crafted_subject_or_path_stays_on_one_line() {
+        let email = request_label(&json!({
+            "id": "r1", "kind": "email", "subject": "Hi\n  POST /fake  r2\r\nmore"
+        }));
+        assert!(!email.contains('\n') && !email.contains('\r'), "{email}");
+        let http = request_label(&json!({
+            "id": "r1", "kind": "http", "method": "POST", "path": "/a\n  GET /b"
+        }));
+        assert!(!http.contains('\n'), "{http}");
     }
 
     #[test]

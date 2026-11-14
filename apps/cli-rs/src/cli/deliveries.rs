@@ -9,7 +9,7 @@ use crate::api::ApiClient;
 use crate::api::destinations::DeliveryQuery;
 use crate::cli::confirm::confirm;
 use crate::cli::destinations::when;
-use crate::cli::output::{bold, dim, green, red, sanitize, sanitize_line};
+use crate::cli::output::{bold, dim, green, red, sanitize_line};
 
 fn text<'a>(value: &'a Value, field: &str) -> &'a str {
     value.get(field).and_then(Value::as_str).unwrap_or("")
@@ -36,7 +36,7 @@ fn destination_label(delivery: &Value) -> String {
     };
     let name = text(destination, "name");
     if !name.is_empty() {
-        return sanitize(name);
+        return sanitize_line(name);
     }
     let url = text(destination, "url");
     let host = url
@@ -45,20 +45,24 @@ fn destination_label(delivery: &Value) -> String {
         .split(['/', '?', '#'])
         .next()
         .unwrap_or("");
-    sanitize(host)
+    sanitize_line(host)
 }
 
 /// What was delivered: the email's subject, or the request's method and path.
 fn what(delivery: &Value) -> String {
     let subject = text(delivery, "subject");
     if text(delivery, "kind") == "email" || !subject.is_empty() {
-        return format!("email \"{}\"", sanitize(subject));
+        return format!("email \"{}\"", sanitize_line(subject));
     }
     let method = text(delivery, "method");
     if method.is_empty() {
         return "-".into();
     }
-    format!("{} {}", sanitize(method), sanitize(text(delivery, "path")))
+    format!(
+        "{} {}",
+        sanitize_line(method),
+        sanitize_line(text(delivery, "path"))
+    )
 }
 
 fn last_status(delivery: &Value) -> String {
@@ -83,7 +87,7 @@ fn destination_id(delivery: &Value) -> String {
         .get("destination")
         .map(|d| text(d, "id"))
         .filter(|id| !id.is_empty())
-        .map_or_else(|| "-".into(), sanitize)
+        .map_or_else(|| "-".into(), sanitize_line)
 }
 
 fn log_lines(list: &[Value]) -> Vec<String> {
@@ -98,7 +102,7 @@ fn log_lines(list: &[Value]) -> Vec<String> {
     )];
     let mut failed = false;
     for delivery in list {
-        let request = sanitize(text(delivery, "requestId"));
+        let request = sanitize_line(text(delivery, "requestId"));
         out.push(format!(
             "  {} {:<5} {:<5} {:<19} {:<18} {:<26} {} {}",
             status_label(text(delivery, "status")),
@@ -142,7 +146,7 @@ fn request_lines(list: &[Value]) -> Vec<String> {
             if target.is_empty() {
                 String::new()
             } else {
-                format!(" {}", sanitize(target))
+                format!(" {}", sanitize_line(target))
             },
             dim(text(delivery, "id")),
         ));
@@ -235,17 +239,17 @@ fn older_command(slug: &str, query: &DeliveryQuery, list: &[Value]) -> Option<St
         return None;
     }
     let cursor = list.last()?.get("cursor")?.as_str()?;
-    let mut command = format!("whk deliveries ls {} --limit {limit}", sanitize(slug));
+    let mut command = format!("whk deliveries ls {} --limit {limit}", sanitize_line(slug));
     if let Some(status) = &query.status {
-        command.push_str(&format!(" --status {}", sanitize(status)));
+        command.push_str(&format!(" --status {}", sanitize_line(status)));
     }
     if let Some(destination) = &query.destination {
-        command.push_str(&format!(" --destination {}", sanitize(destination)));
+        command.push_str(&format!(" --destination {}", sanitize_line(destination)));
     }
     // The cursor holds a timestamp and a `|`: quoted for the shell.
     command.push_str(&format!(
         " --before '{}'",
-        sanitize(cursor).replace('\'', "")
+        sanitize_line(cursor).replace('\'', "")
     ));
     Some(command)
 }
@@ -399,6 +403,29 @@ mod tests {
             lines.contains("whk deliveries redeliver <request> --destination <destination>"),
             "{lines}"
         );
+    }
+
+    #[test]
+    fn a_crafted_subject_cannot_fake_a_row() {
+        let lines = log_lines(&[
+            json!({
+                "id": "x1", "requestId": "r1", "kind": "email", "status": "failed",
+                "destination": { "id": "d1", "name": "A\nB", "url": "https://example.com" },
+                "attempts": 1, "createdAt": 0, "lastStatus": 500,
+                "subject": "x\n  succeeded 1 200"
+            }),
+            json!({
+                "id": "x2", "requestId": "r2", "kind": "http", "status": "succeeded",
+                "destination": null, "attempts": 1, "createdAt": 0, "lastStatus": 200,
+                "method": "POST", "path": "/a\r\n  failed"
+            }),
+        ]);
+        // The heading, the two rows, and the hint under a failed one.
+        assert!(
+            lines.iter().all(|l| !l.contains('\n') && !l.contains('\r')),
+            "{lines:?}"
+        );
+        assert_eq!(lines.len(), 1 + 2 + 2, "{lines:?}");
     }
 
     #[test]

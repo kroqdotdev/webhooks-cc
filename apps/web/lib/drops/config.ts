@@ -233,13 +233,24 @@ export function parseDropSecret(value: unknown, protocol: DropProtocol): DropSec
   if (protocol === "sftp") {
     if (!secret.password && !secret.privateKey)
       return "dropSecret needs a password or a privateKey.";
-    if (secret.privateKey && !/-----BEGIN [A-Z ]*PRIVATE KEY-----/.test(secret.privateKey)) {
-      return "dropSecret.privateKey is a private key in OpenSSH or PEM form.";
+    if (secret.privateKey && !wholePrivateKey(secret.privateKey)) {
+      return "dropSecret.privateKey is a whole private key in OpenSSH or PEM form, from its -----BEGIN line to its -----END line.";
     }
     return { password: secret.password, privateKey: secret.privateKey };
   }
   if (!secret.password) return "dropSecret.password is the FTP password.";
   return { password: secret.password };
+}
+
+/**
+ * Whether a private key is whole: a BEGIN line, something, and the END line
+ * of the same kind. A key pasted at a prompt that reads one line arrives as
+ * its BEGIN line alone, which would only fail later, at the first drop.
+ */
+function wholePrivateKey(key: string): boolean {
+  const match =
+    /-----BEGIN ([A-Z ]*PRIVATE KEY)-----([\s\S]*?)-----END ([A-Z ]*PRIVATE KEY)-----/.exec(key);
+  return !!match && match[1] === match[3] && match[2].trim() !== "";
 }
 
 /** Whether a stored secret suits a protocol (a protocol change needs a new one). */
