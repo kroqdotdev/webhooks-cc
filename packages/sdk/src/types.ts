@@ -67,7 +67,7 @@ export interface Endpoint {
   retentionDays?: number | null;
   /** The longest retention this endpoint may have: its plan's (owner only) */
   retentionCapDays?: number;
-  /** Requests are deleted once every delivery is settled (owner only) */
+  /** Requests are deleted once every delivery is settled (only the owner changes it) */
   deleteAfterDelivery?: boolean;
   /**
    * The GitHub repository (`owner/name`) a coding agent fixes failed
