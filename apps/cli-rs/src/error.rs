@@ -6,7 +6,7 @@
 //! | Status | Code                    | Meaning                                         |
 //! | ------ | ----------------------- | ----------------------------------------------- |
 //! | 0      |                         | Success                                         |
-//! | 1      | `error`, `bad_request`  | Any other failure, or the server refused input   |
+//! | 1      | `error`, `bad_request`, `delivery_failed` | Any other failure, the server refused input, or a test delivery was not accepted |
 //! | 2      | `usage`                 | Bad arguments (clap answers these itself)        |
 //! | 3      | `not_logged_in`, `unauthorized`, `connection_revoked`, `login_expired`, `login_denied` | No credentials, or they were refused |
 //! | 4      | `not_found`             | No such endpoint, request, team or share         |
@@ -59,6 +59,9 @@ pub enum CliError {
     ApprovalExpired,
     /// Arguments that parse but make no sense together.
     Usage(String),
+    /// A test delivery reached its destination's server (or tried to) and
+    /// was not accepted: the destination's fault, so no retry of ours helps.
+    DeliveryFailed(String),
 }
 
 impl std::fmt::Display for CliError {
@@ -67,7 +70,8 @@ impl std::fmt::Display for CliError {
             CliError::NotLoggedIn(m)
             | CliError::ConfirmationRequired(m)
             | CliError::Timeout(m)
-            | CliError::Usage(m) => f.write_str(m),
+            | CliError::Usage(m)
+            | CliError::DeliveryFailed(m) => f.write_str(m),
             CliError::Cancelled => f.write_str("Cancelled."),
             CliError::LoginExpired => f.write_str("The login code expired before it was approved."),
             CliError::LoginDenied => f.write_str("The login was refused on its approval page."),
@@ -159,6 +163,9 @@ pub fn classify(error: &anyhow::Error) -> Classified {
                     "Someone chose \"This wasn't me\". Run `whk auth login` again if it was you.",
                 ),
                 CliError::Usage(_) => Classified::new("usage", 2),
+                CliError::DeliveryFailed(_) => Classified::new("delivery_failed", 1).hint(
+                    "Fix the destination (its URL, headers or server), then run the test again.",
+                ),
             };
         }
         if let Some(e) = cause.downcast_ref::<ApiError>() {
@@ -267,6 +274,8 @@ mod tests {
         assert_eq!((c.code, c.exit), ("approval_expired", 8));
         let c = classify(&anyhow::Error::new(CliError::LoginDenied));
         assert_eq!((c.code, c.exit), ("login_denied", 3));
+        let c = classify(&anyhow::Error::new(CliError::DeliveryFailed("x".into())));
+        assert_eq!((c.code, c.exit), ("delivery_failed", 1));
     }
 
     #[test]

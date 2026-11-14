@@ -3402,7 +3402,9 @@ export function registerTools(
       if ((requestId === undefined) === (endpointSlug === undefined)) {
         throw new Error("Pass exactly one of requestId or endpointSlug");
       }
-      const options = destinationId ? { destinationId } : {};
+      // An empty id is sent, and refused, rather than dropped, which would
+      // widen the redelivery to every destination.
+      const options = destinationId !== undefined ? { destinationId } : {};
       return jsonContent(
         requestId
           ? await client.forwarding.redeliver(requestId, options)

@@ -5,6 +5,8 @@ pub mod billing;
 #[cfg(test)]
 mod capabilities;
 pub mod confirm;
+pub mod deliveries;
+pub mod destinations;
 pub mod endpoints;
 pub mod google;
 pub mod keys;
@@ -63,7 +65,8 @@ pub struct Cli {
 pub const AFTER_HELP: &str = "\
 Exit status:
   0  success
-  1  any other failure, or the server refused the input (bad_request)
+  1  any other failure, the server refused the input (bad_request), or a test
+     delivery was not accepted by the destination (delivery_failed)
   2  bad arguments (usage)
   3  not logged in, or the credentials were refused (not_logged_in, unauthorized,
      connection_revoked, login_expired, login_denied)
@@ -418,6 +421,18 @@ deletion) refuse API keys.")]
         action: FieldsAction,
     },
 
+    /// Where an endpoint's captures are forwarded: add, change, order, preview, test and remove destinations (owner only)
+    Destinations {
+        #[command(subcommand)]
+        action: DestinationsAction,
+    },
+
+    /// The delivery log of an endpoint's destinations, and sending requests again (owner only)
+    Deliveries {
+        #[command(subcommand)]
+        action: DeliveriesAction,
+    },
+
     /// What the account pays for: the plan, its subscription, add-ons, and every team's (read only)
     Billing,
 
@@ -702,6 +717,23 @@ pub enum KeysAction {
         #[arg(short = 'y', long = "yes", visible_alias = "force", short_alias = 'f')]
         yes: bool,
     },
+}
+
+/// A destination id: a UUID, so an empty or mistyped value is refused here
+/// rather than sent, where an empty one would read as every destination.
+fn parse_destination_id(value: &str) -> Result<String, String> {
+    let value = value.trim();
+    let uuid = value.len() == 36
+        && value.char_indices().all(|(i, c)| match i {
+            8 | 13 | 18 | 23 => c == '-',
+            _ => c.is_ascii_hexdigit(),
+        });
+    if uuid {
+        // The server lists ids in lowercase and compares them as text.
+        Ok(value.to_ascii_lowercase())
+    } else {
+        Err("a destination id, as `whk destinations ls <slug>` lists them".into())
+    }
 }
 
 fn parse_share_days(value: &str) -> Result<u32, String> {
@@ -1149,6 +1181,210 @@ pub enum FieldsAction {
 }
 
 #[derive(Subcommand, Debug)]
+pub enum DestinationsAction {
+    /// List an endpoint's destinations in order, with their last 24 hours
+    #[command(alias = "list")]
+    Ls {
+        /// The endpoint's slug
+        slug: String,
+
+        /// With --json, add each one's last 24 hours and what is waiting
+        #[arg(long)]
+        summary: bool,
+    },
+
+    /// Show one destination's settings
+    Get {
+        /// The endpoint's slug
+        slug: String,
+
+        /// The destination's id, from `whk destinations ls`
+        id: String,
+    },
+
+    /// Add a destination (up to 10 per endpoint); it gets a signing secret of its own
+    #[command(after_help = "\
+Examples:
+  whk destinations add acme --url https://example.com/hooks --header \"X-Source: webhooks.cc\"
+  whk destinations add acme --url https://hooks.slack.com/services/... --http false
+  whk destinations add acme --url https://example.com/orders --format template \\
+    --body-template '{\"order\":\"{{ json.id }}\"}' --filter @filter.json
+  WHK_DROP_SECRET=... whk destinations add acme --format file_drop --config @drop.json
+
+A file drop's password, private key or S3 secret key is read from WHK_DROP_SECRET,
+or typed at the terminal without being shown; it is never taken from a flag.")]
+    Add {
+        /// The endpoint's slug
+        slug: String,
+
+        #[command(flatten)]
+        fields: destinations::DestinationFields,
+
+        #[command(flatten)]
+        secrets: destinations::DestinationSecrets,
+    },
+
+    /// Change a destination: only the settings you pass change
+    Update {
+        /// The endpoint's slug
+        slug: String,
+
+        /// The destination's id
+        id: String,
+
+        #[command(flatten)]
+        fields: destinations::DestinationFields,
+
+        #[command(flatten)]
+        secrets: destinations::DestinationSecrets,
+    },
+
+    /// Remove a destination; what is still waiting for it is marked failed (its log stays)
+    #[command(alias = "remove")]
+    Rm {
+        /// The endpoint's slug
+        slug: String,
+
+        /// The destination's id
+        id: String,
+
+        /// Remove without asking (needed without a terminal)
+        #[arg(short = 'y', long = "yes", visible_alias = "force", short_alias = 'f')]
+        yes: bool,
+    },
+
+    /// Put the destinations in this order (the order captures are queued in)
+    Reorder {
+        /// The endpoint's slug
+        slug: String,
+
+        /// Destination ids, first to last
+        #[arg(required = true)]
+        ids: Vec<String>,
+    },
+
+    /// Dry run: whether the filter lets a captured request through and the exact request a destination would send (nothing is sent)
+    Preview {
+        /// The endpoint's slug
+        slug: String,
+
+        /// A saved destination to start from (its id); the setting flags change it for the preview only
+        #[arg(long, value_parser = parse_destination_id)]
+        destination: Option<String>,
+
+        /// A captured request (default: the newest of the kind the destination takes, or a sample)
+        #[arg(long)]
+        request: Option<String>,
+
+        #[command(flatten)]
+        fields: destinations::DestinationFields,
+    },
+
+    /// Send one delivery to a destination now, as a real one would go out, and show the answer (the filter is reported, not applied)
+    Test {
+        /// The endpoint's slug
+        slug: String,
+
+        /// The destination's id
+        id: String,
+
+        /// The captured request to send (default: the newest of its kind, or a sample)
+        #[arg(long)]
+        request: Option<String>,
+
+        /// Send the newest HTTP request or the newest email
+        #[arg(long, value_parser = ["http", "email"], conflicts_with = "request")]
+        kind: Option<String>,
+
+        /// Send without asking (needed without a terminal)
+        #[arg(short = 'y', long = "yes", visible_alias = "force", short_alias = 'f')]
+        yes: bool,
+    },
+
+    /// Print the secret deliveries to a destination are signed with (whsec_...), or replace it
+    Secret {
+        /// The endpoint's slug
+        slug: String,
+
+        /// The destination's id
+        id: String,
+
+        /// Replace it: deliveries are signed with the new one at once
+        #[arg(long)]
+        rotate: bool,
+
+        /// Replace without asking (needed without a terminal)
+        #[arg(short = 'y', long = "yes", visible_alias = "force", short_alias = 'f')]
+        yes: bool,
+    },
+}
+
+#[derive(Subcommand, Debug)]
+pub enum DeliveriesAction {
+    /// The endpoint's delivery log, newest first, or every delivery of one request with each try
+    #[command(alias = "list")]
+    Ls {
+        /// The endpoint's slug
+        #[arg(required_unless_present = "request")]
+        slug: Option<String>,
+
+        /// One captured request's deliveries instead, with each try (without a slug: the request id names its endpoint)
+        #[arg(long, conflicts_with_all = ["slug", "status", "destination", "limit", "before"])]
+        request: Option<String>,
+
+        /// Only these: pending (queued or retrying), failed, or skipped (turned down by the filter)
+        #[arg(long, value_parser = ["all", "pending", "failed", "skipped"])]
+        status: Option<String>,
+
+        /// Only one destination's deliveries (its id)
+        #[arg(long, value_parser = parse_destination_id)]
+        destination: Option<String>,
+
+        /// How many, 1 to 100 (default 5)
+        #[arg(long, value_parser = clap::value_parser!(u32).range(1..=100))]
+        limit: Option<u32>,
+
+        /// Older rows: the cursor printed under the last page
+        #[arg(long)]
+        before: Option<String>,
+    },
+
+    /// Counts: delivered and failed in the last 24 hours, waiting now, and the totals
+    Summary {
+        /// The endpoint's slug
+        slug: String,
+    },
+
+    /// Send a captured request again now with the current settings: to every destination that takes its kind, or to one whatever its filter says
+    Redeliver {
+        /// The request's id (a delivery's REQUEST in `whk deliveries ls`)
+        request: String,
+
+        /// Only this destination (its id); its filter is not applied
+        #[arg(long, value_parser = parse_destination_id)]
+        destination: Option<String>,
+
+        /// Send without asking (needed without a terminal)
+        #[arg(short = 'y', long = "yes", visible_alias = "force", short_alias = 'f')]
+        yes: bool,
+    },
+
+    /// Send every request whose latest delivery failed again, oldest first (at most what fits under each destination's pending cap)
+    RedeliverFailed {
+        /// The endpoint's slug
+        slug: String,
+
+        /// Only this destination's failed deliveries (its id)
+        #[arg(long, value_parser = parse_destination_id)]
+        destination: Option<String>,
+
+        /// Send without asking (needed without a terminal)
+        #[arg(short = 'y', long = "yes", visible_alias = "force", short_alias = 'f')]
+        yes: bool,
+    },
+}
+
+#[derive(Subcommand, Debug)]
 pub enum RequestsAction {
     /// List captured requests for an endpoint
     List {
@@ -1576,5 +1812,258 @@ mod tests {
             }
             other => panic!("expected fields preview, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn destinations_take_their_settings_as_flags() {
+        let parse = |args: &[&str]| Cli::try_parse_from(["whk"].iter().chain(args));
+        match parse(&[
+            "destinations",
+            "add",
+            "acme",
+            "--url",
+            "https://example.com/hooks",
+            "--http",
+            "false",
+            "--format",
+            "json",
+            "--header",
+            "X-Token: abc",
+            "--header",
+            "X-Other:1",
+            "--retry-seconds",
+            "3600",
+            "--delay-seconds",
+            "30",
+        ])
+        .unwrap()
+        .command
+        {
+            Some(Command::Destinations {
+                action:
+                    DestinationsAction::Add {
+                        slug,
+                        fields,
+                        secrets,
+                    },
+            }) => {
+                assert_eq!(slug, "acme");
+                assert_eq!(fields.url.as_deref(), Some("https://example.com/hooks"));
+                assert_eq!(fields.http, Some(false));
+                assert_eq!(fields.email, None);
+                assert_eq!(fields.format.as_deref(), Some("json"));
+                assert_eq!(fields.headers.len(), 2);
+                assert_eq!(fields.retry_seconds, Some(3600));
+                assert_eq!(fields.delay_seconds, Some(30));
+                assert!(!secrets.drop_secret && !secrets.mailgun_signing_key);
+            }
+            other => panic!("expected destinations add, got {other:?}"),
+        }
+        assert!(parse(&["destinations", "add", "acme", "--format", "xml"]).is_err());
+        assert!(parse(&["destinations", "add", "acme", "--retry-seconds", "60"]).is_err());
+        assert!(parse(&["destinations", "add", "acme", "--throttle-seconds", "3601"]).is_err());
+        assert!(parse(&["destinations", "add", "acme", "--enabled", "yes"]).is_err());
+        assert!(
+            parse(&[
+                "destinations",
+                "add",
+                "acme",
+                "--header",
+                "A:b",
+                "--clear-headers"
+            ])
+            .is_err()
+        );
+        // A secret is never a flag's value.
+        assert!(parse(&["destinations", "add", "acme", "--drop-secret", "hunter2"]).is_err());
+
+        match parse(&[
+            "destinations",
+            "update",
+            "acme",
+            "d1",
+            "--enabled",
+            "false",
+            "--drop-secret",
+        ])
+        .unwrap()
+        .command
+        {
+            Some(Command::Destinations {
+                action:
+                    DestinationsAction::Update {
+                        id,
+                        fields,
+                        secrets,
+                        ..
+                    },
+            }) => {
+                assert_eq!(id, "d1");
+                assert_eq!(fields.enabled, Some(false));
+                assert!(secrets.drop_secret);
+            }
+            other => panic!("expected destinations update, got {other:?}"),
+        }
+        match parse(&["destinations", "rm", "acme", "d1", "--yes"])
+            .unwrap()
+            .command
+        {
+            Some(Command::Destinations {
+                action: DestinationsAction::Rm { yes, .. },
+            }) => assert!(yes),
+            other => panic!("expected destinations rm, got {other:?}"),
+        }
+        match parse(&["destinations", "reorder", "acme", "d2", "d1"])
+            .unwrap()
+            .command
+        {
+            Some(Command::Destinations {
+                action: DestinationsAction::Reorder { ids, .. },
+            }) => assert_eq!(ids, ["d2", "d1"]),
+            other => panic!("expected destinations reorder, got {other:?}"),
+        }
+        assert!(parse(&["destinations", "reorder", "acme"]).is_err());
+        match parse(&[
+            "destinations",
+            "preview",
+            "acme",
+            "--destination",
+            "6f1c2a4e-8b3d-4c5e-9f00-1a2b3c4d5e6f",
+            "--request",
+            "r1",
+            "--format",
+            "chat",
+        ])
+        .unwrap()
+        .command
+        {
+            Some(Command::Destinations {
+                action:
+                    DestinationsAction::Preview {
+                        destination,
+                        request,
+                        fields,
+                        ..
+                    },
+            }) => {
+                assert_eq!(
+                    destination.as_deref(),
+                    Some("6f1c2a4e-8b3d-4c5e-9f00-1a2b3c4d5e6f")
+                );
+                assert_eq!(request.as_deref(), Some("r1"));
+                assert_eq!(fields.format.as_deref(), Some("chat"));
+            }
+            other => panic!("expected destinations preview, got {other:?}"),
+        }
+        assert!(parse(&["destinations", "test", "acme", "d1", "--kind", "sms"]).is_err());
+        assert!(
+            parse(&[
+                "destinations",
+                "test",
+                "acme",
+                "d1",
+                "--kind",
+                "http",
+                "--request",
+                "r1"
+            ])
+            .is_err()
+        );
+        match parse(&["destinations", "secret", "acme", "d1", "--rotate", "-y"])
+            .unwrap()
+            .command
+        {
+            Some(Command::Destinations {
+                action: DestinationsAction::Secret { rotate, yes, .. },
+            }) => assert!(rotate && yes),
+            other => panic!("expected destinations secret, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn deliveries_list_by_endpoint_or_by_request() {
+        let parse = |args: &[&str]| Cli::try_parse_from(["whk", "deliveries"].iter().chain(args));
+        match parse(&["ls", "acme", "--status", "failed", "--limit", "20"])
+            .unwrap()
+            .command
+        {
+            Some(Command::Deliveries {
+                action:
+                    DeliveriesAction::Ls {
+                        slug,
+                        request,
+                        status,
+                        limit,
+                        ..
+                    },
+            }) => {
+                assert_eq!(slug.as_deref(), Some("acme"));
+                assert!(request.is_none());
+                assert_eq!(status.as_deref(), Some("failed"));
+                assert_eq!(limit, Some(20));
+            }
+            other => panic!("expected deliveries ls, got {other:?}"),
+        }
+        match parse(&["ls", "--request", "r1"]).unwrap().command {
+            Some(Command::Deliveries {
+                action: DeliveriesAction::Ls { slug, request, .. },
+            }) => {
+                assert!(slug.is_none());
+                assert_eq!(request.as_deref(), Some("r1"));
+            }
+            other => panic!("expected deliveries ls --request, got {other:?}"),
+        }
+        assert!(parse(&["ls"]).is_err(), "a slug or a request is needed");
+        assert!(parse(&["ls", "--request", "r1", "--status", "failed"]).is_err());
+        assert!(
+            parse(&["ls", "acme", "--request", "r1"]).is_err(),
+            "a slug would be ignored beside --request, so it is refused"
+        );
+        assert!(parse(&["ls", "acme", "--limit", "0"]).is_err());
+        assert!(parse(&["ls", "acme", "--status", "succeeded"]).is_err());
+        assert!(
+            parse(&["redeliver", "r1", "--destination", "", "--yes"]).is_err(),
+            "an empty destination would widen the redelivery to every destination"
+        );
+        assert!(parse(&["redeliver", "r1", "--destination", "d1", "--yes"]).is_err());
+        match parse(&[
+            "redeliver",
+            "r1",
+            "--destination",
+            "6f1c2a4e-8b3d-4c5e-9f00-1a2b3c4d5e6f",
+            "--yes",
+        ])
+        .unwrap()
+        .command
+        {
+            Some(Command::Deliveries {
+                action:
+                    DeliveriesAction::Redeliver {
+                        request,
+                        destination,
+                        yes,
+                    },
+            }) => {
+                assert_eq!(request, "r1");
+                assert_eq!(
+                    destination.as_deref(),
+                    Some("6f1c2a4e-8b3d-4c5e-9f00-1a2b3c4d5e6f")
+                );
+                assert!(yes);
+            }
+            other => panic!("expected deliveries redeliver, got {other:?}"),
+        }
+        assert!(matches!(
+            parse(&["redeliver-failed", "acme"]).unwrap().command,
+            Some(Command::Deliveries {
+                action: DeliveriesAction::RedeliverFailed { yes: false, .. }
+            })
+        ));
+        assert!(matches!(
+            parse(&["summary", "acme"]).unwrap().command,
+            Some(Command::Deliveries {
+                action: DeliveriesAction::Summary { .. }
+            })
+        ));
     }
 }

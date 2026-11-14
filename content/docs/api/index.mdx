@@ -742,7 +742,7 @@ curl -X POST https://webhooks.cc/api/endpoints/abc123/destinations \
 | `tlsFingerprint`                              | FTPS and S3: a self-signed certificate's SHA-256 fingerprint, then the only one accepted                            |
 | `hostKey`                                     | SFTP: the server's host key fingerprint, pinned on the first connection; `null`, sent with `dropSecret`, forgets it |
 
-`dropSecret` is `{ "password" }` (FTP, FTPS, SFTP), `{ "privateKey" }` (SFTP, OpenSSH or PEM) or `{ "secretAccessKey" }` (S3). It is stored encrypted and never returned (the destination says `hasDropSecret`), and a change to the server, login, bucket, host key or certificate fingerprint needs it sent again. The destination's test (`POST .../destinations/:id/test`) logs in and writes `webhooks-cc-test.txt`, answering `{ "ok", "file", "hostKey", "delivered", "error", ... }`. Files arrive from `mx.mailhooks.cc`.
+`dropSecret` is `{ "password" }` (FTP, FTPS, SFTP), `{ "privateKey" }` (SFTP: an OpenSSH key, or an RSA or EC key in PEM or PKCS#8 form, without a passphrase; PKCS#8 is stored converted to PEM, and an Ed25519 key in PKCS#8 form is refused) or `{ "secretAccessKey" }` (S3). It is stored encrypted and never returned (the destination says `hasDropSecret`), and a change to the server, login, bucket, host key or certificate fingerprint needs it sent again. The destination's test (`POST .../destinations/:id/test`) logs in and writes `webhooks-cc-test.txt`, answering `{ "ok", "file", "hostKey", "delivered", "error", ... }`. Files arrive from `mx.mailhooks.cc`.
 
 #### Google Sheets
 

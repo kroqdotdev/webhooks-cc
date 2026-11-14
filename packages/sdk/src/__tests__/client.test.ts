@@ -258,6 +258,66 @@ describe("WebhooksCC", () => {
       expect(fetchMock).not.toHaveBeenCalled();
     });
 
+    it("waits up to 90 seconds for a test, past the client's timeout", async () => {
+      vi.useFakeTimers();
+      // A server that answers after 61 seconds, unless the call gives up first.
+      const slowFetch = vi.fn(
+        (_url: string, opts: RequestInit) =>
+          new Promise<Response>((resolve, reject) => {
+            const timer = setTimeout(
+              () =>
+                resolve(
+                  new Response(JSON.stringify({ delivered: true }), {
+                    status: 200,
+                    headers: { "content-type": "application/json" },
+                  })
+                ),
+              61_000
+            );
+            opts.signal?.addEventListener("abort", () => {
+              clearTimeout(timer);
+              const error = new Error("aborted");
+              error.name = "AbortError";
+              reject(error);
+            });
+          })
+      );
+      globalThis.fetch = slowFetch as unknown as typeof fetch;
+      const client = createClient({ timeout: 30_000, retry: { maxAttempts: 1 } });
+
+      const test = client.destinations.test("abc123", "d1");
+      await vi.advanceTimersByTimeAsync(61_000);
+      await expect(test).resolves.toEqual({ delivered: true });
+
+      // Other calls keep the client's timeout.
+      const preview = client.destinations.preview("abc123", { destinationId: "d1" });
+      const rejected = expect(preview).rejects.toBeInstanceOf(TimeoutError);
+      await vi.advanceTimersByTimeAsync(30_000);
+      await rejected;
+
+      // A test gives up after 90 seconds.
+      const stuck = vi.fn(
+        (_url: string, opts: RequestInit) =>
+          new Promise<Response>((_resolve, reject) => {
+            opts.signal?.addEventListener("abort", () => {
+              const error = new Error("aborted");
+              error.name = "AbortError";
+              reject(error);
+            });
+          })
+      );
+      globalThis.fetch = stuck as unknown as typeof fetch;
+      const late = client.destinations.test("abc123", "d1");
+      let settled = false;
+      void late.catch(() => {}).finally(() => (settled = true));
+      const timedOut = expect(late).rejects.toBeInstanceOf(TimeoutError);
+      await vi.advanceTimersByTimeAsync(89_000);
+      expect(settled).toBe(false);
+      expect(stuck).toHaveBeenCalledTimes(1);
+      await vi.advanceTimersByTimeAsync(1_000);
+      await timedOut;
+    });
+
     it("previews and tests a destination, and filters the log by it", async () => {
       const fetchMock = mockFetch({ body: {} });
       globalThis.fetch = fetchMock;

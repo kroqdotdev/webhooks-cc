@@ -30,7 +30,9 @@ below), `http` and `email` (booleans, both on by default) and:
   (`verified`, `failed` or `missing`).
 - `throttleSeconds` (at most one delivery every N seconds; the rest are not
   sent, so 1 makes a heads-up channel), `delaySeconds` (up to 3600, for callbacks), `retrySeconds`,
-  `keepOrder`, `headers`.
+  `keepOrder`, `headers`. With the CLI, give a header's token as a
+  variable, `--header "Authorization: Bearer $HOOK_TOKEN"`: the shell stores
+  the variable's name in its history, not the token.
 
 Template placeholders: HTTP requests read `json.<path>`, `headers.<name>`,
 `query.<name>`, `method`, `path`, `body`; emails read `subject`,
@@ -81,7 +83,8 @@ A row per email (or per line item a layout found) in a spreadsheet.
 
 These tools are in the sheets group, except `add_destination` and
 `update_destination` (core). No Google credential ever passes through the
-agent.
+agent. From the CLI:
+`whk destinations add <slug> --format sheets --config @sheets.json --url <spreadsheet URL>`.
 
 CLI: `whk google` (`list`, `connect`, `pick`, `tabs`, `create-sheet`).
 
@@ -90,8 +93,10 @@ CLI: `whk google` (`list`, `connect`, `pick`, `tabs`, `create-sheet`).
 CSV, XML or JSON files written to the person's SFTP, FTP/FTPS or
 S3-compatible server, a file per email or per batch. A drop holds a server
 password, so the MCP tools do not create one: the person adds it with the
-SDK or `whk api` (`format: "file_drop"`, `config` and `dropSecret`) from
-their own environment.
+SDK (`format: "file_drop"`, `config` and `dropSecret`) or
+`whk destinations add <slug> --format file_drop --config @drop.json`, which
+reads the secret from `WHK_DROP_SECRET` or their terminal, never a flag
+(an SFTP key as `WHK_DROP_SECRET="$(cat ~/.ssh/drop_key)"`).
 
 ## Zapier and Make
 

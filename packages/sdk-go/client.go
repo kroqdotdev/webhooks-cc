@@ -378,6 +378,17 @@ func withCallDeadline(ctx context.Context, deadline time.Time) context.Context {
 	return context.WithValue(ctx, callDeadlineKey{}, deadline)
 }
 
+// attemptTimeoutKey carries a longer timeout for each try of the API calls
+// on a context (see withAttemptTimeout).
+type attemptTimeoutKey struct{}
+
+// withAttemptTimeout lets each try of the API calls on the context take up to
+// timeout when that is longer than the client's own, for a route that does
+// slow work while the caller waits.
+func withAttemptTimeout(ctx context.Context, timeout time.Duration) context.Context {
+	return context.WithValue(ctx, attemptTimeoutKey{}, timeout)
+}
+
 // mayRetryAfter reports whether a retry after wait still fits the context's
 // call deadline, if it has one.
 func mayRetryAfter(ctx context.Context, wait time.Duration) bool {
@@ -393,6 +404,9 @@ type apiResponse struct {
 
 func (c *Client) apiOnce(ctx context.Context, method, endpoint string, payload []byte, bearer string) (*apiResponse, error) {
 	timeout := c.timeout
+	if longer, ok := ctx.Value(attemptTimeoutKey{}).(time.Duration); ok {
+		timeout = max(timeout, longer)
+	}
 	if deadline, ok := ctx.Value(callDeadlineKey{}).(time.Time); ok {
 		timeout = min(timeout, max(time.Until(deadline), time.Millisecond))
 	}

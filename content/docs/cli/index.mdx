@@ -72,7 +72,7 @@ Puts your local site at a public link on sharehooks.cc, for showing work in prog
 | Status | Code | Meaning |
 | --- | --- | --- |
 | 0 | | Success |
-| 1 | `error`, `bad_request` | Any other failure, or the server refused the input |
+| 1 | `error`, `bad_request`, `delivery_failed` | Any other failure, the server refused the input, or a destination did not accept `whk destinations test` |
 | 2 | `usage` | Bad arguments |
 | 3 | `not_logged_in`, `unauthorized`, `connection_revoked`, `login_expired`, `login_denied` | No credentials, they were refused, an agent's connection was revoked, or a login code expired or was refused on its page |
 | 4 | `not_found` | No such endpoint, request, team or share |
@@ -83,7 +83,7 @@ Puts your local site at a public link on sharehooks.cc, for showing work in prog
 | 9 | `confirmation_required`, `cancelled`, `approval_denied` | A destructive command was not confirmed, or the account's owner refused an approval |
 
 - Nothing waits for input without a terminal. `whk delete` and `whk requests clear` ask first in a terminal; anywhere else they stop with `confirmation_required` unless you pass `--yes`.
-- `whk api <path>` calls any [API route](/docs/api) with your credentials, for whatever has no command of its own yet: `whk api endpoints/<slug>/destinations`, or `whk api -X PATCH endpoints/<slug> -d '{"retentionDays":7}'`.
+- `whk api <path>` calls any [API route](/docs/api) with your credentials, for whatever has no command of its own yet: `whk api endpoints/<slug>/alerts`, or `whk api -X PATCH endpoints/<slug> -d '{"retentionDays":7}'`.
 
 An agent can also capture webhooks without an account, and without a browser:
 
