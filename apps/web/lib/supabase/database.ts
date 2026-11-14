@@ -177,6 +177,7 @@ export interface Database {
           attempt_denied_at: string | null;
           idjag_iss: string | null;
           idjag_sub: string | null;
+          idjag_team_issuer_id: string | null;
           oauth_client_id: string | null;
           oauth_refresh_hash: string | null;
           oauth_previous_refresh_hash: string | null;
@@ -206,6 +207,7 @@ export interface Database {
           attempt_denied_at?: string | null;
           idjag_iss?: string | null;
           idjag_sub?: string | null;
+          idjag_team_issuer_id?: string | null;
           oauth_client_id?: string | null;
           oauth_refresh_hash?: string | null;
           oauth_previous_refresh_hash?: string | null;
@@ -235,6 +237,7 @@ export interface Database {
           attempt_denied_at?: string | null;
           idjag_iss?: string | null;
           idjag_sub?: string | null;
+          idjag_team_issuer_id?: string | null;
           oauth_client_id?: string | null;
           oauth_refresh_hash?: string | null;
           oauth_previous_refresh_hash?: string | null;
@@ -977,6 +980,33 @@ export interface Database {
           invited_email?: string;
           invited_user_id?: string | null;
           status?: "pending" | "accepted" | "declined";
+          created_at?: string;
+        };
+        Relationships: [];
+      };
+      team_idjag_issuers: {
+        Row: {
+          id: string;
+          team_id: string;
+          issuer: string;
+          allowed_client_ids: string[];
+          added_by: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          team_id: string;
+          issuer: string;
+          allowed_client_ids?: string[];
+          added_by?: string | null;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          team_id?: string;
+          issuer?: string;
+          allowed_client_ids?: string[];
+          added_by?: string | null;
           created_at?: string;
         };
         Relationships: [];
@@ -2778,6 +2808,45 @@ export interface Database {
           p_max_pending: number;
         };
         Returns: Json;
+      };
+      link_team_idjag_identity: {
+        Args: {
+          p_iss: string;
+          p_sub: string;
+          p_email: string;
+          p_client_id: string;
+          p_claim_token_hash: string;
+          p_attempt_token_hash: string;
+          p_user_code_hash: string;
+          p_lifetime_seconds: number;
+          p_attempt_seconds: number;
+          p_max_attempts: number;
+          p_max_pending: number;
+        };
+        Returns: Json;
+      };
+      add_team_idjag_issuer: {
+        Args: {
+          p_team_id: string;
+          p_user_id: string;
+          p_issuer: string;
+          p_client_ids: string[];
+          p_max: number;
+        };
+        Returns: Json;
+      };
+      remove_team_idjag_issuer: {
+        Args: { p_team_id: string; p_user_id: string; p_issuer_id: string };
+        Returns: Json;
+      };
+      revoke_team_idjag_delegations: {
+        Args: {
+          p_trust_ids: string[];
+          p_user_id: string | null;
+          p_team_id: string | null;
+          p_source: string;
+        };
+        Returns: string[];
       };
       revoke_agent_delegation: {
         Args: { p_iss: string; p_sub: string };

@@ -140,6 +140,21 @@ Deleting a team ends its subscription at once and cannot be undone, so when an A
 - **Members who leave or are removed** hand their team names to the owner, and their previews under team names stop. When a team's subscription ends, previews under its names stop and its names wait, kept but unusable, until it is back.
 - **Teammates' runs**: `whk shares ls` and `GET /api/shares` list teammates' previews under the team's names and teammates' live tunnels on endpoints you own. You can stop either: a preview under a team name, and as an endpoint's owner a teammate's `--live` tunnel on it.
 
+## Agent sign-in from your organisation
+
+<Callout type="warning">
+Not yet available. This section describes a feature that is built but switched off; it will appear in team settings once it is announced.
+</Callout>
+
+Some organisations' AI platforms can sign their members in to other services with an identity assertion (an ID-JAG, the IETF Identity Assertion JWT Authorization Grant), Claude for organisations among them. When your team trusts your organisation's issuer, a member's agent connects to webhooks.cc with the member's organisation sign-in instead of a separate sign-in each time.
+
+- **Who sets it up**: the team's owner adds the issuer URL in the team's settings, signed in (API keys cannot add or remove one). The URL is the one your organisation's platform publishes, for Claude organisations `https://identity.anthropic.com/issuers/...`. The owner can limit the issuer to named client ids.
+- **Who can connect**: a member of the team whose webhooks.cc email equals the verified email in the assertion. Nobody else, and no account is ever created this way.
+- **The first time**: each member confirms an agent once, with the same code-and-link step as any other [agent claim](/docs/agents). After that, the member's later assertions connect directly.
+- **Ending it**: removing the issuer disconnects every agent it connected and ends their tokens at once; so does the member leaving the team or being removed. Each addition, removal, connection and disconnection is recorded in the audit trail.
+
+For agents and identity providers, the token request and every check the assertion must pass are in [`/auth.md`](/auth.md).
+
 ## How It Works
 
 - Sharing is **view and edit only**: team members can see requests, rename the endpoint and change its responses, but cannot change its forwarding, layouts or other settings, delete it, or clear its requests

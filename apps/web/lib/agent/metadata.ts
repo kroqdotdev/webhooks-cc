@@ -40,7 +40,16 @@ export interface AgentMetadataOptions {
   idJagEnabled: boolean;
   /** AGENT_IDJAG_MAX_AUTH_AGE_SECONDS, quoted in /auth.md. */
   idJagMaxAuthAgeSeconds?: number;
+  /**
+   * True when teams may trust organisation ID-JAG issuers
+   * (AGENT_IDJAG_ORG_ISSUER_PREFIXES): the token endpoint then takes an
+   * ID-JAG as a jwt-bearer assertion (lib/agent/org-id-jag.ts).
+   */
+  orgIdJagEnabled?: boolean;
 }
+
+/** draft-ietf-oauth-identity-assertion-authz-grant Section 7.2. */
+export const ID_JAG_GRANT_PROFILE = "urn:ietf:params:oauth:grant-profile:id-jag";
 
 /** Resource identifier of the protected API (the audience of an ID-JAG). */
 function resourceUrl(appUrl: string): string {
@@ -177,6 +186,8 @@ export interface AuthorizationServerMetadata {
   client_id_metadata_document_supported: boolean;
   authorization_response_iss_parameter_supported: boolean;
   service_documentation: string;
+  /** Only while teams may trust organisation issuers. */
+  authorization_grant_profiles_supported?: string[];
   agent_auth: AgentAuthMetadata;
 }
 
@@ -218,6 +229,9 @@ export function buildAuthorizationServerMetadata(
     // RFC 9207: every authorization response carries `iss`.
     authorization_response_iss_parameter_supported: true,
     service_documentation: u.authMd,
+    ...(options.orgIdJagEnabled
+      ? { authorization_grant_profiles_supported: [ID_JAG_GRANT_PROFILE] }
+      : {}),
     agent_auth: {
       skill: u.authMd,
       identity_endpoint: u.identity,
@@ -730,5 +744,28 @@ secevent+jwt\`, signed with the same keys, \`aud\` \`${appUrl}\`, a unique
 that identity is revoked with its tokens, and the next ID-JAG for it links
 again as above. The answer is 202 with no body (also for a SET already
 received), or 400 with \`{ "err", "description" }\` (RFC 8935).
+${options.orgIdJagEnabled ? orgIdJagSection(appUrl, u.token, maxAuthAge) : ""}`;
+}
+
+/** /auth.md on organisation issuers a team trusts, only while that is on. */
+function orgIdJagSection(appUrl: string, tokenUrl: string, maxAuthAge: number): string {
+  return `
+## Organisation issuers a team trusts (ID-JAG)
+
+A team's owner can trust their organisation's ID-JAG issuer in the team's
+settings. A member's agent then sends the member's ID-JAG to ${tokenUrl}
+as \`grant_type=${JWT_BEARER_GRANT}\` with \`assertion\` and \`client_id\`.
+The assertion must be \`typ: oauth-id-jag+jwt\` signed with ES256 (keys from
+the issuer's \`/.well-known/openid-configuration\`), \`aud\` \`${appUrl}\`, a
+\`client_id\` equal to the request's, a unique \`jti\`, an \`auth_time\`
+within the last ${maxAuthAge} seconds, and \`email\` with
+\`email_verified: true\` belonging to a member of a team that trusts the
+issuer. No account is ever created this way.
+
+The first assertion for an identity answers 400 \`interaction_required\`
+with a \`claim\` block: the member confirms once (Step 4b), and the claim
+grant returns the account's tokens. Later assertions answer an access token
+at once, with no refresh token. Removing the issuer, or the member leaving
+the team, revokes the connection and its tokens.
 `;
 }

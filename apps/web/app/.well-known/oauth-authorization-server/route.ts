@@ -1,5 +1,6 @@
 import { preflight, withCors } from "@/lib/oauth/cors";
 import { buildAuthorizationServerMetadata } from "@/lib/agent/metadata";
+import { orgIssuersEnabled } from "@/lib/agent/org-issuers";
 import { hasTrustedProviders } from "@/lib/agent/trusted-providers";
 
 // Whether an ID-JAG issuer is trusted is runtime configuration.
@@ -12,9 +13,15 @@ export const dynamic = "force-dynamic";
  */
 export async function GET() {
   return withCors(
-    Response.json(buildAuthorizationServerMetadata({ idJagEnabled: hasTrustedProviders() }), {
-      headers: { "Cache-Control": "public, max-age=300" },
-    })
+    Response.json(
+      buildAuthorizationServerMetadata({
+        idJagEnabled: hasTrustedProviders(),
+        orgIdJagEnabled: orgIssuersEnabled(),
+      }),
+      {
+        headers: { "Cache-Control": "public, max-age=300" },
+      }
+    )
   );
 }
 

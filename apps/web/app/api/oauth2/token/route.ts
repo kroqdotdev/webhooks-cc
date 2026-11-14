@@ -12,6 +12,9 @@ import {
 import { oauthError, oauthJson } from "@/lib/agent/errors";
 import { issuer, readAgentBody } from "@/lib/agent/http";
 import { exchangeAssertion, hashClaimToken, InvalidGrantError } from "@/lib/agent/registrations";
+import { looksLikeIdJag } from "@/lib/agent/org-id-jag";
+import { orgIdJagGrant } from "@/lib/agent/org-id-jag-grant";
+import { orgIssuersEnabled } from "@/lib/agent/org-issuers";
 import { preflight, withCors } from "@/lib/oauth/cors";
 import {
   OAuthGrantError,
@@ -24,7 +27,8 @@ import { reportError } from "@/lib/observability";
 /**
  * POST /api/oauth2/token. Four grants:
  *   - jwt-bearer (RFC 7523, auth.md Step 5) exchanges a registration's
- *     identity assertion for a one-hour access token;
+ *     identity assertion for a one-hour access token, or an organisation's
+ *     ID-JAG from an issuer a team trusts (lib/agent/org-id-jag-grant.ts);
  *   - the claim grant (auth.md Step 4c) is the agent's poll during a claim
  *     ceremony, in RFC 8628's vocabulary, and on success returns account
  *     credentials plus a claimed identity assertion;
@@ -94,6 +98,11 @@ async function token(request: Request): Promise<Response> {
   try {
     if (!(await assertionSigningConfigured())) {
       return oauthError(503, "temporarily_unavailable", "Token issuance is not available.");
+    }
+    // An organisation's ID-JAG, from an issuer a team trusts. With the
+    // feature off it falls through and is refused like any foreign assertion.
+    if (orgIssuersEnabled() && looksLikeIdJag(body.assertion)) {
+      return await orgIdJagGrant(request, body, body.assertion);
     }
     const token = await exchangeAssertion(body.assertion);
     await auditAgentEvent(request, {

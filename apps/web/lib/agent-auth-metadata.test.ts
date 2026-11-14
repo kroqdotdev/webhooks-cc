@@ -149,6 +149,18 @@ describe("agent auth.md: Authorization Server Metadata", () => {
       assertion_types_supported: ["urn:ietf:params:oauth:token-type:id-jag"],
     });
   });
+
+  test("names the ID-JAG grant profile only while teams may trust organisation issuers", () => {
+    expect(as).not.toHaveProperty("authorization_grant_profiles_supported");
+    const org = buildAuthorizationServerMetadata({ idJagEnabled: false, orgIdJagEnabled: true });
+    expect(org.authorization_grant_profiles_supported).toEqual([
+      "urn:ietf:params:oauth:grant-profile:id-jag",
+    ]);
+    expect(buildAuthMd({ idJagEnabled: false })).not.toContain("Organisation issuers");
+    expect(buildAuthMd({ idJagEnabled: false, orgIdJagEnabled: true })).toContain(
+      "## Organisation issuers a team trusts (ID-JAG)"
+    );
+  });
 });
 
 describe("agent auth.md: proactive discovery pointers", () => {

@@ -577,6 +577,21 @@
       "mcp": "session only"
     },
     {
+      "id": "team.idjag-issuers",
+      "does": "Trust the organisation's ID-JAG issuer so members' agents connect with its assertions (the owner only; off until announced)",
+      "routes": [
+        "GET /api/teams/[teamId]/idjag-issuers",
+        "POST /api/teams/[teamId]/idjag-issuers",
+        "DELETE /api/teams/[teamId]/idjag-issuers/[issuerId]"
+      ],
+      "sessionOnly": "trusting an issuer lets it connect agents to members' accounts, so the owner decides in a signed-in session; agents use the result at the token endpoint",
+      "sdk": "session only",
+      "python": "session only",
+      "go": "session only",
+      "cli": "session only",
+      "mcp": "session only"
+    },
+    {
       "id": "support.tickets",
       "does": "Open and follow support tickets, and see when staff looked at your data",
       "routes": [
