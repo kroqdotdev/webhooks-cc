@@ -137,9 +137,15 @@ return {count, score}
 
 /** How long a Redis call may take before the in-memory limit answers instead. */
 const REDIS_EVAL_TIMEOUT_MS = 100;
-/** Timeouts in a row after which Redis is reported as a problem, not a blip. */
+/**
+ * Redis is reported as a problem, not a blip, once timeouts have come in a
+ * row for this long, and at least this many of them: one stall times out
+ * every check waiting on it at once, so a count alone would report a blip.
+ */
 const REDIS_TIMEOUTS_BEFORE_REPORT = 5;
+const REDIS_TIMEOUT_RUN_BEFORE_REPORT_MS = 5_000;
 let consecutiveRedisTimeouts = 0;
+let redisTimeoutRunStartedAt = 0;
 let lastTimeoutWarnAt = 0;
 
 class RedisEvalTimeout extends Error {
@@ -189,18 +195,24 @@ function withRedisTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
 }
 
 /**
- * A single slow answer is not a fault: the in-memory limit covers that one
- * request. Only timeouts that keep coming in a row go to StatOSS.
+ * A slow answer is not a fault: the in-memory limit covers those requests.
+ * Only timeouts that keep coming, with no answer between them, go to StatOSS.
  */
 function noteRedisTimeout(err: RedisEvalTimeout): void {
+  const now = Date.now();
+  if (consecutiveRedisTimeouts === 0) redisTimeoutRunStartedAt = now;
   consecutiveRedisTimeouts += 1;
-  if (consecutiveRedisTimeouts >= REDIS_TIMEOUTS_BEFORE_REPORT) {
+  const runMs = now - redisTimeoutRunStartedAt;
+  if (
+    consecutiveRedisTimeouts >= REDIS_TIMEOUTS_BEFORE_REPORT &&
+    runMs >= REDIS_TIMEOUT_RUN_BEFORE_REPORT_MS
+  ) {
     reportError("[rate-limit] Redis eval keeps timing out", err, {
       consecutive: consecutiveRedisTimeouts,
+      runMs,
     });
     return;
   }
-  const now = Date.now();
   if (now - lastTimeoutWarnAt > 30_000) {
     lastTimeoutWarnAt = now;
     console.warn(
