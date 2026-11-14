@@ -83,7 +83,7 @@ claude mcp add -s user --transport http webhooks-cc https://webhooks.cc/mcp --he
 - **No `enable_tools`.** Choose the [tool groups](#tool-groups) in the server's address instead.
 - **Three tools fewer.** `send_to`, `replay_request` and `share_port` are left out: the first two post to a URL you name and `share_port` runs `whk` on your computer, and a hosted server cannot reach your machine. For the same reason `render_email` and `test_webhook_flow` refuse `targetUrl`. To send to localhost, use the local server or [`whk tunnel`](/docs/cli/tunnel).
 - **Waits are capped at 50 seconds.** `wait_for_request`, `wait_for_email` and the other tools with a `timeout` return by then; call them again to keep waiting.
-- **Tools only.** The prompts and resources below come with the local server.
+- **Tools and the request inspector.** The prompts and the data resources below come with the local server.
 - **An account is required.** There is no sandbox on the remote server, and a sandbox token is refused.
 
 ## Local server
@@ -244,6 +244,20 @@ Agent: Captured POST request detected as Typeform / form_response
 The same flow works for Stripe, GitHub, Shopify, Twilio, Slack, Paddle, Linear, SendGrid templates, Clerk, Discord templates, Vercel, GitLab, Typeform, Standard Webhooks, DocuSign, Adyen, PayPal templates, and Plaid templates.
 
 For provider templates in `send_webhook`, `secret` is required for every signed provider (only `sendgrid`, `discord`, and `plaid` templates are unsigned and need no secret). The MCP server does not inject a default secret.
+
+## Request inspector
+
+`get_request`, `get_email`, `wait_for_request` and `wait_for_email` come with an inspector. In clients that support [MCP Apps](https://modelcontextprotocol.io/extensions/apps/overview), the result opens as an interactive view beside the answer, from the remote and the local server alike.
+
+- **A request:** the method, path and query, when it arrived and its size, the answer the sender got and the rule that chose it, the signature check, the headers (authorization, cookies and other secrets stay masked until you reveal them), and the body as folding JSON or as it was received.
+- **An email:** the sender, recipients and subject, the SPF, DKIM, DMARC and spam verdicts, the one-time code and the links found in it, the endpoint's named fields, the text part and the attachments. An email from `get_request` or `wait_for_request` comes without its code and links; Show codes and links loads them with `get_email`. The HTML part is not shown there; `get_email` with `includeHtml` returns it.
+- **The endpoint's recent requests,** when you ask for them, to open one after another.
+
+The inspector calls tools only when you click: it loads codes and links and the recent requests through your client with `list_requests`, `get_request` and `get_email` (and `list_endpoints`, only when a request does not name its endpoint), as your agent would, so they count like your agent's own calls. Those buttons appear only in clients that let the view call tools.
+
+The inspector reaches nothing on the network itself, opens a link only when you click Open, and shows every captured value as text. Copy buttons appear when your client lets the view use the clipboard.
+
+Clients without MCP Apps show the same result as before: the inspector reads the same text the model gets, so nothing is sent twice.
 
 ## Prompts
 

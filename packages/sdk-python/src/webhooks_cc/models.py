@@ -659,6 +659,8 @@ class Request:
     live_response: LiveResponse | None = None
     """What the local app answered, for a request captured while ``whk tunnel --live``
     ran."""
+    endpoint_slug: str | None = None
+    """The endpoint's slug, on a request read by id (``requests.get``, ``emails.get``)."""
     raw: dict[str, Any] = field(default_factory=dict, repr=False, compare=False)
 
     @classmethod
@@ -701,6 +703,7 @@ class Request:
             live_response=LiveResponse.from_dict(data["liveResponse"])
             if isinstance(data.get("liveResponse"), Mapping)
             else None,
+            endpoint_slug=_str_or_none(data.get("endpointSlug")),
             raw=dict(data),
         )
 

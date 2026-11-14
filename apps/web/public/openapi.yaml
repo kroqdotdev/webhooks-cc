@@ -5940,6 +5940,12 @@ components:
           type: string
         endpointId:
           type: string
+        endpointSlug:
+          type: string
+          description: |
+            The slug of the endpoint that captured it. Present on a request fetched by id
+            (`GET /api/requests/{id}`, `GET /api/agent/sandbox/requests/{id}`); lists leave it
+            out, since they name the endpoint.
         method:
           type: string
           description: HTTP method, or `EMAIL` for a captured email

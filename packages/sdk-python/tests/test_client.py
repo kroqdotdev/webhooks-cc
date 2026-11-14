@@ -2478,3 +2478,13 @@ def test_a_slow_token_refresh_inside_a_search_ends_at_its_deadline(
     with pytest.raises(errors.TimeoutError) as caught:
         own.requests.search(q="x")
     assert caught.value.timeout_ms == 500
+
+
+def test_request_carries_endpoint_slug_when_read_by_id() -> None:
+    from webhooks_cc.models import Request
+
+    request = Request.from_dict(
+        {"id": "r1", "endpointId": "e1", "endpointSlug": "acme", "method": "POST", "path": "/"}
+    )
+    assert request.endpoint_slug == "acme"
+    assert Request.from_dict({"id": "r2", "endpointId": "e1"}).endpoint_slug is None

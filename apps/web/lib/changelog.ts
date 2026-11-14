@@ -34,7 +34,7 @@ export const CLI_VERSION = "1.18.0";
 export const SDK_VERSION = "1.28.0";
 export const PYTHON_SDK_VERSION = "0.8.0";
 export const GO_SDK_VERSION = "0.8.0";
-export const MCP_VERSION = "2.1.0";
+export const MCP_VERSION = "2.2.0";
 
 export const CHANGELOG: ChangelogEntry[] = [
   ...RELEASE.entries,
@@ -3171,6 +3171,16 @@ export const CHANGELOG: ChangelogEntry[] = [
   },
 
   // ─── MCP ────────────────────────────────────────────────────────────
+  {
+    version: "2.2.0",
+    date: "2026-11-14",
+    title: "Request Inspector",
+    track: "mcp",
+    items: [
+      "`get_request`, `get_email`, `wait_for_request` and `wait_for_email` open an interactive inspector in clients that support MCP Apps: the request's method, path, response, signature result, headers and body, or the email's code and links, sender, verdicts, fields, text and attachments, with the endpoint's recent requests a click away",
+      "Clients without MCP Apps see the same answers as before",
+    ],
+  },
   {
     version: "2.1.0",
     date: "2026-11-14",

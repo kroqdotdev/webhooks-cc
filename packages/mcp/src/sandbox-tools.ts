@@ -11,6 +11,7 @@ import {
 } from "@webhooks-cc/sdk";
 import { TOOL_GROUP_NAMES, toolAnnotations, toolTitle } from "./catalog";
 import { compactRequest } from "./compact";
+import { appToolMeta } from "./app";
 import {
   asToolServer,
   localToolGroups,
@@ -297,7 +298,7 @@ function sandboxTarget(target: ToolServer, readOnly: boolean): ToolServer {
       if (readOnly && !annotations.readOnlyHint && !CONNECT_TOOLS.has(name)) {
         return { remove() {} };
       }
-      return target.tool(name, description, shape, handler, annotations);
+      return target.tool(name, description, shape, handler, annotations, appToolMeta(name));
     },
   };
 }

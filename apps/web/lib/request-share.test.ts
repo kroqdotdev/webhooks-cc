@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
+import * as inspector from "../../../packages/mcp/app/model";
 import {
   buildShareSnapshot,
+  CREDENTIAL_HEADERS,
+  SENSITIVE_NAME,
+  SENSITIVE_QUERY_NAME,
   parseShareSnapshot,
   redactHeaders,
   redactQuery,
@@ -121,5 +125,40 @@ describe("share snapshot", () => {
     const request = snapshotToRequest(buildShareSnapshot(source, { hideSensitive: true }), "tok");
     expect(request).toMatchObject({ _id: "tok", kind: "http", ip: "", method: "POST" });
     expect(request.headers["stripe-signature"]).toBe(REDACTED);
+  });
+});
+
+describe("the MCP request inspector's masking", () => {
+  // packages/mcp/app/model.ts copies these patterns (the inspector is a
+  // self-contained page): it must hide what a share link hides.
+  it("uses the share link's patterns", () => {
+    for (const [copy, own] of [
+      [inspector.SENSITIVE_NAME, SENSITIVE_NAME],
+      [inspector.SENSITIVE_QUERY_NAME, SENSITIVE_QUERY_NAME],
+    ]) {
+      expect(copy.source).toBe(own.source);
+      expect(copy.flags).toBe(own.flags);
+    }
+    for (const name of CREDENTIAL_HEADERS) {
+      expect(inspector.isSecretHeader(name), name).toBe(true);
+      expect(inspector.isSecretHeader(name.toUpperCase()), name).toBe(true);
+    }
+  });
+
+  it("masks the query values a share link redacts", () => {
+    const query = {
+      code: "c",
+      state: "s",
+      sig: "x",
+      key: "k",
+      api_key: "a",
+      access_token: "t",
+      page: "2",
+      q: "hello",
+    };
+    const redacted = redactQuery(query, true).redacted;
+    for (const name of Object.keys(query)) {
+      expect(inspector.isSecretQueryName(name), name).toBe(redacted.includes(name));
+    }
   });
 });

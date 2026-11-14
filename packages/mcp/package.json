@@ -1,6 +1,6 @@
 {
   "name": "@webhooks-cc/mcp",
-  "version": "2.1.0",
+  "version": "2.2.0",
   "mcpName": "io.github.kroqdotdev/webhooks-cc",
   "description": "MCP server for webhooks.cc: AI agent integration for webhook testing",
   "main": "dist/index.js",
@@ -28,7 +28,8 @@
   "scripts": {
     "build": "tsup",
     "dev": "tsup --watch",
-    "typecheck": "tsc --noEmit",
+    "build:app": "node scripts/build-app.mjs",
+    "typecheck": "tsc --noEmit && tsc -p app",
     "test": "vitest run",
     "prepublishOnly": "npm run build"
   },

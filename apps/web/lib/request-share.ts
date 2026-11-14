@@ -17,7 +17,7 @@ export const REDACTED = "[redacted]";
 export const SHARE_TOKEN_PATTERN = /^[A-Za-z0-9_-]{22,64}$/;
 
 /** Headers that carry credentials: never shared. */
-const CREDENTIAL_HEADERS = new Set([
+export const CREDENTIAL_HEADERS = new Set([
   "authorization",
   "proxy-authorization",
   "cookie",
@@ -29,9 +29,9 @@ const CREDENTIAL_HEADERS = new Set([
  * unless the user chooses to show them (a signature is often what a
  * teammate needs to see).
  */
-const SENSITIVE_NAME =
+export const SENSITIVE_NAME =
   /token|secret|passw|api[-_]?key|apikey|key$|signature|hmac|session|csrf|xsrf|auth|jwt|assertion|credential/i;
-const SENSITIVE_QUERY_NAME = /^(code|key|sig|state)$/i;
+export const SENSITIVE_QUERY_NAME = /^(code|key|sig|state)$/i;
 
 export function isCredentialHeader(name: string): boolean {
   return CREDENTIAL_HEADERS.has(name.toLowerCase());

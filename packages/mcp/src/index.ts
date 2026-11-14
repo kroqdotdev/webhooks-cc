@@ -3,6 +3,7 @@ import { WebhooksCC } from "@webhooks-cc/sdk";
 import { localToolGroups, toolSelection, type ToolSelectionOptions } from "./local-tools";
 import { registerPrompts } from "./prompts";
 import { attachSkill } from "./skills";
+import { attachInspector } from "./app";
 import { registerResources } from "./resources";
 import { registerSandboxTools } from "./sandbox-tools";
 import { MCP_USER_AGENT, VERSION } from "./version";
@@ -61,6 +62,8 @@ export function createServer(options: CreateServerOptions = {}): McpServer {
   );
   // The agent skill, served to clients that read skills from their servers.
   attachSkill(server);
+  // The request inspector, which get_request and get_email name for clients with MCP Apps.
+  attachInspector(server);
   const groups = localToolGroups(server, toolSelection(options));
 
   // No API key: the account a human connected this agent to before (saved in
@@ -97,6 +100,7 @@ export type {
 export { registerSandboxTools, registerAgentRegistrationTools } from "./sandbox-tools";
 export type { SandboxToolOptions } from "./sandbox-tools";
 export { registerPrompts } from "./prompts";
+export { attachInspector, INSPECTOR_URI, INSPECTOR_URI_TEMPLATE, APP_MIME_TYPE } from "./app";
 export { registerResources } from "./resources";
 export { asToolServer, LocalToolGroups, localToolGroups, toolSelection } from "./local-tools";
 export type { ToolSelection, ToolSelectionOptions } from "./local-tools";

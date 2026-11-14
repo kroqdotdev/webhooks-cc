@@ -35,7 +35,7 @@ import {
 /** registerTools' view of a v2 McpServer: each tool with its title and annotations. */
 export function asToolServer(server: McpServer): ToolServer {
   return {
-    tool(name, description, shape, handler, annotations) {
+    tool(name, description, shape, handler, annotations, meta) {
       const registered = server.registerTool(
         name,
         {
@@ -43,6 +43,7 @@ export function asToolServer(server: McpServer): ToolServer {
           description,
           inputSchema: z.object(shape),
           annotations,
+          ...(meta ? { _meta: meta } : {}),
         },
         async (args: unknown, ctx: ServerContext) =>
           sdkToolResult(
@@ -177,9 +178,9 @@ export class LocalToolGroups {
     for (const group of fresh) added[group] = [];
     const server = this.server;
     const recorder: ToolServer = {
-      tool(name, description, shape, handler, annotations) {
+      tool(name, description, shape, handler, annotations, meta) {
         added[TOOL_CATALOG[name].group]?.push(name);
-        return server.tool(name, description, shape, handler, annotations);
+        return server.tool(name, description, shape, handler, annotations, meta);
       },
     };
     this.handles.push(

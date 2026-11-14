@@ -41,6 +41,11 @@ interface Behaviour {
   idempotent?: true;
   /** Reaches past webhooks.cc: a URL you name, an email inbox, Google, Anthropic. */
   openWorld?: true;
+  /**
+   * Shows its answer in the request inspector, an MCP App (app.ts) that
+   * clients with MCP Apps render beside the result.
+   */
+  ui?: true;
 }
 
 interface CatalogEntry extends Behaviour {
@@ -71,8 +76,8 @@ export const TOOL_CATALOG: Record<string, CatalogEntry> = {
     delete_endpoint: remove,
     list_requests: read,
     search_requests: read,
-    get_request: read,
-    wait_for_request: read,
+    get_request: { ...read, ui: true },
+    wait_for_request: { ...read, ui: true },
     wait_for_requests: read,
     replay_request: outward,
     compare_requests: read,
@@ -86,8 +91,8 @@ export const TOOL_CATALOG: Record<string, CatalogEntry> = {
     list_provider_templates: read,
     verify_signature: read,
     list_emails: read,
-    get_email: read,
-    wait_for_email: read,
+    get_email: { ...read, ui: true },
+    wait_for_email: { ...read, ui: true },
     send_test_email: write,
     render_email: outward,
     list_destinations: read,

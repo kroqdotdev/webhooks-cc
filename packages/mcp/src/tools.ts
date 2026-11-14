@@ -23,6 +23,7 @@ import {
   verifySignature,
   WebhooksCC,
   WebhooksCCError,
+  DEFAULT_EMAIL_DOMAIN,
   extractCode,
   extractLink,
   detectWebhookInfo,
@@ -33,6 +34,7 @@ import {
   conditionIssues,
   type ConditionField,
   type EmailRequest,
+  type Endpoint,
   type LiveShare,
   type TunnelShareList,
   type PayloadSchemaFormat,
@@ -56,6 +58,7 @@ import {
   TEXT_FLOOR,
 } from "./compact";
 import { TOOL_CATALOG, toolAnnotations, type ToolGroup } from "./catalog";
+import { appToolMeta } from "./app";
 
 const MAX_BODY_SIZE = MAX_OUTPUT;
 const HTTP_METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"] as const;
@@ -822,6 +825,9 @@ function shortenRequest(
   const summary: JsonRecord = {
     id: request.id,
     slug: clip(request.slug, 64),
+    // What the inspector reads to find the endpoint's recent requests.
+    endpointSlug: clip(request.endpointSlug, 64),
+    endpointId: clip(request.endpointId, 64),
     method: clip(request.method, 16),
     path: clip(request.path, 200),
     contentType: clip(request.contentType, 100),
@@ -1112,16 +1118,42 @@ interface EmailEndpointView {
 }
 
 async function emailEndpointView(client: WebhooksCC, slug: string): Promise<EmailEndpointView> {
-  const endpoint = await client.endpoints.get(slug);
+  return endpointViewOf(await client.endpoints.get(slug));
+}
+
+function endpointViewOf(
+  endpoint: Pick<Endpoint, "slug" | "name" | "showEmailExtracts">
+): EmailEndpointView {
   return {
     endpoint: { slug: endpoint.slug, name: endpoint.name ?? null },
     includeExtracts: endpoint.showEmailExtracts !== false,
   };
 }
 
-function emailSlugFromAddress(address: string): string {
-  const local = address.slice(0, Math.max(0, address.lastIndexOf("@")));
-  return local.split("+")[0].toLowerCase();
+/**
+ * The endpoint an email is at, with what `get_email` needs to know of it.
+ * An email read by id names its endpoint's slug, and so does a capture
+ * address ({slug}[+tag]@mailhooks.cc). Mail to a custom inbound domain is
+ * stored under the recipient's own address, so without the slug (an older
+ * server) its endpoint is found by id among the account's endpoints, whose
+ * list already says all that is needed.
+ */
+async function emailEndpointViewFor(
+  client: WebhooksCC,
+  email: EmailRequest
+): Promise<EmailEndpointView> {
+  if (email.endpointSlug) return emailEndpointView(client, email.endpointSlug);
+  const at = email.path.lastIndexOf("@");
+  if (at > 0 && email.path.slice(at + 1).toLowerCase() === DEFAULT_EMAIL_DOMAIN) {
+    return emailEndpointView(client, email.path.slice(0, at).split("+")[0].toLowerCase());
+  }
+  const endpoint = (await client.endpoints.list()).find(
+    (candidate) => candidate.id === email.endpointId
+  );
+  if (!endpoint) {
+    throw new NotFoundError(`The endpoint of email ${email.id} was not found`);
+  }
+  return endpointViewOf(endpoint);
 }
 
 /** A main link in `list_emails` longer than this is left out, so one email cannot fill the list. */
@@ -1261,7 +1293,9 @@ export interface ToolServer {
     shape: Shape,
     handler: (args: z.infer<z.ZodObject<Shape>>, call?: ToolCall) => Promise<ToolResult>,
     /** MCP tool annotations (catalog.ts), set by registerTools for every tool. */
-    annotations?: ToolAnnotationsHint
+    annotations?: ToolAnnotationsHint,
+    /** The tool's _meta (the request inspector, app.ts), for the adapter to pass on. */
+    meta?: Record<string, unknown>
   ): RegisteredToolHandle;
 }
 
@@ -1397,7 +1431,14 @@ function toolTarget(
             return handler(bounded as unknown as typeof args, call);
           }
         : handler;
-      const handle = target.tool(name, description, shape, wrapped, toolAnnotations(name));
+      const handle = target.tool(
+        name,
+        description,
+        shape,
+        wrapped,
+        toolAnnotations(name),
+        appToolMeta(name)
+      );
       handles.push(handle);
       return handle;
     },
@@ -2834,10 +2875,9 @@ export function registerTools(
           `No email at ${endpointSlug}${tag ? ` with tag "${tag}"` : ""} yet. Send one with send_test_email, or wait with wait_for_email.`
         );
       }
-      const view = await emailEndpointView(
-        client,
-        endpointSlug ?? emailSlugFromAddress(email.path)
-      );
+      const view = endpointSlug
+        ? await emailEndpointView(client, endpointSlug)
+        : await emailEndpointViewFor(client, email);
       return jsonContent(emailDetail(client, email, view, includeHtml));
     })
   );
@@ -3705,3 +3745,4 @@ export {
 
 export { sdkToolResult, toolCallFrom } from "./sdk-call";
 export { attachSkill } from "./skills";
+export { attachInspector, INSPECTOR_URI, INSPECTOR_URI_TEMPLATE, APP_MIME_TYPE } from "./app";
