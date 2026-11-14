@@ -5,6 +5,14 @@ import { useEffect, useRef, useState } from "react";
 import { SupabaseAuthProvider, useAuth } from "@/components/providers/supabase-auth-provider";
 import { MfaChallenge, useNeedsSecondFactor } from "./mfa-challenge";
 
+/**
+ * Where a signed-out visitor is sent: the login page, with the way back to
+ * `here` only for someone who arrived signed out (a link to one request).
+ */
+export function loginPathFor(here: string, wasSignedIn: boolean): string {
+  return here === "/" || wasSignedIn ? "/login" : `/login?redirect=${encodeURIComponent(here)}`;
+}
+
 export function RequireAuth({ children }: { children: React.ReactNode }) {
   return (
     <SupabaseAuthProvider>
@@ -26,9 +34,9 @@ function RequireAuthInner({ children }: { children: React.ReactNode }) {
   // must pass its own.
   const [verifiedUserId, setVerifiedUserId] = useState<string | null>(null);
 
-  // Whether this page was signed in: after a sign-out the login page must
-  // not offer the way back, which would sit in the history of a shared
-  // computer for the next person.
+  // Whether this page was signed in: once the session ends in this tab
+  // (a sign-out in another tab, a refused refresh), the login page does not
+  // offer the way back.
   const wasSignedIn = useRef(false);
 
   useEffect(() => {
@@ -37,11 +45,8 @@ function RequireAuthInner({ children }: { children: React.ReactNode }) {
       // Arriving signed out, back to this page after signing in (the login
       // page accepts only a path on this site: lib/auth-redirect.ts), so a
       // link to one request still opens it.
-      const here = `${window.location.pathname}${window.location.search}`;
       router.replace(
-        here === "/" || wasSignedIn.current
-          ? "/login"
-          : `/login?redirect=${encodeURIComponent(here)}`
+        loginPathFor(`${window.location.pathname}${window.location.search}`, wasSignedIn.current)
       );
     }
   }, [isAuthenticated, isLoading, router]);
