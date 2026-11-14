@@ -93,9 +93,10 @@ async fn run(args: Cli) -> Result<()> {
     }
 
     let mut client = ApiClient::new(args.api_url.as_deref(), args.webhook_url.as_deref())?;
-    // A server other than the default, by flag or by WHK_API_URL: a command
-    // printed for a later run names it.
-    let api_url_flag = client.custom_base_url().map(String::from);
+    // A command printed for a later run (a search's continue command) names
+    // the server this run used, default included: the later run may have
+    // other flags or another WHK_API_URL.
+    let api_url_flag = Some(client.base_url().to_string());
 
     match args.command {
         None => unreachable!("handled above"),

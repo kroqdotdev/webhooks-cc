@@ -206,10 +206,11 @@ fn search_progress_line(searched_until: Option<i64>, order: &str, next: Option<&
     line
 }
 
-/// The command that goes on from `cursor`, with the same filters, and with
-/// `--api-url` when this run used a server other than the default (by flag
-/// or by `WHK_API_URL`), so the cursor goes back to the server that made it. Values are attached with `=`, so one that starts
-/// with a hyphen is still read as a value.
+/// The command that goes on from `cursor`, with the same filters and the
+/// `--api-url` this run used (the default included), so the cursor goes back
+/// to the server that made it whatever the later run's environment. Values
+/// are attached with `=`, so one that starts with a hyphen is still read as a
+/// value.
 fn continue_command(
     action: &str,
     filters: &SearchFilters<'_>,
