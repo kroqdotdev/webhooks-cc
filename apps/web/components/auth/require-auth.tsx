@@ -28,7 +28,11 @@ function RequireAuthInner({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     if (!isLoading && !isAuthenticated) {
-      router.push("/login");
+      // Back to this page after signing in (the login page accepts only a
+      // path on this site: lib/auth-redirect.ts), so a link to one request
+      // still opens it.
+      const here = `${window.location.pathname}${window.location.search}`;
+      router.push(here === "/" ? "/login" : `/login?redirect=${encodeURIComponent(here)}`);
     }
   }, [isAuthenticated, isLoading, router]);
 
