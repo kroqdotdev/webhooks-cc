@@ -53,9 +53,7 @@ export function AgentSection({ endpoint }: { endpoint: DashboardEndpoint }) {
       <Field
         id="settings-agent-repo"
         label="GitHub repository"
-        error={
-          value.trim() !== "" && !parsed.ok ? "Enter it as owner/name, like acme/api." : undefined
-        }
+        error={value.trim() !== "" && !parsed.ok ? parsed.error : undefined}
         help="The prompt names the delivery and its request by id, never their contents. The agent reads the rest through the webhooks.cc MCP server or whk. Team members who can view this endpoint see the repository name."
       >
         <FieldControl

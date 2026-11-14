@@ -11,7 +11,7 @@ import { sendOptions } from "@/lib/forwarding/config";
 import { isChatUrl } from "@/lib/forwarding/format";
 import { isDelivered, jsonForward, sendForward } from "@/lib/forwarding/send";
 import { forwardHeaders, FORWARD_USER_AGENT } from "@/lib/forwarding/sign";
-import { buildFixPrompt, t3CodeLink, takesFixPrompt } from "@/lib/fix-prompt";
+import { buildFixPrompt, isAgentRepo, t3CodeLink, takesFixPrompt } from "@/lib/fix-prompt";
 
 /**
  * Tells the owner when an alert opens or resolves: an email from
@@ -218,7 +218,8 @@ export function alertFixPrompt(
   destinationFormat: string | null | undefined,
   deleteAfterDelivery = false
 ): AlertFix | null {
-  if (event.kind !== "destination" || event.resolved_at !== null || !agentRepo) return null;
+  if (event.kind !== "destination" || event.resolved_at !== null || !isAgentRepo(agentRepo))
+    return null;
   if (deleteAfterDelivery) return null;
   if (!takesFixPrompt(destinationFormat)) return null;
   const details = (event.details ?? {}) as Record<string, unknown>;

@@ -6,7 +6,7 @@
 -- The check mirrors isAgentRepo() in apps/web/lib/fix-prompt.ts: GitHub's
 -- own rules for an owner (letters, digits and dashes, not starting with a
 -- dash, at most 39) and a repository name (letters, digits, dots, dashes
--- and underscores, at most 100, not only dots). Added NOT VALID and then
+-- and underscores, at most 100, not ending in "." or ".git"). Added NOT VALID and then
 -- validated, so the table is scanned under a lock that lets reads and
 -- writes go on; every row is null when it runs.
 

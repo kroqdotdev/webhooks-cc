@@ -1,7 +1,7 @@
 "use client";
 
 import { Check, Copy, ExternalLink } from "lucide-react";
-import { buildFixPrompt, t3CodeLink, type FixPromptDelivery } from "@/lib/fix-prompt";
+import { buildFixPrompt, isAgentRepo, t3CodeLink, type FixPromptDelivery } from "@/lib/fix-prompt";
 import { useCopyWithFeedback } from "@/hooks/use-copy-with-feedback";
 import { Button } from "@/components/ui/button";
 
@@ -52,7 +52,7 @@ export function FixPromptActions({
               target="_blank"
               rel="noopener noreferrer"
               title={
-                agentRepo
+                isAgentRepo(agentRepo)
                   ? `Opens a draft in T3 Code for ${agentRepo}`
                   : "Opens a draft in T3 Code; set the endpoint's agent repository to pick the project"
               }
