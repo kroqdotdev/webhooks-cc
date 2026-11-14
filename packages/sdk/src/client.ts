@@ -1072,9 +1072,9 @@ export class WebhooksCC {
       repeatable?: boolean;
       timeoutMs?: number;
       /**
-       * Each attempt's timeout in place of the client's, longer or shorter:
-       * for a route that does slow work while the caller waits. A client
-       * timeout set longer than it wins.
+       * A longer timeout for each attempt, for a route that does slow work
+       * while the caller waits. It only lengthens: a client timeout set
+       * longer than it wins.
        */
       attemptTimeoutMs?: number;
       /**
