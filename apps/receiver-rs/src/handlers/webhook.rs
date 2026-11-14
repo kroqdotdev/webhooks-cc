@@ -1,7 +1,9 @@
+use axum::Router;
 use axum::body::Bytes;
 use axum::extract::{OriginalUri, Path, State};
 use axum::http::{HeaderMap, HeaderValue, Method, StatusCode};
 use axum::response::{IntoResponse, Response};
+use axum::routing::MethodRouter;
 use chrono::{SecondsFormat, Utc};
 use serde::Deserialize;
 use std::borrow::Cow;
@@ -18,6 +20,20 @@ use super::rules::{RequestContext, ResponseRule};
 use super::values::LazyBody;
 use crate::AppState; // ResponseRule needed for deserialization
 use crate::metrics;
+
+/// The capture routes, which `main.rs` mounts with the real handlers.
+/// `{*path}` matches only a non-empty rest, so `/w/{slug}/` needs a route of
+/// its own: without it a sender configured with a trailing slash got a 404
+/// and nothing was kept. It is the same capture as `/w/{slug}`, path "/".
+pub fn capture_routes<S>(with_path: MethodRouter<S>, no_path: MethodRouter<S>) -> Router<S>
+where
+    S: Clone + Send + Sync + 'static,
+{
+    Router::new()
+        .route("/w/{slug}/{*path}", with_path)
+        .route("/w/{slug}/", no_path.clone())
+        .route("/w/{slug}", no_path)
+}
 
 const MAX_HEADER_KEY_LEN: usize = 256;
 const MAX_HEADER_VALUE_LEN: usize = 8192;
@@ -565,7 +581,7 @@ pub async fn handle_webhook(
     .await
 }
 
-/// Handle the case where no trailing path is provided: /w/{slug}
+/// Handle the case where no trailing path is provided: /w/{slug} and /w/{slug}/
 pub async fn handle_webhook_no_path(
     State(state): State<AppState>,
     method: Method,
@@ -1090,6 +1106,35 @@ async fn handle_webhook_inner(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn every_capture_url_reaches_a_handler() {
+        use axum::body::Body;
+        use axum::http::Request;
+        use axum::routing::any;
+        use tower::ServiceExt;
+
+        // The route table main.rs mounts, each handler answering its name.
+        let app = capture_routes(any(|| async { "with_path" }), any(|| async { "no_path" }));
+        for (uri, expected) in [
+            ("/w/acme", "no_path"),
+            ("/w/acme/", "no_path"),
+            ("/w/acme/?a=1", "no_path"),
+            ("/w/acme/hooks/stripe", "with_path"),
+            ("/w/acme/hooks/", "with_path"),
+        ] {
+            let response = app
+                .clone()
+                .oneshot(Request::post(uri).body(Body::empty()).unwrap())
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::OK, "{uri}");
+            let body = axum::body::to_bytes(response.into_body(), 64)
+                .await
+                .unwrap();
+            assert_eq!(body, expected, "{uri}");
+        }
+    }
 
     #[test]
     fn a_mock_whose_response_cannot_be_built_goes_out_as_a_plain_200() {
