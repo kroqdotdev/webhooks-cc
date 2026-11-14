@@ -131,10 +131,10 @@ type UpdateEndpointOptions struct {
 	// removes them all (owner only). The server checks them, RE2 included.
 	Layouts Field[[]Layout]
 	// AgentRepo is the GitHub repository (owner/name) a coding agent fixes
-	// the endpoint's failed deliveries in; Null clears it (owner only). The
-	// dashboard's Open in T3 Code opens there, and delivery-failure alert
-	// emails link to a fix prompt. One that is not owner/name is refused
-	// before anything is sent.
+	// the endpoint's failed deliveries in; Null or "" clears it (owner only).
+	// The dashboard's Open in T3 Code opens there, and delivery-failure alert
+	// emails link to a fix prompt. Spaces around it and a trailing ".git" are
+	// dropped; one that is not owner/name is refused before anything is sent.
 	AgentRepo Field[string]
 }
 
@@ -153,6 +153,20 @@ func validAgentRepo(repo string) bool {
 	return strings.Trim(name, ".") != ""
 }
 
+// normalizeAgentRepo reads an AgentRepo as the API does: spaces around it
+// and a trailing ".git" dropped, and "" (what is left of "  " too) clearing
+// it. ok is false when what remains is not owner/name.
+func normalizeAgentRepo(repo string) (string, bool) {
+	repo = strings.TrimSpace(repo)
+	if len(repo) >= 4 && strings.EqualFold(repo[len(repo)-4:], ".git") {
+		repo = repo[:len(repo)-4]
+	}
+	if repo == "" {
+		return "", true
+	}
+	return repo, validAgentRepo(repo)
+}
+
 // Update changes an endpoint's settings.
 func (s *EndpointsService) Update(ctx context.Context, slug string, opts UpdateEndpointOptions) (*Endpoint, error) {
 	if err := validateSegment(slug, "slug"); err != nil {
@@ -161,8 +175,16 @@ func (s *EndpointsService) Update(ctx context.Context, slug string, opts UpdateE
 	if opts.Name.isNull() || opts.ShowEmailExtracts.isNull() || opts.Site.isNull() || opts.ForwardEnabled.isNull() || opts.DeleteAfterDelivery.isNull() {
 		return nil, errors.New("webhooks.cc: Name, ShowEmailExtracts, Site, ForwardEnabled and DeleteAfterDelivery cannot be cleared; set them with Value")
 	}
-	if opts.AgentRepo.IsSet() && !opts.AgentRepo.isNull() && !validAgentRepo(opts.AgentRepo.value) {
-		return nil, errors.New("webhooks.cc: AgentRepo must be a GitHub repository as owner/name")
+	if opts.AgentRepo.IsSet() && !opts.AgentRepo.isNull() {
+		repo, ok := normalizeAgentRepo(opts.AgentRepo.value)
+		if !ok {
+			return nil, errors.New("webhooks.cc: AgentRepo must be a GitHub repository as owner/name")
+		}
+		if repo == "" {
+			opts.AgentRepo = Null[string]()
+		} else {
+			opts.AgentRepo = Value(repo)
+		}
 	}
 	if opts.EmailFields.IsSet() && !opts.EmailFields.isNull() {
 		if issues := EmailFieldIssues(opts.EmailFields.value); len(issues) > 0 {

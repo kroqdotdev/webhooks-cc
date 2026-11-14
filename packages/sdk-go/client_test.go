@@ -211,7 +211,23 @@ func TestUpdateSetsAndClearsTheAgentRepo(t *testing.T) {
 	if _, body := api.last(); body != `{"agentRepo":null}` {
 		t.Errorf("body = %s", body)
 	}
-	for _, bad := range []string{"acme", "https://github.com/acme/api", "-acme/api", "acme/..", strings.Repeat("a", 40) + "/b"} {
+	// Read as the API reads it: trimmed, ".git" dropped, "" clears.
+	for in, want := range map[string]string{
+		" acme/api ":   `{"agentRepo":"acme/api"}`,
+		"acme/api.git": `{"agentRepo":"acme/api"}`,
+		"":             `{"agentRepo":null}`,
+		"  ":           `{"agentRepo":null}`,
+	} {
+		if _, err := client.Endpoints.Update(context.Background(), "acme-test", webhookscc.UpdateEndpointOptions{
+			AgentRepo: webhookscc.Value(in),
+		}); err != nil {
+			t.Fatalf("%q: %v", in, err)
+		}
+		if _, body := api.last(); body != want {
+			t.Errorf("%q: body = %s", in, body)
+		}
+	}
+	for _, bad := range []string{"acme", "https://github.com/acme/api", "-acme/api", "acme/..", "acme/.git", strings.Repeat("a", 40) + "/b"} {
 		if _, err := client.Endpoints.Update(context.Background(), "acme-test", webhookscc.UpdateEndpointOptions{
 			AgentRepo: webhookscc.Value(bad),
 		}); err == nil || !strings.Contains(err.Error(), "AgentRepo") {

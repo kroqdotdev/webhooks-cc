@@ -16,12 +16,15 @@ import { Button } from "@/components/ui/button";
 export function FixPromptActions({
   delivery,
   agentRepo,
+  canRedeliver = true,
 }: {
   delivery: FixPromptDelivery;
   agentRepo?: string | null;
+  /** Only the owner redelivers; a team member's prompt asks the owner to. */
+  canRedeliver?: boolean;
 }) {
   const { copy, isCopied } = useCopyWithFeedback();
-  const prompt = buildFixPrompt(delivery);
+  const prompt = buildFixPrompt(delivery, { canRedeliver });
   if (!prompt) return null;
   const copied = isCopied();
   return (

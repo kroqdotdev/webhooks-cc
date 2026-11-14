@@ -1,3 +1,5 @@
+import { isChatUrl, resolveFormat } from "@/lib/forwarding/format";
+
 /**
  * Fix prompts: a failed delivery handed to a coding agent in one click. The
  * dashboard's failed-delivery view copies the prompt or opens it in T3 Code,
@@ -10,6 +12,11 @@
  * header, body, email address, destination name or error message, nothing a
  * customer or a sender wrote. The agent reads the rest itself, with the
  * account's own credentials, through the MCP server or `whk`.
+ *
+ * Endpoints that delete requests once they are delivered
+ * (`delete_after_delivery`) get no prompt: the request and its deliveries go
+ * a few minutes after the last one settles, failed or not, so the ids would
+ * name nothing by the time an agent reads them.
  */
 
 /** The fields a prompt is made from; anything else on the delivery is ignored. */
@@ -72,6 +79,28 @@ export function takesFixPrompt(format: string | null | undefined): boolean {
   return format !== "sheets" && format !== "file_drop" && format !== "chat";
 }
 
+/**
+ * The format a failed delivery's prompt decision reads: the one it recorded,
+ * else (a failure recorded before formats were) what its destination
+ * resolves to now, from the owner's view of its settings, or, for team
+ * members, from the origin of the URL it went to (a Slack or Discord host is
+ * chat); else unknown, which still takes a prompt.
+ */
+export function fixPromptFormat(
+  recorded: string | null | undefined,
+  kind: "http" | "email",
+  destination: { format: string | null; url: string } | null,
+  deliveredTo: { url: string } | null | undefined
+): string | null {
+  if (recorded) return recorded;
+  if (destination) {
+    const setting = destination.format === "auto" ? null : destination.format;
+    return resolveFormat(kind, setting, destination.url);
+  }
+  if (deliveredTo?.url && isChatUrl(deliveredTo.url)) return "chat";
+  return null;
+}
+
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 function httpStatus(status: number | null | undefined): number | null {
@@ -82,9 +111,14 @@ function httpStatus(status: number | null | undefined): number | null {
 
 /**
  * The prompt for a failed delivery, or null when its ids are not ids (so
- * nothing else can ride along in their place).
+ * nothing else can ride along in their place). Redelivering is the owner's
+ * (`canRedeliver`, the default); a team member's prompt stops at the fix and
+ * leaves the redelivery to the owner.
  */
-export function buildFixPrompt(delivery: FixPromptDelivery): string | null {
+export function buildFixPrompt(
+  delivery: FixPromptDelivery,
+  { canRedeliver = true }: { canRedeliver?: boolean } = {}
+): string | null {
   const id = String(delivery.id ?? "").toLowerCase();
   const requestId = String(delivery.requestId ?? "").toLowerCase();
   if (!UUID.test(id) || !UUID.test(requestId)) return null;
@@ -95,8 +129,11 @@ export function buildFixPrompt(delivery: FixPromptDelivery): string | null {
     `A webhooks.cc delivery failed with ${failure}. ` +
     "Using the webhooks.cc MCP server or `whk`, " +
     `read delivery ${id} of request ${requestId}, ` +
-    "find why the handler failed, fix it in this repository, " +
-    "then redeliver and confirm it succeeds."
+    (canRedeliver
+      ? "find why the handler failed, fix it in this repository, " +
+        "then redeliver and confirm it succeeds."
+      : "find why the handler failed and fix it in this repository, " +
+        "then ask the endpoint's owner to redeliver it.")
   );
 }
 

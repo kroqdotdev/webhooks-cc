@@ -2,9 +2,11 @@ import { describe, expect, it } from "vitest";
 import {
   buildFixPrompt,
   deliveryErrorKind,
+  fixPromptFormat,
   isAgentRepo,
   parseAgentRepo,
   t3CodeLink,
+  takesFixPrompt,
 } from "./fix-prompt";
 
 const DELIVERY_ID = "6f1c2a4e-8b3d-4c5e-9f00-1a2b3c4d5e6f";
@@ -59,15 +61,35 @@ describe("buildFixPrompt", () => {
         },
       ],
     };
-    const prompt = buildFixPrompt(delivery as never);
-    expect(prompt).not.toBeNull();
-    expect(prompt).toContain("a refused connection");
-    for (const forbidden of [secret, "example.com", "@", "Bearer", "ECONNREFUSED", "ERP", "http"]) {
-      expect(prompt).not.toContain(forbidden);
+    for (const canRedeliver of [true, false]) {
+      const prompt = buildFixPrompt(delivery as never, { canRedeliver });
+      expect(prompt).not.toBeNull();
+      expect(prompt).toContain("a refused connection");
+      for (const forbidden of [
+        secret,
+        "example.com",
+        "@",
+        "Bearer",
+        "ECONNREFUSED",
+        "ERP",
+        "http",
+      ]) {
+        expect(prompt).not.toContain(forbidden);
+      }
+      // Only fixed words, the two ids and a status number.
+      const rest = prompt!.replace(DELIVERY_ID, "").replace(REQUEST_ID, "");
+      expect(rest).toMatch(/^[A-Za-z .,`()']+$/);
     }
-    // Only fixed words, the two ids and a status number.
-    const rest = prompt!.replace(DELIVERY_ID, "").replace(REQUEST_ID, "");
-    expect(rest).toMatch(/^[A-Za-z .,`()]+$/);
+  });
+
+  it("leaves redelivering to the owner in a team member's prompt", () => {
+    const delivery = { id: DELIVERY_ID, requestId: REQUEST_ID, lastStatus: 502, lastError: null };
+    const member = buildFixPrompt(delivery, { canRedeliver: false });
+    expect(member).toBe(
+      `A webhooks.cc delivery failed with status 502. Using the webhooks.cc MCP server or \`whk\`, read delivery ${DELIVERY_ID} of request ${REQUEST_ID}, find why the handler failed and fix it in this repository, then ask the endpoint's owner to redeliver it.`
+    );
+    expect(member).not.toContain("redeliver and confirm");
+    expect(buildFixPrompt(delivery, { canRedeliver: true })).toBe(buildFixPrompt(delivery));
   });
 
   it("refuses ids that are not ids, so nothing rides in their place", () => {
@@ -88,6 +110,34 @@ describe("buildFixPrompt", () => {
     expect(
       buildFixPrompt({ id: DELIVERY_ID, requestId: REQUEST_ID, lastStatus: 0, lastError: "oops" })
     ).toContain("failed with an error before any answer.");
+  });
+});
+
+describe("fixPromptFormat", () => {
+  const slack = "https://hooks.slack.com/services/T/B/X";
+  it("reads the recorded format first", () => {
+    expect(fixPromptFormat("json", "http", { format: "chat", url: slack }, { url: slack })).toBe(
+      "json"
+    );
+  });
+
+  it("falls back to the destination's resolved format for a failure recorded without one", () => {
+    expect(fixPromptFormat(null, "http", { format: "auto", url: slack }, null)).toBe("chat");
+    expect(fixPromptFormat(null, "email", { format: "sheets", url: "" }, null)).toBe("sheets");
+    expect(
+      fixPromptFormat(null, "http", { format: "auto", url: "https://api.acme.example/hooks" }, null)
+    ).toBe("as_received");
+    expect(
+      takesFixPrompt(fixPromptFormat(null, "http", { format: "auto", url: slack }, null))
+    ).toBe(false);
+  });
+
+  it("reads a team member's destination origin, else stays unknown", () => {
+    expect(fixPromptFormat(null, "http", null, { url: "https://hooks.slack.com" })).toBe("chat");
+    expect(fixPromptFormat(null, "http", null, { url: "https://discord.com" })).toBe("chat");
+    expect(fixPromptFormat(null, "http", null, { url: "https://api.acme.example" })).toBeNull();
+    expect(fixPromptFormat(null, "http", null, null)).toBeNull();
+    expect(takesFixPrompt(fixPromptFormat(null, "http", null, null))).toBe(true);
   });
 });
 

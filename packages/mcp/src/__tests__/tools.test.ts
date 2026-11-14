@@ -795,11 +795,29 @@ describe("registerTools", () => {
     const schema = z.object(tools.update_endpoint.schema as z.ZodRawShape);
     expect(schema.safeParse({ slug: "acme", agentRepo: "acme/api" }).success).toBe(true);
     expect(schema.safeParse({ slug: "acme", agentRepo: null }).success).toBe(true);
-    for (const agentRepo of ["acme", "https://github.com/acme/api", "-acme/api"]) {
+    // Read as the API reads it: trimmed, ".git" dropped, "" clears.
+    for (const agentRepo of [" acme/api ", "acme/api.git", "", "  "]) {
+      expect(schema.safeParse({ slug: "acme", agentRepo }).success).toBe(true);
+    }
+    for (const agentRepo of [
+      "acme",
+      "https://github.com/acme/api",
+      "-acme/api",
+      "acme/..",
+      "acme/.",
+      "acme/.git",
+    ]) {
       expect(schema.safeParse({ slug: "acme", agentRepo }).success).toBe(false);
     }
     await tools.update_endpoint.handler({ slug: "acme", agentRepo: "acme/api" });
     expect(update).toHaveBeenCalledWith("acme", expect.objectContaining({ agentRepo: "acme/api" }));
+    await tools.update_endpoint.handler({ slug: "acme", agentRepo: " acme/api.git " });
+    expect(update).toHaveBeenLastCalledWith(
+      "acme",
+      expect.objectContaining({ agentRepo: "acme/api" })
+    );
+    await tools.update_endpoint.handler({ slug: "acme", agentRepo: "" });
+    expect(update).toHaveBeenLastCalledWith("acme", expect.objectContaining({ agentRepo: null }));
     await tools.update_endpoint.handler({ slug: "acme", agentRepo: null });
     expect(update).toHaveBeenLastCalledWith("acme", expect.objectContaining({ agentRepo: null }));
   });

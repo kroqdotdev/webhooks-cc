@@ -21,8 +21,9 @@ import { buildFixPrompt, t3CodeLink, takesFixPrompt } from "@/lib/fix-prompt";
  * event). A failed send is tried again on the next pass, at most five times.
  * Alerts carry field names and delivery errors, never an email's contents.
  * A failed-delivery email also links to T3 Code with a fix prompt when the
- * endpoint names its repository (endpoints.agent_repo, the opt-in); chat
- * and JSON notices never do, since they are the owner's own payloads.
+ * endpoint names its repository (endpoints.agent_repo, the opt-in) and keeps
+ * its requests after delivery; chat and JSON notices never do, since they
+ * are the owner's own payloads.
  */
 
 const BATCH = 50;
@@ -40,6 +41,8 @@ interface AlertContext {
   destinationFormats: Map<string, string | null>;
   /** The GitHub repository fix prompts open in; null leaves the link out. */
   agentRepo: string | null;
+  /** Requests go once delivered, so a fix prompt's ids would name nothing. */
+  deleteAfterDelivery: boolean;
 }
 
 function plural(count: number, one: string, many: string): string {
@@ -120,13 +123,14 @@ async function contextFor(endpointId: string): Promise<AlertContext | null> {
   const admin = createAdminClient();
   const { data: endpoint, error } = await admin
     .from("endpoints")
-    .select("slug, name, user_id, agent_repo")
+    .select("slug, name, user_id, agent_repo, delete_after_delivery")
     .eq("id", endpointId)
     .maybeSingle<{
       slug: string;
       name: string | null;
       user_id: string | null;
       agent_repo: string | null;
+      delete_after_delivery: boolean | null;
     }>();
   if (error) throw error;
   if (!endpoint) return null;
@@ -186,6 +190,7 @@ async function contextFor(endpointId: string): Promise<AlertContext | null> {
     destinationNames: names,
     destinationFormats: formats,
     agentRepo: endpoint.agent_repo ?? null,
+    deleteAfterDelivery: endpoint.delete_after_delivery === true,
   };
 }
 
@@ -199,15 +204,19 @@ export function alertDestinationFormat(format: string | null, url: string): stri
 
 /**
  * The fix prompt and its T3 Code link for an open failed-delivery alert, when
- * the endpoint names its repository and the destination is a handler (not
- * Sheets, a file drop or chat); null otherwise.
+ * the endpoint names its repository, keeps its requests after delivery (with
+ * `delete_after_delivery` the request and its deliveries are gone a few
+ * minutes after the failure, so the prompt's ids would 404), and the
+ * destination is a handler (not Sheets, a file drop or chat); null otherwise.
  */
 export function alertFixPrompt(
   event: Pick<AlertEventRow, "kind" | "subject" | "details" | "resolved_at">,
   agentRepo: string | null,
-  destinationFormat: string | null | undefined
+  destinationFormat: string | null | undefined,
+  deleteAfterDelivery = false
 ): { prompt: string; link: string } | null {
   if (event.kind !== "destination" || event.resolved_at !== null || !agentRepo) return null;
+  if (deleteAfterDelivery) return null;
   if (!takesFixPrompt(destinationFormat)) return null;
   const details = (event.details ?? {}) as Record<string, unknown>;
   const prompt = buildFixPrompt({
@@ -313,7 +322,8 @@ async function notifyOne(event: AlertEventRow): Promise<boolean> {
     const fix = alertFixPrompt(
       event,
       context.agentRepo,
-      event.subject ? context.destinationFormats.get(event.subject) : undefined
+      event.subject ? context.destinationFormats.get(event.subject) : undefined,
+      context.deleteAfterDelivery
     );
     const email = alertEmail(event, summary, lines, link, fix);
     try {

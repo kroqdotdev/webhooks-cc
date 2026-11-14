@@ -66,6 +66,23 @@ const MAX_BODY_SIZE = MAX_OUTPUT;
 const HTTP_METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"] as const;
 const TIME_SEPARATOR = " — ";
 
+// GitHub's own rules, as the API checks them (apps/web/lib/fix-prompt.ts): an
+// owner of letters, digits and dashes (not starting with a dash, at most 39),
+// a name of letters, digits, dots, dashes and underscores (at most 100), and
+// not only dots.
+const AGENT_REPO = /^[A-Za-z0-9][A-Za-z0-9-]{0,38}\/[A-Za-z0-9._-]{1,100}$/;
+
+/**
+ * An agentRepo read as the API reads it: spaces around it and a trailing
+ * `.git` dropped, "" (or only spaces) clearing it as null; undefined when what
+ * is left is not `owner/name`.
+ */
+function normalizeAgentRepo(input: string): string | null | undefined {
+  const value = input.trim().replace(/\.git$/i, "");
+  if (value === "") return null;
+  return AGENT_REPO.test(value) && !/\/\.+$/.test(value) ? value : undefined;
+}
+
 const httpUrlSchema = z
   .string()
   .url()
@@ -2075,14 +2092,11 @@ export function registerTools(
         ),
       agentRepo: z
         .string()
-        .regex(
-          /^[A-Za-z0-9][A-Za-z0-9-]{0,38}\/[A-Za-z0-9._-]{1,100}$/,
-          "owner/name, like acme/api"
-        )
+        .refine((value) => normalizeAgentRepo(value) !== undefined, "owner/name, like acme/api")
         .nullable()
         .optional()
         .describe(
-          "The GitHub repository (owner/name) a coding agent fixes this endpoint's failed deliveries in: the dashboard's Open in T3 Code opens there, and delivery-failure alert emails link to a fix prompt. null clears it. Owner only."
+          "The GitHub repository (owner/name) a coding agent fixes this endpoint's failed deliveries in: the dashboard's Open in T3 Code opens there, and delivery-failure alert emails link to a fix prompt. null or \"\" clears it. Owner only."
         ),
     },
     withErrorHandling(
@@ -2113,7 +2127,7 @@ export function registerTools(
           site,
           emailFields,
           layouts,
-          agentRepo,
+          agentRepo: typeof agentRepo === "string" ? normalizeAgentRepo(agentRepo) : agentRepo,
         });
         return jsonContent(endpoint);
       }

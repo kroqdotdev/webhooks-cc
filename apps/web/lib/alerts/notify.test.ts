@@ -108,7 +108,7 @@ describe("failed-delivery alert email", () => {
     expect(email.text.endsWith("Change them in its settings.\n")).toBe(true);
   });
 
-  it("leaves the link off resolved alerts, other kinds, chat, Sheets and drops", () => {
+  it("leaves the link off resolved alerts, other kinds, chat, Sheets, drops and deleted requests", () => {
     expect(alertFixPrompt({ ...event, resolved_at: "2026-11-14" }, "acme/api", "json")).toBeNull();
     expect(alertFixPrompt({ ...event, kind: "silence" }, "acme/api", "json")).toBeNull();
     for (const format of ["chat", "sheets", "file_drop"]) {
@@ -129,6 +129,10 @@ describe("failed-delivery alert email", () => {
       )
     ).not.toBeNull();
     expect(alertDestinationFormat("json", "https://hooks.slack.com/services/T/B/X")).toBe("json");
+    // Requests deleted once delivered take their deliveries with them minutes
+    // after the failure, so the prompt's ids would name nothing.
+    expect(alertFixPrompt(event, "acme/api", "json", true)).toBeNull();
+    expect(alertFixPrompt(event, "acme/api", "json", false)).not.toBeNull();
     // An alert opened before the ids were recorded has nothing to name.
     expect(
       alertFixPrompt({ ...event, details: { failed: 1, lastError: "x" } }, "acme/api", "json")
