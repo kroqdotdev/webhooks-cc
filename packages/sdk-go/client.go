@@ -251,6 +251,24 @@ func (c *Client) bearer(ctx context.Context) (string, error) {
 	return c.tokens.token(ctx)
 }
 
+// bearerByDeadline is bearer, bounded by the context's call deadline when it
+// has one (see withCallDeadline): an agent's token exchange that the deadline
+// cut short is a *TimeoutError, like a try it cut short.
+func (c *Client) bearerByDeadline(ctx context.Context) (string, error) {
+	deadline, ok := ctx.Value(callDeadlineKey{}).(time.Time)
+	if !ok || c.tokens == nil {
+		return c.bearer(ctx)
+	}
+	left := max(time.Until(deadline), time.Millisecond)
+	tokenCtx, cancel := context.WithTimeout(ctx, left)
+	defer cancel()
+	bearer, err := c.bearer(tokenCtx)
+	if err != nil && ctx.Err() == nil && errors.Is(tokenCtx.Err(), context.DeadlineExceeded) {
+		return "", &TimeoutError{After: left}
+	}
+	return bearer, err
+}
+
 // api calls an API route and decodes the JSON response into out (when not nil).
 func (c *Client) api(ctx context.Context, method, path string, query url.Values, body, out any) error {
 	return c.apiRetrying(ctx, method, path, query, body, out, idempotentMethods[method])
@@ -294,7 +312,7 @@ func (c *Client) call(ctx context.Context, method, path string, query url.Values
 		backoff := backoffDelay(c.retry.Backoff, attempt)
 		more := attempt < c.retry.MaxAttempts
 		// An agent token that cannot be had is never retried as a network error.
-		bearer, err := c.bearer(ctx)
+		bearer, err := c.bearerByDeadline(ctx)
 		if err != nil {
 			return nil, err
 		}
@@ -303,7 +321,7 @@ func (c *Client) call(ctx context.Context, method, path string, query url.Values
 			if ctx.Err() != nil {
 				return nil, ctx.Err()
 			}
-			if more && repeatable {
+			if more && repeatable && mayRetryAfter(ctx, backoff) {
 				if err := sleep(ctx, backoff); err != nil {
 					return nil, err
 				}
@@ -326,10 +344,12 @@ func (c *Client) call(ctx context.Context, method, path string, query url.Values
 				if apiErr.RetryAfter > 0 {
 					wait = apiErr.RetryAfter
 				}
-				if err := sleep(ctx, wait); err != nil {
-					return nil, err
+				if mayRetryAfter(ctx, wait) {
+					if err := sleep(ctx, wait); err != nil {
+						return nil, err
+					}
+					continue
 				}
-				continue
 			}
 			if c.sandbox && response.status != http.StatusTooManyRequests {
 				refusal := sandboxErrorFromResponse(response)
@@ -345,6 +365,26 @@ func (c *Client) call(ctx context.Context, method, path string, query url.Values
 	}
 }
 
+// callDeadlineKey carries the time an API call must end by (see
+// withCallDeadline).
+type callDeadlineKey struct{}
+
+// withCallDeadline makes API calls on the context end by deadline: each try
+// times out at the deadline when that is sooner than the client's timeout,
+// and a retry whose wait would end after it is not made, so the error goes to
+// the caller instead. Unlike a context deadline, a try it cuts short is a
+// *TimeoutError.
+func withCallDeadline(ctx context.Context, deadline time.Time) context.Context {
+	return context.WithValue(ctx, callDeadlineKey{}, deadline)
+}
+
+// mayRetryAfter reports whether a retry after wait still fits the context's
+// call deadline, if it has one.
+func mayRetryAfter(ctx context.Context, wait time.Duration) bool {
+	deadline, ok := ctx.Value(callDeadlineKey{}).(time.Time)
+	return !ok || time.Now().Add(wait).Before(deadline)
+}
+
 type apiResponse struct {
 	status int
 	header http.Header
@@ -352,7 +392,11 @@ type apiResponse struct {
 }
 
 func (c *Client) apiOnce(ctx context.Context, method, endpoint string, payload []byte, bearer string) (*apiResponse, error) {
-	callCtx, cancel := context.WithTimeout(ctx, c.timeout)
+	timeout := c.timeout
+	if deadline, ok := ctx.Value(callDeadlineKey{}).(time.Time); ok {
+		timeout = min(timeout, max(time.Until(deadline), time.Millisecond))
+	}
+	callCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	var reader io.Reader
 	if payload != nil {
@@ -367,20 +411,20 @@ func (c *Client) apiOnce(ctx context.Context, method, endpoint string, payload [
 	request.Header.Set("User-Agent", userAgent)
 	response, err := c.http.Do(request)
 	if err != nil {
-		return nil, c.timeoutOr(ctx, callCtx, err)
+		return nil, timeoutOr(ctx, callCtx, timeout, err)
 	}
 	defer response.Body.Close()
 	data, err := io.ReadAll(response.Body)
 	if err != nil {
-		return nil, c.timeoutOr(ctx, callCtx, err)
+		return nil, timeoutOr(ctx, callCtx, timeout, err)
 	}
 	return &apiResponse{status: response.StatusCode, header: response.Header, body: data}, nil
 }
 
 // timeoutOr turns an error caused by the per-call timeout into a TimeoutError.
-func (c *Client) timeoutOr(parent, call context.Context, err error) error {
+func timeoutOr(parent, call context.Context, timeout time.Duration, err error) error {
 	if parent.Err() == nil && errors.Is(call.Err(), context.DeadlineExceeded) {
-		return &TimeoutError{After: c.timeout}
+		return &TimeoutError{After: timeout}
 	}
 	return err
 }
@@ -456,6 +500,12 @@ func errorFromResponse(response *apiResponse, path string) *Error {
 			apiErr.Message = strings.TrimSpace(message + " " + notFoundHint(path))
 		}
 	case http.StatusTooManyRequests:
+		var body struct {
+			Error string `json:"error"`
+		}
+		if json.Unmarshal(response.body, &body) == nil {
+			apiErr.code = body.Error
+		}
 		if seconds, ok := headerInt(response.header, "Retry-After"); ok {
 			apiErr.RetryAfter = time.Duration(seconds) * time.Second
 		}
@@ -637,12 +687,12 @@ func (c *Client) send(ctx context.Context, method, target string, headers map[st
 	}
 	response, err := c.http.Do(request)
 	if err != nil {
-		return nil, c.timeoutOr(ctx, callCtx, err)
+		return nil, timeoutOr(ctx, callCtx, c.timeout, err)
 	}
 	defer response.Body.Close()
 	data, err := io.ReadAll(io.LimitReader(response.Body, maxResponseBody))
 	if err != nil {
-		return nil, c.timeoutOr(ctx, callCtx, err)
+		return nil, timeoutOr(ctx, callCtx, c.timeout, err)
 	}
 	return &Response{StatusCode: response.StatusCode, Header: response.Header, Body: data}, nil
 }

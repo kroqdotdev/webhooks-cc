@@ -649,6 +649,122 @@ function fitArrayField(value: Record<string, unknown>, key: string): Record<stri
   return cut(low);
 }
 
+/** Epoch milliseconds as ISO 8601, or null. */
+function isoTime(ms: number | null): string | null {
+  if (ms === null || !Number.isFinite(ms)) return null;
+  const date = new Date(ms);
+  return Number.isNaN(date.getTime()) ? null : date.toISOString();
+}
+
+/** What a search that did not read everything tells the agent. */
+function searchStoppedNote(
+  searchedUntil: string | null,
+  order: "asc" | "desc",
+  hasCursor: boolean
+): string {
+  const [direction, rest] = order === "asc" ? ["forward", "newer"] : ["back", "older"];
+  const reached = searchedUntil
+    ? `Searched ${direction} to ${searchedUntil}; ${rest} requests were not searched yet.`
+    : `The search stopped before it read everything; ${rest} requests were not searched yet.`;
+  return hasCursor ? `${reached} Call search_requests again with cursor to continue.` : reached;
+}
+
+// Tool output has a size limit, so no tool can promise a large request whole.
+const FULL_REQUEST_HINT =
+  "The full request is available from the API (GET /api/requests/{id}), the SDKs (requests.get(id)) or the CLI (whk requests get <id>).";
+
+const SEARCH_SHORTENED_NOTE = `Some requests were shortened to fit the output (bodyTruncated with bodySize, or shortened: true for a summary); get_request with the id returns as much of one request as fits. ${FULL_REQUEST_HINT}`;
+
+const REQUEST_SHORTENED_NOTE = `This request was cut to fit the output: its body (bodyTruncated, with bodySize), or everything but a summary (shortened: true). ${FULL_REQUEST_HINT}`;
+
+/** A string cut to `max` characters, for a summary. */
+function clip(value: unknown, max: number): string | undefined {
+  return typeof value === "string" ? sliceText(value, max) : undefined;
+}
+
+/** The size of one request as an item of the `requests` list in the output. */
+function listedSize(request: unknown): number {
+  // Its lines indented two levels, plus the comma and line break after it.
+  return jsonSize([[request]]) - 8;
+}
+
+/**
+ * The requests of one search page, shortened so the list takes at most
+ * `room` characters: every request stays listed, because the page's cursor
+ * continues after all of them. Each gets an equal share; one that is larger
+ * loses the end of its body, then everything but a summary, and a page that
+ * cannot hold the summaries lists ids and times.
+ */
+function fitSearchRequests(requests: unknown[], room: number): unknown[] {
+  const share = Math.floor(room / Math.max(1, requests.length));
+  const fitted = requests.map((request) =>
+    shortenRequest(request as JsonRecord, share, listedSize)
+  );
+  if (fitted.every((request) => listedSize(request) <= share)) return fitted;
+  return requests.map((request) => {
+    const { id, receivedAt } = request as JsonRecord;
+    return { id, receivedAt, shortened: true };
+  });
+}
+
+type JsonRecord = Record<string, unknown>;
+
+/**
+ * `request` in at most `share` characters as `sizeOf` measures it: as it is
+ * when it fits, else with the end of its body cut, else as a summary. A
+ * `note` on it is kept.
+ */
+function shortenRequest(
+  request: JsonRecord,
+  share: number,
+  sizeOf: (value: unknown) => number
+): JsonRecord {
+  if (sizeOf(request) <= share) return request;
+  if (typeof request.body === "string") {
+    const body = request.body;
+    // Escaping can make a body longer in JSON than it is, so cut until it fits.
+    let keep = body.length - (sizeOf(request) - share) - 96;
+    while (keep > 0) {
+      const cut = {
+        ...request,
+        body: sliceText(body, keep),
+        bodyTruncated: true,
+        bodySize: body.length,
+      };
+      if (sizeOf(cut) <= share) return cut;
+      keep = Math.floor(keep / 2);
+    }
+  }
+  const email = request.email as JsonRecord | null | undefined;
+  const summary: JsonRecord = {
+    id: request.id,
+    slug: clip(request.slug, 64),
+    method: clip(request.method, 16),
+    path: clip(request.path, 200),
+    contentType: clip(request.contentType, 100),
+    size: request.size,
+    receivedAt: request.receivedAt,
+    kind: request.kind,
+    ...(email ? { subject: clip(email.subject, 200) } : {}),
+    shortened: true,
+    ...(typeof request.note === "string" ? { note: request.note } : {}),
+  };
+  return summary;
+}
+
+/**
+ * One request as a tool's whole output: always valid JSON, so a request
+ * larger than the output is cut the way a search page's requests are and
+ * says where the whole of it can be had.
+ */
+function requestContent(request: Parameters<typeof compactRequest>[0]): ToolResult {
+  const compact = compactRequest(request) as unknown as JsonRecord;
+  if (jsonSize(compact) <= MAX_BODY_SIZE) return jsonContent(compact);
+  return jsonContent(
+    shortenRequest({ ...compact, note: REQUEST_SHORTENED_NOTE }, MAX_BODY_SIZE, jsonSize)
+  );
+}
+
 export function jsonContent(value: unknown): ToolResult {
   return textContent(serializeJson(value));
 }
@@ -711,6 +827,16 @@ function serializeError(error: unknown): string {
     payload.code = "timeout";
   } else if (error instanceof WebhooksCCError) {
     payload.code = error.statusCode >= 500 ? "server_error" : "validation_error";
+  }
+
+  if (error instanceof WebhooksCCError && payload.hint === null) {
+    if (error.code === "invalid_cursor") {
+      payload.hint =
+        "The cursor is not one this search returned, or the order changed since. Pass a cursor exactly as a result gave it, or search again without one.";
+    } else if (error.code === "search_busy") {
+      payload.hint =
+        "The account's other searches are still running. Wait retryAfter seconds, then call again with the same inputs.";
+    }
   }
 
   return JSON.stringify(payload, null, 2);
@@ -1701,66 +1827,134 @@ export function registerTools(
 
   server.tool(
     "search_requests",
-    "Search captured webhook requests across endpoints using retained full-text search.",
+    "Search captured requests and emails across endpoints: a substring match on path, headers, body and decoded email fields. One call reads back through history for about 2 seconds and returns { requests, complete, searchedUntil, cursor }. When complete is false, older requests were not searched yet: call again with the cursor and the same filters to continue.",
     {
       slug: z.string().optional().describe("Filter to a specific endpoint slug"),
       method: z.string().optional().describe("Filter by HTTP method"),
       kind: kindSchema,
-      q: z.string().optional().describe("Free-text search across path, body, and headers"),
+      q: z
+        .string()
+        .optional()
+        .describe(
+          "Substring to find in the path, headers, body and decoded email fields (up to 1,000 characters)"
+        ),
       from: durationOrTimestampSchema
         .optional()
-        .describe('Start time as a timestamp or duration like "1h" or "7d"'),
+        .describe(
+          'Start time as a timestamp (Unix ms) or a duration back from now like "1h" or "7d". A duration is counted from each call, so when you continue with a cursor pass a timestamp to keep the same range.'
+        ),
       to: durationOrTimestampSchema
         .optional()
-        .describe('End time as a timestamp or duration like "1h" or "7d"'),
+        .describe(
+          'End time as a timestamp (Unix ms) or a duration back from now like "1h" or "7d". A duration is counted from each call, so when you continue with a cursor pass a timestamp to keep the same range.'
+        ),
       limit: z.number().int().min(1).max(200).default(50).describe("Max results to return"),
-      offset: z.number().int().min(0).max(10_000).default(0).describe("Result offset"),
+      offset: z
+        .number()
+        .int()
+        .min(0)
+        .max(10_000)
+        .default(0)
+        .describe("Matches to skip (first call only; a cursor carries what is left of it)"),
       order: z.enum(["asc", "desc"]).default("desc").describe("Sort order by received time"),
+      cursor: z
+        .string()
+        .optional()
+        .describe(
+          "The cursor from a previous search_requests result, to continue that search. Keep the other inputs the same."
+        ),
     },
-    withErrorHandling(async ({ slug, method, kind, q, from, to, limit, offset, order }) => {
-      const results = await client.requests.search({
-        slug,
-        method,
-        kind,
-        q,
-        from,
-        to,
-        limit,
-        offset,
-        order,
-      });
-      return jsonContent(results.map(compactRequest));
+    withErrorHandling(async ({ slug, method, kind, q, from, to, limit, offset, order, cursor }) => {
+      const page = await client.requests.searchPage(
+        { slug, method, kind, q, from, to, limit, offset, order },
+        { cursor }
+      );
+      const searchedUntil = isoTime(page.searchedUntil);
+      const envelope = (requests: unknown[], shortened: boolean) => {
+        const notes = [
+          ...(page.complete ? [] : [searchStoppedNote(searchedUntil, order, Boolean(page.cursor))]),
+          ...(shortened ? [SEARCH_SHORTENED_NOTE] : []),
+        ];
+        return {
+          requests,
+          complete: page.complete,
+          searchedUntil,
+          cursor: page.cursor,
+          ...(notes.length > 0 ? { note: notes.join(" ") } : {}),
+        };
+      };
+      // The cursor reads on after every match of this page, so every match
+      // is listed, shortened where the output would not hold it.
+      const requests = page.requests.map(compactRequest);
+      if (jsonSize(envelope(requests, false)) <= MAX_BODY_SIZE) {
+        return jsonContent(envelope(requests, false));
+      }
+      // 8: what the brackets of a list with items take over an empty one's.
+      const room = MAX_BODY_SIZE - jsonSize(envelope([], true)) - 8;
+      return jsonContent(envelope(fitSearchRequests(requests, room), true));
     })
   );
 
   server.tool(
     "count_requests",
-    "Count captured webhook requests that match the given filters.",
+    "Count captured requests and emails that match the given filters (q is a substring match on path, headers, body and decoded email fields). Returns { count, exact, searchedUntil, cursor }. With q or method a call counts back through history for about 2 seconds: when exact is false, count covers history back to searchedUntil only, and calling again with the cursor counts the next stretch (add the counts up).",
     {
       slug: z.string().optional().describe("Filter to a specific endpoint slug"),
       method: z.string().optional().describe("Filter by HTTP method"),
       kind: kindSchema,
-      q: z.string().optional().describe("Free-text search across path, body, and headers"),
+      q: z
+        .string()
+        .optional()
+        .describe(
+          "Substring to find in the path, headers, body and decoded email fields (up to 1,000 characters)"
+        ),
       from: durationOrTimestampSchema
         .optional()
-        .describe('Start time as a timestamp or duration like "1h" or "7d"'),
+        .describe(
+          'Start time as a timestamp (Unix ms) or a duration back from now like "1h" or "7d". A duration is counted from each call, so when you continue with a cursor pass a timestamp to keep the same range.'
+        ),
       to: durationOrTimestampSchema
         .optional()
-        .describe('End time as a timestamp or duration like "1h" or "7d"'),
+        .describe(
+          'End time as a timestamp (Unix ms) or a duration back from now like "1h" or "7d". A duration is counted from each call, so when you continue with a cursor pass a timestamp to keep the same range.'
+        ),
+      cursor: z
+        .string()
+        .optional()
+        .describe(
+          "The cursor from a previous count_requests result, to count the next stretch. Keep the other inputs the same."
+        ),
     },
-    withErrorHandling(async ({ slug, method, kind, q, from, to }) => {
-      const count = await client.requests.count({ slug, method, kind, q, from, to });
-      return jsonContent({ count });
+    withErrorHandling(async ({ slug, method, kind, q, from, to, cursor }) => {
+      const page = await client.requests.countPage({ slug, method, kind, q, from, to }, { cursor });
+      const searchedUntil = isoTime(page.searchedUntil);
+      return jsonContent({
+        count: page.count,
+        exact: page.exact,
+        searchedUntil,
+        cursor: page.cursor,
+        ...(page.exact
+          ? {}
+          : {
+              note: `At least ${page.count}, counted ${
+                searchedUntil ? `back to ${searchedUntil}` : "over part of the history"
+              }; ${
+                page.cursor
+                  ? "call count_requests again with cursor to count further (the counts add up)."
+                  : "there is no cursor to count further with."
+              }`,
+            }),
+      });
     })
   );
 
   server.tool(
     "get_request",
-    "Get full details for a specific captured request by ID.",
+    "Get the details of a captured request by ID: method, path, headers and body. A request larger than the tool output has its body cut (bodyTruncated, bodySize) and a note saying where the whole request is available.",
     getRequestShape,
     withErrorHandling(async ({ requestId }) => {
       const request = await client.requests.get(requestId);
-      return jsonContent(compactRequest(request));
+      return requestContent(request);
     })
   );
 
@@ -1770,7 +1964,7 @@ export function registerTools(
     waitForRequestShape,
     withErrorHandling(async ({ endpointSlug, timeout, pollInterval }) => {
       const request = await client.requests.waitFor(endpointSlug, { timeout, pollInterval });
-      return jsonContent(compactRequest(request));
+      return requestContent(request);
     })
   );
 

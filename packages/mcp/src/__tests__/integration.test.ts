@@ -198,7 +198,7 @@ describe.skipIf(!API_KEY)("MCP integration tests", () => {
       })
     );
 
-    if (searchResults.length === 0 || countResult.count === 0) {
+    if (searchResults.requests.length === 0 || countResult.count === 0) {
       await waitForRetainedSearch(async () => {
         searchResults = parseJsonResult(
           await handlers.search_requests({
@@ -215,12 +215,14 @@ describe.skipIf(!API_KEY)("MCP integration tests", () => {
             from: "10m",
           })
         );
-        return searchResults.length > 0 && countResult.count > 0;
+        return searchResults.requests.length > 0 && countResult.count > 0;
       });
     }
 
     expect(
-      searchResults.some((result: { body?: string }) => result.body?.includes(firstBody.marker))
+      searchResults.requests.some((result: { body?: string }) =>
+        result.body?.includes(firstBody.marker)
+      )
     ).toBe(true);
     expect(countResult.count).toBeGreaterThanOrEqual(1);
 

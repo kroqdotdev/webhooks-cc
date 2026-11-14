@@ -3,6 +3,13 @@
  * Extends the standard Error with an HTTP status code.
  */
 export class WebhooksCCError extends Error {
+  /**
+   * The API's error code, when its answer named one: `invalid_cursor` (a
+   * search cursor the server did not issue), `search_busy` (a 429 because the
+   * account already runs its searches), `invalid_q` and the like.
+   */
+  public code?: string;
+
   constructor(
     public readonly statusCode: number,
     message: string

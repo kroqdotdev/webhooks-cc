@@ -1036,53 +1036,79 @@ pub enum RequestsAction {
         id: String,
     },
 
-    /// Search across all retained requests
+    /// Search retained requests for text in the path, headers, body and email fields
+    ///
+    /// Reads until it has --limit matches or 25 seconds have passed. When it
+    /// stops before the end it says so on stderr, with the --cursor that
+    /// continues it.
     Search {
         /// Filter by endpoint slug
         #[arg(long)]
         slug: Option<String>,
 
-        /// Filter by HTTP method
+        /// Filter by HTTP method (EMAIL for emails)
         #[arg(long)]
         method: Option<String>,
 
-        /// Search query
+        /// Only HTTP requests or only emails
+        #[arg(long, value_parser = ["http", "email"])]
+        kind: Option<String>,
+
+        /// Text to find (a substring, at most 1,000 characters)
         #[arg(short, long)]
         q: Option<String>,
 
-        /// Start time (timestamp or duration like "1h")
+        /// Start time (timestamp in ms, or a duration back from now like "1h")
         #[arg(long)]
         from: Option<String>,
 
-        /// End time (timestamp or duration like "7d")
+        /// End time (timestamp in ms, or a duration back from now like "7d")
         #[arg(long)]
         to: Option<String>,
 
-        /// Max results
+        /// Max results (more than 200 takes several pages)
         #[arg(long, default_value = "50")]
         limit: u32,
 
-        /// Result offset
-        #[arg(long, default_value = "0")]
+        /// Skip this many matches (prefer --cursor to page)
+        #[arg(long, default_value = "0", conflicts_with = "cursor")]
         offset: u32,
 
-        /// Sort order
-        #[arg(long, default_value = "desc")]
+        /// Sort order: desc (newest first) or asc
+        #[arg(long, default_value = "desc", value_parser = parse_order)]
         order: String,
+
+        /// Continue a search from where it stopped, with the same filters and order
+        #[arg(long)]
+        cursor: Option<String>,
     },
 
     /// Count matching requests
+    ///
+    /// With -q or --method the count reads requests like a search does, for
+    /// up to 25 seconds; if that is not all of them it says "at least".
     Count {
+        /// Filter by endpoint slug
         #[arg(long)]
         slug: Option<String>,
+        /// Filter by HTTP method (EMAIL for emails)
         #[arg(long)]
         method: Option<String>,
+        /// Only HTTP requests or only emails
+        #[arg(long, value_parser = ["http", "email"])]
+        kind: Option<String>,
+        /// Text to find (a substring)
         #[arg(short, long)]
         q: Option<String>,
+        /// Start time (timestamp or duration like "1h")
         #[arg(long)]
         from: Option<String>,
+        /// End time (timestamp or duration like "7d")
         #[arg(long)]
         to: Option<String>,
+        /// Count on from where a count stopped: the next stretch only, so add it up
+        #[arg(long)]
+        cursor: Option<String>,
     },
 
     /// Delete captured requests
@@ -1126,6 +1152,14 @@ pub enum RequestsAction {
 pub enum ExportFormat {
     Har,
     Curl,
+}
+
+/// `--order`: `asc` or `desc`, in any case.
+fn parse_order(value: &str) -> Result<String, String> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        order @ ("asc" | "desc") => Ok(order.to_string()),
+        _ => Err("expected asc or desc".to_string()),
+    }
 }
 
 #[cfg(test)]

@@ -150,7 +150,9 @@ function createMockClient(overrides: Partial<WebhooksCC> = {}): WebhooksCC {
       subscribe: vi.fn(),
       replay: vi.fn(),
       search: vi.fn(),
+      searchPage: vi.fn(),
       count: vi.fn(),
+      countPage: vi.fn(),
       clear: vi.fn(),
       export: vi.fn(),
       ...(overrides.requests ?? {}),
@@ -2740,5 +2742,338 @@ describe("get_billing", () => {
     const client = createMockClient({ billing: { get } as unknown as WebhooksCC["billing"] });
     const result = await getRegisteredTools(client).get_billing.handler({});
     expect(JSON.parse(result.content[0].text)).toMatchObject({ plan: "pro" });
+  });
+});
+
+describe("search_requests and count_requests", () => {
+  function searchClient(requests: Record<string, unknown>) {
+    return createMockClient({ requests: requests as unknown as WebhooksCC["requests"] });
+  }
+
+  it("returns one page with how far it read, and says how to continue", async () => {
+    const searchPage = vi.fn(async () => ({
+      requests: [makeRequest({ id: "r1" })],
+      complete: false,
+      searchedUntil: 1_700_000_000_000,
+      cursor: "c1",
+    }));
+    const tools = getRegisteredTools(searchClient({ searchPage }));
+
+    const result = parseJsonResult(
+      await tools.search_requests.handler({
+        slug: "acme",
+        q: "needle",
+        limit: 10,
+        offset: 2,
+        order: "desc",
+      })
+    );
+
+    expect(searchPage).toHaveBeenCalledWith(
+      expect.objectContaining({ slug: "acme", q: "needle", limit: 10, offset: 2, order: "desc" }),
+      { cursor: undefined }
+    );
+    expect(result).toEqual({
+      requests: [makeRequest({ id: "r1" })],
+      complete: false,
+      searchedUntil: "2023-11-14T22:13:20.000Z",
+      cursor: "c1",
+      note: "Searched back to 2023-11-14T22:13:20.000Z; older requests were not searched yet. Call search_requests again with cursor to continue.",
+    });
+  });
+
+  it("passes the cursor on and adds no note to a complete search", async () => {
+    const searchPage = vi.fn(async () => ({
+      requests: [],
+      complete: true,
+      searchedUntil: null,
+      cursor: null,
+    }));
+    const tools = getRegisteredTools(searchClient({ searchPage }));
+
+    const result = parseJsonResult(
+      await tools.search_requests.handler({ q: "needle", cursor: "c1" })
+    );
+
+    expect(searchPage).toHaveBeenCalledWith(expect.objectContaining({ q: "needle" }), {
+      cursor: "c1",
+    });
+    expect(result).toEqual({ requests: [], complete: true, searchedUntil: null, cursor: null });
+  });
+
+  it("names the direction of an ascending search", async () => {
+    const searchPage = vi.fn(async () => ({
+      requests: [],
+      complete: false,
+      searchedUntil: 1_700_000_000_000,
+      cursor: "c1",
+    }));
+    const tools = getRegisteredTools(searchClient({ searchPage }));
+    const result = parseJsonResult(
+      await tools.search_requests.handler({ q: "needle", order: "asc" })
+    );
+    expect(result.note).toBe(
+      "Searched forward to 2023-11-14T22:13:20.000Z; newer requests were not searched yet. Call search_requests again with cursor to continue."
+    );
+  });
+
+  it("keeps a request larger than the output, with its body cut and marked", async () => {
+    const searchPage = vi.fn(async () => ({
+      requests: [makeRequest({ id: "big", body: "x".repeat(40_000) })],
+      complete: true,
+      searchedUntil: null,
+      cursor: null,
+    }));
+    const tools = getRegisteredTools(searchClient({ searchPage }));
+
+    const output = await tools.search_requests.handler({ q: "x" });
+    expect(output.content[0].text.length).toBeLessThanOrEqual(32_768);
+    const result = JSON.parse(output.content[0].text);
+    expect(result.requests).toHaveLength(1);
+    expect(result.requests[0]).toMatchObject({
+      id: "big",
+      method: "POST",
+      bodyTruncated: true,
+      bodySize: 40_000,
+    });
+    // Nearly all of the budget goes to the body.
+    expect(result.requests[0].body.length).toBeGreaterThan(30_000);
+    expect(result.complete).toBe(true);
+    expect(result.note).toContain("get_request");
+    expect(result).not.toHaveProperty("truncated");
+  });
+
+  it("cuts a body that grows when escaped", async () => {
+    const searchPage = vi.fn(async () => ({
+      requests: [makeRequest({ id: "quotes", body: '"\n'.repeat(15_000) })],
+      complete: true,
+      searchedUntil: null,
+      cursor: null,
+    }));
+    const tools = getRegisteredTools(searchClient({ searchPage }));
+
+    const output = await tools.search_requests.handler({ q: "x" });
+    expect(output.content[0].text.length).toBeLessThanOrEqual(32_768);
+    const result = JSON.parse(output.content[0].text);
+    expect(result.requests[0]).toMatchObject({
+      id: "quotes",
+      bodyTruncated: true,
+      bodySize: 30_000,
+    });
+  });
+
+  it("lists every match of a page that does not fit, since the cursor skips none", async () => {
+    const searchPage = vi.fn(async () => ({
+      requests: [
+        makeRequest({ id: "small", body: "needle" }),
+        ...Array.from({ length: 48 }, (_, i) =>
+          makeRequest({ id: `r${i}`, body: "x".repeat(4_000) })
+        ),
+        // Too large even without its body: only a summary is left.
+        makeRequest({ id: "headers", headers: { "x-big": "h".repeat(5_000) } }),
+      ],
+      complete: false,
+      searchedUntil: 1_700_000_000_000,
+      cursor: "c1",
+    }));
+    const tools = getRegisteredTools(searchClient({ searchPage }));
+
+    const output = await tools.search_requests.handler({ q: "x" });
+    expect(output.content[0].text.length).toBeLessThanOrEqual(32_768);
+    const result = JSON.parse(output.content[0].text);
+    expect(result.requests).toHaveLength(50);
+    expect(result.requests[0]).toEqual(makeRequest({ id: "small", body: "needle" }));
+    expect(result.requests[1]).toMatchObject({ id: "r0", bodyTruncated: true, bodySize: 4_000 });
+    expect(result.requests[49]).toEqual({
+      id: "headers",
+      method: "POST",
+      path: "/webhooks/github",
+      contentType: "application/json",
+      size: 42,
+      receivedAt: 1700000000000,
+      shortened: true,
+    });
+    expect(result.cursor).toBe("c1");
+    expect(result.note).toContain("Call search_requests again with cursor to continue.");
+    expect(result.note).toContain("get_request");
+  });
+
+  it("falls back to ids when even summaries do not fit", async () => {
+    const searchPage = vi.fn(async () => ({
+      requests: Array.from({ length: 200 }, (_, i) =>
+        makeRequest({
+          id: `00000000-0000-4000-8000-${String(i).padStart(12, "0")}`,
+          path: "/" + "p".repeat(300),
+          headers: { "x-big": "h".repeat(2_000) },
+        })
+      ),
+      complete: true,
+      searchedUntil: null,
+      cursor: null,
+    }));
+    const tools = getRegisteredTools(searchClient({ searchPage }));
+
+    const output = await tools.search_requests.handler({ q: "x", limit: 200 });
+    expect(output.content[0].text.length).toBeLessThanOrEqual(32_768);
+    const result = JSON.parse(output.content[0].text);
+    expect(result.requests).toHaveLength(200);
+    expect(result.requests[199]).toEqual({
+      id: "00000000-0000-4000-8000-000000000199",
+      receivedAt: 1700000000000,
+      shortened: true,
+    });
+  });
+
+  it("says where a shortened request is available in full", async () => {
+    const searchPage = vi.fn(async () => ({
+      requests: [makeRequest({ id: "big", body: "x".repeat(40_000) })],
+      complete: true,
+      searchedUntil: null,
+      cursor: null,
+    }));
+    const tools = getRegisteredTools(searchClient({ searchPage }));
+
+    const result = parseJsonResult(await tools.search_requests.handler({ q: "x" }));
+    expect(result.note).toBe(
+      "Some requests were shortened to fit the output (bodyTruncated with bodySize, or shortened: true for a summary); get_request with the id returns as much of one request as fits. The full request is available from the API (GET /api/requests/{id}), the SDKs (requests.get(id)) or the CLI (whk requests get <id>)."
+    );
+    expect(result.note).not.toContain("in full");
+  });
+
+  it("counts one page and says when the count is a lower bound", async () => {
+    const countPage = vi.fn(async () => ({
+      count: 12,
+      exact: false,
+      searchedUntil: 1_700_000_000_000,
+      cursor: "c1",
+    }));
+    const tools = getRegisteredTools(searchClient({ countPage }));
+
+    const result = parseJsonResult(
+      await tools.count_requests.handler({ slug: "acme", q: "needle", cursor: "c0" })
+    );
+
+    expect(countPage).toHaveBeenCalledWith(expect.objectContaining({ slug: "acme", q: "needle" }), {
+      cursor: "c0",
+    });
+    expect(result).toEqual({
+      count: 12,
+      exact: false,
+      searchedUntil: "2023-11-14T22:13:20.000Z",
+      cursor: "c1",
+      note: "At least 12, counted back to 2023-11-14T22:13:20.000Z; call count_requests again with cursor to count further (the counts add up).",
+    });
+  });
+
+  it("returns an exact count without a note", async () => {
+    const countPage = vi.fn(async () => ({
+      count: 7,
+      exact: true,
+      searchedUntil: null,
+      cursor: null,
+    }));
+    const tools = getRegisteredTools(searchClient({ countPage }));
+    const result = parseJsonResult(await tools.count_requests.handler({ slug: "acme" }));
+    expect(result).toEqual({ count: 7, exact: true, searchedUntil: null, cursor: null });
+  });
+
+  it("says what to do about a cursor the server refuses and a busy search", async () => {
+    const refused = Object.assign(new WebhooksCCError(400, '{"error":"invalid_cursor"}'), {
+      code: "invalid_cursor",
+    });
+    const busy = Object.assign(new RateLimitError(2), { code: "search_busy" });
+    const searchPage = vi.fn().mockRejectedValueOnce(refused).mockRejectedValueOnce(busy);
+    const tools = getRegisteredTools(searchClient({ searchPage }));
+
+    const first = await tools.search_requests.handler({ q: "needle", cursor: "made-up" });
+    expect(first.isError).toBe(true);
+    expect(JSON.parse(first.content[0].text)).toMatchObject({
+      code: "validation_error",
+      hint: expect.stringContaining("search again without one"),
+    });
+
+    const second = await tools.search_requests.handler({ q: "needle" });
+    expect(JSON.parse(second.content[0].text)).toMatchObject({
+      code: "rate_limited",
+      retryAfter: 2,
+      hint: expect.stringContaining("Wait retryAfter seconds"),
+    });
+  });
+
+  it("describes search as a substring match with a cursor", () => {
+    const tools = getRegisteredTools(createMockClient());
+    for (const name of ["search_requests", "count_requests"] as const) {
+      const description = tools[name].description;
+      expect(description).toContain("substring");
+      expect(description).toContain("cursor");
+      expect(description).toContain("decoded email fields");
+      expect(description).not.toContain("full-text");
+    }
+  });
+});
+
+describe("a request larger than the tool output", () => {
+  const big = () => makeRequest({ id: "big", body: "x".repeat(40_000) });
+  const NOTE =
+    "This request was cut to fit the output: its body (bodyTruncated, with bodySize), or everything but a summary (shortened: true). The full request is available from the API (GET /api/requests/{id}), the SDKs (requests.get(id)) or the CLI (whk requests get <id>).";
+
+  function requestsClient(requests: Record<string, unknown>) {
+    return createMockClient({ requests: requests as unknown as WebhooksCC["requests"] });
+  }
+
+  it("get_request returns valid JSON with the body cut and a note", async () => {
+    const tools = getRegisteredTools(requestsClient({ get: vi.fn(async () => big()) }));
+
+    const output = await tools.get_request.handler({ requestId: "big" });
+    expect(output.content[0].text.length).toBeLessThanOrEqual(32_768);
+    const result = parseJsonResult(output);
+    expect(result).toMatchObject({
+      id: "big",
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      bodyTruncated: true,
+      bodySize: 40_000,
+      note: NOTE,
+    });
+    expect(result.body.length).toBeGreaterThan(30_000);
+    expect("x".repeat(40_000).startsWith(result.body)).toBe(true);
+  });
+
+  it("wait_for_request does the same", async () => {
+    const tools = getRegisteredTools(requestsClient({ waitFor: vi.fn(async () => big()) }));
+
+    const output = await tools.wait_for_request.handler({ endpointSlug: "acme" });
+    expect(output.content[0].text.length).toBeLessThanOrEqual(32_768);
+    expect(parseJsonResult(output)).toMatchObject({
+      id: "big",
+      bodyTruncated: true,
+      bodySize: 40_000,
+      note: NOTE,
+    });
+  });
+
+  it("get_request keeps a summary when the headers alone are too large", async () => {
+    const get = vi.fn(async () =>
+      makeRequest({ id: "headers", headers: { "x-big": "h".repeat(40_000) } })
+    );
+    const tools = getRegisteredTools(requestsClient({ get }));
+
+    expect(parseJsonResult(await tools.get_request.handler({ requestId: "headers" }))).toEqual({
+      id: "headers",
+      method: "POST",
+      path: "/webhooks/github",
+      contentType: "application/json",
+      size: 42,
+      receivedAt: 1700000000000,
+      shortened: true,
+      note: NOTE,
+    });
+  });
+
+  it("get_request leaves a request that fits as it is", async () => {
+    const tools = getRegisteredTools(requestsClient({ get: vi.fn(async () => makeRequest()) }));
+    expect(parseJsonResult(await tools.get_request.handler({ requestId: "req_123" }))).toEqual(
+      makeRequest()
+    );
   });
 });

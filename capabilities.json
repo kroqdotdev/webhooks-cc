@@ -193,9 +193,14 @@
       "id": "request.search",
       "does": "Search and count requests across endpoints",
       "routes": ["GET /api/search/requests", "GET /api/search/requests/count"],
-      "sdk": ["requests.search", "requests.count"],
-      "python": ["requests.search", "requests.count"],
-      "go": ["Requests.Search", "Requests.Count"],
+      "sdk": ["requests.search", "requests.count", "requests.searchPage", "requests.countPage"],
+      "python": [
+        "requests.search",
+        "requests.count",
+        "requests.search_page",
+        "requests.count_page"
+      ],
+      "go": ["Requests.Search", "Requests.Count", "Requests.SearchPage", "Requests.CountPage"],
       "cli": ["requests search", "requests count"],
       "mcp": ["search_requests", "count_requests"]
     },

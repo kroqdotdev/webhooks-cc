@@ -257,7 +257,7 @@ Use `list_provider_templates` to inspect templates, default events, signature he
 Typical agent flows:
 
 - Create an ephemeral endpoint, send a provider-signed webhook, and wait for capture
-- Search retained requests across endpoints with full-text filters
+- Search retained requests across endpoints by substring, continuing with the cursor through long histories
 - Compare two webhook attempts and extract only the JSON fields you care about
 - Verify a captured signature against a known secret
 - Run `test_webhook_flow` to create, send, capture, verify, replay, and clean up in one tool call

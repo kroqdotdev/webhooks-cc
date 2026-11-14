@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -718,8 +719,13 @@ func TestReplay(t *testing.T) {
 
 func TestSearchCountClear(t *testing.T) {
 	api := newFakeAPI(t)
-	api.handle("GET /api/search/requests", func(w http.ResponseWriter, r *http.Request) { writeJSON(w, 200, []any{}) })
-	api.handle("GET /api/search/requests/count", func(w http.ResponseWriter, r *http.Request) { writeJSON(w, 200, map[string]int{"count": 3}) })
+	api.handle("GET /api/search/requests", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("X-Search-Complete", "true")
+		writeJSON(w, 200, []any{})
+	})
+	api.handle("GET /api/search/requests/count", func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, 200, map[string]any{"count": 3, "exact": true, "searchedUntil": nil, "cursor": nil})
+	})
 	api.handle("DELETE /api/endpoints/{slug}/requests", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(204) })
 	client := api.client()
 	ctx := context.Background()
@@ -728,11 +734,15 @@ func TestSearchCountClear(t *testing.T) {
 		t.Fatal(err)
 	}
 	request, _ := api.last()
-	if got := request.URL.Query().Encode(); got != "from=1767225000000&limit=10&order=asc&q=invoice&slug=acme-test" {
+	if got := request.URL.Query().Encode(); got != "from=1767225000000&limit=10&order=asc&paged=true&q=invoice&slug=acme-test" {
 		t.Errorf("search query = %s", got)
 	}
 	if count, err := client.Requests.Count(ctx, webhookscc.SearchOptions{Kind: webhookscc.KindEmail}); err != nil || count != 3 {
 		t.Errorf("count = %d, %v", count, err)
+	}
+	request, _ = api.last()
+	if got := request.URL.RawQuery; got != "kind=email&paged=true" {
+		t.Errorf("count query = %s", got)
 	}
 	if err := client.Requests.Clear(ctx, "acme-test", webhookscc.ClearOptions{Before: from}); err != nil {
 		t.Fatal(err)
@@ -740,6 +750,273 @@ func TestSearchCountClear(t *testing.T) {
 	request, _ = api.last()
 	if request.URL.RawQuery != "before=1767225000000" {
 		t.Errorf("clear query = %s", request.URL.RawQuery)
+	}
+}
+
+// searchPages answers a search with one scripted page per call and records
+// each call's query.
+type searchPages struct {
+	mu      sync.Mutex
+	queries []string
+}
+
+type scriptedPage struct {
+	ids      []string
+	complete bool
+	cursor   string
+	until    int64
+}
+
+func (p *searchPages) serve(api *fakeAPI, pages ...scriptedPage) {
+	api.handle("GET /api/search/requests", func(w http.ResponseWriter, r *http.Request) {
+		p.mu.Lock()
+		p.queries = append(p.queries, r.URL.Query().Encode())
+		page := pages[min(len(p.queries), len(pages))-1]
+		p.mu.Unlock()
+		w.Header().Set("X-Search-Complete", strconv.FormatBool(page.complete))
+		if page.cursor != "" {
+			w.Header().Set("X-Search-Cursor", page.cursor)
+		}
+		if page.until != 0 {
+			w.Header().Set("X-Search-Searched-Until", strconv.FormatInt(page.until, 10))
+		}
+		requests := []any{}
+		for _, id := range page.ids {
+			requests = append(requests, requestJSON(id, 1767225000000, map[string]any{"slug": "acme-test"}))
+		}
+		writeJSON(w, 200, requests)
+	})
+}
+
+func requestIDs(requests []webhookscc.Request) string {
+	ids := make([]string, len(requests))
+	for i, request := range requests {
+		ids[i] = request.ID
+	}
+	return strings.Join(ids, ",")
+}
+
+func TestSearchPageReadsOnePageAndItsProgress(t *testing.T) {
+	api := newFakeAPI(t)
+	var pages searchPages
+	pages.serve(api, scriptedPage{ids: []string{"r1", "r2"}, cursor: "c1.mac", until: 1767225000000})
+	client := api.client()
+	ctx := context.Background()
+	opts := webhookscc.SearchOptions{Query: "invoice", Limit: 20, Offset: 5, Order: "asc"}
+	page, err := client.Requests.SearchPage(ctx, opts, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if requestIDs(page.Requests) != "r1,r2" || page.Requests[0].Slug != "acme-test" {
+		t.Errorf("requests = %+v", page.Requests)
+	}
+	if page.Complete || page.Cursor != "c1.mac" || !page.SearchedUntil.Equal(time.UnixMilli(1767225000000)) {
+		t.Errorf("progress = %v %q %v", page.Complete, page.Cursor, page.SearchedUntil)
+	}
+	// With a cursor, the offset is the cursor's to carry.
+	if _, err := client.Requests.SearchPage(ctx, opts, page.Cursor); err != nil {
+		t.Fatal(err)
+	}
+	want := []string{
+		"limit=20&offset=5&order=asc&paged=true&q=invoice",
+		"cursor=c1.mac&limit=20&order=asc&paged=true&q=invoice",
+	}
+	if !slices.Equal(pages.queries, want) {
+		t.Errorf("queries = %q", pages.queries)
+	}
+}
+
+func TestSearchPageReadsTheProgressHeaders(t *testing.T) {
+	cases := []struct {
+		headers  map[string]string
+		complete bool
+		until    int64
+		cursor   string
+	}{
+		{map[string]string{"X-Search-Complete": "true"}, true, 0, ""},
+		{map[string]string{"X-Search-Complete": "false", "X-Search-Cursor": "c"}, false, 0, "c"},
+		{map[string]string{"X-Search-Complete": "TRUE", "X-Search-Searched-Until": "1767225600000"}, true, 1767225600000, ""},
+		{map[string]string{"X-Search-Complete": "false", "X-Search-Searched-Until": "soon"}, false, 0, ""},
+		// A server from before the cursor sends no progress: that answer is all there is.
+		{nil, true, 0, ""},
+	}
+	for _, c := range cases {
+		api := newFakeAPI(t)
+		api.handle("GET /api/search/requests", func(w http.ResponseWriter, r *http.Request) {
+			for name, value := range c.headers {
+				w.Header().Set(name, value)
+			}
+			writeJSON(w, 200, []any{})
+		})
+		page, err := api.client().Requests.SearchPage(context.Background(), webhookscc.SearchOptions{Query: "x"}, "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if page.Complete != c.complete || page.Cursor != c.cursor || len(page.Requests) != 0 {
+			t.Errorf("%v: page = %+v", c.headers, page)
+		}
+		if c.until == 0 && !page.SearchedUntil.IsZero() || c.until != 0 && page.SearchedUntil.UnixMilli() != c.until {
+			t.Errorf("%v: searched until %v", c.headers, page.SearchedUntil)
+		}
+	}
+}
+
+func TestSearchFollowsTheCursorUntilItHasTheLimit(t *testing.T) {
+	api := newFakeAPI(t)
+	var pages searchPages
+	pages.serve(api,
+		scriptedPage{ids: []string{"r1", "r2"}, cursor: "c1"},
+		scriptedPage{cursor: "c2"},
+		scriptedPage{ids: []string{"r3", "r4", "r5"}, cursor: "c3"},
+	)
+	found, err := api.client().Requests.Search(context.Background(), webhookscc.SearchOptions{Query: "invoice", Limit: 4, Offset: 10})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if requestIDs(found) != "r1,r2,r3,r4" {
+		t.Errorf("found %s", requestIDs(found))
+	}
+	want := []string{
+		"limit=4&offset=10&paged=true&q=invoice",
+		"cursor=c1&limit=2&paged=true&q=invoice",
+		"cursor=c2&limit=2&paged=true&q=invoice",
+	}
+	if !slices.Equal(pages.queries, want) {
+		t.Errorf("queries = %q", pages.queries)
+	}
+}
+
+func TestSearchStopsWhenTheSearchIsComplete(t *testing.T) {
+	api := newFakeAPI(t)
+	var pages searchPages
+	pages.serve(api, scriptedPage{ids: []string{"r1"}, cursor: "c1"}, scriptedPage{ids: []string{"r2"}, complete: true})
+	found, err := api.client().Requests.Search(context.Background(), webhookscc.SearchOptions{Slug: "acme-test"})
+	if err != nil || requestIDs(found) != "r1,r2" {
+		t.Errorf("found %s, %v", requestIDs(found), err)
+	}
+	// The default limit is the server's on the first page, and what is left of 50 after.
+	want := []string{"paged=true&slug=acme-test", "cursor=c1&limit=49&paged=true&slug=acme-test"}
+	if !slices.Equal(pages.queries, want) {
+		t.Errorf("queries = %q", pages.queries)
+	}
+}
+
+func TestCountAddsUpTheStretches(t *testing.T) {
+	api := newFakeAPI(t)
+	answers := []map[string]any{
+		{"count": 3, "exact": false, "searchedUntil": 1767225002000, "cursor": "c1"},
+		{"count": 0, "exact": false, "searchedUntil": 1767225001000, "cursor": "c2"},
+		{"count": 4, "exact": true, "searchedUntil": nil, "cursor": nil},
+	}
+	var mu sync.Mutex
+	var queries []string
+	api.handle("GET /api/search/requests/count", func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		queries = append(queries, r.URL.Query().Encode())
+		answer := answers[min(len(queries), len(answers))-1]
+		mu.Unlock()
+		writeJSON(w, 200, answer)
+	})
+	client := api.client()
+	ctx := context.Background()
+	opts := webhookscc.SearchOptions{Query: "invoice", Kind: webhookscc.KindEmail}
+	if count, err := client.Requests.Count(ctx, opts); err != nil || count != 7 {
+		t.Errorf("count = %d, %v", count, err)
+	}
+	want := []string{
+		"kind=email&paged=true&q=invoice",
+		"cursor=c1&kind=email&paged=true&q=invoice",
+		"cursor=c2&kind=email&paged=true&q=invoice",
+	}
+	if !slices.Equal(queries, want) {
+		t.Errorf("queries = %q", queries)
+	}
+
+	queries = nil
+	first, err := client.Requests.CountPage(ctx, opts, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.Count != 3 || first.Exact || first.Cursor != "c1" || first.SearchedUntil.UnixMilli() != 1767225002000 {
+		t.Errorf("first count page = %+v", first)
+	}
+	if _, err := client.Requests.CountPage(ctx, opts, "c1"); err != nil {
+		t.Fatal(err)
+	}
+	last, err := client.Requests.CountPage(ctx, opts, "c2")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if last.Count != 4 || !last.Exact || last.Cursor != "" || !last.SearchedUntil.IsZero() {
+		t.Errorf("last count page = %+v", last)
+	}
+}
+
+func TestCountPageReadsAnAnswerFromBeforeTheCursor(t *testing.T) {
+	api := newFakeAPI(t)
+	api.handle("GET /api/search/requests/count", func(w http.ResponseWriter, r *http.Request) { writeJSON(w, 200, map[string]int{"count": 3}) })
+	page, err := api.client().Requests.CountPage(context.Background(), webhookscc.SearchOptions{}, "")
+	if err != nil || page.Count != 3 || !page.Exact {
+		t.Errorf("page = %+v, %v", page, err)
+	}
+}
+
+func TestAnInvalidCursorHasItsOwnError(t *testing.T) {
+	api := newFakeAPI(t)
+	api.handle("GET /api/search/requests", func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Get("cursor") != "" {
+			writeJSON(w, 400, map[string]string{"error": "invalid_cursor"})
+			return
+		}
+		writeJSON(w, 400, map[string]string{"error": "invalid_q"})
+	})
+	api.handle("GET /api/search/requests/count", func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, 400, map[string]string{"error": "invalid_cursor"})
+	})
+	client := api.client()
+	ctx := context.Background()
+	_, err := client.Requests.SearchPage(ctx, webhookscc.SearchOptions{Query: "x"}, "tampered")
+	var apiErr *webhookscc.Error
+	if !errors.Is(err, webhookscc.ErrInvalidCursor) || !errors.As(err, &apiErr) || apiErr.StatusCode != 400 {
+		t.Errorf("search page: %v", err)
+	}
+	if _, err := client.Requests.CountPage(ctx, webhookscc.SearchOptions{Query: "x"}, "tampered"); !errors.Is(err, webhookscc.ErrInvalidCursor) {
+		t.Errorf("count page: %v", err)
+	}
+	// Another 400 is not an invalid cursor.
+	if _, err := client.Requests.SearchPage(ctx, webhookscc.SearchOptions{Query: "x"}, ""); err == nil || errors.Is(err, webhookscc.ErrInvalidCursor) || !strings.Contains(err.Error(), "invalid_q") {
+		t.Errorf("another 400: %v", err)
+	}
+}
+
+func TestABusySearchIsRetriedAfterRetryAfter(t *testing.T) {
+	api := newFakeAPI(t)
+	var calls atomic.Int32
+	api.handle("GET /api/search/requests", func(w http.ResponseWriter, r *http.Request) {
+		if calls.Add(1) == 1 {
+			w.Header().Set("Retry-After", "1")
+			writeJSON(w, 429, map[string]string{"error": "search_busy"})
+			return
+		}
+		w.Header().Set("X-Search-Complete", "true")
+		writeJSON(w, 200, []any{requestJSON("r1", 1767225000000, nil)})
+	})
+	ctx := context.Background()
+	started := time.Now()
+	client := api.client(webhookscc.WithRetry(webhookscc.RetryOptions{MaxAttempts: 2, Backoff: time.Millisecond}))
+	found, err := client.Requests.Search(ctx, webhookscc.SearchOptions{Query: "x"})
+	if err != nil || requestIDs(found) != "r1" {
+		t.Fatalf("found %s, %v", requestIDs(found), err)
+	}
+	if waited := time.Since(started); waited < time.Second {
+		t.Errorf("retried after %s, before the second Retry-After asked for", waited)
+	}
+	// Without retries it is the rate-limit error, with the wait the server asked for.
+	calls.Store(0)
+	_, err = api.client().Requests.SearchPage(ctx, webhookscc.SearchOptions{Query: "x"}, "")
+	var apiErr *webhookscc.Error
+	if !errors.Is(err, webhookscc.ErrRateLimited) || !errors.As(err, &apiErr) || apiErr.RetryAfter != time.Second {
+		t.Errorf("busy without retries: %v", err)
 	}
 }
 

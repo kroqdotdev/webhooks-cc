@@ -99,7 +99,7 @@ An API key carries exactly the team access of the account it belongs to, so ever
 whk list --team Payments          # endpoints tied to one team, by name or id
 whk listen <shared-slug>          # stream a teammate's endpoint
 whk tunnel 3000 --endpoint <shared-slug>
-whk requests search --q invoice   # covers shared endpoints too
+whk requests search -q invoice    # covers shared endpoints too
 ```
 
 **Manage sharing and membership without the browser.** `whk teams` mirrors the team page; the SDK exposes the same operations under `client.teams`; the MCP server exposes `list_teams`, `list_team_members`, `share_endpoint`, and `unshare_endpoint`.

@@ -50,6 +50,7 @@ from .email import (
     is_valid_email_tag,
 )
 from .errors import (
+    InvalidCursorError,
     NotFoundError,
     RateLimitError,
     TimeoutError,
@@ -60,6 +61,7 @@ from .matchers import Matcher, is_email_request, match_email
 from .models import (
     AttachmentDownload,
     BuiltRequest,
+    CountPage,
     Destination,
     DestinationAttachments,
     DestinationFilter,
@@ -76,6 +78,7 @@ from .models import (
     RequestKind,
     RequestPage,
     ResponsePreview,
+    SearchPage,
     SendTestEmailResult,
     TunnelName,
     TunnelNameList,
@@ -111,6 +114,12 @@ _IDEMPOTENT_METHODS = frozenset({"GET", "HEAD", "OPTIONS", "PUT", "DELETE"})
 _MIN_POLL_INTERVAL_MS = 10
 _MAX_POLL_INTERVAL_MS = 60_000
 _MAX_WAIT_ITERATIONS = 10_000
+# How long requests.search() and requests.count() keep following the cursor. Each
+# page reads for about two seconds on the server.
+_SEARCH_DEADLINE_MS = 25_000
+_SEARCH_DEFAULT_LIMIT = 50
+# What a page of theirs, its retries included, may run past that deadline.
+_SEARCH_DEADLINE_GRACE_MS = 5_000
 _STREAM_CONNECT_TIMEOUT_S = 30.0
 _STREAM_DEDUP_WINDOW = 1000
 _STREAM_RAPID_ROTATION_MS = 5000
@@ -218,6 +227,8 @@ def _map_error(
             if generic
             else message
         )
+    if status == 400 and _error_code(message) == "invalid_cursor":
+        return InvalidCursorError("Invalid search cursor: start the search again without a cursor")
     if status == 404:
         return NotFoundError(f"{message}: {_not_found_hint(path)}" if generic else message)
     if status == 429:
@@ -230,8 +241,19 @@ def _map_error(
             limit=limit if complete else None,
             remaining=remaining if complete else None,
             reset=reset if complete else None,
+            code=_error_code(message),
         )
     return WebhooksCCError(status, message)
+
+
+def _error_code(message: str) -> str | None:
+    """The ``error`` of a JSON error body, when it is one."""
+    try:
+        parsed = json.loads(message)
+    except ValueError:
+        return None
+    code = parsed.get("error") if isinstance(parsed, dict) else None
+    return code if isinstance(code, str) else None
 
 
 def _error_from_response(response: httpx.Response) -> WebhooksCCError:
@@ -579,17 +601,18 @@ class WebhooksCC:
     def _timeout_s(self) -> float:
         return self._timeout_ms / 1000
 
-    def _bearer(self, force_refresh: bool = False) -> str:
-        """The API key, or an agent's access token. A token that cannot be had is a 401."""
+    def _bearer(self, force_refresh: bool = False, timeout_ms: float | None = None) -> str:
+        """The API key, or an agent's access token. A token that cannot be had is a 401;
+        one that took longer than ``timeout_ms`` (when given) is a ``TimeoutError``."""
         if self._tokens is None:
             return self._api_key or ""
         try:
-            return self._tokens.get(force_refresh)
+            return self._tokens.get(force_refresh, timeout_ms)
         except AgentAuthError as error:
             raise UnauthorizedError(f"Could not get an access token: {error}") from error
 
-    def _auth(self) -> dict[str, str]:
-        return {"Authorization": f"Bearer {self._bearer()}"}
+    def _auth(self, timeout_ms: float | None = None) -> dict[str, str]:
+        return {"Authorization": f"Bearer {self._bearer(timeout_ms=timeout_ms)}"}
 
     def _agent_file(self) -> str | None:
         """The credential file of the connected agent this client acts for, if any, so
@@ -607,10 +630,15 @@ class WebhooksCC:
         body: Any = None,
         params: Mapping[str, str] | None = None,
         repeatable: bool | None = None,
+        deadline_ms: float | None = None,
     ) -> Any:
         """Call the API and return its JSON. ``repeatable`` overrides whether a network
-        error, a timeout or a 5xx is retried, for a call whose method says otherwise."""
-        response = self._call(method, path, body=body, params=params, repeatable=repeatable)
+        error, a timeout or a 5xx is retried, for a call whose method says otherwise;
+        ``deadline_ms`` is a time on the monotonic clock the call must end by (see
+        :meth:`_call`)."""
+        response = self._call(
+            method, path, body=body, params=params, repeatable=repeatable, deadline_ms=deadline_ms
+        )
         if response.status_code == 204 or response.headers.get("content-length") == "0":
             return None
         content_type = response.headers.get("content-type")
@@ -647,8 +675,26 @@ class WebhooksCC:
         body: Any = None,
         params: Mapping[str, str] | None = None,
         repeatable: bool | None = None,
+        deadline_ms: float | None = None,
     ) -> httpx.Response:
-        """Call the API with retries; the response, once it is a success."""
+        """Call the API with retries; the response, once it is a success.
+
+        With ``deadline_ms`` (a time on the monotonic clock, in ms) the call ends by
+        then: each try times out at the deadline when that is sooner than the
+        client's timeout, and a retry whose wait would end after it is not made, so
+        the error goes to the caller instead. Getting an agent's access token is
+        bounded the same way.
+        """
+        timeout_ms = self._timeout_ms
+
+        def time_left() -> float:
+            """What a try, or a token exchange, may take: no longer than the deadline."""
+            assert deadline_ms is not None
+            return min(self._timeout_ms, max(deadline_ms - time.monotonic() * 1000, 1.0))
+
+        def may_retry_after(wait_ms: float) -> bool:
+            return deadline_ms is None or time.monotonic() * 1000 + wait_ms < deadline_ms
+
         url = f"{self._base_url}/api{path}"
         attempts = max(1, int(self._retry.max_attempts))
         if repeatable is None:
@@ -658,6 +704,8 @@ class WebhooksCC:
         while True:
             attempt += 1
             backoff = self._backoff_ms * 2 ** (attempt - 1)
+            if deadline_ms is not None:
+                timeout_ms = time_left()
             try:
                 # Never followed, even with an http_client configured to: the API does
                 # not redirect, the token stays with the host named, and a download
@@ -667,17 +715,20 @@ class WebhooksCC:
                     url,
                     params=params,
                     content=json.dumps(body) if body is not None else None,
-                    headers={**self._auth(), "Content-Type": "application/json"},
-                    timeout=self._timeout_s,
+                    headers={
+                        **self._auth(timeout_ms if deadline_ms is not None else None),
+                        "Content-Type": "application/json",
+                    },
+                    timeout=(time_left() if deadline_ms is not None else timeout_ms) / 1000,
                     follow_redirects=False,
                 )
             except httpx.TimeoutException:
-                if attempt < attempts and repeatable:
+                if attempt < attempts and repeatable and may_retry_after(backoff):
                     _sleep_ms(backoff)
                     continue
-                raise TimeoutError(self._timeout_ms) from None
+                raise TimeoutError(timeout_ms) from None
             except httpx.TransportError:
-                if attempt < attempts and repeatable:
+                if attempt < attempts and repeatable and may_retry_after(backoff):
                     _sleep_ms(backoff)
                     continue
                 raise
@@ -685,7 +736,10 @@ class WebhooksCC:
             # An agent's token that expired or was revoked: exchange once more and retry.
             if response.status_code == 401 and self._tokens is not None and not refreshed:
                 refreshed = True
-                self._bearer(force_refresh=True)
+                self._bearer(
+                    force_refresh=True,
+                    timeout_ms=time_left() if deadline_ms is not None else None,
+                )
                 attempt -= 1
                 continue
 
@@ -699,8 +753,10 @@ class WebhooksCC:
                     and (repeatable or response.status_code == 429)
                 ):
                     retry_after = error.retry_after if isinstance(error, RateLimitError) else None
-                    _sleep_ms(retry_after * 1000 if retry_after is not None else backoff)
-                    continue
+                    wait_ms = retry_after * 1000 if retry_after is not None else backoff
+                    if may_retry_after(wait_ms):
+                        _sleep_ms(wait_ms)
+                        continue
                 raise error
             return response
 
@@ -1265,21 +1321,125 @@ class Requests:
         offset: int | None = None,
         order: Literal["asc", "desc"] | None = None,
     ) -> builtins.list[Request]:
-        """Search retained requests across path, body and headers.
+        """Search retained requests: ``q`` is found as a substring of the path, the
+        headers and the body, and of an email's decoded subject, text and addresses.
 
+        Returns at most ``limit`` matches (50 by default), newest first unless
+        ``order="asc"``. A search reads a long history in pages; this follows them
+        until it has ``limit`` matches, the whole range was read, or 25 seconds
+        have passed, so a rare term in a long history can return fewer matches
+        than exist. :meth:`search_page` reads one page and says how far it got.
+
+        When the server is busy with other searches (a 429 ``search_busy``), this
+        waits as long as the server asks and tries the page again while that fits
+        in the 25 seconds; after that it returns what it has, or raises
+        :class:`~webhooks_cc.errors.RateLimitError` when it has read no page yet.
+
+        Each result's ``id`` is the request's own id, as :meth:`get` takes it.
         ``from_`` and ``to`` take ms since the epoch, or a duration ago (``"1h"``).
         """
         params = _search_params(slug, method, kind, q, from_, to)
+        if order is not None:
+            params["order"] = order
+        wanted = _SEARCH_DEFAULT_LIMIT if limit is None else max(1, int(limit))
+        deadline = time.monotonic() * 1000 + _SEARCH_DEADLINE_MS
+        found: builtins.list[Request] = []
+        cursor: str | None = None
+        while True:
+            page_params = dict(params)
+            if limit is not None or found:
+                page_params["limit"] = str(wanted - len(found))
+            # The cursor carries what is left of the offset.
+            if offset is not None and cursor is None:
+                page_params["offset"] = str(int(offset))
+            try:
+                page = self._search_page(page_params, cursor, deadline + _SEARCH_DEADLINE_GRACE_MS)
+            except TimeoutError as error:
+                # Cut short by the deadline, not by the client's own timeout: the
+                # search ends with what it has.
+                if cursor is None or error.timeout_ms >= self._client._timeout_ms:
+                    raise
+                break
+            except RateLimitError as error:
+                # Only a busy search server is waited out, and only a wait that no
+                # longer fits ends the search with what it has.
+                if error.code != "search_busy":
+                    raise
+                if _wait_out_busy_search(error, deadline):
+                    continue
+                if cursor is None:
+                    raise
+                break
+            found.extend(page.requests)
+            cursor = page.cursor
+            if (
+                len(found) >= wanted
+                or page.complete
+                or cursor is None
+                or time.monotonic() * 1000 >= deadline
+            ):
+                break
+        return found[:wanted]
+
+    def search_page(
+        self,
+        *,
+        slug: str | None = None,
+        method: str | None = None,
+        kind: RequestKind | None = None,
+        q: str | None = None,
+        from_: float | str | None = None,
+        to: float | str | None = None,
+        limit: int | None = None,
+        offset: int | None = None,
+        order: Literal["asc", "desc"] | None = None,
+        cursor: str | None = None,
+    ) -> SearchPage:
+        """One page of a search, and how far it read.
+
+        The server reads for about two seconds and answers with what it found, so
+        a page can be short or empty without being the end: ``complete`` says
+        whether the whole range was read, and ``cursor`` reads on. Pass the same
+        filters with the ``cursor`` of the page before; ``offset`` belongs to the
+        first page only and is left out with a cursor (the cursor carries what is
+        left of it). ``limit`` is at most 200 a page (50 by default).
+
+        Raises :class:`~webhooks_cc.errors.InvalidCursorError` for a cursor the
+        server did not issue for this search. Keep the bounds of ``from_`` and
+        ``to`` the same across pages: pass times, since a duration is counted
+        back from each call.
+        """
+        cursor = cursor or None  # an empty cursor is no cursor
+        params = _search_params(slug, method, kind, q, from_, to)
         if limit is not None:
             params["limit"] = str(int(limit))
-        if offset is not None:
+        if offset is not None and cursor is None:
             params["offset"] = str(int(offset))
         if order is not None:
             params["order"] = order
-        return [
-            Request.from_dict(item)
-            for item in self._client._api("GET", "/search/requests", params=params) or []
-        ]
+        return self._search_page(params, cursor)
+
+    def _search_page(
+        self, params: dict[str, str], cursor: str | None, deadline_ms: float | None = None
+    ) -> SearchPage:
+        params = {**params, "paged": "true"}
+        if cursor is not None:
+            params["cursor"] = cursor
+        response = self._client._call(
+            "GET", "/search/requests", params=params, deadline_ms=deadline_ms
+        )
+        items = response.json() if response.content else []
+        next_cursor = response.headers.get("x-search-cursor") or None
+        complete = response.headers.get("x-search-complete")
+        return SearchPage(
+            requests=[Request.from_dict(item) for item in items or []],
+            # A server that sends no progress has nothing more to give.
+            complete=js_trim(complete).lower() == "true"
+            if complete is not None
+            else next_cursor is None,
+            searched_until=_int_header(response.headers, "x-search-searched-until"),
+            cursor=next_cursor,
+        )
 
     def count(
         self,
@@ -1291,9 +1451,88 @@ class Requests:
         from_: float | str | None = None,
         to: float | str | None = None,
     ) -> int:
-        """How many retained requests match the search."""
+        """How many retained requests match the search.
+
+        Without ``q`` and ``method`` the count is exact. With them the server
+        counts a long history in stretches; this adds them up until the count is
+        exact or 25 seconds have passed, and then returns what it counted, which
+        is a lower bound. :meth:`count_page` says whether a count is exact. A busy
+        server (a 429 ``search_busy``) is waited out as :meth:`search` does.
+        """
         params = _search_params(slug, method, kind, q, from_, to)
-        return int(self._client._api("GET", "/search/requests/count", params=params)["count"])
+        deadline = time.monotonic() * 1000 + _SEARCH_DEADLINE_MS
+        total = 0
+        cursor: str | None = None
+        while True:
+            try:
+                page = self._count_page(params, cursor, deadline + _SEARCH_DEADLINE_GRACE_MS)
+            except TimeoutError as error:
+                if cursor is None or error.timeout_ms >= self._client._timeout_ms:
+                    raise
+                return total
+            except RateLimitError as error:
+                if error.code != "search_busy":
+                    raise
+                if _wait_out_busy_search(error, deadline):
+                    continue
+                if cursor is None:
+                    raise
+                return total
+            total += page.count
+            cursor = page.cursor
+            if page.exact or cursor is None or time.monotonic() * 1000 >= deadline:
+                return total
+
+    def count_page(
+        self,
+        *,
+        slug: str | None = None,
+        method: str | None = None,
+        kind: RequestKind | None = None,
+        q: str | None = None,
+        from_: float | str | None = None,
+        to: float | str | None = None,
+        cursor: str | None = None,
+    ) -> CountPage:
+        """One count, and whether it is exact.
+
+        Without ``q`` and ``method`` a count is always exact. With them, the
+        server counts for about two seconds: when ``exact`` is ``False``,
+        ``count`` covers the requests back to ``searched_until``, and the same
+        filters with ``cursor`` count the next stretch (the counts add up).
+
+        Raises :class:`~webhooks_cc.errors.InvalidCursorError` for a cursor the
+        server did not issue for this search.
+        """
+        return self._count_page(_search_params(slug, method, kind, q, from_, to), cursor or None)
+
+    def _count_page(
+        self, params: dict[str, str], cursor: str | None, deadline_ms: float | None = None
+    ) -> CountPage:
+        params = {**params, "paged": "true"}
+        if cursor is not None:
+            params["cursor"] = cursor
+        data = self._client._api(
+            "GET", "/search/requests/count", params=params, deadline_ms=deadline_ms
+        )
+        if not isinstance(data, Mapping):
+            data = {}
+        until = data.get("searchedUntil")
+        count = data.get("count")
+        next_cursor = data.get("cursor")
+        next_cursor = next_cursor if isinstance(next_cursor, str) and next_cursor else None
+        exact = data.get("exact")
+        return CountPage(
+            count=int(count)
+            if isinstance(count, (int, float)) and not isinstance(count, bool)
+            else 0,
+            # A server that does not say counted everything it will.
+            exact=exact if isinstance(exact, bool) else next_cursor is None,
+            searched_until=int(until)
+            if isinstance(until, (int, float)) and not isinstance(until, bool)
+            else None,
+            cursor=next_cursor,
+        )
 
     def clear(self, slug: str, *, before: float | str | None = None) -> None:
         """Delete an endpoint's requests: all of them, or those ``before`` a time.
@@ -2159,6 +2398,16 @@ def _resolve_time(value: float | str) -> float:
     if not math.isnan(number):
         return number
     return _now_ms() - parse_duration(text)
+
+
+def _wait_out_busy_search(error: RateLimitError, deadline_ms: float) -> bool:
+    """Sleep as long as a busy search server asked (a second at least), when that
+    still fits before the deadline; ``False`` when it does not."""
+    wait_ms = max(error.retry_after or 0, 1) * 1000
+    if time.monotonic() * 1000 + wait_ms >= deadline_ms:
+        return False
+    _sleep_ms(wait_ms)
+    return True
 
 
 def _search_params(

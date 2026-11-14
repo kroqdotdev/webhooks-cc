@@ -224,9 +224,15 @@ const results = await client.requests.search({
   offset?: number,
   order?: "asc" | "desc",
 });
+// search() follows the search cursor until it has `limit` matches, the end, or 25 s.
+// One page (about 2 s of reading) and how far it got; pass cursor with the same filters to read on:
+const page = await client.requests.searchPage({ q: "invoice" }, { cursor?: string });
+// page: { requests, complete, searchedUntil, cursor }
 
-// Count matching requests
+// Count matching requests (exact without q and method; else summed for up to 25 s, a lower bound if time ran out)
 const count = await client.requests.count({ slug: "my-slug", method: "POST" });
+const counted = await client.requests.countPage({ q: "invoice" }, { cursor?: string });
+// counted: { count, exact, searchedUntil, cursor }; the counts of successive pages add up
 
 // Clear requests
 await client.requests.clear("my-slug", { before?: number | string });
@@ -665,8 +671,8 @@ The local server has 57 tools once it is connected to an account; the remote ser
 | `unshare_endpoint` | slug, teamId | Stop sharing an endpoint with a team |
 | `send_webhook` | slug, method?, headers?, body?, provider?, template?, event?, secret? | Send test webhook |
 | `list_requests` | endpointSlug, limit (1-100), since?, kind? | List recent requests |
-| `search_requests` | slug?, method?, kind?, q?, from?, to?, limit, offset, order | Search request history |
-| `count_requests` | slug?, method?, kind?, q?, from?, to? | Count matching requests |
+| `search_requests` | slug?, method?, kind?, q?, from?, to?, limit, offset, order, cursor? | Search request history (substring of path, headers, body, email fields); returns `{ requests, complete, searchedUntil, cursor, note? }`, call again with `cursor` while `complete` is false |
+| `count_requests` | slug?, method?, kind?, q?, from?, to?, cursor? | Count matching requests; returns `{ count, exact, searchedUntil, cursor, note? }`, counts add up across cursors |
 | `get_request` | requestId | Get single request |
 | `wait_for_request` | endpointSlug, timeout?, pollInterval? | Wait for next request |
 | `wait_for_requests` | endpointSlug, count (1-20), timeout?, pollInterval?, method? | Collect N requests |
@@ -807,9 +813,11 @@ whk requests list <slug>               # List requests
 
 whk requests get <id>                  # Get single request
 whk requests search                    # Search requests
-  --slug --method -q --from --to --limit --offset --order
+  --slug --method --kind -q --from --to --limit --offset --order --cursor
+  # reads until --limit matches, the end, or 25 s; says on stderr how far it searched and the --cursor command that continues
 
-whk requests count                     # Count matching requests
+whk requests count                     # Count matching requests ("at least N" when not exact)
+  --slug --method --kind -q --from --to --cursor
 whk requests clear <slug> [--force]    # Delete requests
 whk requests export <slug>             # Export requests
   --format har|curl --limit <n> -o <file>

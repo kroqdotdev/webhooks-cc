@@ -93,6 +93,10 @@ async fn run(args: Cli) -> Result<()> {
     }
 
     let mut client = ApiClient::new(args.api_url.as_deref(), args.webhook_url.as_deref())?;
+    // A command printed for a later run (a search's continue command) names
+    // the server this run used, default included: the later run may have
+    // other flags or another WHK_API_URL.
+    let api_url_flag = Some(client.base_url().to_string());
 
     match args.command {
         None => unreachable!("handled above"),
@@ -328,23 +332,31 @@ async fn run(args: Cli) -> Result<()> {
             RequestsAction::Search {
                 slug,
                 method,
+                kind,
                 q,
                 from,
                 to,
                 limit,
                 offset,
                 order,
+                cursor,
             } => {
+                let filters = whk::api::requests::SearchFilters {
+                    slug: slug.as_deref(),
+                    method: method.as_deref(),
+                    kind: kind.as_deref(),
+                    query: q.as_deref(),
+                    from: from.as_deref(),
+                    to: to.as_deref(),
+                };
                 cli::requests::search(
                     &client,
-                    slug.as_deref(),
-                    method.as_deref(),
-                    q.as_deref(),
-                    from.as_deref(),
-                    to.as_deref(),
+                    &filters,
                     limit,
                     offset,
                     &order,
+                    cursor.as_deref(),
+                    api_url_flag.as_deref(),
                     args.json,
                 )
                 .await?;
@@ -352,17 +364,25 @@ async fn run(args: Cli) -> Result<()> {
             RequestsAction::Count {
                 slug,
                 method,
+                kind,
                 q,
                 from,
                 to,
+                cursor,
             } => {
+                let filters = whk::api::requests::SearchFilters {
+                    slug: slug.as_deref(),
+                    method: method.as_deref(),
+                    kind: kind.as_deref(),
+                    query: q.as_deref(),
+                    from: from.as_deref(),
+                    to: to.as_deref(),
+                };
                 cli::requests::count(
                     &client,
-                    slug.as_deref(),
-                    method.as_deref(),
-                    q.as_deref(),
-                    from.as_deref(),
-                    to.as_deref(),
+                    &filters,
+                    cursor.as_deref(),
+                    api_url_flag.as_deref(),
                     args.json,
                 )
                 .await?;

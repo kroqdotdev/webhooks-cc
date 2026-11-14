@@ -465,7 +465,9 @@ replay(requestId: string, targetUrl: string): Promise<Response>
 
 Search captured requests across endpoints for text.
 
-`q` matches as a case-insensitive substring of the path, the headers or the body (`%` and `_` are literal), and an email also matches on its decoded subject, text and sender and recipient addresses; a request id finds that request first. A search reads the most recent requests first and answers within about 10 seconds, so a rare term on a long history can return fewer results than exist: narrow `from` and `to` to search one stretch of time at a time.
+`q` matches as a case-insensitive substring of the path, the headers or the body (`%` and `_` are literal), and an email also matches on its decoded subject, text and sender and recipient addresses; a request id finds that request first. Each result's `id` is the request's own id, the one `requests.get()` takes.
+
+There is no text index behind search, so the server reads a long history newest first, in pages of about 2 seconds. `search()` follows the cursor for you until it has `limit` matches (50 by default), the whole range was read, or 25 seconds have passed, and returns the matches found by then. A rare term on a very long history can therefore return fewer matches than exist; `searchPage()` says how far a search read and lets you continue it.
 
 ```ts
 search(filters?: SearchFilters): Promise<SearchResult[]>
@@ -482,15 +484,46 @@ search(filters?: SearchFilters): Promise<SearchResult[]>
 | `from`   | `string \| number`  | no       | Start time (duration or timestamp) |
 | `to`     | `string \| number`  | no       | End time (duration or timestamp)   |
 | `limit`  | `number`            | no       | Max results (default: 50)          |
-| `offset` | `number`            | no       | Pagination offset                  |
+| `offset` | `number`            | no       | Matches to skip                    |
 | `order`  | `"asc" \| "desc"`   | no       | Sort order (default: `"desc"`)     |
 
 </ParamTable>
 </ApiMethod>
 
+<ApiMethod method="GET" path="/requests/search" title="client.requests.searchPage">
+
+One page of a search: a single request that reads for about 2 seconds and says how far it got.
+
+```ts
+searchPage(filters?: SearchFilters, options?: { cursor?: string }): Promise<SearchPage>
+
+interface SearchPage {
+  requests: SearchResult[]; // the matches this page found
+  complete: boolean; // whether the whole range was read
+  searchedUntil: number | null; // how far the search read (Unix ms)
+  cursor: string | null; // pass to the next call; null when complete
+}
+```
+
+A page can be short or empty without being the end: read on while `complete` is `false`.
+
+```ts
+const filters = { slug: "abc123", q: "invoice.paid", from: Date.now() - 7 * 86_400_000 };
+let page = await client.requests.searchPage(filters);
+while (!page.complete && page.cursor) {
+  page = await client.requests.searchPage(filters, { cursor: page.cursor });
+}
+```
+
+Pass the same filters with each cursor. A page holds at most 200 matches, `offset` applies to the first page only (the cursor carries what is left of it), and a cursor is opaque: pass it back as given. Give `from` and `to` as timestamps when you continue, since a duration is counted back from each call's own clock.
+
+A cursor the server did not issue for this search (a changed one, or one from a search in the other order) throws a `WebhooksCCError` whose `code` is `"invalid_cursor"`. A page asked for while the account's other searches are still running throws a `RateLimitError` with `code` `"search_busy"` and `retryAfter`; `search()` and `count()` wait that out themselves while it fits in their 25 seconds.
+
+</ApiMethod>
+
 <ApiMethod method="GET" path="/requests/count" title="client.requests.count">
 
-Count captured requests matching the given filters. Without `q` and `method` the count is exact. With either, it covers what about 10 seconds of reading reached, so on a long history it can be lower than the real number.
+Count captured requests matching the given filters. Without `q` and `method` the count is exact. With either, the server counts a long history in stretches: `count()` adds them up until the count is exact or 25 seconds have passed, and returns the sum, which is then a lower bound. `countPage()` says which.
 
 ```ts
 count(filters?: SearchFilters): Promise<number>
@@ -498,6 +531,24 @@ count(filters?: SearchFilters): Promise<number>
 
 </ApiMethod>
 
+<ApiMethod method="GET" path="/requests/count" title="client.requests.countPage">
+
+One count, and whether it is exact. Takes the filters of `search` (without `limit`, `offset` and `order`) and the same `cursor` option.
+
+```ts
+countPage(filters?: SearchFilters, options?: { cursor?: string }): Promise<SearchCountPage>
+
+interface SearchCountPage {
+  count: number; // matches counted by this call
+  exact: boolean; // whether the whole range was counted
+  searchedUntil: number | null; // how far the count read (Unix ms)
+  cursor: string | null; // pass to the next call; null when exact
+}
+```
+
+When `exact` is `false`, `count` covers the requests back to `searchedUntil` only. Calling again with `cursor` and the same filters counts the next stretch, so add the counts up.
+
+</ApiMethod>
 <ApiMethod method="DELETE" path="/endpoints/:slug/requests" title="client.requests.clear">
 
 Delete captured requests for an endpoint without deleting the endpoint itself.
@@ -1926,7 +1977,7 @@ Errors include actionable recovery hints when the server message is generic.
 
 ```ts
 import {
-  WebhooksCCError, // Base error (has statusCode)
+  WebhooksCCError, // Base error (has statusCode, and code when the API named one)
   UnauthorizedError, // 401: includes link to get API key
   NotFoundError, // 404: suggests using endpoints.list()
   RateLimitError, // 429: includes retryAfter seconds
@@ -1934,5 +1985,7 @@ import {
   WebhookVerificationError, // Thrown by verifyForwardedEmail(); has a code
 } from "@webhooks-cc/sdk";
 ```
+
+`WebhooksCCError.code` is the API's own error code when its answer had one, such as `"invalid_cursor"` or `"search_busy"` from `requests.searchPage()`.
 
 `WebhookVerificationError.code` is `"missing_headers"`, `"timestamp_out_of_range"`, `"invalid_signature"` or `"invalid_payload"`. Answer the first three with 401 and `invalid_payload` with 400.
