@@ -6,14 +6,23 @@ import { serveStdio } from "@modelcontextprotocol/server/stdio";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { buildInspectorHtml, inspectorExports } from "../../scripts/build-app.mjs";
 import {
+  DASHBOARD_URL_META as MODEL_DASHBOARD_URL_META,
   MASK,
+  dashboardUrlOf,
   isSecretHeader,
   maskQuery,
   slugForEndpoint,
   slugFromAddress,
   viewOf,
 } from "../../app/model";
-import { APP_MIME_TYPE, INSPECTOR_URI, appToolMeta } from "../app";
+import {
+  APP_MIME_TYPE,
+  DASHBOARD_URL_META,
+  INSPECTOR_URI,
+  appToolMeta,
+  dashboardRequestUrl,
+  localDashboardOrigins,
+} from "../app";
 import { INSPECTOR_HASH, INSPECTOR_HTML } from "../app-html";
 import { TOOL_CATALOG } from "../catalog";
 import { createServer, type CreateServerOptions } from "../index";
@@ -27,14 +36,19 @@ afterEach(async () => {
   await Promise.all(open.splice(0).map((handle) => handle.close()));
 });
 
-/** A stand-in for the webhooks.cc API: one request, and no endpoints. */
-async function fakeApi(request: Record<string, unknown>): Promise<string> {
+/** A stand-in for the webhooks.cc API: one request, and one endpoint when given (else none). */
+async function fakeApi(
+  request: Record<string, unknown>,
+  endpoint?: Record<string, unknown>
+): Promise<string> {
   const server: Server = createHttpServer((req, res) => {
     const answer = req.url?.startsWith("/api/requests/")
       ? request
-      : req.url?.startsWith("/api/endpoints")
-        ? []
-        : undefined;
+      : endpoint && req.url === `/api/endpoints/${String(endpoint.slug)}`
+        ? endpoint
+        : req.url?.startsWith("/api/endpoints")
+          ? []
+          : undefined;
     if (req.method === "GET" && answer !== undefined) {
       res.writeHead(200, { "content-type": "application/json" });
       res.end(JSON.stringify(answer));
@@ -157,6 +171,119 @@ describe("the request inspector", () => {
     // The inspector reads the text: a second copy would only cost the model tokens.
     expect(result.structuredContent).toBeUndefined();
     expect(JSON.parse(result.content[0].text)).toMatchObject({ id: "req_1", method: "POST" });
+  });
+
+  it("gives an email's result its dashboard page in _meta, out of the model's text", async () => {
+    const email = {
+      id: "req_9",
+      endpointId: "ep_1",
+      endpointSlug: "acme",
+      kind: "email",
+      method: "EMAIL",
+      path: "acme@mailhooks.cc",
+      headers: {},
+      body: "raw message",
+      size: 2_000,
+      receivedAt: 1_763_000_000_000,
+      email: {
+        subject: "Your receipt",
+        from: [{ name: null, address: "shop@example.com" }],
+        to: [],
+        cc: [],
+        replyTo: [],
+        sender: [],
+        date: null,
+        messageId: null,
+        inReplyTo: [],
+        tag: null,
+        text: "Thanks for your order.",
+        html: "<p>Thanks for your <b>order</b>.</p>",
+        textFromHtml: true,
+        attachments: [],
+        auth: null,
+        smtp: null,
+        parseError: false,
+        truncated: { raw: false, text: false, html: false },
+      },
+    };
+    const base = await fakeApi(email, {
+      id: "ep_1",
+      slug: "acme",
+      name: "Acme",
+      site: "mailhooks",
+      showEmailExtracts: true,
+    });
+    const client = await connect({ apiKey: "whcc_test", baseUrl: base });
+    // A dev server is one site: the link stays on it whatever the endpoint's site.
+    const page = `${base}/dashboard?endpoint=acme&request=req_9`;
+
+    for (const name of ["get_request", "get_email"]) {
+      const result = (await client.callTool({ name, arguments: { requestId: "req_9" } })) as {
+        content: Array<{ text: string }>;
+        _meta?: Record<string, unknown>;
+        isError?: boolean;
+      };
+      expect(result.isError, name).toBeFalsy();
+      expect(result._meta?.[DASHBOARD_URL_META], name).toBe(page);
+      expect(result.content[0].text, name).not.toContain("/dashboard");
+      const data = JSON.parse(result.content[0].text);
+      // The text the receiver made from the HTML part, said so; the HTML only by size.
+      const message = name === "get_request" ? data.email : data;
+      expect(message, name).toMatchObject({ textFromHtml: true, htmlSize: 36 });
+      expect(message.html, name).toBeUndefined();
+      expect(viewOf(data, result._meta), name).toMatchObject({
+        kind: "email",
+        text: "Thanks for your order.",
+        textFromHtml: true,
+        htmlSize: 36,
+        dashboardUrl: page,
+      });
+    }
+  });
+
+  it("gives an HTTP request no dashboard link", async () => {
+    const base = await fakeApi({
+      id: "req_1",
+      endpointId: "ep_1",
+      endpointSlug: "acme",
+      method: "POST",
+      path: "/",
+      headers: {},
+      body: "{}",
+      size: 2,
+      receivedAt: 1_763_000_000_000,
+      kind: "http",
+    });
+    const client = await connect({ apiKey: "whcc_test", baseUrl: base });
+    const result = await client.callTool({
+      name: "get_request",
+      arguments: { requestId: "req_1" },
+    });
+    expect(result._meta?.[DASHBOARD_URL_META]).toBeUndefined();
+  });
+
+  it("links to the dashboard of the site that lists the endpoint", () => {
+    expect(MODEL_DASHBOARD_URL_META).toBe(DASHBOARD_URL_META);
+    const production = localDashboardOrigins(undefined);
+    expect(production).toEqual({
+      webhooks: "https://webhooks.cc",
+      mailhooks: "https://mailhooks.cc",
+    });
+    expect(localDashboardOrigins("https://webhooks.cc/")).toEqual(production);
+    expect(dashboardRequestUrl(production, "acme", "req_1", "mailhooks")).toBe(
+      "https://mailhooks.cc/dashboard?endpoint=acme&request=req_1"
+    );
+    for (const site of ["webhooks", "both", null, undefined]) {
+      expect(dashboardRequestUrl(production, "acme", "req_1", site)).toBe(
+        "https://webhooks.cc/dashboard?endpoint=acme&request=req_1"
+      );
+    }
+    // Another API (a dev server) is one site.
+    const dev = localDashboardOrigins("http://localhost:3000");
+    expect(dev).toEqual({ webhooks: "http://localhost:3000" });
+    expect(dashboardRequestUrl(dev, "a b&c", "req/1", "mailhooks")).toBe(
+      "http://localhost:3000/dashboard?endpoint=a+b%26c&request=req%2F1"
+    );
   });
 
   it("is named by the sandbox's get_request too", async () => {
@@ -294,6 +421,82 @@ describe("the inspector's model", () => {
     const cut = { items: listed, truncated: true, total: 400, returned: 1 };
     expect(slugForEndpoint(cut, "ep_1")).toEqual({ slug: "acme", listed: true });
     expect(slugForEndpoint(cut, "ep_2")).toEqual({ slug: null, listed: false });
+  });
+
+  it("shows an HTML-only email's text made from its HTML, and links to the dashboard", () => {
+    const page = "https://webhooks.cc/dashboard?endpoint=acme&request=req_1";
+    const meta = { [MODEL_DASHBOARD_URL_META]: page };
+    // get_request's compact email: the receiver made the text from the HTML part.
+    const compact = viewOf(
+      {
+        id: "req_1",
+        endpointSlug: "acme",
+        kind: "email",
+        method: "EMAIL",
+        path: "acme@mailhooks.cc",
+        email: { text: "Your code is 123456", textFromHtml: true, htmlSize: 4_200 },
+      },
+      meta
+    );
+    expect(compact).toMatchObject({
+      text: "Your code is 123456",
+      textFromHtml: true,
+      htmlSize: 4_200,
+      dashboardUrl: page,
+    });
+    // get_email's answer says so the same way.
+    const detail = viewOf(
+      {
+        id: "req_1",
+        endpoint: { slug: "acme", name: null },
+        address: "acme@mailhooks.cc",
+        text: "Your code is 123456",
+        textFromHtml: true,
+        htmlSize: 4_200,
+      },
+      meta
+    );
+    expect(detail).toMatchObject({ textFromHtml: true, dashboardUrl: page, full: true });
+    // HTML-only mail captured before the receiver made text from it: no text, still the link.
+    expect(
+      viewOf(
+        { id: "req_1", kind: "email", path: "acme@mailhooks.cc", email: { htmlSize: 900 } },
+        meta
+      )
+    ).toMatchObject({ text: null, textFromHtml: false, htmlSize: 900, dashboardUrl: page });
+  });
+
+  it("shows an email with both parts as its text part, with the dashboard link", () => {
+    const page = "https://mailhooks.cc/dashboard?endpoint=acme&request=req_2";
+    const view = viewOf(
+      {
+        id: "req_2",
+        kind: "email",
+        path: "acme@mailhooks.cc",
+        email: { text: "Plain text part", textFromHtml: false, htmlSize: 12_000 },
+      },
+      { [MODEL_DASHBOARD_URL_META]: page }
+    );
+    expect(view).toMatchObject({
+      text: "Plain text part",
+      textFromHtml: false,
+      htmlSize: 12_000,
+      dashboardUrl: page,
+    });
+    // Without _meta (a host that drops it), there is no link.
+    expect(
+      viewOf({ id: "req_2", kind: "email", path: "acme@mailhooks.cc", email: {} })
+    ).toMatchObject({ dashboardUrl: null });
+  });
+
+  it("takes only an http(s) dashboard link", () => {
+    expect(dashboardUrlOf({ [MODEL_DASHBOARD_URL_META]: "javascript:alert(1)" })).toBeNull();
+    expect(dashboardUrlOf({ [MODEL_DASHBOARD_URL_META]: "not a url" })).toBeNull();
+    expect(dashboardUrlOf({ [MODEL_DASHBOARD_URL_META]: 42 })).toBeNull();
+    expect(dashboardUrlOf(null)).toBeNull();
+    expect(dashboardUrlOf({ [MODEL_DASHBOARD_URL_META]: "https://webhooks.cc/dashboard" })).toBe(
+      "https://webhooks.cc/dashboard"
+    );
   });
 
   it("reads the subject of an email summary, which keeps it beside the message", () => {

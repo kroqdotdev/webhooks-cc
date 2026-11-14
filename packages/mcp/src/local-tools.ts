@@ -6,6 +6,7 @@ import {
 } from "@modelcontextprotocol/server";
 import { sdkToolResult, toolCallFrom } from "./sdk-call";
 import type { WebhooksCC } from "@webhooks-cc/sdk";
+import type { DashboardOrigins } from "./app";
 import { z } from "zod";
 import {
   clientLoadsEverything,
@@ -122,7 +123,9 @@ export class LocalToolGroups {
 
   constructor(
     private readonly server: ToolServer,
-    readonly selection: ToolSelection
+    readonly selection: ToolSelection,
+    /** Where the account's dashboard is, for the request inspector's links. */
+    private readonly dashboard?: DashboardOrigins
   ) {}
 
   /** The groups an account's tools start with. */
@@ -187,6 +190,7 @@ export class LocalToolGroups {
       ...registerTools(recorder, client, {
         groups: new Set(fresh),
         readOnly: this.selection.readOnly,
+        dashboard: this.dashboard,
       })
     );
     for (const group of fresh) this.loaded.add(group);
@@ -283,8 +287,12 @@ export function watchClient(server: McpServer, groups: LocalToolGroups): void {
 }
 
 /** Groups for a server, watching for the client that connects. */
-export function localToolGroups(server: McpServer, selection: ToolSelection): LocalToolGroups {
-  const groups = new LocalToolGroups(asToolServer(server), selection);
+export function localToolGroups(
+  server: McpServer,
+  selection: ToolSelection,
+  dashboard?: DashboardOrigins
+): LocalToolGroups {
+  const groups = new LocalToolGroups(asToolServer(server), selection, dashboard);
   watchClient(server, groups);
   return groups;
 }
