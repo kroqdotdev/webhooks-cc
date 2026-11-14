@@ -1667,6 +1667,7 @@ interface Endpoint {
 interface Request {
   id: string;
   endpointId: string;
+  endpointSlug?: string; // on requests.get() and emails.get()
   method: string;
   path: string;
   headers: Record<string, string>;
