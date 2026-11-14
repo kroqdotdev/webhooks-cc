@@ -523,7 +523,36 @@ export function payloadSchemaResult(requests: Request[], args: PayloadSchemaArgs
 }
 
 type TextContent = { type: "text"; text: string };
-export type ToolResult = { content: TextContent[]; isError?: boolean };
+export type ToolResult = {
+  content: TextContent[];
+  isError?: boolean;
+  /**
+   * An approval the person opens: a server whose client can open a URL for
+   * the person (URL elicitation) asks it to, and the retried call finishes
+   * the approval (toolTarget). Never sent as is: the adapters turn it into
+   * an input request or drop it.
+   */
+  approval?: PendingApprovalAsk;
+};
+
+/** What a tool asked the account's owner to approve. */
+export interface PendingApprovalAsk {
+  id: string;
+  summary: string;
+  url: string;
+  code: string;
+  expiresAt: string;
+}
+
+/** What a server adapter knows about the call in progress. */
+export interface ToolCall {
+  /** The client can open a URL for the person (URL-mode elicitation). */
+  urlElicitation: boolean;
+  /** State a retried call carries back (an approval id). From the client: untrusted. */
+  requestState?: string;
+  /** How the client answered the URL request: accept, decline or cancel. */
+  urlAnswer?: string;
+}
 
 /** Create a text content response for MCP tools. */
 /** A new API key as a tool answer: the key is shown once, so say so. */
@@ -575,14 +604,44 @@ function approvalResultText(result: Record<string, unknown>): string {
   return `Approved and done: ${JSON.stringify(result)}`;
 }
 
-/** The answer for an action the account's owner must approve first. */
-function approvalAskText(pending: {
-  summary: string;
-  url: string;
-  code: string;
-  id: string;
-  expiresAt: string;
-}): string {
+/** Waits for an approval's answer and says what it granted or did. */
+async function waitForApprovalText(client: WebhooksCC, id: string, ms: number): Promise<string> {
+  try {
+    const result = await client.approvals.wait<Record<string, unknown>>(id, { timeout: ms });
+    return approvalResultText(result);
+  } catch (error) {
+    if (error instanceof ApprovalDeniedError) {
+      return "The person refused it on the approval page. Do not ask again unless they tell you to.";
+    }
+    if (error instanceof ApprovalExpiredError) {
+      return "The approval expired. Ask again if the person still wants it.";
+    }
+    if (error instanceof TimeoutError) {
+      return `Not answered yet. Remind the person of the link if needed, and call wait_for_approval with id ${id} again.`;
+    }
+    throw error;
+  }
+}
+
+/** An approval id as it comes back from a client: untrusted, so only its shape is taken. */
+const APPROVAL_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+/** How long a retried call waits for the person, within the hosted server's cap. */
+const APPROVAL_RETRY_WAIT_MS = 45_000;
+
+/**
+ * The answer for an action the account's owner must approve first: the
+ * text for clients that cannot open a link, and the approval for those that
+ * can (toolTarget).
+ */
+function approvalAsk(pending: PendingApprovalAsk): ToolResult {
+  const { id, summary, url, code, expiresAt } = pending;
+  return {
+    ...textContent(approvalAskText(pending)),
+    approval: { id, summary, url, code, expiresAt },
+  };
+}
+
+function approvalAskText(pending: PendingApprovalAsk): string {
   return [
     `Asked for approval: ${pending.summary}`,
     `Show the person this link: ${pending.url}`,
@@ -1188,7 +1247,7 @@ export interface ToolServer {
     name: string,
     description: string,
     shape: Shape,
-    handler: (args: z.infer<z.ZodObject<Shape>>) => Promise<ToolResult>,
+    handler: (args: z.infer<z.ZodObject<Shape>>, call?: ToolCall) => Promise<ToolResult>,
     /** MCP tool annotations (catalog.ts), set by registerTools for every tool. */
     annotations?: ToolAnnotationsHint
   ): RegisteredToolHandle;
@@ -1249,19 +1308,47 @@ function durationMs(value: unknown): number | null {
  */
 function toolTarget(
   target: ToolServer,
+  client: WebhooksCC,
   options: RegisterToolsOptions,
   handles: RegisteredToolHandle[]
 ): ToolServer {
   const remote = options.remote === true;
   return {
-    tool(name, description, shape, handler) {
+    tool(name, description, shape, inner) {
+      // An approval the client opened for the person comes back as a retry
+      // carrying its id: finish it rather than ask again. Otherwise a new
+      // approval is asked of a client that can open links as a URL request.
+      const handler: typeof inner = async (args, call) => {
+        if (call?.requestState !== undefined) {
+          const id = call.requestState;
+          if (!APPROVAL_ID.test(id)) {
+            return {
+              ...textContent("That approval is not one this server asked for."),
+              isError: true,
+            };
+          }
+          if (call.urlAnswer === "decline" || call.urlAnswer === "cancel") {
+            return textContent(
+              `The person closed the approval link. It works until it expires: if they still want this, show them the link again and call wait_for_approval with id ${id}.`
+            );
+          }
+          return withErrorHandling(async () =>
+            textContent(await waitForApprovalText(client, id, APPROVAL_RETRY_WAIT_MS))
+          )(undefined);
+        }
+        const result = await inner(args, call);
+        if (!result.approval) return result;
+        if (call?.urlElicitation) return result;
+        const { approval: _omitted, ...plain } = result;
+        return plain;
+      };
       if (remote && LOCAL_ONLY_TOOLS.has(name)) return { remove() {} };
       const entry = TOOL_CATALOG[name];
       if (!entry) throw new Error(`${name} has no entry in catalog.ts`);
       if (options.groups && !options.groups.has(entry.group)) return { remove() {} };
       if (options.readOnly && entry.readOnly !== true) return { remove() {} };
       const wrapped: typeof handler = remote
-        ? async (args) => {
+        ? async (args, call) => {
             const input = args as Record<string, unknown>;
             if (TARGET_URL_TOOLS.has(name) && input.targetUrl !== undefined) {
               return {
@@ -1294,7 +1381,7 @@ function toolTarget(
               }
               bounded[key] = bound(ms);
             }
-            return handler(bounded as unknown as typeof args);
+            return handler(bounded as unknown as typeof args, call);
           }
         : handler;
       const handle = target.tool(name, description, shape, wrapped, toolAnnotations(name));
@@ -1422,7 +1509,7 @@ export function registerTools(
 ): RegisteredToolHandle[] {
   const handles: RegisteredToolHandle[] = [];
   const remote = options.remote === true;
-  const server = toolTarget(target, options, handles);
+  const server = toolTarget(target, client, options, handles);
   // How the tool descriptions say to start a preview: the hosted server has
   // no share_port (it cannot run whk on the person's computer).
   const shareWith = remote ? REMOTE_SHARE : "share_port";
@@ -1574,7 +1661,7 @@ export function registerTools(
     withErrorHandling(async ({ teamId }) => {
       const pending = await client.teams.delete(teamId);
       if (!pending.id) return textContent(`Deleted the team ${teamId}.`);
-      return textContent(approvalAskText(pending));
+      return approvalAsk(pending);
     })
   );
 
@@ -1611,7 +1698,7 @@ export function registerTools(
     withErrorHandling(async ({ teamId, email }) => {
       const pending = await client.teams.invite(teamId, email);
       if (!pending.id) return textContent(approvalResultText({ ...(await pending.wait()) }));
-      return textContent(approvalAskText(pending));
+      return approvalAsk(pending);
     })
   );
 
@@ -3177,7 +3264,7 @@ export function registerTools(
         const key = await pending.wait();
         return textContent(keyText(key));
       }
-      return textContent(approvalAskText(pending));
+      return approvalAsk(pending);
     })
   );
 
@@ -3190,30 +3277,9 @@ export function registerTools(
         .default("45s")
         .describe('How long to wait for the person, for example "45s"'),
     },
-    withErrorHandling(async ({ id, timeout }) => {
-      const ms = durationMs(timeout) ?? 45_000;
-      try {
-        const result = await client.approvals.wait<Record<string, unknown>>(id, {
-          timeout: ms,
-        });
-        return textContent(approvalResultText(result));
-      } catch (error) {
-        if (error instanceof ApprovalDeniedError) {
-          return textContent(
-            "The person refused it on the approval page. Do not ask again unless they tell you to."
-          );
-        }
-        if (error instanceof ApprovalExpiredError) {
-          return textContent("The approval expired. Ask again if the person still wants it.");
-        }
-        if (error instanceof TimeoutError) {
-          return textContent(
-            `Not answered yet. Remind the person of the link if needed, and call wait_for_approval with id ${id} again.`
-          );
-        }
-        throw error;
-      }
-    })
+    withErrorHandling(async ({ id, timeout }) =>
+      textContent(await waitForApprovalText(client, id, durationMs(timeout) ?? 45_000))
+    )
   );
 
   server.tool(
@@ -3242,7 +3308,7 @@ export function registerTools(
     withErrorHandling(async ({ name }) => {
       const pending = await client.account.rename(name);
       if (!pending.id) return textContent(approvalResultText(await pending.wait()));
-      return textContent(approvalAskText(pending));
+      return approvalAsk(pending);
     })
   );
 
@@ -3298,7 +3364,7 @@ export function registerTools(
     withErrorHandling(async ({ requestId, expiresInDays, hideSensitive }) => {
       const pending = await client.shareLinks.create(requestId, { expiresInDays, hideSensitive });
       if (!pending.id) return textContent(approvalResultText({ ...(await pending.wait()) }));
-      return textContent(approvalAskText(pending));
+      return approvalAsk(pending);
     })
   );
 
@@ -3386,7 +3452,7 @@ export function registerTools(
     withErrorHandling(async ({ id, teamId }) => {
       const pending = await client.domains.remove(id, { teamId });
       if (!pending.id) return textContent(`Removed the domain ${id}.`);
-      return textContent(approvalAskText(pending));
+      return approvalAsk(pending);
     })
   );
 
@@ -3401,7 +3467,7 @@ export function registerTools(
     "connect_google",
     "Connect a Google account for Google Sheets destinations. The account's owner must approve it: this returns a link and a code to show them, and approving takes them to Google to choose the account. Then call wait_for_approval for the new connection's id.",
     {},
-    withErrorHandling(async () => textContent(approvalAskText(await client.google.connect())))
+    withErrorHandling(async () => approvalAsk(await client.google.connect()))
   );
 
   server.tool(
@@ -3411,7 +3477,7 @@ export function registerTools(
       connectionId: z.string().describe("The Google connection's id, from list_google_connections"),
     },
     withErrorHandling(async ({ connectionId }) =>
-      textContent(approvalAskText(await client.google.pick(connectionId)))
+      approvalAsk(await client.google.pick(connectionId))
     )
   );
 
@@ -3498,13 +3564,11 @@ export function registerTools(
         .describe("What to propose"),
     },
     withErrorHandling(async ({ slug, requestIds, ask }) =>
-      textContent(
-        approvalAskText(
-          await client.ai.setup(slug, {
-            requestIds,
-            ask: ask as Parameters<typeof client.ai.setup>[1]["ask"],
-          })
-        )
+      approvalAsk(
+        await client.ai.setup(slug, {
+          requestIds,
+          ask: ask as Parameters<typeof client.ai.setup>[1]["ask"],
+        })
       )
     )
   );
@@ -3625,3 +3689,5 @@ export {
   toolAnnotations,
   type ToolGroup,
 } from "./catalog";
+
+export { sdkToolResult, toolCallFrom } from "./sdk-call";

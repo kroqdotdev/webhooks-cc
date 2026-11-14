@@ -1,10 +1,12 @@
-import { createMcpHandler, McpServer } from "@modelcontextprotocol/server";
+import { createMcpHandler, McpServer, type ServerContext } from "@modelcontextprotocol/server";
 import { z } from "zod";
 import { WebhooksCC } from "@webhooks-cc/sdk";
 import {
   defaultToolGroups,
   parseToolGroups,
   registerTools,
+  sdkToolResult,
+  toolCallFrom,
   type ToolGroup,
   type ToolServer,
 } from "@webhooks-cc/mcp/tools";
@@ -109,7 +111,7 @@ function toolServer(server: McpServer, account: string): ToolServer {
       return server.registerTool(
         name,
         { title: annotations?.title, description, inputSchema: z.object(shape), annotations },
-        async (args: unknown) => {
+        async (args: unknown, ctx: ServerContext) => {
           const busy = running.get(account) ?? 0;
           if (busy >= MAX_RUNNING_TOOLS_PER_ACCOUNT) {
             return {
@@ -124,7 +126,9 @@ function toolServer(server: McpServer, account: string): ToolServer {
           }
           running.set(account, busy + 1);
           try {
-            return await handler(args as Parameters<typeof handler>[0]);
+            return sdkToolResult(
+              await handler(args as Parameters<typeof handler>[0], toolCallFrom(server, ctx))
+            );
           } finally {
             const left = (running.get(account) ?? 1) - 1;
             if (left > 0) running.set(account, left);
