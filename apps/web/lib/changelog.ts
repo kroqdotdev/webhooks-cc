@@ -30,11 +30,11 @@ export const TRACK_LABELS: Record<ChangelogTrack, string> = {
 const RELEASE = release as { version: string | null; entries: ChangelogEntry[] };
 
 export const APP_VERSION: string = RELEASE.version ?? "dev";
-export const CLI_VERSION = "1.18.0";
-export const SDK_VERSION = "1.28.0";
-export const PYTHON_SDK_VERSION = "0.8.0";
-export const GO_SDK_VERSION = "0.8.0";
-export const MCP_VERSION = "2.2.0";
+export const CLI_VERSION = "1.19.0";
+export const SDK_VERSION = "1.29.0";
+export const PYTHON_SDK_VERSION = "0.9.0";
+export const GO_SDK_VERSION = "0.9.0";
+export const MCP_VERSION = "2.3.0";
 
 export const CHANGELOG: ChangelogEntry[] = [
   ...RELEASE.entries,
@@ -2145,6 +2145,18 @@ export const CHANGELOG: ChangelogEntry[] = [
 
   // ─── CLI ────────────────────────────────────────────────────────────
   {
+    version: "1.19.0",
+    date: "2026-11-14",
+    title: "Destinations And Deliveries",
+    track: "cli",
+    items: [
+      "`whk destinations ls`, `get`, `add`, `update`, `rm`, `reorder`, `preview`, `test` and `secret` manage an endpoint's forwarding destinations, Google Sheets and file drops included; passwords, keys and signing secrets come from an environment variable or a hidden prompt, never a flag",
+      "`whk deliveries ls` shows an endpoint's or a request's delivery log, and `whk deliveries redeliver` and `redeliver-failed` send deliveries again",
+      "`whk update-endpoint --agent-repo owner/name` (or `--clear-agent-repo`) names the GitHub repository a coding agent fixes failed deliveries in",
+      "whk refuses an empty, `.` or `..` slug or id before sending anything, and `--destination` must be a destination id",
+    ],
+  },
+  {
     version: "1.18.0",
     date: "2026-11-14",
     title: "Teams And Layouts",
@@ -2502,6 +2514,17 @@ export const CHANGELOG: ChangelogEntry[] = [
   },
 
   // ─── SDK ────────────────────────────────────────────────────────────
+  {
+    version: "1.29.0",
+    date: "2026-11-14",
+    title: "Agent Repository And Destination Tests",
+    track: "sdk",
+    items: [
+      "`endpoints.update(slug, { agentRepo })` sets or clears the GitHub repository a coding agent fixes failed deliveries in, and endpoints return `agentRepo`",
+      "A request fetched by id (`requests.get()`, `emails.get()`) carries its `endpointSlug`",
+      "`destinations.test()` waits up to 90 seconds, as long as a file drop's test can take, and `forwarding.redeliver()` sends an empty `destinationId` to the server (which refuses it) rather than widening the redelivery to every destination",
+    ],
+  },
   {
     version: "1.28.0",
     date: "2026-11-14",
@@ -2952,6 +2975,16 @@ export const CHANGELOG: ChangelogEntry[] = [
 
   // ─── Python SDK ─────────────────────────────────────────────────────
   {
+    version: "0.9.0",
+    date: "2026-11-14",
+    title: "Agent Repository And Destination Tests",
+    track: "python",
+    items: [
+      "`endpoints.update(slug, agent_repo=...)` sets or clears the GitHub repository a coding agent fixes failed deliveries in, and endpoints carry `agent_repo`",
+      "A request fetched by id carries its `endpoint_slug`, and a destination test waits up to 90 seconds",
+    ],
+  },
+  {
     version: "0.8.0",
     date: "2026-11-14",
     title: "Search That Continues",
@@ -3073,6 +3106,16 @@ export const CHANGELOG: ChangelogEntry[] = [
 
   // ─── Go SDK ─────────────────────────────────────────────────────────
   {
+    version: "0.9.0",
+    date: "2026-11-14",
+    title: "Agent Repository And Destination Tests",
+    track: "go",
+    items: [
+      "`UpdateEndpointOptions.AgentRepo` sets or clears the GitHub repository a coding agent fixes failed deliveries in, and `Endpoint.AgentRepo` reads it",
+      "A request fetched by id carries its endpoint in `Request.Slug`, and a destination test waits up to 90 seconds",
+    ],
+  },
+  {
     version: "0.8.0",
     date: "2026-11-14",
     title: "Search That Continues",
@@ -3171,6 +3214,18 @@ export const CHANGELOG: ChangelogEntry[] = [
   },
 
   // ─── MCP ────────────────────────────────────────────────────────────
+  {
+    version: "2.3.0",
+    date: "2026-11-14",
+    title: "Google Sheets And Fix Prompts",
+    track: "mcp",
+    items: [
+      '`add_destination` and `update_destination` take Google Sheets destinations (`format: "sheets"` with the spreadsheet and its columns), so an agent sets one up without the dashboard',
+      "`update_endpoint` takes `agentRepo`, the GitHub repository a coding agent fixes failed deliveries in",
+      "The request inspector shows an email's text part and opens its HTML in webhooks.cc instead of rendering it",
+      "`redeliver` with an empty `destinationId` is refused instead of reaching every destination",
+    ],
+  },
   {
     version: "2.2.0",
     date: "2026-11-14",

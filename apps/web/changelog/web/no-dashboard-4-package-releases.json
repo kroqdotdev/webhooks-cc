@@ -1,0 +1,6 @@
+{
+  "title": "whk 1.19.0, SDK 1.29.0, MCP 2.3.0, Python and Go 0.9.0",
+  "items": [
+    "The changelog lists whk 1.19.0, SDK 1.29.0, MCP 2.3.0 and the Python and Go SDKs 0.9.0: destinations and deliveries from the CLI, Google Sheets destinations from the MCP server, the agent repository for fix prompts in every client, and the inspector opening an email's HTML in webhooks.cc"
+  ]
+}
