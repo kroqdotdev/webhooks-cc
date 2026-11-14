@@ -1,6 +1,6 @@
 {
   "title": "File drops to S3 on the default port",
   "items": [
-    "File drops to S3 storage on the default https port, Amazon S3 included, send the Host they signed; the request named port 80 over https, which Amazon S3 refuses as a signature mismatch"
+    "File drops to S3 storage on the default https port, Amazon S3 included, send the Host they signed, so deliveries and the connection test work; the request named port 80 over https, which Amazon S3 refuses as a signature mismatch"
   ]
 }
