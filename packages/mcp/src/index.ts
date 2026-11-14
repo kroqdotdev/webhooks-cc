@@ -100,7 +100,7 @@ export type {
 export { registerSandboxTools, registerAgentRegistrationTools } from "./sandbox-tools";
 export type { SandboxToolOptions } from "./sandbox-tools";
 export { registerPrompts } from "./prompts";
-export { attachInspector, INSPECTOR_URI, APP_MIME_TYPE } from "./app";
+export { attachInspector, INSPECTOR_URI, INSPECTOR_URI_TEMPLATE, APP_MIME_TYPE } from "./app";
 export { registerResources } from "./resources";
 export { asToolServer, LocalToolGroups, localToolGroups, toolSelection } from "./local-tools";
 export type { ToolSelection, ToolSelectionOptions } from "./local-tools";

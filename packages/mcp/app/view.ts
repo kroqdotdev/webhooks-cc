@@ -1,6 +1,13 @@
 import { append, button, bytes, el, type Child } from "./dom";
 import { jsonTree } from "./json-tree";
-import type { Address, EmailView, HttpView, RecentItem, View } from "./model";
+import {
+  isSecretHeader,
+  type Address,
+  type EmailView,
+  type HttpView,
+  type RecentItem,
+  type View,
+} from "./model";
 
 /** What the views may do, from the host's capabilities. */
 export interface Abilities {
@@ -15,9 +22,13 @@ export interface Abilities {
 /** The longest body the page draws; the rest is left out with a note. */
 const MAX_BODY_CHARS = 200_000;
 
-/** Headers whose values are secrets: shown masked until revealed. */
-const SENSITIVE =
-  /^(authorization|proxy-authorization|cookie|set-cookie|x-api-key|api-key|apikey|x-auth-token|x-access-token|x-csrf-token)$|secret|password|token/i;
+/** Loading the whole email (get_email) for a compact one, which has no codes or links. */
+export interface FullEmail {
+  /** Asks for it; null when the client does not pass tool calls on. */
+  load: (() => void) | null;
+  loading: boolean;
+  failed: string | null;
+}
 
 export function formatTime(ms: number | null, abilities: Abilities): string | null {
   if (ms === null) return null;
@@ -112,7 +123,7 @@ function note(text: Child): HTMLElement {
 
 function headersTable(headers: [string, string][], abilities: Abilities): HTMLElement {
   const rows = headers.map(([name, value]) => {
-    const secret = SENSITIVE.test(name);
+    const secret = isSecretHeader(name);
     const shown = el(
       "span",
       { class: "hv-text" },
@@ -180,8 +191,9 @@ function bodySection(view: HttpView, abilities: Abilities): HTMLElement | null {
       json = false;
     }
   }
+  // A body too large or deep for the tree is shown as received: indenting
+  // thousands of nested levels would make it many times longer.
   const tree = json ? jsonTree(parsed) : null;
-  const raw = el("pre", { class: "code raw" }, json ? indented(parsed, text) : text);
   const frame = el("div", { class: "code-frame" });
   const aside: Child[] = [];
   if (tree) {
@@ -202,7 +214,7 @@ function bodySection(view: HttpView, abilities: Abilities): HTMLElement | null {
     );
     show("pretty");
   } else {
-    frame.appendChild(raw);
+    frame.appendChild(el("pre", { class: "code raw" }, text));
   }
   aside.push(copyButton(abilities, () => text));
   const notes: Child[] = [];
@@ -344,7 +356,7 @@ function verdictChip(name: string, result: string | null): HTMLElement | null {
   return chip(`${name} ${result}`, tone);
 }
 
-export function emailPanel(view: EmailView, abilities: Abilities, upgrading: boolean): HTMLElement {
+export function emailPanel(view: EmailView, abilities: Abilities, full: FullEmail): HTMLElement {
   const [main, ...more] = view.codes;
   const extracts: Child[] = [];
   if (main) {
@@ -403,8 +415,20 @@ export function emailPanel(view: EmailView, abilities: Abilities, upgrading: boo
       )
     );
   }
-  if (!view.full && upgrading) {
-    extracts.push(note("Looking for codes and links..."));
+  if (!view.full && view.id) {
+    if (full.loading) {
+      extracts.push(note("Looking for codes and links..."));
+    } else if (full.load) {
+      const load = full.load;
+      extracts.push(
+        el(
+          "div",
+          { class: "ask" },
+          button("Show codes and links", () => load()),
+          el("span", { class: "note" }, full.failed ?? "Loads the whole email with get_email.")
+        )
+      );
+    }
   }
 
   const checks: Child[] = [];
@@ -558,8 +582,8 @@ export function emailPanel(view: EmailView, abilities: Abilities, upgrading: boo
   );
 }
 
-export function viewPanel(view: View, abilities: Abilities, upgrading: boolean): HTMLElement {
-  return view.kind === "http" ? httpPanel(view, abilities) : emailPanel(view, abilities, upgrading);
+export function viewPanel(view: View, abilities: Abilities, full: FullEmail): HTMLElement {
+  return view.kind === "http" ? httpPanel(view, abilities) : emailPanel(view, abilities, full);
 }
 
 export function skeleton(): HTMLElement {
@@ -628,13 +652,4 @@ export function strip(
   const root = el("nav", { class: "recent", attrs: { "aria-label": "Recent requests" } }, head);
   append(root, body);
   return root;
-}
-
-/** The JSON indented, or as received when it cannot be (nested too deep). */
-function indented(value: unknown, fallback: string): string {
-  try {
-    return JSON.stringify(value, null, 2);
-  } catch {
-    return fallback;
-  }
 }

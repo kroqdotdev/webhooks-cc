@@ -48,7 +48,9 @@ export interface Attachment {
 export interface EmailView {
   kind: "email";
   id: string | null;
+  /** The endpoint's slug when the answer names it, or the capture address shows it. */
   slug: string | null;
+  endpointId: string | null;
   /** From get_email: codes and links are there when the endpoint shows them. */
   full: boolean;
   subject: string | null;
@@ -110,12 +112,31 @@ function addresses(value: unknown): Address[] {
   return Array.isArray(value) ? value.map(address).filter((a): a is Address => a !== null) : [];
 }
 
-/** The slug of an endpoint from one of its capture addresses (slug+tag@domain). */
+/** The capture domain (the SDK's DEFAULT_EMAIL_DOMAIN), where an address is {slug}[+tag]@. */
+const CAPTURE_DOMAIN = "mailhooks.cc";
+
+/**
+ * The slug of an endpoint from its capture address ({slug}[+tag]@mailhooks.cc).
+ * Null for any other domain: mail to a custom inbound domain keeps the
+ * recipient's own local part, which names no endpoint.
+ */
 export function slugFromAddress(value: string | null): string | null {
   if (!value) return null;
   const at = value.lastIndexOf("@");
-  if (at <= 0) return null;
+  if (at <= 0 || value.slice(at + 1).toLowerCase() !== CAPTURE_DOMAIN) return null;
   return value.slice(0, at).split("+")[0].toLowerCase() || null;
+}
+
+/**
+ * Header names whose values are usually secrets, shown masked until
+ * revealed: the share-link redaction's names (apps/web/lib/request-share.ts)
+ * and the credential headers.
+ */
+const SECRET_HEADER =
+  /^(authorization|proxy-authorization|cookie|set-cookie)$|token|secret|passw|api[-_]?key|apikey|key$|signature|hmac|session|csrf|xsrf|auth|jwt|assertion|credential/i;
+
+export function isSecretHeader(name: string): boolean {
+  return SECRET_HEADER.test(name);
 }
 
 function queryString(data: Rec): string {
@@ -215,6 +236,7 @@ function emailDetailView(data: Rec): EmailView {
     kind: "email",
     id: str(data.id),
     slug: str(endpoint?.slug) ?? slugFromAddress(str(data.address)),
+    endpointId: str(data.endpointId),
     full: true,
     subject: str(data.subject),
     from: address(data.from),
@@ -258,8 +280,10 @@ function emailRequestView(data: Rec): EmailView {
     kind: "email",
     id: str(data.id),
     slug: slugFromAddress(str(data.path)),
+    endpointId: str(data.endpointId),
     full: false,
-    subject: str(email.subject),
+    // The compact form keeps the subject beside the message, not in it.
+    subject: str(email.subject) ?? str(data.subject),
     from: from[0] ?? null,
     to: addresses(email.to),
     cc: addresses(email.cc),

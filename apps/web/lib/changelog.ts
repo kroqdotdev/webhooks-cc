@@ -3177,7 +3177,7 @@ export const CHANGELOG: ChangelogEntry[] = [
     title: "Request Inspector",
     track: "mcp",
     items: [
-      "`get_request`, `get_email`, `wait_for_request` and `wait_for_email` open an interactive inspector in clients with MCP Apps (Claude, ChatGPT, VS Code, Cursor, T3 Code): the request's method, path, response, signature result, headers and body, or the email's code and links, sender, verdicts, fields, text and attachments, with the endpoint's recent requests a click away",
+      "`get_request`, `get_email`, `wait_for_request` and `wait_for_email` open an interactive inspector in clients that support MCP Apps, such as Claude, ChatGPT, VS Code, Cursor and T3 Code: the request's method, path, response, signature result, headers and body, or the email's code and links, sender, verdicts, fields, text and attachments, with the endpoint's recent requests a click away",
       "Clients without MCP Apps see the same answers as before",
     ],
   },

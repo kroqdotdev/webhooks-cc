@@ -2088,7 +2088,8 @@ describe("email and forwarding tools", () => {
     const byId = parseJsonResult(
       await tools.get_email.handler({ requestId: "e1", includeHtml: false })
     );
-    // The slug comes from the address the email arrived at, without its +tag.
+    // The slug comes from the capture address the email arrived at, without
+    // its +tag (this client has no endpoints.list to call).
     expect(client.endpoints.get).toHaveBeenLastCalledWith("acme");
     const waited = parseJsonResult(
       await tools.wait_for_email.handler({
@@ -2104,6 +2105,31 @@ describe("email and forwarding tools", () => {
       expect(detail).not.toHaveProperty("links");
       expect(detail.endpoint).toEqual({ slug: "acme", name: "Acme signups" });
     }
+  });
+
+  it("finds the endpoint of an email at a custom domain by its id", async () => {
+    // Mail to a Business custom domain is stored under the recipient's own address.
+    const email = { ...makeEmail("e1"), endpointId: "ep_orders", path: "orders@acme.example" };
+    const get = vi.fn(async () => email);
+    const client = emailClient({ emails: { get } as never });
+    const list = vi.fn(async () => [
+      { id: "ep_other", slug: "orders", createdAt: 1 },
+      { id: "ep_orders", slug: "acme-orders", createdAt: 1 },
+    ]);
+    client.endpoints.list = list as never;
+    const tools = getRegisteredTools(client);
+
+    const detail = parseJsonResult(
+      await tools.get_email.handler({ requestId: "e1", includeHtml: false })
+    );
+    expect(list).toHaveBeenCalledTimes(1);
+    expect(client.endpoints.get).toHaveBeenLastCalledWith("acme-orders");
+    expect(detail.endpoint).toEqual({ slug: "acme-orders", name: "Acme signups" });
+
+    list.mockResolvedValueOnce([]);
+    const missing = await tools.get_email.handler({ requestId: "e1", includeHtml: false });
+    expect(missing.isError).toBe(true);
+    expect(missing.content[0].text).toContain("was not found");
   });
 
   it("returns what the layouts found, cut to fit when it is large", async () => {

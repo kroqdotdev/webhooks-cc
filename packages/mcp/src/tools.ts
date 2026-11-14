@@ -23,6 +23,7 @@ import {
   verifySignature,
   WebhooksCC,
   WebhooksCCError,
+  DEFAULT_EMAIL_DOMAIN,
   extractCode,
   extractLink,
   detectWebhookInfo,
@@ -527,10 +528,6 @@ type TextContent = { type: "text"; text: string };
 export type ToolResult = {
   content: TextContent[];
   isError?: boolean;
-  /**
-   * The text's JSON as an object, for the tools with the request inspector
-   * (app.ts), which reads it. Always the same data as the text.
-   */
   /**
    * An approval the person opens: a server whose client can open a URL for
    * the person (URL elicitation) asks it to, and the retried call finishes
@@ -1124,9 +1121,24 @@ async function emailEndpointView(client: WebhooksCC, slug: string): Promise<Emai
   };
 }
 
-function emailSlugFromAddress(address: string): string {
-  const local = address.slice(0, Math.max(0, address.lastIndexOf("@")));
-  return local.split("+")[0].toLowerCase();
+/**
+ * The slug of the endpoint an email is at. A capture address
+ * ({slug}[+tag]@mailhooks.cc) names it; mail to a custom inbound domain is
+ * stored under the recipient's own address, so its endpoint is looked up by
+ * id among the account's endpoints.
+ */
+async function emailEndpointSlug(client: WebhooksCC, email: EmailRequest): Promise<string> {
+  const at = email.path.lastIndexOf("@");
+  if (at > 0 && email.path.slice(at + 1).toLowerCase() === DEFAULT_EMAIL_DOMAIN) {
+    return email.path.slice(0, at).split("+")[0].toLowerCase();
+  }
+  const endpoint = (await client.endpoints.list()).find(
+    (candidate) => candidate.id === email.endpointId
+  );
+  if (!endpoint) {
+    throw new NotFoundError(`The endpoint of email ${email.id} was not found`);
+  }
+  return endpoint.slug;
 }
 
 /** A main link in `list_emails` longer than this is left out, so one email cannot fill the list. */
@@ -2850,7 +2862,7 @@ export function registerTools(
       }
       const view = await emailEndpointView(
         client,
-        endpointSlug ?? emailSlugFromAddress(email.path)
+        endpointSlug ?? (await emailEndpointSlug(client, email))
       );
       return jsonContent(emailDetail(client, email, view, includeHtml));
     })
@@ -3719,4 +3731,4 @@ export {
 
 export { sdkToolResult, toolCallFrom } from "./sdk-call";
 export { attachSkill } from "./skills";
-export { attachInspector, INSPECTOR_URI, APP_MIME_TYPE } from "./app";
+export { attachInspector, INSPECTOR_URI, INSPECTOR_URI_TEMPLATE, APP_MIME_TYPE } from "./app";

@@ -1,8 +1,8 @@
 {
   "title": "Request inspector in MCP clients",
   "items": [
-    "get_request, get_email, wait_for_request and wait_for_email open an interactive inspector in clients with MCP Apps (Claude, ChatGPT, VS Code, Cursor): the request line and the answer it got, headers with secrets masked, the body as folding JSON, and for an email its code, links, checks, text and attachments",
-    "The inspector lists the endpoint's recent requests to click through when asked, follows the client's light or dark theme, and reaches nothing on the network itself",
+    "get_request, get_email, wait_for_request and wait_for_email open an interactive inspector in clients that support MCP Apps, such as Claude, ChatGPT, VS Code and Cursor: the request line and the answer it got, headers with secrets masked, the body as folding JSON, and for an email its code, links, checks, text and attachments",
+    "The inspector loads an email's codes and links and lists the endpoint's recent requests to click through when asked, follows the client's light or dark theme, and reaches nothing on the network itself",
     "Clients without MCP Apps see the same answers as before, and the inspector reads the same text the model gets"
   ]
 }

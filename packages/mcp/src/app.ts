@@ -1,11 +1,11 @@
-import type { McpServer } from "@modelcontextprotocol/server";
+import { ResourceTemplate, type McpServer } from "@modelcontextprotocol/server";
 import { INSPECTOR_HASH, INSPECTOR_HTML } from "./app-html";
 import { TOOL_CATALOG } from "./catalog";
 
 /**
  * The request inspector: an MCP App (the io.modelcontextprotocol/ui
- * extension) that clients with MCP Apps (Claude, ChatGPT, VS Code, Cursor)
- * render beside a get_request or get_email result. The tools stay as they
+ * extension) that clients with MCP Apps render beside a get_request or
+ * get_email result. The tools stay as they
  * are for every other client: the UI is a resource the tool's _meta names,
  * and clients without MCP Apps ignore it. The page is one self-contained
  * HTML document built from app/ by scripts/build-app.mjs (app-html.ts); it
@@ -22,6 +22,13 @@ export const APP_MIME_TYPE = "text/html;profile=mcp-app";
  */
 export const INSPECTOR_URI = `ui://webhooks-cc/inspector-${INSPECTOR_HASH}.html`;
 
+/**
+ * Every inspector name, older hashes included: a client still holding a
+ * tool list from before a release (the hosted server lets clients cache it
+ * for an hour) asks for the page by its old name and gets the current one.
+ */
+export const INSPECTOR_URI_TEMPLATE = "ui://webhooks-cc/inspector-{hash}.html";
+
 /** What the resource's _meta asks of the host: a border, and the clipboard for Copy. */
 const INSPECTOR_UI_META = {
   prefersBorder: true,
@@ -37,27 +44,38 @@ export function appToolMeta(name: string): Record<string, unknown> | undefined {
   return { ui: { resourceUri: INSPECTOR_URI }, "ui/resourceUri": INSPECTOR_URI };
 }
 
+const INSPECTOR_METADATA = {
+  title: "Request inspector",
+  description:
+    "The interactive view of a captured request or email that get_request and get_email open in clients with MCP Apps.",
+  mimeType: APP_MIME_TYPE,
+  _meta: { ui: INSPECTOR_UI_META },
+};
+
+/** The current page, under the name it was asked for. */
+function inspectorContents(uri: string) {
+  return {
+    contents: [
+      {
+        uri,
+        mimeType: APP_MIME_TYPE,
+        text: INSPECTOR_HTML,
+        _meta: { ui: INSPECTOR_UI_META },
+      },
+    ],
+  };
+}
+
 /** Serves the inspector from `server`; call it before connecting. */
 export function attachInspector(server: McpServer): void {
+  server.registerResource("request-inspector", INSPECTOR_URI, INSPECTOR_METADATA, async () =>
+    inspectorContents(INSPECTOR_URI)
+  );
+  // Older names are answered too; resources/list names only the current one.
   server.registerResource(
-    "request-inspector",
-    INSPECTOR_URI,
-    {
-      title: "Request inspector",
-      description:
-        "The interactive view of a captured request or email that get_request and get_email open in clients with MCP Apps.",
-      mimeType: APP_MIME_TYPE,
-      _meta: { ui: INSPECTOR_UI_META },
-    },
-    async () => ({
-      contents: [
-        {
-          uri: INSPECTOR_URI,
-          mimeType: APP_MIME_TYPE,
-          text: INSPECTOR_HTML,
-          _meta: { ui: INSPECTOR_UI_META },
-        },
-      ],
-    })
+    "request-inspector-any",
+    new ResourceTemplate(INSPECTOR_URI_TEMPLATE, { list: undefined }),
+    INSPECTOR_METADATA,
+    async (uri) => inspectorContents(uri.toString())
   );
 }

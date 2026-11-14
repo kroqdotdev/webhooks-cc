@@ -11,7 +11,8 @@ import { problem, skeleton, strip, viewPanel, type Abilities, type StripState } 
 
 /**
  * The request inspector: shows the request or email of the get_request or
- * get_email result the host hands it, and the endpoint's recent requests,
+ * get_email result the host hands it and, when the person asks and the host
+ * passes tool calls on, the whole email and the endpoint's recent requests,
  * which it loads through the host (tools/call). It never reaches the
  * network itself and never opens a link on its own.
  */
@@ -34,13 +35,22 @@ const abilities: Abilities = {
 };
 
 let view: View | null = null;
-let upgrading = false;
+/** The host passes tool calls on (hostCapabilities.serverTools): only then is anything offered that calls one. */
+let serverTools = false;
+let loadingFull = false;
+let fullFailed: string | null = null;
 let toolArgs: Record<string, unknown> = {};
 let recent: StripState | null = null;
-/** Endpoint ids already looked up, with their slugs. */
+/** Looking for the request's endpoint, after the person asked for recent requests. */
+let finding = false;
+/** Why the last ask for recent requests found no endpoint, shown beside the button. */
+let recentMissing: string | null = null;
+/** Endpoint ids looked up in list_endpoints, with their slugs (null: not listed). Failed lookups are not kept. */
 const slugs = new Map<string, string | null>();
 /** Bumped for every request shown, so a late answer for an older one is dropped. */
 let generation = 0;
+/** Bumped for every ask for recent requests, so only the newest one changes the strip. */
+let findToken = 0;
 
 function applyContext(context: HostContext | undefined): void {
   if (!context) return;
@@ -93,11 +103,43 @@ async function callTool(name: string, args: Record<string, unknown>): Promise<un
 }
 
 function renderView(): void {
-  main.replaceChildren(view ? viewPanel(view, abilities, upgrading) : skeleton());
+  if (!view) {
+    main.replaceChildren(skeleton());
+    return;
+  }
+  const id = view.kind === "email" && !view.full ? view.id : null;
+  main.replaceChildren(
+    viewPanel(view, abilities, {
+      load: serverTools && id ? () => void loadFull(id) : null,
+      loading: loadingFull,
+      failed: fullFailed,
+    })
+  );
 }
 
 function renderRecent(): void {
-  recentSlot.replaceChildren(recent ? strip(recent, pick, () => void loadRecent(true)) : "");
+  if (recent) {
+    recentSlot.replaceChildren(strip(recent, pick, () => void loadRecent()));
+  } else if (!view || !serverTools) {
+    recentSlot.replaceChildren("");
+  } else {
+    const ask = button(
+      finding ? "Looking for the endpoint" : "Show recent requests at this endpoint",
+      // The request shown at the click: a whole email may have replaced the compact one.
+      () => {
+        if (view) void findRecent(view, null);
+      }
+    );
+    ask.disabled = finding;
+    recentSlot.replaceChildren(
+      el(
+        "div",
+        { class: "ask" },
+        ask,
+        recentMissing ? el("span", { class: "note" }, recentMissing) : null
+      )
+    );
+  }
 }
 
 function showBanner(title: string | null, detail: string | null = null): void {
@@ -107,79 +149,114 @@ function showBanner(title: string | null, detail: string | null = null): void {
 /** Shows a tool result: the request or email it holds, or what went wrong. */
 function show(result: ToolResultParams): void {
   generation += 1;
+  // A request picked from the strip and still loading is replaced by this one.
+  if (recent) recent.loadingId = null;
   showBanner(null);
   if (result.isError) {
     view = null;
     main.replaceChildren(problem("The tool could not load this request.", errorText(result)));
+    renderRecent();
     return;
   }
   const next = viewOf(resultData(result));
   if (!next) {
     view = null;
     main.replaceChildren(problem("This result is not a captured request or email.", null));
+    renderRecent();
     return;
   }
-  present(next);
+  present(next, null);
 }
 
-function present(next: View): void {
+/**
+ * Shows a request or email. Nothing here calls a tool on its own: the
+ * whole email and the endpoint's recent requests cost tool calls (counted
+ * against the account's limits on the hosted server), and hosts mount the
+ * view again whenever a conversation is reopened. They load when asked,
+ * and the strip is then kept up as the person clicks through.
+ */
+function present(next: View, slug: string | null): void {
   view = next;
-  upgrading = next.kind === "email" && !next.full && next.id !== null;
+  loadingFull = false;
+  fullFailed = null;
   renderView();
-  if (upgrading && next.id) void upgrade(next.id, generation);
-  // The endpoint's recent requests cost tool calls (counted against the
-  // account's limit on the hosted server): loaded when asked, then kept up
-  // as the person clicks through.
-  if (recent) void findRecent(next);
-  else offerRecent(next);
-}
-
-function offerRecent(current: View): void {
-  recentSlot.replaceChildren(
-    button("Show recent requests at this endpoint", () => void findRecent(current))
-  );
+  if (recent) void findRecent(next, slug);
+  else renderRecent();
 }
 
 /**
  * get_request answers an email in its compact form, without codes and
- * links: ask get_email for the same email.
+ * links: get_email returns the whole email, when the person asks.
  */
-async function upgrade(id: string, asked: number): Promise<void> {
+async function loadFull(id: string): Promise<void> {
+  if (loadingFull) return;
+  // Kept to the email on show: once another is shown (present() resets the
+  // state), the answer is dropped; a pick that failed leaves this one shown.
+  const shown = view;
+  loadingFull = true;
+  fullFailed = null;
+  renderView();
   try {
     const data = await callTool("get_email", { requestId: id });
-    if (asked !== generation) return;
+    if (view !== shown) return;
     const full = viewOf(data);
     if (full && full.kind === "email") view = full;
-  } catch {
-    // The compact email stays; nothing is lost.
+    else fullFailed = "The answer was not an email.";
+  } catch (error) {
+    if (view !== shown) return;
+    fullFailed =
+      `Could not load the whole email. ${error instanceof Error ? error.message : ""}`.trim();
   }
-  if (asked !== generation) return;
-  upgrading = false;
+  loadingFull = false;
   renderView();
 }
 
-/** The endpoint the request belongs to, then its recent requests. */
-async function findRecent(current: View): Promise<void> {
-  let slug: string | null = current.kind === "email" ? current.slug : null;
-  if (!slug && typeof toolArgs.endpointSlug === "string") slug = toolArgs.endpointSlug;
-  if (!slug && current.kind === "http" && current.endpointId) {
-    if (!slugs.has(current.endpointId)) {
-      try {
-        slugs.set(
-          current.endpointId,
-          slugForEndpoint(await callTool("list_endpoints", {}), current.endpointId)
-        );
-      } catch {
-        slugs.set(current.endpointId, null);
+/**
+ * The endpoint the request is at, then its recent requests: the slug the
+ * caller already knows (a pick from the strip), else the one the tool was
+ * called with, else the one the request names, else its endpoint id looked
+ * up in list_endpoints. An email's address names the endpoint only at the
+ * capture domain; at a custom domain it is the recipient's own.
+ */
+async function findRecent(current: View, known: string | null): Promise<void> {
+  const token = ++findToken;
+  finding = false;
+  let slug = known;
+  let missing = "Could not tell which endpoint this request is at.";
+  if (!slug && typeof toolArgs.endpointSlug === "string" && toolArgs.endpointSlug)
+    slug = toolArgs.endpointSlug;
+  if (!slug && current.kind === "email") slug = current.slug;
+  if (!slug && current.endpointId) {
+    const endpointId = current.endpointId;
+    if (!slugs.has(endpointId)) {
+      if (!recent) {
+        finding = true;
+        renderRecent();
       }
+      try {
+        slugs.set(endpointId, slugForEndpoint(await callTool("list_endpoints", {}), endpointId));
+      } catch (error) {
+        // Not kept: the next ask tries again.
+        missing =
+          `Could not look up the endpoint. ${error instanceof Error ? error.message : ""}`.trim();
+      }
+      if (token === findToken) finding = false;
     }
-    slug = slugs.get(current.endpointId) ?? null;
+    slug = slugs.get(endpointId) ?? null;
   }
-  if (!slug) {
-    recent = null;
+  // A newer ask, or another request shown meanwhile, decides the strip.
+  if (token !== findToken) return;
+  if (!view || view.id !== current.id) {
     renderRecent();
     return;
   }
+  if (!slug) {
+    recent = null;
+    recentMissing = missing;
+    renderRecent();
+    return;
+  }
+  recentMissing = null;
   if (recent && recent.slug === slug) {
     recent.currentId = current.id;
     recent.loadingId = null;
@@ -194,26 +271,20 @@ async function findRecent(current: View): Promise<void> {
     refreshing: true,
     failed: null,
   };
-  await loadRecent(false);
+  await loadRecent();
 }
 
-async function loadRecent(again: boolean): Promise<void> {
+async function loadRecent(): Promise<void> {
   if (!recent) return;
   const state = recent;
   state.refreshing = true;
-  if (again) renderRecent();
+  renderRecent();
   try {
     state.items = recentOf(
       await callTool("list_requests", { endpointSlug: state.slug, limit: RECENT_LIMIT })
     );
     state.failed = null;
   } catch (error) {
-    if (!again && state.items.length === 0) {
-      // A host that does not pass tool calls on: no strip at all.
-      recent = recent === state ? null : recent;
-      renderRecent();
-      return;
-    }
     state.failed =
       `Could not load recent requests. ${error instanceof Error ? error.message : ""}`.trim();
   }
@@ -224,6 +295,7 @@ async function loadRecent(again: boolean): Promise<void> {
 async function pick(item: RecentItem): Promise<void> {
   if (!recent || recent.loadingId) return;
   if (item.id === recent.currentId) return;
+  const slug = recent.slug;
   recent.loadingId = item.id;
   renderRecent();
   const asked = ++generation;
@@ -233,7 +305,7 @@ async function pick(item: RecentItem): Promise<void> {
     const next = viewOf(data);
     if (!next) throw new Error("The answer was not a request.");
     showBanner(null);
-    present(next);
+    present(next, slug);
   } catch (error) {
     if (asked !== generation) return;
     showBanner("Could not open that request.", error instanceof Error ? error.message : null);
@@ -242,14 +314,20 @@ async function pick(item: RecentItem): Promise<void> {
   }
 }
 
-// The size the host gives the frame follows the page, or it stays 0 high.
-let lastHeight = 0;
-new ResizeObserver(() => {
-  const height = Math.ceil(root.getBoundingClientRect().height);
-  if (height === lastHeight) return;
-  lastHeight = height;
-  bridge.notify("ui/notifications/size-changed", { height });
-}).observe(root);
+/**
+ * The size the host gives the frame follows the page, or it stays 0 high.
+ * Reported only once the host knows the view is ready (after
+ * ui/notifications/initialized); the first report comes at once.
+ */
+function startSizing(): void {
+  let lastHeight = 0;
+  new ResizeObserver(() => {
+    const height = Math.ceil(root.getBoundingClientRect().height);
+    if (height === lastHeight) return;
+    lastHeight = height;
+    bridge.notify("ui/notifications/size-changed", { height });
+  }).observe(root);
+}
 
 // Handlers first: the host may send the tool's input and result right after initialize.
 bridge.on("ui/notifications/tool-input", (params) => {
@@ -300,9 +378,12 @@ async function start(): Promise<void> {
         if (answer?.isError) throw new Error("The client did not open the link.");
       };
     }
+    serverTools = Boolean(init.hostCapabilities?.serverTools);
     bridge.notify("ui/notifications/initialized", {});
+    startSizing();
     // Abilities can change what the first view shows.
     if (view) renderView();
+    renderRecent();
   } catch {
     main.replaceChildren(problem("This client did not start the inspector.", null));
   }

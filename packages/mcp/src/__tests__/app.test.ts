@@ -5,6 +5,7 @@ import { InMemoryTransport } from "@modelcontextprotocol/server";
 import { serveStdio } from "@modelcontextprotocol/server/stdio";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { buildInspectorHtml, inspectorExports } from "../../scripts/build-app.mjs";
+import { isSecretHeader, slugFromAddress, viewOf } from "../../app/model";
 import { APP_MIME_TYPE, INSPECTOR_URI, appToolMeta } from "../app";
 import { INSPECTOR_HASH, INSPECTOR_HTML } from "../app-html";
 import { TOOL_CATALOG } from "../catalog";
@@ -119,6 +120,13 @@ describe("the request inspector", () => {
       },
     ]);
 
+    // A client holding a tool list from before a release asks for an older name.
+    const old = "ui://webhooks-cc/inspector-0123456789abcdef.html";
+    expect(old).not.toBe(INSPECTOR_URI);
+    const stale = await client.readResource({ uri: old });
+    expect(stale.contents).toEqual([{ ...read.contents[0], uri: old }]);
+    expect(resources.filter((resource) => resource.uri.includes("inspector"))).toHaveLength(1);
+
     const { tools } = await client.listTools();
     for (const tool of tools) {
       if (INSPECTED.includes(tool.name)) {
@@ -154,5 +162,86 @@ describe("the request inspector", () => {
     });
     const { resources } = await client.listResources();
     expect(resources.map((resource) => resource.uri)).toContain(INSPECTOR_URI);
+  });
+});
+
+describe("the inspector's model", () => {
+  it("masks the headers the share links redact", () => {
+    for (const name of [
+      "Authorization",
+      "cookie",
+      "x-goog-api-key",
+      "ocp-apim-subscription-key",
+      "x-functions-key",
+      "x-session-id",
+      "x-amz-security-token",
+      "stripe-signature",
+      "x-hub-signature-256",
+      "x-csrf-token",
+      "client-secret",
+      "x-jwt-assertion",
+    ]) {
+      expect(isSecretHeader(name), name).toBe(true);
+    }
+    for (const name of ["content-type", "user-agent", "x-github-event", "accept", "host"]) {
+      expect(isSecretHeader(name), name).toBe(false);
+    }
+  });
+
+  it("reads an endpoint's slug from a capture address only", () => {
+    expect(slugFromAddress("Acme+run-1@mailhooks.cc")).toBe("acme");
+    expect(slugFromAddress("orders@acme.example")).toBeNull();
+    expect(slugFromAddress("nobody")).toBeNull();
+  });
+
+  it("leaves the slug of an email at a custom domain to its endpoint id", () => {
+    const view = viewOf({
+      id: "req_1",
+      endpointId: "ep_1",
+      kind: "email",
+      method: "EMAIL",
+      path: "orders@acme.example",
+      receivedAt: 1_763_000_000_000,
+      email: { subject: "Order 1001", from: [{ name: null, address: "shop@example.com" }] },
+    });
+    expect(view).toMatchObject({
+      kind: "email",
+      slug: null,
+      endpointId: "ep_1",
+      address: "orders@acme.example",
+      subject: "Order 1001",
+      full: false,
+    });
+    const captured = viewOf({
+      id: "req_2",
+      endpointId: "ep_2",
+      kind: "email",
+      method: "EMAIL",
+      path: "acme+run-1@mailhooks.cc",
+      email: {},
+    });
+    expect(captured).toMatchObject({ slug: "acme", endpointId: "ep_2" });
+  });
+
+  it("takes get_email's endpoint over the address", () => {
+    const view = viewOf({
+      id: "req_1",
+      endpoint: { slug: "acme-orders", name: null },
+      address: "orders@acme.example",
+      subject: "Order 1001",
+    });
+    expect(view).toMatchObject({ kind: "email", slug: "acme-orders", full: true });
+  });
+
+  it("reads the subject of an email summary, which keeps it beside the message", () => {
+    const view = viewOf({
+      id: "req_1",
+      kind: "email",
+      method: "EMAIL",
+      path: "acme@mailhooks.cc",
+      subject: "Your code",
+      shortened: true,
+    });
+    expect(view).toMatchObject({ kind: "email", subject: "Your code" });
   });
 });

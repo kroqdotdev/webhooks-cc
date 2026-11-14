@@ -101,4 +101,19 @@ describe("the request inspector on the hosted server", () => {
     });
     expect(contents[0].text.startsWith("<!doctype html>")).toBe(true);
   });
+
+  it("answers an older inspector name with the current page", async () => {
+    // A client that cached tools/list before a release names the old hash.
+    const old = "ui://webhooks-cc/inspector-0123456789abcdef.html";
+    expect(old).not.toBe(INSPECTOR_URI);
+    const { contents } = (await ask("resources/read", { uri: old })) as {
+      contents: Array<{ uri: string; mimeType: string; text: string }>;
+    };
+    const current = (await ask("resources/read", { uri: INSPECTOR_URI })) as {
+      contents: Array<{ text: string }>;
+    };
+    expect(contents).toHaveLength(1);
+    expect(contents[0]).toMatchObject({ uri: old, mimeType: APP_MIME_TYPE });
+    expect(contents[0].text).toBe(current.contents[0].text);
+  });
 });

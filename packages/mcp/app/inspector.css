@@ -268,6 +268,7 @@ p {
   row-gap: 2px;
   color: var(--muted);
   font-size: 13px;
+  overflow-wrap: anywhere;
 }
 
 .facts .mono {
@@ -287,6 +288,8 @@ p {
   border-radius: 999px;
   border: 1px solid var(--line);
   color: var(--ink);
+  overflow-wrap: anywhere;
+  min-width: 0;
 }
 
 .chip-ok {
@@ -346,6 +349,17 @@ p {
 .note {
   color: var(--muted);
   font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+/* A control that calls a tool, with what it does beside it. */
+.ask {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  column-gap: 10px;
+  row-gap: 4px;
+  min-width: 0;
 }
 
 /* Controls */
@@ -612,6 +626,7 @@ button:focus-visible {
   grid-column: 1 / -1;
   font-size: 12.5px;
   margin-top: 4px;
+  overflow-wrap: anywhere;
 }
 
 .links,
@@ -640,6 +655,7 @@ button:focus-visible {
 
 .link-label {
   font-weight: 500;
+  overflow-wrap: anywhere;
 }
 
 .link-url {
