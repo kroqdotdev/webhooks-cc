@@ -467,6 +467,72 @@ whk fields preview <slug> --request <id>
 whk fields preview <slug> --fields '[{"name":"order","from":"subject","pattern":"#(\\d+)"}]'
 ```
 
+## destinations
+
+Where an endpoint's captures are [forwarded](/docs/forwarding): up to 10 destinations, each with its own URL, kinds, filter, format, headers, retries and signing secret. Only the endpoint's owner can manage them. `ls` lists them in order with their last 24 hours; `get` shows one.
+
+```bash
+whk destinations ls <slug>
+whk destinations get <slug> <id>
+whk destinations add <slug> --url https://example.com/hooks --header "Authorization: Bearer $HOOK_TOKEN"
+whk destinations add <slug> --url https://hooks.slack.com/services/... --http false
+whk destinations update <slug> <id> --enabled false
+whk destinations reorder <slug> <id> <id>       # first to last
+whk destinations rm <slug> <id> --yes
+```
+
+`add` and `update` take a flag for each setting, and `update` changes only the ones you pass:
+
+| Flag                                                   | Description                                                                                                                                                              |
+| ------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `--url`                                                | Where deliveries go (a file drop has none; its server is in `--config`)                                                                                                  |
+| `--name`                                               | A name to tell it apart by (`""` clears it)                                                                                                                              |
+| `--enabled`, `--http`, `--email`                       | `true` or `false`: on or off, and whether it takes HTTP requests and emails                                                                                              |
+| `--format`                                             | `auto`, `as_received`, `json`, `template`, `chat`, `postmark`, `sendgrid`, `mailgun`, `cloudmailin`, `sheets` or `file_drop` ([Formats](/docs/forwarding#formats))       |
+| `--filter`                                             | Which captures it gets, as JSON (`{"logic":"and","conditions":[...]}`), `@file`, or `null` for all ([Send only some captures](/docs/forwarding#send-only-some-captures)) |
+| `--body-template`                                      | For `template`: the JSON body with `{{ placeholders }}`, or `@file`                                                                                                      |
+| `--message-template`                                   | For `chat`: the message text, or `@file` (`""` sends the standard message)                                                                                               |
+| `--header NAME:VALUE`                                  | A header on every delivery, repeatable; the set you pass replaces the stored one, and `NAME` alone keeps that header's stored value. `--clear-headers` removes them all  |
+| `--append-path`, `--keep-order`                        | `true` or `false`: append the captured path to the URL, and deliver one at a time in capture order                                                                       |
+| `--retry-seconds`                                      | How long failed deliveries are retried: `0` (one try), `3600` or `86400`                                                                                                 |
+| `--throttle-seconds`, `--delay-seconds`                | 0 to 3600: at most one delivery every N seconds, and a wait after the capture before the first try                                                                       |
+| `--sent-field`                                         | A JSON body field with the sender's own timestamp (`""` clears it)                                                                                                       |
+| `--attachments`                                        | How emails' stored attachments travel: `links`, `inline` or `none`                                                                                                       |
+| `--config`                                             | For `sheets` and `file_drop`: the spreadsheet and columns, or where files go and what they hold, as JSON or `@file`                                                      |
+| `--drop-secret`                                        | Send a file drop's password, private key or S3 secret key again (see below)                                                                                              |
+| `--mailgun-signing-key`, `--clear-mailgun-signing-key` | For `mailgun`: send your Mailgun signing key (from `WHK_MAILGUN_SIGNING_KEY`, or typed), or remove it                                                                    |
+
+Secrets are never taken from a flag, where they would stay in your shell history. A [file drop](/docs/forwarding#file-drops)'s password, private key or S3 secret key comes from `WHK_DROP_SECRET`, or is typed at the terminal without being shown: `add` asks for it whenever `--format` is `file_drop`, and `update` sends it with `--drop-secret`, which the server asks for whenever the drop would go to another server, login or bucket, or trust another key. For SFTP a value that holds a private key is sent as the key, anything else as the password. Header values are flags, so give a token as a variable (`--header "Authorization: Bearer $HOOK_TOKEN"`), and stored values come back masked. A Google Sheets destination takes the spreadsheet's address as `--url` and its `--config` from `whk google` ([Google Sheets](/docs/forwarding#google-sheets)).
+
+```bash
+whk destinations preview <slug> --destination <id>                 # what it would send for the newest request
+whk destinations preview <slug> --destination <id> --request <id> --format template --body-template @body.json
+whk destinations preview <slug> --url https://example.com/hooks --format json   # one not saved yet
+whk destinations test <slug> <id> --yes                            # send one delivery now
+whk destinations test <slug> <id> --kind email --yes
+whk destinations secret <slug> <id>                                # the whsec_ secret deliveries are signed with
+whk destinations secret <slug> <id> --rotate --yes
+```
+
+`preview` is a dry run: whether the filter lets the request through (the newest of the kind the destination takes, or a sample, unless `--request` names one) and the exact request it would send, with stored header values masked. The setting flags change a saved destination for the preview only. `test` sends one delivery now, as a real one would go out, and prints the answer; the filter is reported, not applied, and nothing is queued. `secret` prints only the secret, so `$(whk destinations secret <slug> <id>)` reads it into a variable; `--rotate` replaces it, and deliveries are signed with the new one at once. `rm`, `test` and `secret --rotate` ask first, and need `--yes` without a terminal. Every subcommand supports `--json`, which prints the API's answer.
+
+## deliveries
+
+The [delivery log](/docs/forwarding#the-delivery-log) of an endpoint's destinations, and sending requests again. Only the endpoint's owner can see the log and redeliver.
+
+```bash
+whk deliveries ls <slug>                                  # newest first, 5 by default
+whk deliveries ls <slug> --status failed --limit 50       # all, pending, failed or skipped
+whk deliveries ls <slug> --destination <id>
+whk deliveries ls --request <request-id>                  # one request's deliveries, with each try
+whk deliveries summary <slug>                             # last 24 hours, waiting, failed
+whk deliveries redeliver <request-id> --yes               # to every destination that takes its kind
+whk deliveries redeliver <request-id> --destination <id> --yes   # to one, whatever its filter says
+whk deliveries redeliver-failed <slug> --yes              # every request whose latest delivery failed
+```
+
+`skipped` deliveries are the ones a filter turned down. A full page ends with the command for the next one (`--before` and a row's cursor). `redeliver` takes a request id (the REQUEST column), and sends it with each destination's current settings, also when it was never forwarded; `redeliver-failed` sends the failed ones oldest first, at most what fits under each destination's pending cap, and `--destination` limits it to one. Both ask first, and need `--yes` without a terminal.
+
 ## usage
 
 Show your plan's request usage, then parsed pages, preview data and AI assists with when each resets, and below them the pooled quota of every subscribed team you belong to. With `--json` you get the whole `/api/usage` answer (`parsedPages`, `previewData`, `aiAssists`), and the team pools in a `teams` array.
@@ -537,9 +603,9 @@ Call any [API route](/docs/api) with your credentials and print the answer as it
 
 ```bash
 whk api /api/endpoints
-whk api endpoints/<slug>/destinations
+whk api endpoints/<slug>/alerts
 whk api -X PATCH endpoints/<slug> -d '{"retentionDays":7}'
-whk api -X POST endpoints/<slug>/destinations -d @destination.json
+whk api -X PUT endpoints/<slug>/alerts -d @alerts.json
 ```
 
 The path is relative to `/api` when it does not start with it, and only paths are accepted, so your credentials never go to another host. `-d` sends JSON text, `@file` or `@-` (stdin), with `POST` unless `-X` says otherwise. `-H Key:Value` adds a header and `-i` prints the status and headers to stderr. A failing status prints the body, then exits with the matching status (404 is `not_found`, exit 4). Routes that need a browser session, such as billing and account deletion, refuse API keys.

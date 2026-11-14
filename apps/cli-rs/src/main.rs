@@ -6,8 +6,9 @@ use clap::Parser;
 use whk::api::ApiClient;
 use whk::cli::{
     self, AccountAction, AgentsAction, AiAction, ApprovalsAction, AuthAction, Cli, Command,
-    DomainsAction, FieldsAction, GoogleAction, KeysAction, LayoutsAction, NamesAction,
-    RequestsAction, SandboxAction, ShareLinksAction, SharesAction, TeamsAction,
+    DeliveriesAction, DestinationsAction, DomainsAction, FieldsAction, GoogleAction, KeysAction,
+    LayoutsAction, NamesAction, RequestsAction, SandboxAction, ShareLinksAction, SharesAction,
+    TeamsAction,
 };
 use whk::error::{classify, error_json};
 
@@ -637,6 +638,131 @@ async fn run(args: Cli) -> Result<()> {
                     (None, None) => unreachable!("clap requires --seats or --plan"),
                 };
                 cli::teams::quote(&client, &team, ask, args.json).await?
+            }
+        },
+
+        Some(Command::Destinations { action }) => match action {
+            DestinationsAction::Ls { slug, summary } => {
+                cli::destinations::list(&client, &slug, summary, args.json).await?
+            }
+            DestinationsAction::Get { slug, id } => {
+                cli::destinations::get(&client, &slug, &id, args.json).await?
+            }
+            DestinationsAction::Add {
+                slug,
+                fields,
+                secrets,
+            } => cli::destinations::add(&client, &slug, &fields, &secrets, args.json).await?,
+            DestinationsAction::Update {
+                slug,
+                id,
+                fields,
+                secrets,
+            } => {
+                cli::destinations::update(&client, &slug, &id, &fields, &secrets, args.json).await?
+            }
+            DestinationsAction::Rm { slug, id, yes } => {
+                cli::destinations::remove(&client, &slug, &id, yes, args.json).await?
+            }
+            DestinationsAction::Reorder { slug, ids } => {
+                cli::destinations::reorder(&client, &slug, &ids, args.json).await?
+            }
+            DestinationsAction::Preview {
+                slug,
+                destination,
+                request,
+                fields,
+            } => {
+                cli::destinations::preview(
+                    &client,
+                    &slug,
+                    destination.as_deref(),
+                    &fields,
+                    request.as_deref(),
+                    args.json,
+                )
+                .await?
+            }
+            DestinationsAction::Test {
+                slug,
+                id,
+                request,
+                kind,
+                yes,
+            } => {
+                cli::destinations::test(
+                    &client,
+                    &slug,
+                    &id,
+                    request.as_deref(),
+                    kind.as_deref(),
+                    yes,
+                    args.json,
+                )
+                .await?
+            }
+            DestinationsAction::Secret {
+                slug,
+                id,
+                rotate,
+                yes,
+            } => cli::destinations::secret(&client, &slug, &id, rotate, yes, args.json).await?,
+        },
+
+        Some(Command::Deliveries { action }) => match action {
+            DeliveriesAction::Ls {
+                slug,
+                request,
+                status,
+                destination,
+                limit,
+                before,
+            } => {
+                let query = whk::api::destinations::DeliveryQuery {
+                    limit,
+                    status,
+                    destination,
+                    before,
+                };
+                cli::deliveries::list(
+                    &client,
+                    slug.as_deref(),
+                    request.as_deref(),
+                    &query,
+                    args.json,
+                )
+                .await?
+            }
+            DeliveriesAction::Summary { slug } => {
+                cli::deliveries::summary(&client, &slug, args.json).await?
+            }
+            DeliveriesAction::Redeliver {
+                request,
+                destination,
+                yes,
+            } => {
+                cli::deliveries::redeliver(
+                    &client,
+                    &request,
+                    destination.as_deref(),
+                    yes,
+                    args.json,
+                )
+                .await?
+            }
+            DeliveriesAction::RedeliverFailed {
+                slug,
+                destination,
+                yes,
+            } => {
+                cli::deliveries::redeliver_failed(
+                    &client,
+                    &slug,
+                    destination.as_deref(),
+                    yes,
+                    args.json,
+                )
+                .await?
             }
         },
 
