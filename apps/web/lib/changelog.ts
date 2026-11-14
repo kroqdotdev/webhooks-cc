@@ -34,7 +34,7 @@ export const CLI_VERSION = "1.18.0";
 export const SDK_VERSION = "1.28.0";
 export const PYTHON_SDK_VERSION = "0.8.0";
 export const GO_SDK_VERSION = "0.8.0";
-export const MCP_VERSION = "2.0.0";
+export const MCP_VERSION = "2.1.0";
 
 export const CHANGELOG: ChangelogEntry[] = [
   ...RELEASE.entries,
@@ -3171,6 +3171,16 @@ export const CHANGELOG: ChangelogEntry[] = [
   },
 
   // ─── MCP ────────────────────────────────────────────────────────────
+  {
+    version: "2.1.0",
+    date: "2026-11-14",
+    title: "Approvals In The Client, And The Skill",
+    track: "mcp",
+    items: [
+      "A tool that needs the account owner's approval asks a client that can open links to open the approval page, with the code to compare, and finishes once it is approved; other clients keep the link, the code and `wait_for_approval`",
+      "The server serves the webhooks.cc agent skill over the MCP skills extension, so clients that read skills from their servers get it without installing anything",
+    ],
+  },
   {
     version: "2.0.0",
     date: "2026-11-14",
