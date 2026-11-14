@@ -2150,8 +2150,9 @@ export const CHANGELOG: ChangelogEntry[] = [
     title: "Destinations And Deliveries",
     track: "cli",
     items: [
-      "`whk destinations ls`, `get`, `add`, `update`, `rm`, `reorder`, `preview`, `test` and `secret` manage an endpoint's forwarding destinations, Google Sheets and file drops included; passwords, keys and signing secrets come from an environment variable or a hidden prompt, never a flag",
-      "`whk deliveries ls` shows an endpoint's or a request's delivery log, and `whk deliveries redeliver` and `redeliver-failed` send deliveries again",
+      "`whk destinations ls`, `get`, `add`, `update`, `rm`, `reorder`, `preview`, `test` and `secret` manage an endpoint's forwarding destinations, Google Sheets and file drops included; a file drop's password or key (`WHK_DROP_SECRET`) and a Mailgun signing key (`WHK_MAILGUN_SIGNING_KEY`) come from an environment variable or a hidden prompt, never a flag, and `@file` reads a flag's value from a file",
+      "`whk destinations test` waits up to 90 seconds and exits 1 with the code `delivery_failed` when the destination refuses the delivery",
+      "`whk deliveries ls` shows an endpoint's or a request's delivery log, `whk deliveries summary` how each destination is doing, and `whk deliveries redeliver` and `redeliver-failed` send deliveries again",
       "`whk update-endpoint --agent-repo owner/name` (or `--clear-agent-repo`) names the GitHub repository a coding agent fixes failed deliveries in",
       "whk refuses an empty, `.` or `..` slug or id before sending anything, and `--destination` must be a destination id",
     ],
@@ -2520,9 +2521,9 @@ export const CHANGELOG: ChangelogEntry[] = [
     title: "Agent Repository And Destination Tests",
     track: "sdk",
     items: [
-      "`endpoints.update(slug, { agentRepo })` sets or clears the GitHub repository a coding agent fixes failed deliveries in, and endpoints return `agentRepo`",
+      '`endpoints.update(slug, { agentRepo })` sets the GitHub repository a coding agent fixes failed deliveries in (`null` or `""` clears it, and a value that is not `owner/name` throws before anything is sent), and endpoints return `agentRepo`',
       "A request fetched by id (`requests.get()`, `emails.get()`) carries its `endpointSlug`",
-      "`destinations.test()` waits up to 90 seconds, as long as a file drop's test can take, and `forwarding.redeliver()` sends an empty `destinationId` to the server (which refuses it) rather than widening the redelivery to every destination",
+      "`destinations.test()` waits up to 90 seconds, as long as a file drop's test can take, and `forwarding.redeliver()` and `redeliverFailed()` send an empty `destinationId` to the server (which refuses it) rather than widening the redelivery to every destination",
     ],
   },
   {
@@ -3220,9 +3221,11 @@ export const CHANGELOG: ChangelogEntry[] = [
     title: "Google Sheets And Fix Prompts",
     track: "mcp",
     items: [
-      '`add_destination` and `update_destination` take Google Sheets destinations (`format: "sheets"` with the spreadsheet and its columns), so an agent sets one up without the dashboard',
+      "`add_destination` and `update_destination` take Google Sheets destinations (`format: \"sheets\"` with the spreadsheet and its columns), so an agent sets one up without the dashboard; `update_destination` keeps a Sheets destination's tab and row mode when they are left out, and leaves a file drop's target alone",
+      "`create_spreadsheet` takes the `spreadsheetId` of a spreadsheet chosen with `pick_spreadsheet` and writes its header row",
       "`update_endpoint` takes `agentRepo`, the GitHub repository a coding agent fixes failed deliveries in",
-      "The request inspector shows an email's text part and opens its HTML in webhooks.cc instead of rendering it",
+      "The request inspector shows an email's text part and opens its HTML in webhooks.cc instead of rendering it; `get_email` and `wait_for_email` mark text made from the HTML part with `textFromHtml`",
+      "`test_forwarding` waits up to 90 seconds, and the agent skill the server serves covers Sheets destinations and `whk destinations`",
       "`redeliver` with an empty `destinationId` is refused instead of reaching every destination",
     ],
   },
