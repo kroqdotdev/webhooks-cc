@@ -83,7 +83,7 @@ Puts your local site at a public link on sharehooks.cc, for showing work in prog
 | 9 | `confirmation_required`, `cancelled`, `approval_denied` | A destructive command was not confirmed, or the account's owner refused an approval |
 
 - Nothing waits for input without a terminal. `whk delete` and `whk requests clear` ask first in a terminal; anywhere else they stop with `confirmation_required` unless you pass `--yes`.
-- `whk api <path>` calls any [API route](/docs/api) with your credentials, for whatever has no command of its own yet: `whk api endpoints/<slug>/destinations`, or `whk api -X PATCH endpoints/<slug> -d '{"retentionDays":7}'`.
+- `whk api <path>` calls any [API route](/docs/api) with your credentials, for whatever has no command of its own yet: `whk api endpoints/<slug>/alerts`, or `whk api -X PATCH endpoints/<slug> -d '{"retentionDays":7}'`.
 
 An agent can also capture webhooks without an account, and without a browser:
 
