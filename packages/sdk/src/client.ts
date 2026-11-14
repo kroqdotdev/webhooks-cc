@@ -171,6 +171,13 @@ import {
 const DEFAULT_BASE_URL = "https://webhooks.cc";
 const DEFAULT_WEBHOOK_URL = "https://go.webhooks.cc";
 const DEFAULT_TIMEOUT = 30000;
+
+/**
+ * How long a destination's test may take. The server gives a file drop's
+ * test a minute to connect, log in and write its file, longer than the
+ * default timeout, which would otherwise give up while the test still runs.
+ */
+const DESTINATION_TEST_TIMEOUT = 90_000;
 const DEFAULT_RETRY_ATTEMPTS = 1;
 const DEFAULT_RETRY_BACKOFF_MS = 1000;
 const DEFAULT_RETRY_STATUSES = [429, 500, 502, 503, 504];
@@ -1058,11 +1065,18 @@ export class WebhooksCC {
     {
       repeatable = IDEMPOTENT_METHODS.has(method),
       timeoutMs,
+      attemptTimeoutMs,
       onHeaders,
       stopAt,
     }: {
       repeatable?: boolean;
       timeoutMs?: number;
+      /**
+       * Each attempt's timeout in place of the client's, longer or shorter:
+       * for a route that does slow work while the caller waits. A client
+       * timeout set longer than it wins.
+       */
+      attemptTimeoutMs?: number;
       /**
        * An absolute time (ms) the whole call must end by, for a search that
        * follows its cursor: no attempt starts after it, an attempt (reading
@@ -1094,10 +1108,12 @@ export class WebhooksCC {
       if (stopAt !== undefined && Date.now() >= stopAt) {
         throw deadlineTimeout(new TimeoutError(0, "The search's time ran out"));
       }
+      const clientTimeout =
+        attemptTimeoutMs === undefined ? this.timeout : Math.max(this.timeout, attemptTimeoutMs);
       const attemptTimeout =
         stopAt === undefined
-          ? this.timeout
-          : Math.min(this.timeout, Math.max(0, stopAt - Date.now()));
+          ? clientTimeout
+          : Math.min(clientTimeout, Math.max(0, stopAt - Date.now()));
       // Whether a wait before another attempt still fits.
       const fits = (waitMs: number) => stopAt === undefined || Date.now() + waitMs <= stopAt;
       const timeoutId = setTimeout(
@@ -3479,7 +3495,9 @@ export class WebhooksCC {
     /**
      * Send one delivery to the destination now, as a real one would go out:
      * `requestId`, or the newest request of `kind`, or a sample. The filter
-     * is reported (`filterPasses`), not applied. Nothing is queued.
+     * is reported (`filterPasses`), not applied. Nothing is queued. It may
+     * take up to 90 seconds (a file drop's test logs in and writes a file),
+     * whatever the client's own timeout.
      */
     test: async (
       endpointSlug: string,
@@ -3491,7 +3509,8 @@ export class WebhooksCC {
       return this.request<DestinationTestResult>(
         "POST",
         `/endpoints/${endpointSlug}/destinations/${destinationId}/test`,
-        options
+        options,
+        { attemptTimeoutMs: DESTINATION_TEST_TIMEOUT }
       );
     },
 

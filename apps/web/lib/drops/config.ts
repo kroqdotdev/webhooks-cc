@@ -1,3 +1,4 @@
+import { utils as sshUtils } from "ssh2";
 import { parseColumns, type SheetsColumn } from "@/lib/integrations/sheets";
 import type { Json } from "@/lib/supabase/database";
 import { dropHostProblem } from "./connect";
@@ -233,24 +234,50 @@ export function parseDropSecret(value: unknown, protocol: DropProtocol): DropSec
   if (protocol === "sftp") {
     if (!secret.password && !secret.privateKey)
       return "dropSecret needs a password or a privateKey.";
-    if (secret.privateKey && !wholePrivateKey(secret.privateKey)) {
-      return "dropSecret.privateKey is a whole private key in OpenSSH or PEM form, from its -----BEGIN line to its -----END line.";
+    let privateKey: string | undefined;
+    if (secret.privateKey) {
+      const key = usablePrivateKey(secret.privateKey);
+      if (typeof key !== "string") return key.problem;
+      privateKey = key;
     }
-    return { password: secret.password, privateKey: secret.privateKey };
+    return { password: secret.password, privateKey };
   }
   if (!secret.password) return "dropSecret.password is the FTP password.";
   return { password: secret.password };
 }
 
 /**
- * Whether a private key is whole: a BEGIN line, something, and the END line
- * of the same kind. A key pasted at a prompt that reads one line arrives as
- * its BEGIN line alone, which would only fail later, at the first drop.
+ * A private key as drops will use it (each line trimmed), or why it cannot
+ * be: SFTP connects with ssh2 and no passphrase, so the key is parsed the
+ * same way here, when it is saved, rather than failing at the first drop.
+ * ssh2 reads OpenSSH keys and PEM RSA, EC and DSA keys without a
+ * passphrase; it refuses PKCS#8 (`BEGIN PRIVATE KEY`) and encrypted keys.
  */
-function wholePrivateKey(key: string): boolean {
-  const match =
-    /-----BEGIN ([A-Z ]*PRIVATE KEY)-----([\s\S]*?)-----END ([A-Z ]*PRIVATE KEY)-----/.exec(key);
-  return !!match && match[1] === match[3] && match[2].trim() !== "";
+function usablePrivateKey(value: string): string | { problem: string } {
+  const key =
+    value
+      .split(/\r?\n|\r/)
+      .map((line) => line.trim())
+      .join("\n")
+      .trim() + "\n";
+  const rewrite =
+    'Rewrite a copy of it as an OpenSSH key without a passphrase (ssh-keygen -p -N "" -f <copy>) and send that.';
+  const encrypted = `dropSecret.privateKey is protected by a passphrase, which drops cannot use. ${rewrite}`;
+  if (/-----BEGIN ENCRYPTED PRIVATE KEY-----|Proc-Type:\s*4,ENCRYPTED/.test(key)) {
+    return { problem: encrypted };
+  }
+  const parsed = sshUtils.parseKey(key);
+  const first = Array.isArray(parsed) ? parsed[0] : parsed;
+  if (first instanceof Error) {
+    if (/passphrase|encrypted/i.test(first.message)) return { problem: encrypted };
+    return {
+      problem: `dropSecret.privateKey is not a key drops can use: they take a whole OpenSSH key (-----BEGIN OPENSSH PRIVATE KEY-----) or a PEM RSA, EC or DSA key, not PKCS#8 (-----BEGIN PRIVATE KEY-----). ${rewrite}`,
+    };
+  }
+  if (!first || !first.isPrivateKey()) {
+    return { problem: "dropSecret.privateKey is a public key; send the private one." };
+  }
+  return key;
 }
 
 /** Whether a stored secret suits a protocol (a protocol change needs a new one). */

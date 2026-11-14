@@ -3,6 +3,7 @@ package webhookscc_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strings"
 	"testing"
@@ -381,5 +382,36 @@ func TestDestinationInputIsCheckedBeforeSending(t *testing.T) {
 	defer api.mu.Unlock()
 	if len(api.calls) != 0 {
 		t.Errorf("%d requests reached the API", len(api.calls))
+	}
+}
+
+func TestADestinationTestOutlastsTheClientTimeout(t *testing.T) {
+	api := newFakeAPI(t)
+	slow := func(answer any) http.HandlerFunc {
+		return func(w http.ResponseWriter, r *http.Request) {
+			select {
+			case <-time.After(300 * time.Millisecond):
+			case <-r.Context().Done():
+				return
+			}
+			writeJSON(w, 200, answer)
+		}
+	}
+	api.handle("POST /api/endpoints/{slug}/destinations/{id}/test", slow(map[string]any{"delivered": true}))
+	api.handle("POST /api/endpoints/{slug}/destinations/preview", slow(map[string]any{"format": "json"}))
+	client := api.client(webhookscc.WithTimeout(100*time.Millisecond), webhookscc.WithRetry(webhookscc.RetryOptions{MaxAttempts: 1}))
+	ctx := context.Background()
+
+	// A file drop's test runs for up to a minute on the server, so a test
+	// waits up to 90 seconds whatever the client's timeout.
+	result, err := client.Destinations.Test(ctx, "acme-test", destinationID, webhookscc.TestDestinationOptions{})
+	if err != nil || !result.Delivered {
+		t.Fatalf("Test = %+v, %v", result, err)
+	}
+	// Other calls keep the client's timeout.
+	_, err = client.Destinations.Preview(ctx, "acme-test", webhookscc.PreviewDestinationOptions{DestinationID: destinationID})
+	var timeout *webhookscc.TimeoutError
+	if !errors.As(err, &timeout) || timeout.After != 100*time.Millisecond {
+		t.Fatalf("Preview error = %v, want a TimeoutError after 100ms", err)
 	}
 }

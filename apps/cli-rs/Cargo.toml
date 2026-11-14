@@ -57,6 +57,11 @@ tar = "0.4"
 unicode-width = "0.2"
 percent-encoding = "2"
 
+# Unix terminal modes: echo stays off across the several hidden prompts a
+# pasted private key takes (cli/destinations.rs).
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
 [dev-dependencies]
 axum = "0.8"
 rqrr = "0.11"
