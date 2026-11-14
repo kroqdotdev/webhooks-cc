@@ -20,6 +20,7 @@ import { CapacityPanel } from "@/components/billing/capacity-panel";
 import { ParsedPagesPanel } from "@/components/billing/parsed-pages-panel";
 import { DomainsPanel } from "@/components/settings/domains-panel";
 import { TeamBillingPanel } from "@/components/teams/team-billing-panel";
+import { TeamIdJagIssuersPanel } from "@/components/teams/team-idjag-issuers-panel";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -867,6 +868,8 @@ function TeamDetailContent() {
         </Panel>
 
         {subscribed && billing}
+
+        <TeamIdJagIssuersPanel accessToken={accessToken} teamId={team.id} />
 
         {isOwner && (
           <Panel

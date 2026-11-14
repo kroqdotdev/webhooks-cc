@@ -80,6 +80,8 @@ export type AuditAction =
   | "team.subscription_canceled"
   | "team.subscription_resumed"
   | "team.seats_changed"
+  | "team.idjag_issuer_added"
+  | "team.idjag_issuer_removed"
   | "support.ticket_created"
   | "support.reply_posted"
   | "support.ticket_closed"
@@ -282,6 +284,8 @@ export async function auditAgentEvent(
     targetId?: string | null;
     actorUserId?: string | null;
     targetUserId?: string | null;
+    /** The team the event concerns (an organisation issuer it trusts). */
+    teamId?: string | null;
     metadata?: Record<string, unknown>;
   }
 ): Promise<void> {
@@ -292,7 +296,7 @@ export async function auditAgentEvent(
     user_agent: truncate(request.headers.get("user-agent"), MAX_USER_AGENT),
     action: input.action,
     outcome: outcomeForStatus(input.status),
-    team_id: null,
+    team_id: input.teamId ?? null,
     target_user_id: input.targetUserId ?? null,
     target_id: truncate(input.targetId, MAX_TARGET_ID),
     metadata: { ...boundStrings(input.metadata ?? {}), status: input.status },
