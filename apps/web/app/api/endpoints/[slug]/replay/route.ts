@@ -49,7 +49,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ slu
   if (!access?.isOwner) return reply({ error: "Endpoint not found" }, 404);
 
   try {
-    const { ids, lastReceivedAt } = await requestsInRange(access.endpointId, {
+    const { ids, nextSince } = await requestsInRange(access.endpointId, {
       since,
       until,
       kind: (body.kind as "email" | "http" | null | undefined) ?? null,
@@ -61,11 +61,8 @@ export async function POST(request: Request, { params }: { params: Promise<{ slu
       targetId: slug,
       metadata: { requests: ids.length, queued },
     });
-    // Cut off at the limit: where the next call starts, the millisecond after
-    // the last one replayed (one that arrived in that same millisecond is
-    // left for the person to check).
-    const nextSince =
-      ids.length >= MAX_REPLAY && lastReceivedAt !== null ? Math.floor(lastReceivedAt) + 1 : null;
+    // Cut off at the limit: `nextSince` is where the next call starts,
+    // inclusive, and only there when requests are left.
     return reply({
       requests: ids.length,
       queued,

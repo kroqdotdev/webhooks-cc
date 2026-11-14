@@ -121,11 +121,38 @@ fn explain(error: anyhow::Error, request_id: &str, what: Download) -> anyhow::Er
     api.into()
 }
 
-/// Writes the file whole or not at all: to a temporary file beside it, then
-/// renamed over it, so a failed write never leaves a cut-off file or loses
-/// the one that was there.
+/// The name part of the temporary file: the target's name cut to about 100
+/// bytes on a character boundary, so a long name that is valid on its own
+/// does not grow past the file system's limit once the suffix is added.
+fn temp_stem(name: &str) -> &str {
+    const MAX: usize = 100;
+    if name.len() <= MAX {
+        return name;
+    }
+    let mut end = MAX;
+    while !name.is_char_boundary(end) {
+        end -= 1;
+    }
+    &name[..end]
+}
+
+/// Writes the download to `path`. A device, FIFO or socket there (also
+/// behind a link, such as `/dev/stdout` or `/dev/null`) is opened and
+/// written as it is. Otherwise the file is written whole or not at all: to
+/// a temporary file beside it, then renamed over it, so a failed write never
+/// leaves a cut-off file or loses the one that was there.
 fn write_whole(path: &str, bytes: &[u8]) -> std::io::Result<()> {
     let target = std::path::Path::new(path);
+    // Followed through links: what the bytes would land in.
+    if let Ok(meta) = std::fs::metadata(target)
+        && !meta.is_file()
+        && !meta.is_dir()
+    {
+        use std::io::Write as _;
+        let mut file = std::fs::OpenOptions::new().write(true).open(target)?;
+        file.write_all(bytes)?;
+        return file.flush();
+    }
     let dir = target
         .parent()
         .filter(|dir| !dir.as_os_str().is_empty())
@@ -134,29 +161,20 @@ fn write_whole(path: &str, bytes: &[u8]) -> std::io::Result<()> {
         .file_name()
         .map(|name| name.to_string_lossy().to_string())
         .unwrap_or_else(|| "download".into());
-    // The old file's permissions, or private ones for a new file: an email
-    // can hold anything.
-    #[cfg(unix)]
-    let mode = {
-        use std::os::unix::fs::PermissionsExt;
-        std::fs::metadata(target)
-            .ok()
-            .filter(|meta| meta.is_file())
-            .map(|meta| meta.permissions().mode() & 0o7777)
-            .unwrap_or(0o600)
-    };
+    let stem = temp_stem(&name);
     // A fresh name each try, created only if nothing is there (O_EXCL), so a
     // file or link planted at a guessable name is never written through.
+    // Private until the mode is settled: an email can hold anything.
     let mut attempt = 0u32;
     let (temp, mut file) = loop {
         let suffix: u64 = rand::random();
-        let temp = dir.join(format!(".{name}.whk-{suffix:016x}.part"));
+        let temp = dir.join(format!(".{stem}.whk-{suffix:016x}.part"));
         let mut options = std::fs::OpenOptions::new();
         options.write(true).create_new(true);
         #[cfg(unix)]
         {
             use std::os::unix::fs::OpenOptionsExt;
-            options.mode(mode);
+            options.mode(0o600);
         }
         match options.open(&temp) {
             Ok(file) => break (temp, file),
@@ -169,13 +187,21 @@ fn write_whole(path: &str, bytes: &[u8]) -> std::io::Result<()> {
     let written = (|| {
         use std::io::Write as _;
         file.write_all(bytes)?;
-        file.sync_all()?;
         #[cfg(unix)]
         {
-            // The umask may have narrowed the mode it was created with.
-            use std::os::unix::fs::PermissionsExt;
-            std::fs::set_permissions(&temp, std::fs::Permissions::from_mode(mode))?;
+            // The old file's permission bits when it is a regular file of
+            // this user's (never setuid, setgid or sticky, and never read
+            // through a link), else private ones.
+            use std::os::unix::fs::{MetadataExt, PermissionsExt};
+            let uid = file.metadata()?.uid();
+            let mode = std::fs::symlink_metadata(target)
+                .ok()
+                .filter(|meta| meta.is_file() && meta.uid() == uid)
+                .map(|meta| meta.permissions().mode() & 0o777)
+                .unwrap_or(0o600);
+            file.set_permissions(std::fs::Permissions::from_mode(mode))?;
         }
+        file.sync_all()?;
         drop(file);
         std::fs::rename(&temp, target)
     })();
@@ -373,6 +399,105 @@ mod tests {
             .collect();
         assert!(leftovers.is_empty());
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_kept_mode_is_only_permission_bits_from_a_file_of_ones_own() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = scratch("mode");
+        // setuid, setgid and sticky are never carried over.
+        let target = dir.join("m.eml");
+        std::fs::write(&target, b"old").unwrap();
+        std::fs::set_permissions(&target, std::fs::Permissions::from_mode(0o7755)).unwrap();
+        write_whole(target.to_str().unwrap(), b"new").unwrap();
+        assert_eq!(std::fs::read(&target).unwrap(), b"new");
+        assert_eq!(
+            std::fs::metadata(&target).unwrap().permissions().mode() & 0o7777,
+            0o755
+        );
+        // A link's target is not where the mode comes from: the new file is
+        // private.
+        let open = dir.join("open.txt");
+        std::fs::write(&open, b"keep").unwrap();
+        std::fs::set_permissions(&open, std::fs::Permissions::from_mode(0o644)).unwrap();
+        let link = dir.join("link.eml");
+        std::os::unix::fs::symlink(&open, &link).unwrap();
+        write_whole(link.to_str().unwrap(), b"mail").unwrap();
+        assert_eq!(
+            std::fs::symlink_metadata(&link)
+                .unwrap()
+                .permissions()
+                .mode()
+                & 0o7777,
+            0o600
+        );
+        assert_eq!(std::fs::read(&open).unwrap(), b"keep");
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_device_or_fifo_is_written_in_place() {
+        use std::os::unix::fs::FileTypeExt;
+        let dir = scratch("device");
+        // A character device, directly and behind a link, stays what it is.
+        write_whole("/dev/null", b"gone").unwrap();
+        assert!(
+            std::fs::metadata("/dev/null")
+                .unwrap()
+                .file_type()
+                .is_char_device()
+        );
+        let link = dir.join("null.eml");
+        std::os::unix::fs::symlink("/dev/null", &link).unwrap();
+        write_whole(link.to_str().unwrap(), b"gone").unwrap();
+        assert!(
+            std::fs::symlink_metadata(&link)
+                .unwrap()
+                .file_type()
+                .is_symlink()
+        );
+        // A FIFO gets the bytes, and is not replaced by a file.
+        let fifo = dir.join("pipe");
+        let made = std::process::Command::new("mkfifo")
+            .arg(&fifo)
+            .status()
+            .unwrap();
+        assert!(made.success());
+        let reader = {
+            let fifo = fifo.clone();
+            std::thread::spawn(move || std::fs::read(fifo).unwrap())
+        };
+        write_whole(fifo.to_str().unwrap(), b"through the pipe").unwrap();
+        assert_eq!(reader.join().unwrap(), b"through the pipe");
+        assert!(
+            std::fs::symlink_metadata(&fifo)
+                .unwrap()
+                .file_type()
+                .is_fifo()
+        );
+        // Nothing else was made beside them.
+        assert_eq!(std::fs::read_dir(&dir).unwrap().count(), 2);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_long_name_gets_a_temporary_name_that_fits() {
+        // 85 two-byte characters: 170 bytes, under the usual 255 limit, which
+        // the temporary name would pass without the cut.
+        let name: String = std::iter::repeat_n('\u{e9}', 85).collect();
+        assert_eq!(temp_stem(&name).len(), 100);
+        assert!(name.starts_with(temp_stem(&name)));
+        let odd = format!("a{name}");
+        assert_eq!(temp_stem(&odd).len(), 99, "cut on a character boundary");
+        assert_eq!(temp_stem("m.eml"), "m.eml");
+        let dir = scratch("long");
+        let target = dir.join(&name);
+        write_whole(target.to_str().unwrap(), b"x").unwrap();
+        assert_eq!(std::fs::read(&target).unwrap(), b"x");
+        assert_eq!(std::fs::read_dir(&dir).unwrap().count(), 1);
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]

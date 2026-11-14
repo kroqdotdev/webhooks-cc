@@ -53,7 +53,8 @@ describe("redelivery and alerts", () => {
       const json = (value: unknown) =>
         new Response(JSON.stringify(value), { headers: { "content-type": "application/json" } });
       if (path === "/requests/req-1/replay") return json({ queued: true });
-      if (path === "/endpoints/orders/replay") return json({ requests: 3, queued: 3 });
+      if (path === "/endpoints/orders/replay")
+        return json({ requests: 500, queued: 3, limit: 500, nextSince: 42 });
       if (path === "/endpoints/orders/alerts" && init?.method === "PUT") {
         return json({ settings: { ...body, enabled: true } });
       }
@@ -62,8 +63,10 @@ describe("redelivery and alerts", () => {
     const c = client(fetchImpl as unknown as typeof fetch);
     expect(await c.requests.redeliver("req-1")).toBe(true);
     expect(await c.endpoints.redeliver("orders", { since: 1, kind: "email" })).toEqual({
-      requests: 3,
+      requests: 500,
       queued: 3,
+      limit: 500,
+      nextSince: 42,
     });
     expect((await c.alerts.get("orders")).events).toEqual([]);
     expect((await c.alerts.update("orders", { silenceHours: 6 })).silenceHours).toBe(6);

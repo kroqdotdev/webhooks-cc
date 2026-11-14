@@ -139,6 +139,37 @@ fn range_words(body: &Value) -> String {
     }
 }
 
+/// The command that replays the rest of a range cut off at the limit: on
+/// the server this run used, from `next`, and up to this run's `--until`,
+/// or without one the `now` this run started from, so a later run never
+/// takes requests captured after the first call. `--yes` when this run had
+/// it, since the person already agreed to the range.
+fn continue_command(
+    base_url: &str,
+    slug: &str,
+    body: &Value,
+    now: i64,
+    next: u64,
+    yes: bool,
+) -> String {
+    let until = body.get("until").and_then(Value::as_i64).unwrap_or(now);
+    let mut command = format!(
+        "whk requests replay-range --api-url={} {} --since={next} --until={until}",
+        crate::cli::requests::shell_word(base_url),
+        crate::cli::requests::shell_word(slug)
+    );
+    if let Some(kind) = body.get("kind").and_then(Value::as_str) {
+        command.push_str(&format!(
+            " --kind={}",
+            crate::cli::requests::shell_word(kind)
+        ));
+    }
+    if yes {
+        command.push_str(" --yes");
+    }
+    command
+}
+
 pub async fn range(
     client: &ApiClient,
     slug: &str,
@@ -148,7 +179,8 @@ pub async fn range(
     yes: bool,
     json: bool,
 ) -> Result<()> {
-    let body = range_body(since, until, kind, chrono::Utc::now().timestamp_millis())?;
+    let now = chrono::Utc::now().timestamp_millis();
+    let body = range_body(since, until, kind, now)?;
     confirm(
         &format!(
             "Run {} of {} through it again now, oldest first, at most 500?",
@@ -172,24 +204,12 @@ pub async fn range(
     );
     let limit = count("limit");
     if let Some(next) = answer.value.get("nextSince").and_then(Value::as_u64) {
-        // The server this run used, so the later run goes to the same one.
-        let mut command = format!(
-            "whk requests replay-range --api-url={} {} --since={next}",
-            crate::cli::requests::shell_word(client.base_url()),
-            crate::cli::requests::shell_word(slug)
-        );
-        if let Some(until) = body.get("until").and_then(Value::as_i64) {
-            command.push_str(&format!(" --until={until}"));
-        }
-        if let Some(kind) = body.get("kind").and_then(Value::as_str) {
-            command.push_str(&format!(" --kind={kind}"));
-        }
         println!(
             "  {} {}",
             dim(&format!(
                 "That is the most one call takes ({limit}). For the rest:"
             )),
-            command
+            continue_command(client.base_url(), slug, &body, now, next, yes)
         );
     }
     if count("queued") < found {
@@ -235,6 +255,24 @@ mod tests {
         assert_eq!(range_words(&json!({})), "all its requests");
         assert!(
             range_words(&json!({ "since": 0, "kind": "http" })).starts_with("HTTP requests since")
+        );
+    }
+
+    #[test]
+    fn the_rest_of_a_range_stays_inside_the_first_call() {
+        // No --until: pinned to the now the first call used.
+        let body = range_body(Some("7d"), None, Some("email"), NOW).unwrap();
+        assert_eq!(
+            continue_command("https://webhooks.cc", "acme", &body, NOW, 42, true),
+            format!(
+                "whk requests replay-range --api-url=https://webhooks.cc acme --since=42 --until={NOW} --kind=email --yes"
+            )
+        );
+        // An --until given is kept, and --yes only when it was given.
+        let body = range_body(None, Some("1799999999000"), None, NOW).unwrap();
+        assert_eq!(
+            continue_command("https://webhooks.cc", "acme", &body, NOW, 42, false),
+            "whk requests replay-range --api-url=https://webhooks.cc acme --since=42 --until=1799999999000"
         );
     }
 

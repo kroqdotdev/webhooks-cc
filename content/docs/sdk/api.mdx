@@ -176,13 +176,13 @@ previewLayouts(slug: string, options?: { layouts?: Layout[]; requestId?: string 
 
 <ApiMethod method="POST" path="/endpoints/:slug/replay" title="client.endpoints.redeliver">
 
-Send the endpoint's requests received in a time range through its destinations again, at most 500, oldest first: after a pattern was fixed or a destination came back. Owner only.
+Send the endpoint's requests received in a time range through its destinations again, at most 500, oldest first: after a pattern was fixed or a destination came back. Owner only. `limit` is the most one call takes; `nextSince` is there only when requests in the range are left, and goes on with them as the next call's `since`.
 
 ```ts
 redeliver(
   slug: string,
   range?: { since?: number; until?: number; kind?: "http" | "email" }
-): Promise<{ requests: number; queued: number }>
+): Promise<{ requests: number; queued: number; limit: number; nextSince?: number }>
 ```
 
 </ApiMethod>

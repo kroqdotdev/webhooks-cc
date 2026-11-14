@@ -1,6 +1,7 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { applyRequestRetention } from "@/lib/supabase/requests";
 import { queueRedelivery } from "@/lib/supabase/forwarding";
+import { cutAtLimit } from "./cut";
 
 /**
  * Replay: runs captured requests through the endpoint's destinations again,
@@ -26,20 +27,22 @@ export async function requestIdsInRange(endpointId: string, range: ReplayRange):
 }
 
 /**
- * The ids in the range, oldest first and at most MAX_REPLAY, and when the
- * last of them arrived (epoch milliseconds), so a caller cut off at the
- * limit can go on from there.
+ * The ids in the range, oldest first and at most MAX_REPLAY, and, when more
+ * are left, the `since` (epoch milliseconds, inclusive) that goes on with
+ * them. A batch cut at the limit ends before the millisecond the next
+ * request arrived in, so requests sharing it are all in the next call.
  */
 export async function requestsInRange(
   endpointId: string,
   range: ReplayRange
-): Promise<{ ids: string[]; lastReceivedAt: number | null }> {
+): Promise<{ ids: string[]; nextSince: number | null }> {
   let query = createAdminClient()
     .from("requests")
     .select("id, received_at")
     .eq("endpoint_id", endpointId)
     .order("received_at", { ascending: true })
-    .limit(MAX_REPLAY);
+    // One more than the limit, to tell whether more are left.
+    .limit(MAX_REPLAY + 1);
   // A bound of 0 is a bound (until: 0 replays nothing), not a missing one.
   if (range.since != null) query = query.gte("received_at", new Date(range.since).toISOString());
   if (range.until != null) query = query.lte("received_at", new Date(range.until).toISOString());
@@ -48,12 +51,11 @@ export async function requestsInRange(
   await applyRequestRetention(query, endpointId);
   const { data, error } = await query;
   if (error) throw error;
-  const rows = (data ?? []) as { id: string; received_at: string }[];
-  const last = rows.at(-1);
-  return {
-    ids: rows.map((row) => row.id),
-    lastReceivedAt: last ? Date.parse(last.received_at) : null,
-  };
+  const { rows, nextSince } = cutAtLimit(
+    (data ?? []) as { id: string; received_at: string }[],
+    MAX_REPLAY
+  );
+  return { ids: rows.map((row) => row.id), nextSince };
 }
 
 /**
