@@ -506,7 +506,7 @@ curl -X POST https://webhooks.cc/api/send-test-email \
 
 [Forwarding](/docs/forwarding) sends what an endpoint captures to up to 10 destinations: relayed as received, as signed JSON, as a JSON body you shape with placeholders, or as a chat message for Slack and Discord, each with its own conditions and timing, and retried until it is accepted. The formats and how to verify them are described in [Forwarding](/docs/forwarding). Only the endpoint's owner can configure forwarding: the owner-only routes below return `404` to anyone else, and the endpoint update returns `403`.
 
-The `forward*` fields of an endpoint stand for its primary destination, and `notificationUrl` for a chat destination named Notifications (at most one message a second, not retried). The [destination routes](#destinations) manage all of them.
+The `forward*` fields of an endpoint stand for its primary destination, the first one that sends to a URL (never a Google Sheets destination or a file drop: with only those, the fields read as not forwarding, and setting `forwardUrl` adds a destination), and `notificationUrl` for a chat destination named Notifications (at most one message a second, not retried). The [destination routes](#destinations) manage all of them.
 
 ### Turn forwarding on
 

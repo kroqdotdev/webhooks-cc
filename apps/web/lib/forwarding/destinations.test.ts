@@ -181,6 +181,32 @@ describe("parseDestinationInput", () => {
       ).toEqual({ ok: false, error: "dropSecret is for file drops only." });
     });
 
+    it("clears a drop's secret whatever it becomes, a Sheets destination too", () => {
+      expect(change({ format: "sheets", config: sheetsConfig }, drop)).toMatchObject({
+        ok: true,
+        changes: { format: "sheets", dropSecret: null, config: { sheet: "Sheet1" } },
+      });
+    });
+
+    it("needs the config in the change that switches into sheets or file_drop", () => {
+      const json = { http: true, email: true, format: "json" as const, config: sheetsConfig };
+      for (const format of ["sheets", "file_drop"]) {
+        expect(
+          parseDestinationInput({ format }, { creating: false, current: json, allowPrivate: false })
+        ).toEqual({
+          ok: false,
+          error: expect.stringMatching(new RegExp(`^Send the config with format "${format}"`)),
+        });
+      }
+      expect(change({ format: "file_drop" }, sheets)).toMatchObject({ ok: false });
+      expect(change({ format: "sheets" }, drop)).toMatchObject({ ok: false });
+      // Staying on the format needs none.
+      expect(change({ format: "sheets", name: "Orders" }, sheets)).toEqual({
+        ok: true,
+        changes: { format: "sheets", name: "Orders" },
+      });
+    });
+
     it("refuses a config for a format that takes none", () => {
       const refused = {
         ok: false,

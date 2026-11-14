@@ -161,7 +161,9 @@ export function parseDestinationInput(
   // Only Sheets destinations and file drops carry a config. One that moves
   // to another format needs a URL of its own (its current one is the
   // spreadsheet's or the drop's), and leaves its config and its drop
-  // secret behind, so nothing of the old target stays on the row.
+  // secret behind, so nothing of the old target stays on the row; one that
+  // moves into either needs the config in the same change, never a stale
+  // one left on the row.
   const currentFormat = options.current?.format;
   const nextFormat = changes.format ?? (options.creating ? "auto" : currentFormat);
   const configured = (format: DestinationFormatSetting | undefined) =>
@@ -171,6 +173,25 @@ export function parseDestinationInput(
     configured(currentFormat) &&
     nextFormat !== undefined &&
     !configured(nextFormat);
+  // A drop's secret goes with the drop, whatever the destination becomes.
+  const leavingDrop =
+    !options.creating &&
+    currentFormat === "file_drop" &&
+    nextFormat !== undefined &&
+    nextFormat !== "file_drop";
+  if (leavingDrop) changes.dropSecret = null;
+  if (
+    !options.creating &&
+    configured(nextFormat) &&
+    nextFormat !== currentFormat &&
+    (body.config === undefined || body.config === null)
+  ) {
+    return fail(
+      nextFormat === "sheets"
+        ? 'Send the config with format "sheets": the spreadsheet, its tab and its columns.'
+        : 'Send the config with format "file_drop": where the files go and what they hold.'
+    );
+  }
   if (leaving) {
     if (body.url === undefined) {
       return fail(
@@ -180,7 +201,6 @@ export function parseDestinationInput(
       );
     }
     changes.config = null;
-    if (currentFormat === "file_drop") changes.dropSecret = null;
   }
   if (body.config !== undefined && body.config !== null && !configured(nextFormat)) {
     return fail(
@@ -322,7 +342,7 @@ export function parseDestinationInput(
   }
 
   // Leaving a file drop already clears its secret; null says the same.
-  if (body.dropSecret !== undefined && !(leaving && body.dropSecret === null)) {
+  if (body.dropSecret !== undefined && !(leavingDrop && body.dropSecret === null)) {
     if (!drop) return fail("dropSecret is for file drops only.");
     if (body.dropSecret === null) changes.dropSecret = null;
     else {

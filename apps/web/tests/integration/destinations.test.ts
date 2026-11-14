@@ -12,6 +12,7 @@ import {
   updateDestination,
 } from "@/lib/supabase/destinations";
 import { queueDestinationRedelivery } from "@/lib/supabase/forwarding";
+import { saveGoogleConnection } from "@/lib/supabase/google-connections";
 import { runForwardingBatch } from "@/lib/forwarding/worker";
 
 /**
@@ -441,7 +442,21 @@ describe("destinations through the API: formats and their configs", () => {
     expect(await row(sheets.id)).toMatchObject({ format: "sheets", config: sheetsConfig });
 
     // A url alone would leave the spreadsheet's URL misleading: refused too.
-    expect((await call("PATCH", path, { url: `${base}/moved` })).status).toBe(400);
+    const urlAlone = await call("PATCH", path, { url: `${base}/moved` });
+    expect(urlAlone.status).toBe(400);
+    expect(((await urlAlone.json()) as { error: string }).error).toMatch(
+      /^A Google Sheets destination's URL/
+    );
+
+    // The preview checks a draft by the same rules.
+    const preview = await call("POST", `/endpoints/${e.slug}/destinations/preview`, {
+      destinationId: sheets.id,
+      destination: { format: "json" },
+    });
+    expect(preview.status).toBe(400);
+    expect(((await preview.json()) as { error: string }).error).toMatch(
+      /^Enter the URL to send to/
+    );
 
     const moved = await call("PATCH", path, { format: "json", url: `${base}/moved` });
     expect(moved.status).toBe(200);
@@ -509,5 +524,100 @@ describe("destinations through the API: formats and their configs", () => {
     });
     expect(changed.status).toBe(400);
     expect(await row(json.id)).toMatchObject({ format: "json", url: `${base}/json`, config: null });
+  });
+
+  it("moves a file drop to a Sheets destination, clearing the drop's secret", async () => {
+    const e = await endpoint();
+    const connection = await saveGoogleConnection(userId, {
+      sub: `sub-destinations-${Date.now()}`,
+      email: "owner@acme.example",
+      refreshToken: "rt-destinations",
+      scopes: "drive.file",
+    });
+    const drop = await createDestination(e.id, {
+      url: "sftp://files.acme.example",
+      format: "file_drop",
+      email: true,
+      http: false,
+      config: { protocol: "sftp", host: "files.acme.example", port: 22, username: "acme" },
+      dropSecret: { password: "x" },
+    });
+    const config = { ...sheetsConfig, connectionId: connection.id };
+    const moved = await call("PATCH", `/endpoints/${e.slug}/destinations/${drop.id}`, {
+      format: "sheets",
+      config,
+    });
+    expect(moved.status).toBe(200);
+    expect(await row(drop.id)).toMatchObject({
+      format: "sheets",
+      url: `https://docs.google.com/spreadsheets/d/${spreadsheetId}/edit`,
+      config,
+      drop_secret_encrypted: null,
+    });
+  });
+
+  it("needs the config in the change that switches into sheets or file_drop", async () => {
+    const e = await endpoint();
+    // A row left with a config its format does not use (as before the API
+    // cleared them) must not be picked up by a later switch.
+    const stale = await createDestination(e.id, {
+      url: `${base}/json`,
+      format: "json",
+      config: sheetsConfig,
+    });
+    const path = `/endpoints/${e.slug}/destinations/${stale.id}`;
+    for (const format of ["sheets", "file_drop"]) {
+      const res = await call("PATCH", path, { format });
+      expect(res.status, format).toBe(400);
+      expect(((await res.json()) as { error: string }).error).toMatch(
+        new RegExp(`^Send the config with format "${format}"`)
+      );
+    }
+    expect(await row(stale.id)).toMatchObject({ format: "json", url: `${base}/json` });
+  });
+
+  it("keeps the endpoint's old forward fields off Sheets destinations and drops", async () => {
+    const e = await endpoint();
+    // The old forward row, since turned into a Sheets destination.
+    const sheets = await createDestination(
+      e.id,
+      {
+        url: `https://docs.google.com/spreadsheets/d/${spreadsheetId}/edit`,
+        format: "sheets",
+        email: true,
+        http: false,
+        config: sheetsConfig,
+      },
+      "forward"
+    );
+    const before = await updateEndpointBySlugForUser({ userId, slug: e.slug, name: "Legacy" });
+    expect(before).toMatchObject({ forwardEnabled: false, forwardUrl: null });
+
+    const set = await updateEndpointBySlugForUser({
+      userId,
+      slug: e.slug,
+      forwardUrl: `${base}/legacy`,
+      forwardFormat: "json",
+      forwardEnabled: true,
+    });
+    expect(set).toMatchObject({
+      forwardEnabled: true,
+      forwardUrl: `${base}/legacy`,
+      forwardFormat: "json",
+    });
+    expect(await row(sheets.id)).toMatchObject({
+      format: "sheets",
+      url: `https://docs.google.com/spreadsheets/d/${spreadsheetId}/edit`,
+      config: sheetsConfig,
+    });
+    // A later change goes to the same new destination, not a third one.
+    await updateEndpointBySlugForUser({ userId, slug: e.slug, forwardUrl: `${base}/legacy2` });
+    const listed = await listDestinations(e.id);
+    expect(listed).toHaveLength(2);
+    expect(listed.find((d) => d.id !== sheets.id)).toMatchObject({
+      url: `${base}/legacy2`,
+      format: "json",
+      role: null,
+    });
   });
 });

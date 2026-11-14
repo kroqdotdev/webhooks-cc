@@ -571,13 +571,22 @@ export async function getDestinationSummaries(
 // The endpoint's old fields
 // ---------------------------------------------------------------------------
 
-/** The destination the old forward* fields stand for. */
-export function primaryDestination<T extends { role: string | null; position: number }>(
-  destinations: T[]
-): T | null {
+/**
+ * The destination the old forward* fields stand for: a URL the requests go
+ * to. Google Sheets destinations and file drops are never it, since those
+ * fields cannot say what they hold (a spreadsheet, a server and its
+ * password) and a change through them would bypass the destinations API's
+ * checks; an endpoint with only those reads as not forwarding.
+ */
+export function primaryDestination<
+  T extends { role: string | null; position: number; format?: string | null },
+>(destinations: T[]): T | null {
+  const urls = destinations.filter(
+    (destination) => destination.format !== "sheets" && destination.format !== "file_drop"
+  );
   return (
-    destinations.find((destination) => destination.role === "forward") ??
-    destinations.find((destination) => destination.role !== "notify") ??
+    urls.find((destination) => destination.role === "forward") ??
+    urls.find((destination) => destination.role !== "notify") ??
     null
   );
 }
@@ -644,7 +653,9 @@ export async function applyLegacyForwarding(
         ...changes,
         url,
       },
-      "forward"
+      // A forward row that became a Sheets destination or a drop keeps the
+      // role (one per endpoint); the new one is the primary all the same.
+      destinations.some((destination) => destination.role === "forward") ? null : "forward"
     );
     return;
   }
