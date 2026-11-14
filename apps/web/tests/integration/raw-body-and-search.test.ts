@@ -13,7 +13,7 @@ import {
   getRequestByIdForUser,
   listRequestsForEndpointByUser,
 } from "@/lib/supabase/requests";
-import { searchRequestsForUser, countSearchRequestsForUser } from "@/lib/supabase/search";
+import { searchRequestsForUser, countSearchRequests } from "@/lib/supabase/search";
 
 if (!process.env.SUPABASE_URL) throw new Error("SUPABASE_URL env var required");
 const SUPABASE_URL = process.env.SUPABASE_URL;
@@ -402,13 +402,17 @@ describe("Raw Body Fidelity & Search", () => {
         q: "/api/",
       });
 
-      const count = await countSearchRequestsForUser({
+      // A count with a term is exact only when the search read the whole
+      // range within its time budget (search_requests_page, 00100); a
+      // handful of rows always fits.
+      const { count, exact } = await countSearchRequests({
         userId: testUserId,
         plan: "pro",
         slug: searchEndpointSlug,
         q: "/api/",
       });
 
+      expect(exact).toBe(true);
       expect(count).toBe(results.length);
       expect(count).toBe(3); // stripe, github, slack paths all contain "/api/"
     });

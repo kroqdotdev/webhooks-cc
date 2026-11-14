@@ -89,7 +89,7 @@ Selecting an email opens its own view:
 - **Tabs**: JSON (the parsed email, shown first), Preview (when the email has HTML), Text (with **Reply only** when the email [quotes an earlier one](#reply-text)), Headers, Attachments (when there are any), Authentication, Raw, and Deliveries when [forwarding](/docs/forwarding) is on.
 - **Download .eml**: saves the original message, when it was stored in full.
 
-Notes, pinning, compare, export, search, and live updates work for emails the same way as for HTTP requests.
+Notes, pinning, compare, export, search, and live updates work for emails the same way as for HTTP requests. Search finds an email by its subject, its text and its sender and recipient addresses as you read them, also when the message was sent encoded (base64 or quoted-printable).
 
 ### The preview
 
@@ -229,4 +229,4 @@ const code = extractCode(email); // "482913"
 
 ## In the API
 
-The [REST API](/docs/api) returns emails alongside HTTP requests. An email has `method` set to `EMAIL`, `path` set to the recipient address, `kind` set to `email`, the full original message (or its headers, for messages over 1 MB) as `body`, and the parsed message as `email`. Add `kind=email` to the request list or search to get only emails, or `kind=http` to leave them out. Add `extracts=true` to the request lists or a single request to get the codes and links found in each email as `extracts`, and your fields and the reply text as `emailFields` and `replyText`, so a test in any language can read them without parsing the message (see [Get single request](/docs/api#get-single-request)). `POST /api/requests/{id}/render` returns an email in a provider's shape ([Render an email](/docs/api#render-an-email)).
+The [REST API](/docs/api) returns emails alongside HTTP requests. An email has `method` set to `EMAIL`, `path` set to the recipient address, `kind` set to `email`, the full original message (or its headers, for messages over 1 MB) as `body`, and the parsed message as `email`. Add `kind=email` to the request list or search to get only emails, or `kind=http` to leave them out. [Search](/docs/api#search) matches an email's decoded subject, text and from, to and cc addresses as well as its raw message. Add `extracts=true` to the request lists or a single request to get the codes and links found in each email as `extracts`, and your fields and the reply text as `emailFields` and `replyText`, so a test in any language can read them without parsing the message (see [Get single request](/docs/api#get-single-request)). `POST /api/requests/{id}/render` returns an email in a provider's shape ([Render an email](/docs/api#render-an-email)).

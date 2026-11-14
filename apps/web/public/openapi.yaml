@@ -2036,7 +2036,25 @@ paths:
         Search retained requests across endpoints you own and endpoints shared
         with you through a subscribed team. Rows on shared endpoints are bounded
         by the owner's retention, not the caller's plan.
-        Rate limited to 60 requests per 10 minutes.
+
+        A search reads requests newest first (oldest first with `order=asc`)
+        for a limited time, and stops at a full page, the end of the range, or
+        that time limit, whichever comes first. With `paged=true` the limit is
+        about 2 seconds a call, and the caller reads on with the cursor; use
+        that in new integrations. Without it a call reads for about 10
+        seconds, so a client that reads one answer still reaches older
+        matches. The body is the matches found so far; the `X-Search-*`
+        headers say whether that was everything and where the search stopped.
+        While `X-Search-Complete` is `false`, repeat the call with `cursor`
+        set to `X-Search-Cursor` (and the other parameters unchanged) to read
+        on. An empty page that is not complete means nothing was found yet,
+        not that nothing matches.
+
+        Rate limited to 60 requests per 10 minutes; calls with a `cursor`
+        count against their own limit of 300 per 10 minutes instead. An
+        account runs at most 2 searches at once and the service limits how
+        many run in all, so a call can answer 429 `search_busy` even when the
+        account runs none: wait for `Retry-After` seconds and send it again.
       parameters:
         - name: slug
           in: query
@@ -2059,29 +2077,71 @@ paths:
           in: query
           schema:
             type: string
-          description: Free-text search across path, body, and headers
+            maxLength: 1000
+          description: |
+            Text to find, as a case-insensitive substring of the path, the
+            headers or the body. Every character is literal (`%`, `_` and `\`
+            are not wildcards). Emails also match their decoded subject, text
+            and from, to and cc addresses. A request id finds that request
+            first.
         - name: from
           in: query
           schema:
-            type: integer
-          description: Start time as Unix timestamp (ms)
+            type: string
+          description: |
+            Start time: a Unix timestamp in milliseconds (any number from
+            zero up; a fraction is rounded down), or a duration back from now
+            (`500ms`, `90s`, `15m`, `1h`, `1.5h`, `7d`). Empty means no bound.
+          examples:
+            timestamp:
+              value: "1791450602000"
+            duration:
+              value: 1h
         - name: to
           in: query
           schema:
-            type: integer
-          description: End time as Unix timestamp (ms)
+            type: string
+          description: |
+            End time: a Unix timestamp in milliseconds (any number from
+            zero up; a fraction is rounded down), or a duration back from now
+            (`500ms`, `90s`, `15m`, `1h`, `1.5h`, `7d`). Empty means no bound.
+          examples:
+            timestamp:
+              value: "1791450602000"
+            duration:
+              value: 1h
         - name: limit
           in: query
           schema:
             type: integer
             default: 50
-          description: Maximum number of results
+            minimum: 1
+            maximum: 200
+          description: Maximum number of results in a page
+        - name: paged
+          in: query
+          schema:
+            type: boolean
+            default: false
+          description: |
+            Send `true` (or `1`) when you page with the cursor: each call then
+            reads for about 2 seconds at most. Without it a call reads for
+            about 10 seconds before answering.
+        - name: cursor
+          in: query
+          schema:
+            type: string
+          description: |
+            Continue from where an earlier call stopped: the `X-Search-Cursor`
+            header (or the count's `cursor`) it returned. Opaque, and only
+            valid for the `order` it was made for.
         - name: offset
           in: query
           schema:
             type: integer
             default: 0
-          description: Pagination offset
+            maximum: 10000
+          description: Skip this many matches. Prefer `cursor` to page.
         - name: order
           in: query
           schema:
@@ -2091,7 +2151,32 @@ paths:
           description: Sort order by receivedAt
       responses:
         "200":
-          description: Search results
+          description: The matches found, which may be a partial page (see the `X-Search-*` headers)
+          headers:
+            X-RateLimit-Limit:
+              $ref: "#/components/headers/X-RateLimit-Limit"
+            X-RateLimit-Remaining:
+              $ref: "#/components/headers/X-RateLimit-Remaining"
+            X-RateLimit-Reset:
+              $ref: "#/components/headers/X-RateLimit-Reset"
+            X-Search-Complete:
+              $ref: "#/components/headers/X-Search-Complete"
+            X-Search-Searched-Until:
+              $ref: "#/components/headers/X-Search-Searched-Until"
+            X-Search-Cursor:
+              $ref: "#/components/headers/X-Search-Cursor"
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/SearchResult"
+        "400":
+          description: |
+            Validation error: `invalid_from`, `invalid_to`, `invalid_kind`,
+            `invalid_q` (longer than 1,000 characters), `invalid_limit`,
+            `invalid_offset`, `invalid_cursor` (not a cursor this API returned, or one
+            made for the other order).
           headers:
             X-RateLimit-Limit:
               $ref: "#/components/headers/X-RateLimit-Limit"
@@ -2102,11 +2187,7 @@ paths:
           content:
             application/json:
               schema:
-                type: array
-                items:
-                  $ref: "#/components/schemas/SearchResult"
-        "400":
-          $ref: "#/components/responses/BadRequestRateLimited"
+                $ref: "#/components/schemas/Error"
         "401":
           $ref: "#/components/responses/UnauthorizedRateLimited"
         "403":
@@ -2123,7 +2204,30 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
         "429":
-          $ref: "#/components/responses/RateLimited"
+          description: |
+            Rate limit exceeded, or `search_busy`: too many searches are
+            running (an account runs 2 at once, and the service limits how
+            many run in all). Retry after `Retry-After` seconds.
+          headers:
+            Retry-After:
+              description: Seconds to wait before trying again
+              schema:
+                type: integer
+            X-RateLimit-Limit:
+              $ref: "#/components/headers/X-RateLimit-Limit"
+            X-RateLimit-Remaining:
+              $ref: "#/components/headers/X-RateLimit-Remaining"
+            X-RateLimit-Reset:
+              $ref: "#/components/headers/X-RateLimit-Reset"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              examples:
+                searchBusy:
+                  value:
+                    error: search_busy
+                    message: Too many searches are running; try again shortly.
         "500":
           $ref: "#/components/responses/InternalErrorRateLimited"
 
@@ -2134,35 +2238,95 @@ paths:
       summary: Count search results
       description: |
         Count retained requests matching search filters without returning them.
-        Covers endpoints shared with you through a subscribed team. Rate limited to 120 requests per 10 minutes.
+        Covers endpoints shared with you through a subscribed team.
         Accepts the same query parameters as search (except `limit`, `offset`, `order`).
+
+        A count without `q` and without `method` is always exact, for one
+        endpoint or for all of them. A count with `q` or `method` reads
+        requests like a search does, for a limited time (about 2 seconds with
+        `paged=true`, about 10 without): `exact` says whether it read the
+        whole range, and when it is `false`, `count` is a lower bound. Call
+        again with `cursor` to count the next stretch; each call counts only
+        what it read, so the counts add up.
+
+        Rate limited to 120 requests per 10 minutes; calls with a `cursor`
+        count against their own limit of 300 per 10 minutes instead. An
+        account runs at most 2 searches and counts at once and the service
+        limits how many run in all, so a call can answer 429 `search_busy`
+        even when the account runs none: wait for `Retry-After` seconds and
+        send it again.
       parameters:
         - name: slug
           in: query
           schema:
             type: string
+          description: Filter by endpoint slug
         - name: method
           in: query
           schema:
             type: string
             enum: [GET, POST, PUT, PATCH, DELETE, HEAD, OPTIONS, EMAIL]
+          description: Filter by HTTP method (`EMAIL` for captured emails)
         - name: kind
           in: query
           schema:
             type: string
             enum: [http, email]
+          description: Only HTTP requests or only captured emails
         - name: q
           in: query
           schema:
             type: string
+            maxLength: 1000
+          description: |
+            Text to find, as a case-insensitive substring of the path, the
+            headers or the body. Every character is literal (`%`, `_` and `\`
+            are not wildcards). Emails also match their decoded subject, text
+            and from, to and cc addresses. A request id finds that request
+            first.
         - name: from
           in: query
           schema:
-            type: integer
+            type: string
+          description: |
+            Start time: a Unix timestamp in milliseconds (any number from
+            zero up; a fraction is rounded down), or a duration back from now
+            (`500ms`, `90s`, `15m`, `1h`, `1.5h`, `7d`). Empty means no bound.
+          examples:
+            timestamp:
+              value: "1791450602000"
+            duration:
+              value: 1h
         - name: to
           in: query
           schema:
-            type: integer
+            type: string
+          description: |
+            End time: a Unix timestamp in milliseconds (any number from
+            zero up; a fraction is rounded down), or a duration back from now
+            (`500ms`, `90s`, `15m`, `1h`, `1.5h`, `7d`). Empty means no bound.
+          examples:
+            timestamp:
+              value: "1791450602000"
+            duration:
+              value: 1h
+        - name: paged
+          in: query
+          schema:
+            type: boolean
+            default: false
+          description: |
+            Send `true` (or `1`) when you page with the cursor: each call then
+            reads for about 2 seconds at most. Without it a call reads for
+            about 10 seconds before answering.
+        - name: cursor
+          in: query
+          schema:
+            type: string
+          description: |
+            Continue from where an earlier call stopped: the `X-Search-Cursor`
+            header (or the count's `cursor`) it returned. Opaque, and only
+            valid for the `order` it was made for.
       responses:
         "200":
           description: Match count
@@ -2173,16 +2337,55 @@ paths:
               $ref: "#/components/headers/X-RateLimit-Remaining"
             X-RateLimit-Reset:
               $ref: "#/components/headers/X-RateLimit-Reset"
+            X-Search-Complete:
+              $ref: "#/components/headers/X-Search-Complete"
+            X-Search-Searched-Until:
+              $ref: "#/components/headers/X-Search-Searched-Until"
+            X-Search-Cursor:
+              $ref: "#/components/headers/X-Search-Cursor"
           content:
             application/json:
               schema:
                 type: object
-                required: [count]
+                required: [count, exact, searchedUntil, cursor]
                 properties:
                   count:
                     type: integer
+                    description: Matches found in the part that was read
+                  exact:
+                    type: boolean
+                    description: |
+                      True when the whole range was read. False when the time
+                      limit came first: `count` is then a lower bound.
+                  searchedUntil:
+                    type: [integer, "null"]
+                    description: How far the count read, as a Unix timestamp (ms)
+                  cursor:
+                    type: [string, "null"]
+                    description: Send as `cursor` to count on from there; null when the count is exact
+              examples:
+                exact:
+                  value:
+                    count: 42
+                    exact: true
+                    searchedUntil: null
+                    cursor: null
         "400":
-          $ref: "#/components/responses/BadRequestRateLimited"
+          description: |
+            Validation error: `invalid_from`, `invalid_to`, `invalid_kind`,
+            `invalid_q` (longer than 1,000 characters), `invalid_cursor` (not a cursor this API returned, or one
+            made for the other order).
+          headers:
+            X-RateLimit-Limit:
+              $ref: "#/components/headers/X-RateLimit-Limit"
+            X-RateLimit-Remaining:
+              $ref: "#/components/headers/X-RateLimit-Remaining"
+            X-RateLimit-Reset:
+              $ref: "#/components/headers/X-RateLimit-Reset"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "401":
           $ref: "#/components/responses/UnauthorizedRateLimited"
         "403":
@@ -2199,7 +2402,30 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
         "429":
-          $ref: "#/components/responses/RateLimited"
+          description: |
+            Rate limit exceeded, or `search_busy`: too many searches are
+            running (an account runs 2 at once, and the service limits how
+            many run in all). Retry after `Retry-After` seconds.
+          headers:
+            Retry-After:
+              description: Seconds to wait before trying again
+              schema:
+                type: integer
+            X-RateLimit-Limit:
+              $ref: "#/components/headers/X-RateLimit-Limit"
+            X-RateLimit-Remaining:
+              $ref: "#/components/headers/X-RateLimit-Remaining"
+            X-RateLimit-Reset:
+              $ref: "#/components/headers/X-RateLimit-Reset"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              examples:
+                searchBusy:
+                  value:
+                    error: search_busy
+                    message: Too many searches are running; try again shortly.
         "500":
           $ref: "#/components/responses/InternalErrorRateLimited"
 
@@ -4621,6 +4847,26 @@ components:
       description: Unix timestamp (seconds) when the window resets
       schema:
         type: integer
+    X-Search-Complete:
+      description: |
+        `true` when the search read everything in the range, `false` when it
+        stopped early (a full page or the time limit) and there may be more.
+      schema:
+        type: string
+        enum: ["true", "false"]
+    X-Search-Searched-Until:
+      description: |
+        How far the search has read, as a Unix timestamp (ms): everything
+        between the near end of the range and this time was searched. Absent
+        when a complete search had no bound on that side.
+      schema:
+        type: integer
+    X-Search-Cursor:
+      description: |
+        Opaque position to send as `cursor` to continue. Absent when the
+        search is complete.
+      schema:
+        type: string
 
   schemas:
     Approval:
@@ -6936,7 +7182,7 @@ components:
       properties:
         id:
           type: string
-          description: Synthetic ID (not compatible with requests.get/replay)
+          description: The request's ID (usable with the request routes, such as GET /api/requests/{id})
         slug:
           type: string
         method:

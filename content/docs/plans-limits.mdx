@@ -209,7 +209,7 @@ Data is what passes through your previews both ways (what visitors download and 
 
 ## Rate limits
 
-API routes enforce per-IP rate limits to prevent abuse. When a limit is exceeded, the API returns `429 Too Many Requests` with a `Retry-After` header.
+API routes enforce rate limits to prevent abuse, per account for signed-in calls (search among them) and per IP address otherwise. When a limit is exceeded, the API returns `429 Too Many Requests` with a `Retry-After` header.
 
 | Action                            | Limit | Window     |
 | --------------------------------- | ----- | ---------- |
@@ -221,11 +221,15 @@ API routes enforce per-IP rate limits to prevent abuse. When a limit is exceeded
 | Redeliver a forwarded request     | 30    | 1 minute   |
 | Redeliver all failed (forwarding) | 10    | 1 minute   |
 | Search requests                   | 60    | 10 minutes |
+| Search requests, next pages       | 300   | 10 minutes |
 | Search count                      | 120   | 10 minutes |
+| Search count, counting on         | 300   | 10 minutes |
 | Device auth flows                 | 10    | 1 minute   |
 | Create team                       | 10    | 10 minutes |
 | Send team invite                  | 20    | 10 minutes |
 | Share endpoint with team          | 30    | 10 minutes |
+
+Each search or count reads for a limited time (about 2 seconds with `paged=true`, about 10 without) and answers with what it found and where it stopped, so a long history is [searched a page at a time](/docs/api#partial-pages-and-the-cursor). Calls that continue with a `cursor` count against the "next pages" and "counting on" limits, not the first two. An account runs up to 2 searches at once, and the service limits how many run in all; a search past either gets `429` with `search_busy` and a `Retry-After` header to wait for.
 
 ## Other limits
 

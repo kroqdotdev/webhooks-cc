@@ -5,7 +5,9 @@ const mockFns = vi.hoisted(() => ({
   extractBearerToken: vi.fn(),
   validateBearerTokenWithPlan: vi.fn(),
   checkRateLimitByKeyWithInfo: vi.fn(),
-  searchRequestsForUser: vi.fn(),
+  searchRequestPage: vi.fn(),
+  captureServerEvent: vi.fn(),
+  cancelRequestSearch: vi.fn(),
 }));
 
 vi.mock("@/lib/api-auth", () => ({
@@ -19,9 +21,35 @@ vi.mock("@/lib/rate-limit", () => ({
   applyRateLimitHeaders: (res: Response) => res,
 }));
 
-vi.mock("@/lib/supabase/search", () => ({
-  searchRequestsForUser: mockFns.searchRequestsForUser,
+vi.mock("@/lib/supabase/search", () => {
+  class InvalidSearchCursorError extends Error {}
+  return {
+    InvalidSearchCursorError,
+    SEARCH_BUDGET_MS: 2_000,
+    LEGACY_SEARCH_BUDGET_MS: 10_000,
+    cancelRequestSearch: mockFns.cancelRequestSearch,
+    isRequestKind: (value: unknown) => value === "http" || value === "email",
+    searchRequestPage: mockFns.searchRequestPage,
+  };
+});
+
+vi.mock("@/lib/analytics-server", () => ({
+  captureServerEvent: mockFns.captureServerEvent,
 }));
+
+const record = {
+  id: "req_1",
+  slug: "demo",
+  method: "POST",
+  path: "/hooks/demo",
+  headers: { "content-type": "application/json" },
+  body: '{"ok":true}',
+  queryParams: { foo: "bar" },
+  contentType: "application/json",
+  ip: "127.0.0.1",
+  size: 11,
+  receivedAt: 1_234,
+};
 
 describe("GET /api/search/requests", () => {
   beforeEach(() => {
@@ -42,21 +70,13 @@ describe("GET /api/search/requests", () => {
       userId: "user_123",
       plan: "free",
     });
-    mockFns.searchRequestsForUser.mockResolvedValue([
-      {
-        id: "req_1",
-        slug: "demo",
-        method: "POST",
-        path: "/hooks/demo",
-        headers: { "content-type": "application/json" },
-        body: '{"ok":true}',
-        queryParams: { foo: "bar" },
-        contentType: "application/json",
-        ip: "127.0.0.1",
-        size: 11,
-        receivedAt: 1_234,
-      },
-    ]);
+    mockFns.searchRequestPage.mockResolvedValue({
+      requests: [record],
+      complete: true,
+      searchedUntil: null,
+      cursor: null,
+      slices: 1,
+    });
 
     const { GET } = await import("./route");
     const response = await GET(
@@ -66,27 +86,15 @@ describe("GET /api/search/requests", () => {
     );
 
     expect(response.status).toBe(200);
-    await expect(response.json()).resolves.toEqual([
-      {
-        id: "req_1",
-        slug: "demo",
-        method: "POST",
-        path: "/hooks/demo",
-        headers: { "content-type": "application/json" },
-        body: '{"ok":true}',
-        queryParams: { foo: "bar" },
-        contentType: "application/json",
-        ip: "127.0.0.1",
-        size: 11,
-        receivedAt: 1_234,
-      },
-    ]);
+    await expect(response.json()).resolves.toEqual([record]);
+    expect(response.headers.get("X-Search-Complete")).toBe("true");
+    expect(response.headers.get("X-Search-Cursor")).toBeNull();
 
     expect(mockFns.countBearerRead).toHaveBeenCalledWith(expect.any(Request), expect.any(String), {
       userId: "user_123",
       plan: "free",
     });
-    expect(mockFns.searchRequestsForUser).toHaveBeenCalledWith({
+    expect(mockFns.searchRequestPage).toHaveBeenCalledWith({
       userId: "user_123",
       plan: "free",
       slug: "demo",
@@ -97,7 +105,76 @@ describe("GET /api/search/requests", () => {
       limit: 25,
       offset: 5,
       order: "asc",
+      cursor: undefined,
+      kind: undefined,
+      budgetMs: 10_000,
+      cancelToken: expect.any(String),
     });
+    // Telemetry never carries the term or the slug.
+    const event = mockFns.captureServerEvent.mock.calls[0][0];
+    expect(event.event).toBe("request_search");
+    expect(JSON.stringify(event)).not.toContain("foo");
+    expect(JSON.stringify(event)).not.toContain("demo");
+  });
+
+  test("answers where an unfinished search stopped, and continues from a cursor", async () => {
+    mockFns.extractBearerToken.mockReturnValue("token");
+    mockFns.validateBearerTokenWithPlan.mockResolvedValue({ userId: "user_123", plan: "pro" });
+    mockFns.searchRequestPage.mockResolvedValue({
+      requests: [],
+      complete: false,
+      searchedUntil: 1_700_000_000_000,
+      cursor: "abc_DEF-1",
+      slices: 9,
+    });
+
+    const { GET } = await import("./route");
+    const response = await GET(
+      new Request("https://webhooks.cc/api/search/requests?slug=demo&q=rare&cursor=prev_CURSOR")
+    );
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual([]);
+    expect(response.headers.get("X-Search-Complete")).toBe("false");
+    expect(response.headers.get("X-Search-Searched-Until")).toBe("1700000000000");
+    expect(response.headers.get("X-Search-Cursor")).toBe("abc_DEF-1");
+    expect(mockFns.searchRequestPage).toHaveBeenCalledWith(
+      expect.objectContaining({ cursor: "prev_CURSOR", q: "rare" })
+    );
+  });
+
+  test("reads a duration as that long before now", async () => {
+    mockFns.extractBearerToken.mockReturnValue("token");
+    mockFns.validateBearerTokenWithPlan.mockResolvedValue({ userId: "user_123", plan: "pro" });
+    mockFns.searchRequestPage.mockResolvedValue({
+      requests: [],
+      complete: true,
+      searchedUntil: null,
+      cursor: null,
+      slices: 1,
+    });
+
+    const before = Date.now();
+    const { GET } = await import("./route");
+    const response = await GET(new Request("https://webhooks.cc/api/search/requests?from=1h"));
+
+    expect(response.status).toBe(200);
+    const from = mockFns.searchRequestPage.mock.calls[0][0].from as number;
+    expect(from).toBeGreaterThanOrEqual(before - 3_600_000);
+    expect(from).toBeLessThanOrEqual(Date.now() - 3_600_000);
+  });
+
+  test("returns 400 for a cursor the server did not issue", async () => {
+    mockFns.extractBearerToken.mockReturnValue("token");
+    mockFns.validateBearerTokenWithPlan.mockResolvedValue({ userId: "user_123", plan: "pro" });
+    const { InvalidSearchCursorError } = await import("@/lib/supabase/search");
+    mockFns.searchRequestPage.mockRejectedValue(new InvalidSearchCursorError());
+
+    const { GET } = await import("./route");
+    const response = await GET(new Request("https://webhooks.cc/api/search/requests?cursor=nope"));
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toEqual({ error: "invalid_cursor" });
   });
 
   test("returns 401 when the bearer token is invalid", async () => {
@@ -109,7 +186,7 @@ describe("GET /api/search/requests", () => {
 
     expect(response.status).toBe(401);
     await expect(response.json()).resolves.toEqual({ error: "Invalid token" });
-    expect(mockFns.searchRequestsForUser).not.toHaveBeenCalled();
+    expect(mockFns.searchRequestPage).not.toHaveBeenCalled();
     expect(mockFns.countBearerRead).not.toHaveBeenCalled();
   });
 
@@ -142,7 +219,7 @@ describe("GET /api/search/requests", () => {
 
     expect(response.status).toBe(429);
     await expect(response.json()).resolves.toEqual({ error: "Too many requests" });
-    expect(mockFns.searchRequestsForUser).not.toHaveBeenCalled();
+    expect(mockFns.searchRequestPage).not.toHaveBeenCalled();
   });
 
   test("returns 400 for invalid numeric params", async () => {
@@ -159,6 +236,73 @@ describe("GET /api/search/requests", () => {
 
     expect(response.status).toBe(400);
     await expect(response.json()).resolves.toEqual({ error: "invalid_limit" });
-    expect(mockFns.searchRequestsForUser).not.toHaveBeenCalled();
+    expect(mockFns.searchRequestPage).not.toHaveBeenCalled();
+  });
+
+  test("returns 400 for a time that is neither ms nor a duration", async () => {
+    mockFns.extractBearerToken.mockReturnValue("token");
+    mockFns.validateBearerTokenWithPlan.mockResolvedValue({ userId: "user_123", plan: "pro" });
+
+    const { GET } = await import("./route");
+    const response = await GET(new Request("https://webhooks.cc/api/search/requests?to=yesterday"));
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toEqual({ error: "invalid_to" });
+    expect(mockFns.searchRequestPage).not.toHaveBeenCalled();
+  });
+
+  test("gives callers that page the short budget, and continuations their own allowance", async () => {
+    mockFns.extractBearerToken.mockReturnValue("token");
+    mockFns.validateBearerTokenWithPlan.mockResolvedValue({ userId: "user_123", plan: "pro" });
+    mockFns.searchRequestPage.mockResolvedValue({
+      requests: [],
+      complete: true,
+      searchedUntil: null,
+      cursor: null,
+      slices: 1,
+    });
+
+    const { GET } = await import("./route");
+    await GET(new Request("https://webhooks.cc/api/search/requests?q=x&paged=true"));
+    expect(mockFns.searchRequestPage.mock.calls[0][0].budgetMs).toBe(2_000);
+    expect(mockFns.checkRateLimitByKeyWithInfo.mock.calls[0][0]).toBe("search:user_123");
+
+    await GET(new Request("https://webhooks.cc/api/search/requests?q=x&paged=1&cursor=abc"));
+    expect(mockFns.checkRateLimitByKeyWithInfo.mock.calls[1][0]).toBe("search-more:user_123");
+  });
+
+  test("returns 400 for a term longer than the limit", async () => {
+    mockFns.extractBearerToken.mockReturnValue("token");
+    mockFns.validateBearerTokenWithPlan.mockResolvedValue({ userId: "user_123", plan: "pro" });
+
+    const { GET } = await import("./route");
+    const response = await GET(
+      new Request(`https://webhooks.cc/api/search/requests?q=${"a".repeat(1_001)}`)
+    );
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toEqual({ error: "invalid_q" });
+    expect(mockFns.searchRequestPage).not.toHaveBeenCalled();
+  });
+
+  test("cancels the search in the database when the caller goes away", async () => {
+    mockFns.extractBearerToken.mockReturnValue("token");
+    mockFns.validateBearerTokenWithPlan.mockResolvedValue({ userId: "user_123", plan: "pro" });
+    mockFns.cancelRequestSearch.mockResolvedValue(undefined);
+    const controller = new AbortController();
+    let token = "";
+    mockFns.searchRequestPage.mockImplementation(async (input: { cancelToken: string }) => {
+      token = input.cancelToken;
+      controller.abort();
+      return { requests: [], complete: false, searchedUntil: 1, cursor: "c", slices: 1 };
+    });
+
+    const { GET } = await import("./route");
+    const response = await GET(
+      new Request("https://webhooks.cc/api/search/requests?q=x", { signal: controller.signal })
+    );
+
+    expect(response.status).toBe(200);
+    expect(mockFns.cancelRequestSearch).toHaveBeenCalledWith(token);
   });
 });

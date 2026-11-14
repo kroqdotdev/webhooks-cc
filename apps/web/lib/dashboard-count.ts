@@ -92,3 +92,11 @@ export function computeShowHasMore({
   }
   return !hasLoadedOlderPage && initialCanLoadMore;
 }
+
+/**
+ * The count the list shows. A lower bound (a search that has not read the
+ * whole range yet) reads "50+".
+ */
+export function formatListCount(count: number, lowerBound: boolean): string {
+  return lowerBound ? `${count}+` : String(count);
+}

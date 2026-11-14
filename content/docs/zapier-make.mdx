@@ -108,7 +108,7 @@ When a Zap or scenario is removed, its destination is removed with it. If that f
 
 ## Search
 
-**Find Email** in Zapier returns the newest email at an endpoint that contains the text you give, as the trigger would send it. **Search emails** in Make returns the endpoint's emails that contain the text, newest first, up to the limit you set (10 by default), with their sender, recipients, subject, text, HTML and attachments, but not their parsed fields.
+**Find Email** in Zapier returns the newest email at an endpoint that contains the text you give, as the trigger would send it. **Search emails** in Make returns the endpoint's emails that contain the text, newest first, up to the limit you set (10 by default), with their sender, recipients, subject, text, HTML and attachments, but not their parsed fields. The text is looked for in the email's subject, its text, its sender and recipient addresses and its raw message, in upper or lower case. A search reads the newest emails first for up to about 10 seconds, so on an endpoint with a very long history an old email with rare text may not be found.
 
 Both use the search API, at most 60 searches per 10 minutes per account; when the limit is reached, the Zapier app asks Zapier to try again later. The routes the apps call count their rate limits per account rather than per address, because both platforms send every customer's calls from a few shared addresses.
 
