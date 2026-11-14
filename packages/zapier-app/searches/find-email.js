@@ -2,6 +2,49 @@
 
 const { baseUrl, renderEmail } = require("../lib");
 
+// How long Find Email keeps searching. Each page of a search reads for about
+// 2 seconds and says how far back it got; Zapier ends a step at 30 seconds,
+// and the email found still has to be fetched, so stop starting pages here.
+const SEARCH_DEADLINE_MS = 20_000;
+// The longest a page can take: up to 2.5 seconds waiting for a free search
+// slot, its 2-second budget, and the slice it finishes. No page starts this
+// close to the deadline.
+const PAGE_MS = 5_000;
+
+/**
+ * The newest email at an endpoint containing the text, following the
+ * search's cursor back through older requests until one matches, the
+ * search has read everything, or the deadline passes (then nothing found).
+ */
+async function findNewest(z, bundle) {
+  const stopAt = Date.now() + SEARCH_DEADLINE_MS;
+  let cursor = null;
+  for (;;) {
+    const params = {
+      slug: bundle.inputData.endpoint,
+      q: bundle.inputData.query,
+      kind: "email",
+      limit: 1,
+      paged: "true",
+    };
+    if (cursor) params.cursor = cursor;
+    // A page normally ends within its budget; a slow one is cut off at the
+    // deadline (an error, not an empty search) so the step stays within
+    // Zapier's limit.
+    const response = await z.request({
+      url: `${baseUrl()}/api/search/requests`,
+      params,
+      timeout: Math.max(1, stopAt - Date.now()),
+    });
+    const data = response.data;
+    const list = Array.isArray(data) ? data : (data && (data.requests || data.results)) || [];
+    if (list.length > 0) return list[0];
+    cursor = response.getHeader("x-search-cursor");
+    const complete = response.getHeader("x-search-complete") !== "false";
+    if (complete || !cursor || Date.now() + PAGE_MS > stopAt) return null;
+  }
+}
+
 /** The newest email at an endpoint whose subject, sender or text contains a word. */
 module.exports = {
   key: "find_email",
@@ -16,19 +59,9 @@ module.exports = {
       { key: "query", label: "Contains", required: true },
     ],
     perform: async (z, bundle) => {
-      const response = await z.request({
-        url: `${baseUrl()}/api/search/requests`,
-        params: {
-          slug: bundle.inputData.endpoint,
-          q: bundle.inputData.query,
-          kind: "email",
-          limit: 1,
-        },
-      });
-      const data = response.data;
-      const list = Array.isArray(data) ? data : (data && (data.requests || data.results)) || [];
-      if (list.length === 0) return [];
-      return [await renderEmail(z, list[0].id || list[0]._id)];
+      const found = await findNewest(z, bundle);
+      if (!found) return [];
+      return [await renderEmail(z, found.id || found._id)];
     },
     sample: {
       id: "3f2a9c1e-0000-4000-8000-000000000000",

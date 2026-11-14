@@ -27,7 +27,7 @@ async function callAnonRpc(functionName: string, args: Record<string, unknown>) 
   const rpc = anon.rpc.bind(anon) as unknown as (
     name: string,
     params: Record<string, unknown>
-  ) => Promise<{ data: unknown; error: { message: string } | null }>;
+  ) => Promise<{ data: unknown; error: { message: string; code?: string } | null }>;
 
   return rpc(functionName, args);
 }
@@ -272,23 +272,42 @@ describe("Supabase Search Integration", () => {
   });
 
   it("does not allow anonymous clients to invoke the search rpc", async () => {
-    const { data, error } = await callAnonRpc("search_requests", {
+    const { data, error } = await callAnonRpc("search_requests_page", {
       p_user_id: testUserId,
       p_plan: "pro",
     });
 
     expect(data).toBeNull();
-    expect(error).not.toBeNull();
+    // Refused for want of EXECUTE, not because the call named no function.
+    expect(error?.code).toBe("42501");
   });
 
   it("does not allow anonymous clients to invoke the search count rpc", async () => {
-    const { data, error } = await callAnonRpc("search_requests_count", {
+    const { data, error } = await callAnonRpc("search_requests_page", {
       p_user_id: testUserId,
       p_plan: "pro",
+      p_count: true,
     });
 
     expect(data).toBeNull();
-    expect(error).not.toBeNull();
+    // Refused for want of EXECUTE, not because the call named no function.
+    expect(error?.code).toBe("42501");
+  });
+
+  it("does not allow anonymous clients to cancel a search", async () => {
+    const { error } = await callAnonRpc("cancel_request_search", {
+      p_token: "00000000-0000-4000-8000-000000000000",
+    });
+
+    expect(error?.code).toBe("42501");
+  });
+
+  it("no longer has the unbounded search functions (migration 00102)", async () => {
+    for (const name of ["search_requests", "search_requests_count"]) {
+      const { error } = await admin.rpc(name as never, { p_user_id: testUserId } as never);
+      // PostgREST finds no function by that name.
+      expect(error?.code, name).toBe("PGRST202");
+    }
   });
 
   it("still allows the service role to invoke both search rpcs", async () => {

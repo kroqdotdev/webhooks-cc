@@ -3058,51 +3058,6 @@ export interface Database {
         };
         Returns: Json;
       };
-      search_requests: {
-        Args: {
-          p_user_id: string;
-          p_plan?: "free" | "pro" | "business" | null;
-          p_slug?: string | null;
-          p_method?: string | null;
-          p_q?: string | null;
-          p_from_ms?: number | null;
-          p_to_ms?: number | null;
-          p_limit?: number | null;
-          p_offset?: number | null;
-          p_order?: string | null;
-          p_kind?: string | null;
-        };
-        Returns: Array<{
-          id: string;
-          slug: string;
-          method: string;
-          path: string;
-          headers: Json;
-          body: string | null;
-          query_params: Json;
-          content_type: string | null;
-          ip: string;
-          size: number;
-          received_at: number;
-          kind: "http" | "email";
-          email: Json | null;
-          /** bytea, as PostgREST's hex text. */
-          body_raw: string | null;
-        }>;
-      };
-      search_requests_count: {
-        Args: {
-          p_user_id: string;
-          p_plan?: "free" | "pro" | "business" | null;
-          p_slug?: string | null;
-          p_method?: string | null;
-          p_q?: string | null;
-          p_from_ms?: number | null;
-          p_to_ms?: number | null;
-          p_kind?: string | null;
-        };
-        Returns: number;
-      };
       search_requests_page: {
         Args: {
           p_user_id: string;

@@ -1,6 +1,6 @@
 {
   "name": "@webhooks-cc/zapier-app",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "private": true,
   "description": "The webhooks.cc and mailhooks.cc app for Zapier: new emails (with their parsed fields) as a trigger, endpoints and test emails as actions.",
   "license": "MIT",
