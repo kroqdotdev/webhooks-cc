@@ -64,6 +64,17 @@ vi.mock("@/lib/supabase/admin", () => ({
 
 vi.mock("@/lib/supabase/inbound-domains", () => ({ isInboundDomainAddress: async () => false }));
 vi.mock("@/lib/audit", () => ({ auditAgentEvent: vi.fn(async () => {}), emailDomain: () => null }));
+// The token endpoint's budgets: every key asked for, and which are spent.
+const rateKeys: { key: string; max: number }[] = [];
+const exhausted = new Set<string>();
+vi.mock("@/lib/rate-limit", () => ({
+  checkRateLimitByKeyWithInfo: async (key: string, max: number) => {
+    rateKeys.push({ key, max });
+    return exhausted.has(key)
+      ? { response: new Response(null, { status: 429, headers: { "Retry-After": "42" } }) }
+      : { response: null };
+  },
+}));
 vi.mock("@/lib/forwarding/config", () => ({
   sendOptions: () => ({ timeoutMs: 1000, proxy: null, allowPrivate: false }),
 }));
@@ -83,8 +94,9 @@ vi.mock("@/lib/forwarding/send", () => ({
   },
 }));
 
-const { verifyOrgIdJag, looksLikeIdJag } = await import("./org-id-jag");
-const { orgIdJagGrant } = await import("./org-id-jag-grant");
+const { verifyOrgIdJag, looksLikeIdJag, trustedOrgIssuerOf, orgClientName } =
+  await import("./org-id-jag");
+const { orgIdJagGrant, identityRateKey } = await import("./org-id-jag-grant");
 const { clearOrgJwksCache, discoveryUrl } = await import("./org-jwks");
 const { checkOrgIssuer, checkAllowedClientIds } = await import("./org-issuers");
 
@@ -113,7 +125,8 @@ interface MintOptions {
   iat?: number;
   authTime?: number | null;
   email?: string;
-  emailVerified?: boolean;
+  /** null leaves the claim out. */
+  emailVerified?: unknown;
   clientId?: string;
   jti?: string;
   typ?: string;
@@ -124,8 +137,8 @@ async function mint(options: MintOptions = {}): Promise<string> {
   const claims: Record<string, unknown> = {
     client_id: options.clientId ?? CLIENT,
     email: options.email ?? "Member@Example.com",
-    email_verified: options.emailVerified ?? true,
   };
+  if (options.emailVerified !== null) claims.email_verified = options.emailVerified ?? true;
   if (options.authTime !== null) claims.auth_time = options.authTime ?? now - 30;
   return new jose.SignJWT(claims)
     .setProtectedHeader({
@@ -174,6 +187,8 @@ beforeEach(async () => {
   clearOrgJwksCache();
   serveIssuer(ISS, { keys: [await publicJwk(publicKey, KID)] });
   linkAnswer = { status: "not_member" };
+  rateKeys.length = 0;
+  exhausted.clear();
 });
 
 describe("verifyOrgIdJag", () => {
@@ -262,14 +277,41 @@ describe("verifyOrgIdJag", () => {
     ).toMatchObject({ error: "credential_expired" });
   });
 
-  test("refuses a missing or stale auth_time", async () => {
+  test("enforces auth_time when present: stale, in the future or not a number", async () => {
     const now = Math.floor(Date.now() / 1000);
-    expect(await verifyOrgIdJag(await mint({ authTime: null }), CLIENT)).toMatchObject({
-      error: "auth_time_missing",
-    });
     const stale = await verifyOrgIdJag(await mint({ authTime: now - 7200 }), CLIENT);
     expect(stale).toMatchObject({ ok: false, error: "auth_time_too_old" });
     expect(stale.ok === false && stale.authAge).toBeGreaterThanOrEqual(7200);
+    expect(await verifyOrgIdJag(await mint({ authTime: now + 600 }), CLIENT)).toMatchObject({
+      error: "invalid_token",
+    });
+    const recent = await verifyOrgIdJag(await mint({ authTime: now - 60 }), CLIENT);
+    expect(recent).toMatchObject({ ok: true, authTime: now - 60 });
+  });
+
+  test("without auth_time, accepts only an assertion living 5 minutes or less", async () => {
+    const now = Math.floor(Date.now() / 1000);
+    // Claude's: a minute.
+    expect(await verifyOrgIdJag(await mint({ authTime: null }), CLIENT)).toMatchObject({
+      ok: true,
+      authTime: null,
+    });
+    // Exactly five minutes.
+    expect(
+      (await verifyOrgIdJag(await mint({ authTime: null, iat: now, exp: now + 300 }), CLIENT)).ok
+    ).toBe(true);
+    // A second more.
+    expect(
+      await verifyOrgIdJag(await mint({ authTime: null, iat: now, exp: now + 301 }), CLIENT)
+    ).toMatchObject({ ok: false, error: "lifetime_too_long" });
+    // A long-lived one is fine only with auth_time.
+    expect((await verifyOrgIdJag(await mint({ iat: now, exp: now + 3000 }), CLIENT)).ok).toBe(true);
+  });
+
+  test("without auth_time, the jti is still single-use", async () => {
+    const token = await mint({ authTime: null, jti: "no-auth-time" });
+    expect((await verifyOrgIdJag(token, CLIENT)).ok).toBe(true);
+    expect(await verifyOrgIdJag(token, CLIENT)).toMatchObject({ error: "replay_detected" });
   });
 
   test("refuses an unknown kid, refetching the key set at most once", async () => {
@@ -292,6 +334,18 @@ describe("verifyOrgIdJag", () => {
     const token = await mint({ jti: "same-jti" });
     expect((await verifyOrgIdJag(token, CLIENT)).ok).toBe(true);
     expect(await verifyOrgIdJag(token, CLIENT)).toMatchObject({ error: "replay_detected" });
+  });
+
+  test("accepts email_verified absent, refuses false and anything but true", async () => {
+    expect(await verifyOrgIdJag(await mint({ emailVerified: null }), CLIENT)).toMatchObject({
+      ok: true,
+      email: "member@example.com",
+    });
+    for (const value of [false, "true", 1]) {
+      expect(await verifyOrgIdJag(await mint({ emailVerified: value }), CLIENT)).toMatchObject({
+        error: "missing_verified_email",
+      });
+    }
   });
 
   test("refuses an unverified or missing email", async () => {
@@ -339,10 +393,68 @@ describe("verifyOrgIdJag", () => {
   });
 });
 
+describe("trustedOrgIssuerOf", () => {
+  test("names a trusted issuer without verifying or fetching anything", async () => {
+    expect(await trustedOrgIssuerOf(await mint({ signWith: otherKey }))).toBe(ISS);
+    expect(fetched).toEqual([]);
+  });
+
+  test("is null for an untrusted, out-of-prefix or non-ID-JAG assertion, or when off", async () => {
+    expect(await trustedOrgIssuerOf(await mint({ iss: `${PREFIX}nobody` }))).toBeNull();
+    trusted.add("https://other.example.com/issuers/org-1");
+    expect(
+      await trustedOrgIssuerOf(await mint({ iss: "https://other.example.com/issuers/org-1" }))
+    ).toBeNull();
+    expect(await trustedOrgIssuerOf(await mint({ typ: "JWT" }))).toBeNull();
+    expect(await trustedOrgIssuerOf("garbage")).toBeNull();
+    env.AGENT_IDJAG_ORG_ISSUER_PREFIXES = [];
+    expect(await trustedOrgIssuerOf(await mint())).toBeNull();
+  });
+});
+
+describe("orgClientName", () => {
+  test("names a URL client id by its host, an opaque one by itself", () => {
+    expect(orgClientName(CLIENT)).toBe("client.example.com");
+    expect(orgClientName("claude-connector-123")).toBe("claude-connector-123");
+    expect(orgClientName("x".repeat(300))).toHaveLength(200);
+  });
+});
+
 describe("orgIdJagGrant", () => {
   function tokenRequest(): Request {
     return new Request(`${APP}/api/oauth2/token`, { method: "POST" });
   }
+
+  test("counts a verified assertion per identity, 30 a minute", async () => {
+    await orgIdJagGrant(tokenRequest(), { client_id: CLIENT }, await mint());
+    expect(rateKeys).toEqual([{ key: identityRateKey(ISS, "member-sub"), max: 30 }]);
+    // The raw sub never goes into the key.
+    expect(rateKeys[0].key).not.toContain("member-sub");
+  });
+
+  test("answers 429 once the identity's budget is spent, before linking", async () => {
+    exhausted.add(identityRateKey(ISS, "member-sub"));
+    linkAnswer = { status: "unexpected" };
+    const res = await orgIdJagGrant(tokenRequest(), { client_id: CLIENT }, await mint());
+    expect(res.status).toBe(429);
+    expect(res.headers.get("Retry-After")).toBe("42");
+    expect(await res.json()).toMatchObject({ error: "rate_limited" });
+  });
+
+  test("does not count an assertion that failed verification per identity", async () => {
+    await orgIdJagGrant(
+      tokenRequest(),
+      { client_id: CLIENT },
+      await mint({ aud: "https://elsewhere.example" })
+    );
+    expect(rateKeys).toEqual([]);
+  });
+
+  test("points a member who has not connected yet at the team page's section", async () => {
+    // The integration suite checks the full interaction_required answer.
+    const { teamConnectUrl } = await import("./org-id-jag-grant");
+    expect(teamConnectUrl("team-1")).toBe(`${APP}/teams/team-1#agent-sign-in`);
+  });
 
   test("answers access_denied for someone who is not a member", async () => {
     linkAnswer = { status: "not_member" };

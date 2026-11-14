@@ -3,7 +3,11 @@
  * the owner adds an issuer with a session, a member's agent presents the
  * member's ID-JAG at the token endpoint, the first use needs the member's
  * claim, later ones connect directly, and removing the issuer or leaving the
- * team revokes the connection and its tokens.
+ * team revokes the connection and its tokens. A member's window ("Connect"
+ * on the team page) binds the first matching assertion at once; outside
+ * it, wrong email, after expiry and after Disconnect, nothing binds. The
+ * relaxed claims (no auth_time on a short-lived assertion, email_verified
+ * absent) and the list read with an API key or agent token are covered too.
  *
  * Needs the local Supabase stack with migration 00105 applied, and
  * AGENT_ASSERTION_SIGNING_KEY plus AGENT_POW_SECRET in .env.local. Run with:
@@ -17,7 +21,8 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { createClient } from "@supabase/supabase-js";
 import * as jose from "jose";
-import { randomUUID } from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
+import { hashApiKey } from "@/lib/supabase/api-keys";
 import {
   adminClient,
   APP,
@@ -73,6 +78,9 @@ let routes: AgentRoutes;
 let issuersGet: TeamHandler;
 let issuersPost: TeamHandler;
 let issuerDelete: IssuerHandler;
+let connectPost: IssuerHandler;
+let connectDelete: IssuerHandler;
+let attemptGet: Handler;
 let leavePost: TeamHandler;
 let completePost: Handler;
 let registrationsGet: Handler;
@@ -105,22 +113,29 @@ async function makeUser(email: string): Promise<{ id: string; session: string }>
   return { id: data.user!.id, session: signIn.session!.access_token };
 }
 
-async function mint(sub: string, email: string, overrides: { clientId?: string } = {}) {
+async function mint(
+  sub: string,
+  email: string,
+  overrides: {
+    clientId?: string;
+    authTime?: boolean;
+    emailVerified?: boolean | null;
+    ttl?: number;
+  } = {}
+) {
   const jti = randomUUID();
   jtis.add(jti);
   const now = Math.floor(Date.now() / 1000);
-  return new jose.SignJWT({
-    client_id: overrides.clientId ?? CLIENT,
-    email,
-    email_verified: true,
-    auth_time: now - 30,
-  })
+  const claims: Record<string, unknown> = { client_id: overrides.clientId ?? CLIENT, email };
+  if (overrides.emailVerified !== null) claims.email_verified = overrides.emailVerified ?? true;
+  if (overrides.authTime !== false) claims.auth_time = now - 30;
+  return new jose.SignJWT(claims)
     .setProtectedHeader({ alg: "ES256", typ: "oauth-id-jag+jwt", kid: "org-key-1" })
     .setIssuer(ISS)
     .setSubject(sub)
     .setAudience(APP)
     .setIssuedAt(now)
-    .setExpirationTime(now + 60)
+    .setExpirationTime(now + (overrides.ttl ?? 60))
     .setJti(jti)
     .sign(key);
 }
@@ -161,6 +176,8 @@ async function connectThroughClaim(
     claim: { interval: 5 },
   });
   expect(body.claim_token).toMatch(/^clm_/);
+  // The member is pointed at the team page to connect.
+  expect(body.error_description).toContain(`${APP}/teams/${teamId}#agent-sign-in`);
 
   // Nothing is bound before the member confirms.
   const { data: pending } = await admin
@@ -223,9 +240,11 @@ describe("team ID-JAG issuers", () => {
     documents.set(jwksUri, JSON.stringify({ keys: [jwk] }));
 
     routes = await loadAgentRoutes();
-    const [issuers, issuer, leave, complete, regs] = await Promise.all([
+    const [issuers, issuer, connectRoute, attempt, leave, complete, regs] = await Promise.all([
       import("@/app/api/teams/[teamId]/idjag-issuers/route"),
       import("@/app/api/teams/[teamId]/idjag-issuers/[issuerId]/route"),
+      import("@/app/api/teams/[teamId]/idjag-issuers/[issuerId]/connect/route"),
+      import("@/app/api/agent/identity/claim/attempt/route"),
       import("@/app/api/teams/[teamId]/leave/route"),
       import("@/app/api/agent/identity/claim/complete/route"),
       import("@/app/api/agent/registrations/route"),
@@ -233,6 +252,9 @@ describe("team ID-JAG issuers", () => {
     issuersGet = issuers.GET;
     issuersPost = issuers.POST;
     issuerDelete = issuer.DELETE;
+    connectPost = connectRoute.POST;
+    connectDelete = connectRoute.DELETE;
+    attemptGet = attempt.GET;
     leavePost = leave.POST;
     completePost = complete.POST;
     registrationsGet = regs.GET;
@@ -317,6 +339,22 @@ describe("team ID-JAG issuers", () => {
     expect((await none.json()).error).toBe("access_denied");
     const { data: user } = await admin.from("users").select("id").eq("email", nobody).maybeSingle();
     expect(user).toBeNull();
+  });
+
+  it("names the team and the issuer's host on the claim page", async () => {
+    const sub = `claim-page-${RUN}`;
+    const first = await (await present(await mint(sub, MEMBER_EMAIL))).json();
+    registrations.add(first.registration_id);
+    const attempt = new URL(first.claim.verification_uri).searchParams.get("attempt")!;
+    const view = await attemptGet(
+      bearer("GET", `/api/agent/identity/claim/attempt?attempt=${attempt}`, memberSession)
+    );
+    expect(view.status).toBe(200);
+    expect(await view.json()).toMatchObject({
+      trustedBy: { team: `ID-JAG team ${RUN}`, host: "identity.idjag-test.local" },
+      clientName: "client.idjag-test.local",
+    });
+    await admin.from("agent_registrations").delete().eq("id", first.registration_id);
   });
 
   it("needs the member's claim on first use, then connects directly", async () => {
@@ -437,6 +475,254 @@ describe("team ID-JAG issuers", () => {
     ]);
     const refused = await present(await mint(sub, MEMBER_EMAIL));
     expect((await refused.json()).error).toBe("access_denied");
+  });
+
+  describe("a member's connect window", () => {
+    let issuerId: string;
+    const issuerCtx = () => ({ params: Promise.resolve({ teamId, issuerId }) });
+    const openWindow = (session: string) =>
+      connectPost(
+        bearer("POST", `/api/teams/${teamId}/idjag-issuers/${issuerId}/connect`, session),
+        issuerCtx()
+      );
+    const disconnect = (session: string) =>
+      connectDelete(
+        bearer("DELETE", `/api/teams/${teamId}/idjag-issuers/${issuerId}/connect`, session),
+        issuerCtx()
+      );
+    const listAs = async (token: string) =>
+      issuersGet(bearer("GET", `/api/teams/${teamId}/idjag-issuers`, token), teamCtx());
+    const auditFor = async (action: string) => {
+      const { data } = await admin
+        .from("audit_events")
+        .select("actor_type, outcome, team_id, target_id, target_user_id, metadata")
+        .eq("action", action)
+        .eq("team_id", teamId)
+        .order("occurred_at", { ascending: true });
+      return data ?? [];
+    };
+
+    beforeAll(async () => {
+      // The member left in the test before; back in.
+      const { error } = await admin
+        .from("team_members")
+        .insert({ team_id: teamId, user_id: memberId, role: "member" });
+      if (error) throw error;
+      const listed = await (await listAs(ownerSession)).json();
+      issuerId = listed.issuers[0].id;
+    });
+
+    it("opens only with the member's own session", async () => {
+      expect((await openWindow("whcc_not_a_session_token")).status).toBe(403);
+      const outsider = await makeUser(`idjag-outsider2-${RUN}@webhooks-test.local`);
+      expect((await openWindow(outsider.session)).status).toBe(404);
+      expect((await disconnect(outsider.session)).status).toBe(404);
+    });
+
+    it("refuses outside a window, and binds the first matching assertion inside it", async () => {
+      const sub = `window-${RUN}`;
+      // No window: the claim ceremony, nothing bound.
+      const outside = await present(await mint(sub, MEMBER_EMAIL));
+      const outsideBody = await outside.json();
+      registrations.add(outsideBody.registration_id);
+      expect(outsideBody.error).toBe("interaction_required");
+
+      const opened = await openWindow(memberSession);
+      expect(opened.status).toBe(200);
+      const { window_expires_at } = await opened.json();
+      const left = Date.parse(window_expires_at) - Date.now();
+      expect(left).toBeGreaterThan(590_000);
+      expect(left).toBeLessThanOrEqual(600_000);
+
+      // Inside it: a token at once, and the pending ceremony is replaced.
+      const inside = await present(await mint(sub, MEMBER_EMAIL));
+      expect(inside.status).toBe(200);
+      const token = (await inside.json()).access_token;
+      expect(await tokenWorks(token)).toBe(true);
+      const { data: row } = await admin
+        .from("agent_registrations")
+        .select("id, user_id, client_name, idjag_team_issuer_id")
+        .eq("idjag_iss", ISS)
+        .eq("idjag_sub", sub)
+        .is("revoked_at", null)
+        .single();
+      registrations.add(row!.id);
+      expect(row).toMatchObject({
+        user_id: memberId,
+        client_name: "client.idjag-test.local",
+        idjag_team_issuer_id: issuerId,
+      });
+      const { data: pending } = await admin
+        .from("agent_registrations")
+        .select("id")
+        .eq("id", outsideBody.registration_id)
+        .maybeSingle();
+      expect(pending).toBeNull();
+
+      // The window closed: another identity of the same person needs a claim.
+      const second = await (await present(await mint(`window-b-${RUN}`, MEMBER_EMAIL))).json();
+      registrations.add(second.registration_id);
+      expect(second.error).toBe("interaction_required");
+      // Pending ceremonies count against the member's cap; drop this one.
+      await admin.from("agent_registrations").delete().eq("id", second.registration_id);
+
+      // The list shows the connection, read with the member's agent token.
+      const listed = await listAs(token);
+      expect(listed.status).toBe(200);
+      expect((await listed.json()).issuers[0].connect).toMatchObject({
+        window_expires_at: null,
+        connections: [{ id: row!.id, client_name: "client.idjag-test.local" }],
+      });
+
+      expect(await auditFor("team.idjag_connect_opened")).toContainEqual(
+        expect.objectContaining({ outcome: "ok", target_id: issuerId, target_user_id: null })
+      );
+      expect(await auditFor("team.idjag_connect_bound")).toContainEqual(
+        expect.objectContaining({
+          actor_type: "agent",
+          outcome: "ok",
+          target_id: row!.id,
+          target_user_id: memberId,
+        })
+      );
+    });
+
+    it("never binds another person's email inside the member's window", async () => {
+      // The owner is a member too, but the window is the member's.
+      expect((await openWindow(memberSession)).status).toBe(200);
+      const owners = await present(await mint(`window-owner-${RUN}`, OWNER_EMAIL));
+      const body = await owners.json();
+      registrations.add(body.registration_id);
+      expect(body.error).toBe("interaction_required");
+      // Someone outside the team: refused, and the window stays open.
+      const outsider = await present(await mint(`window-out-${RUN}`, OUTSIDER_EMAIL));
+      expect((await outsider.json()).error).toBe("access_denied");
+      const listed = await (await listAs(memberSession)).json();
+      expect(listed.issuers[0].connect.window_expires_at).not.toBeNull();
+    });
+
+    it("binds nothing after the window expired, and records the unused expiry", async () => {
+      // The window from the test before, moved into the past.
+      const { error } = await admin
+        .from("team_idjag_connect_windows")
+        .update({
+          opened_at: new Date(Date.now() - 700_000).toISOString(),
+          expires_at: new Date(Date.now() - 1000).toISOString(),
+        })
+        .eq("trust_id", issuerId)
+        .eq("user_id", memberId);
+      if (error) throw error;
+      const late = await (await present(await mint(`window-late-${RUN}`, MEMBER_EMAIL))).json();
+      registrations.add(late.registration_id);
+      expect(late.error).toBe("interaction_required");
+      await admin.from("agent_registrations").delete().eq("id", late.registration_id);
+
+      // pg_cron runs this every minute; run it now (it may have already).
+      const { error: expireError } = await admin.rpc("expire_team_idjag_connect_windows");
+      if (expireError) throw expireError;
+      const { data: windows } = await admin
+        .from("team_idjag_connect_windows")
+        .select("trust_id")
+        .eq("trust_id", issuerId)
+        .eq("user_id", memberId);
+      expect(windows).toEqual([]);
+      expect(await auditFor("team.idjag_connect_expired")).toContainEqual(
+        expect.objectContaining({
+          actor_type: "system",
+          target_id: issuerId,
+          target_user_id: memberId,
+          metadata: expect.objectContaining({ issuer: ISS }),
+        })
+      );
+    });
+
+    it("disconnects the member's connections and their tokens", async () => {
+      expect((await openWindow(memberSession)).status).toBe(200);
+      const sub = `window-${RUN}`;
+      // Already bound in the earlier test: a direct token.
+      const direct = await (await present(await mint(sub, MEMBER_EMAIL))).json();
+      expect(await tokenWorks(direct.access_token)).toBe(true);
+
+      const res = await disconnect(memberSession);
+      expect(res.status).toBe(200);
+      expect((await res.json()).revoked_connections).toBeGreaterThanOrEqual(1);
+      expect(await tokenWorks(direct.access_token)).toBe(false);
+      const listed = await (await listAs(memberSession)).json();
+      expect(listed.issuers[0].connect).toEqual({ window_expires_at: null, connections: [] });
+
+      // Nothing binds now: the window closed with the disconnect.
+      const again = await (await present(await mint(sub, MEMBER_EMAIL))).json();
+      registrations.add(again.registration_id);
+      expect(again.error).toBe("interaction_required");
+      expect(await auditFor("team.idjag_connect_disconnected")).toContainEqual(
+        expect.objectContaining({ outcome: "ok", target_id: issuerId })
+      );
+    });
+
+    it("accepts a short-lived assertion without auth_time or email_verified, not a long one", async () => {
+      expect((await openWindow(memberSession)).status).toBe(200);
+      const sub = `relaxed-${RUN}`;
+      const long = await present(await mint(sub, MEMBER_EMAIL, { authTime: false, ttl: 301 }));
+      expect(await long.json()).toMatchObject({
+        error: "invalid_grant",
+        error_description: expect.stringContaining("exp - iat"),
+      });
+      const unverified = await present(await mint(sub, MEMBER_EMAIL, { emailVerified: false }));
+      expect((await unverified.json()).error).toBe("invalid_grant");
+
+      const relaxed = await present(
+        await mint(sub, MEMBER_EMAIL, { authTime: false, emailVerified: null })
+      );
+      expect(relaxed.status).toBe(200);
+      const { data: row } = await admin
+        .from("agent_registrations")
+        .select("id")
+        .eq("idjag_iss", ISS)
+        .eq("idjag_sub", sub)
+        .is("revoked_at", null)
+        .single();
+      registrations.add(row!.id);
+      expect(await tokenWorks((await relaxed.json()).access_token)).toBe(true);
+    });
+
+    it("lists the issuers for a member's API key, and never adds or connects with one", async () => {
+      const apiKey = `whcc_${randomBytes(24).toString("hex")}`;
+      const { error } = await admin.from("api_keys").insert({
+        user_id: memberId,
+        key_hash: hashApiKey(apiKey),
+        key_prefix: apiKey.slice(0, 12),
+        name: "ID-JAG list test",
+      });
+      if (error) throw error;
+      try {
+        const listed = await listAs(apiKey);
+        expect(listed.status).toBe(200);
+        expect(await listed.json()).toMatchObject({
+          issuers: [{ id: issuerId, issuer: ISS }],
+          can_manage: false,
+        });
+        expect((await addIssuer(apiKey, { issuer: `${ISS}-2` })).status).toBe(403);
+        expect((await openWindow(apiKey)).status).toBe(403);
+        expect((await disconnect(apiKey)).status).toBe(403);
+
+        // A key of someone outside the team sees nothing.
+        const { data: outsider } = await admin
+          .from("users")
+          .select("id")
+          .eq("email", OUTSIDER_EMAIL)
+          .single();
+        const otherKey = `whcc_${randomBytes(24).toString("hex")}`;
+        await admin.from("api_keys").insert({
+          user_id: outsider!.id,
+          key_hash: hashApiKey(otherKey),
+          key_prefix: otherKey.slice(0, 12),
+          name: "ID-JAG list test",
+        });
+        expect((await listAs(otherKey)).status).toBe(404);
+      } finally {
+        await admin.from("api_keys").delete().eq("name", "ID-JAG list test");
+      }
+    });
   });
 
   it("fetched the issuer's keys through the outbound sender", () => {

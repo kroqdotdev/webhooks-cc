@@ -241,3 +241,118 @@ export async function removeTeamIssuer(input: {
   }
   throw new Error(`Unexpected remove_team_idjag_issuer status: ${result.status}`);
 }
+
+// ---------------------------------------------------------------------------
+// A member's pre-approval ("Connect" on the team page)
+// ---------------------------------------------------------------------------
+
+/** How long a member's window stays open. */
+export const CONNECT_WINDOW_SECONDS = 600;
+
+export interface MemberConnection {
+  id: string;
+  clientName: string | null;
+  connectedAt: string;
+}
+
+export interface MemberConnectState {
+  /** When the member's open window closes, or null when none is open. */
+  windowExpiresAt: string | null;
+  connections: MemberConnection[];
+}
+
+/**
+ * The caller's own state for each of the team's trust rows: an open window
+ * and the agents connected through the row.
+ */
+export async function memberConnectStates(
+  userId: string,
+  trustIds: string[]
+): Promise<Map<string, MemberConnectState>> {
+  const states = new Map<string, MemberConnectState>(
+    trustIds.map((id) => [id, { windowExpiresAt: null, connections: [] }])
+  );
+  if (trustIds.length === 0) return states;
+  const admin = createAdminClient();
+  const [windows, registrations] = await Promise.all([
+    admin
+      .from("team_idjag_connect_windows")
+      .select("trust_id, expires_at")
+      .eq("user_id", userId)
+      .in("trust_id", trustIds)
+      .gt("expires_at", new Date().toISOString()),
+    admin
+      .from("agent_registrations")
+      .select("id, client_name, claimed_at, idjag_team_issuer_id")
+      .eq("user_id", userId)
+      .in("idjag_team_issuer_id", trustIds)
+      .not("claimed_at", "is", null)
+      .is("revoked_at", null)
+      .order("claimed_at", { ascending: true }),
+  ]);
+  if (windows.error) throw windows.error;
+  if (registrations.error) throw registrations.error;
+  for (const row of windows.data ?? []) {
+    const state = states.get(row.trust_id);
+    if (state) state.windowExpiresAt = row.expires_at;
+  }
+  for (const row of registrations.data ?? []) {
+    const state = states.get(row.idjag_team_issuer_id!);
+    state?.connections.push({
+      id: row.id,
+      clientName: row.client_name,
+      connectedAt: row.claimed_at!,
+    });
+  }
+  return states;
+}
+
+export type OpenWindowResult =
+  { status: "ok"; issuer: string; expiresAt: string } | { status: "not_found" };
+
+/** Opens (or reopens) the member's window for a trust row of their team. */
+export async function openConnectWindow(input: {
+  teamId: string;
+  userId: string;
+  issuerId: string;
+}): Promise<OpenWindowResult> {
+  const { data, error } = await createAdminClient().rpc("open_team_idjag_connect_window", {
+    p_team_id: input.teamId,
+    p_issuer_id: input.issuerId,
+    p_user_id: input.userId,
+    p_seconds: CONNECT_WINDOW_SECONDS,
+  });
+  if (error) throw error;
+  const result = data as { status: string; issuer?: string; expires_at?: string };
+  if (result.status === "ok") {
+    return { status: "ok", issuer: result.issuer!, expiresAt: result.expires_at! };
+  }
+  if (result.status === "not_found") return { status: "not_found" };
+  throw new Error(`Unexpected open_team_idjag_connect_window status: ${result.status}`);
+}
+
+export type DisconnectResult =
+  { status: "ok"; issuer: string; revoked: string[] } | { status: "not_found" };
+
+/**
+ * Disconnects what the member connected through a trust row: the
+ * delegations are revoked with their tokens, and an open window closes.
+ */
+export async function disconnectMember(input: {
+  teamId: string;
+  userId: string;
+  issuerId: string;
+}): Promise<DisconnectResult> {
+  const { data, error } = await createAdminClient().rpc("disconnect_team_idjag_member", {
+    p_team_id: input.teamId,
+    p_issuer_id: input.issuerId,
+    p_user_id: input.userId,
+  });
+  if (error) throw error;
+  const result = data as { status: string; issuer?: string; revoked?: string[] };
+  if (result.status === "ok") {
+    return { status: "ok", issuer: result.issuer!, revoked: result.revoked ?? [] };
+  }
+  if (result.status === "not_found") return { status: "not_found" };
+  throw new Error(`Unexpected disconnect_team_idjag_member status: ${result.status}`);
+}

@@ -1018,6 +1018,27 @@ export interface Database {
         };
         Relationships: [];
       };
+      team_idjag_connect_windows: {
+        Row: {
+          trust_id: string;
+          user_id: string;
+          opened_at: string;
+          expires_at: string;
+        };
+        Insert: {
+          trust_id: string;
+          user_id: string;
+          opened_at?: string;
+          expires_at: string;
+        };
+        Update: {
+          trust_id?: string;
+          user_id?: string;
+          opened_at?: string;
+          expires_at?: string;
+        };
+        Relationships: [];
+      };
       team_members: {
         Row: {
           id: string;
@@ -2828,6 +2849,7 @@ export interface Database {
           p_sub: string;
           p_email: string;
           p_client_id: string;
+          p_client_name: string;
           p_claim_token_hash: string;
           p_attempt_token_hash: string;
           p_user_code_hash: string;
@@ -2835,8 +2857,21 @@ export interface Database {
           p_attempt_seconds: number;
           p_max_attempts: number;
           p_max_pending: number;
+          p_max_agents: number;
         };
         Returns: Json;
+      };
+      open_team_idjag_connect_window: {
+        Args: { p_team_id: string; p_issuer_id: string; p_user_id: string; p_seconds: number };
+        Returns: Json;
+      };
+      disconnect_team_idjag_member: {
+        Args: { p_team_id: string; p_issuer_id: string; p_user_id: string };
+        Returns: Json;
+      };
+      expire_team_idjag_connect_windows: {
+        Args: Record<string, never>;
+        Returns: number;
       };
       add_team_idjag_issuer: {
         Args: {

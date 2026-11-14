@@ -2,6 +2,7 @@ import { authenticateSessionRequest } from "@/lib/api-auth";
 import { auditUserAction } from "@/lib/audit";
 import { orgIssuersEnabled, removeTeamIssuer } from "@/lib/agent/org-issuers";
 import { reportError } from "@/lib/observability";
+import { closeRunsWithoutAccess } from "@/lib/tunnels/access";
 
 /**
  * Stop trusting an organisation ID-JAG issuer (the owner only, session
@@ -45,6 +46,8 @@ export async function DELETE(
       targetId: issuerId,
       metadata: { issuer: result.issuer.slice(0, 200), revoked: result.revoked.length },
     });
+    // Tunnels opened with their tokens end with them.
+    if (result.revoked.length > 0) await closeRunsWithoutAccess();
     return Response.json({ success: true, revoked_connections: result.revoked.length });
   } catch (error) {
     reportError("Failed to remove a team ID-JAG issuer", error);

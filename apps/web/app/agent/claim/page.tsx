@@ -23,6 +23,8 @@ interface AttemptView {
   clientName: string | null;
   kind: "anonymous" | "service_auth" | "identity_assertion";
   provider: string | null;
+  /** An organisation's ID-JAG: the team trusting its issuer, and the host. */
+  trustedBy?: { team: string; host: string } | null;
   registeredAt: number;
   attemptExpiresAt: number | null;
   requestedFor: string;
@@ -310,7 +312,14 @@ function AttemptPanel(props: {
   return (
     <div>
       <h1 className="text-2xl font-bold mb-2 text-center">Connect an agent</h1>
-      {view.provider ? (
+      {view.trustedBy ? (
+        <p className="ph-no-capture text-muted-foreground mb-6 text-center">
+          <span className="font-medium text-foreground">{view.trustedBy.team}</span> trusts{" "}
+          <span className="font-medium text-foreground">{view.trustedBy.host}</span> to sign you in.
+          Confirm to let the agent it runs act on your behalf as{" "}
+          <span className="font-mono">{view.signedInAs}</span>.
+        </p>
+      ) : view.provider ? (
         <p className="text-muted-foreground mb-6 text-center">
           <span className="font-medium text-foreground">{view.provider}</span> is asking to link
           this account so the agent it runs can act on your behalf as{" "}
@@ -324,6 +333,14 @@ function AttemptPanel(props: {
       )}
 
       <Card className="p-4 mb-6 space-y-2 text-sm" render={<dl />}>
+        {view.trustedBy && (
+          <div className="flex justify-between gap-4">
+            <dt className="text-muted-foreground">Trusted by</dt>
+            <dd className="ph-no-capture text-right font-medium break-all">
+              {view.trustedBy.team}
+            </dd>
+          </div>
+        )}
         {view.provider ? (
           <div className="flex justify-between gap-4">
             <dt className="text-muted-foreground">Identity provider</dt>

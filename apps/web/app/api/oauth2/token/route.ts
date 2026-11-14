@@ -1,4 +1,4 @@
-import { checkRateLimitByKeyWithInfo, checkRateLimitWithInfo } from "@/lib/rate-limit";
+import { checkRateLimitByKeyWithInfo } from "@/lib/rate-limit";
 import { auditAgentEvent } from "@/lib/audit";
 import { assertionSigningConfigured } from "@/lib/agent/assertion";
 import { pollClaim } from "@/lib/agent/claims";
@@ -15,6 +15,7 @@ import { exchangeAssertion, hashClaimToken, InvalidGrantError } from "@/lib/agen
 import { looksLikeIdJag } from "@/lib/agent/org-id-jag";
 import { orgIdJagGrant } from "@/lib/agent/org-id-jag-grant";
 import { orgIssuersEnabled } from "@/lib/agent/org-issuers";
+import { tokenRateLimit } from "@/lib/agent/token-rate-limit";
 import { acceptedResources, normalizeResource } from "@/lib/oauth/authorize";
 import { preflight, withCors } from "@/lib/oauth/cors";
 import {
@@ -55,12 +56,11 @@ async function token(request: Request): Promise<Response> {
 
   // Hosted MCP clients (claude.ai, ChatGPT) refresh for many users from few
   // addresses; their codes and refresh tokens cannot be guessed, so they
-  // get a wider budget than the agent grants.
+  // get a wider budget than the agent grants. So does an issuer a team
+  // trusts, counted per issuer (lib/agent/token-rate-limit.ts).
   const oauthGrant =
     body.grant_type === AUTHORIZATION_CODE_GRANT || body.grant_type === REFRESH_TOKEN_GRANT;
-  const limit = oauthGrant
-    ? await checkRateLimitWithInfo(request, "oauth-token", 600, 60_000)
-    : await checkRateLimitWithInfo(request, "agent-token", 60, 60_000);
+  const limit = await tokenRateLimit(request, body);
   if (limit.response) {
     return oauthError(429, "rate_limited", "Too many requests. Wait and retry.", {
       "Retry-After": limit.response.headers.get("Retry-After") ?? "60",

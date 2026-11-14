@@ -304,6 +304,12 @@ export interface AttemptView {
   kind: RegistrationRow["kind"];
   /** For an ID-JAG identity: its provider, named by our trust list. */
   provider: string | null;
+  /**
+   * For an organisation's ID-JAG: the team that trusts its issuer and the
+   * issuer's host ("Acme trusts identity.anthropic.com to sign you in").
+   * Only for a viewer who is a member of that team.
+   */
+  trustedBy: { team: string; host: string } | null;
   registeredAt: number;
   attemptExpiresAt: number | null;
   requestedFor: string;
@@ -363,6 +369,10 @@ export async function readClaimAttempt(
   if (everError) throw everError;
 
   const hint = registration.attempt_login_hint ?? "";
+  const trustedBy =
+    registration.kind === "identity_assertion" && registration.idjag_team_issuer_id
+      ? await trustingTeam(registration.idjag_team_issuer_id, user.id)
+      : null;
   return {
     state,
     clientName: registration.client_name,
@@ -371,6 +381,7 @@ export async function readClaimAttempt(
       registration.kind === "identity_assertion" && registration.idjag_iss
         ? providerDisplayName(registration.idjag_iss)
         : null,
+    trustedBy,
     registeredAt: Date.parse(registration.created_at),
     attemptExpiresAt: attemptExpires,
     requestedFor: maskEmail(hint),
@@ -383,6 +394,41 @@ export async function readClaimAttempt(
       requestCount: row.request_count,
     })),
   };
+}
+
+/** The team behind a trust row and its issuer's host, for one of its members. */
+async function trustingTeam(
+  trustId: string,
+  userId: string
+): Promise<{ team: string; host: string } | null> {
+  const admin = createAdminClient();
+  const { data: trust, error } = await admin
+    .from("team_idjag_issuers")
+    .select("team_id, issuer")
+    .eq("id", trustId)
+    .maybeSingle();
+  if (error) throw error;
+  if (!trust) return null;
+  const [{ data: team, error: teamError }, { data: member, error: memberError }] =
+    await Promise.all([
+      admin.from("teams").select("name").eq("id", trust.team_id).maybeSingle(),
+      admin
+        .from("team_members")
+        .select("user_id")
+        .eq("team_id", trust.team_id)
+        .eq("user_id", userId)
+        .maybeSingle(),
+    ]);
+  if (teamError) throw teamError;
+  if (memberError) throw memberError;
+  if (!team || !member) return null;
+  let host: string;
+  try {
+    host = new URL(trust.issuer).host;
+  } catch {
+    host = trust.issuer.slice(0, 64);
+  }
+  return { team: team.name, host };
 }
 
 export type CompleteResult =

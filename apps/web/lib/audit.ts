@@ -82,6 +82,8 @@ export type AuditAction =
   | "team.seats_changed"
   | "team.idjag_issuer_added"
   | "team.idjag_issuer_removed"
+  | "team.idjag_connect_opened"
+  | "team.idjag_connect_disconnected"
   | "support.ticket_created"
   | "support.reply_posted"
   | "support.ticket_closed"
@@ -135,7 +137,8 @@ export type AgentAuditAction =
   | "agent.sandbox.full"
   | "agent.oauth.client_registered"
   | "agent.oauth.approved"
-  | "agent.oauth.denied";
+  | "agent.oauth.denied"
+  | "team.idjag_connect_bound";
 
 export type AuditOutcome = "ok" | "refused" | "error";
 

@@ -1,9 +1,12 @@
+import { createHash } from "node:crypto";
 import { auditAgentEvent, emailDomain } from "@/lib/audit";
+import { checkRateLimitByKeyWithInfo } from "@/lib/rate-limit";
 import { claimAttemptBlock } from "./claims";
 import { MAX_CLAIM_ATTEMPTS, POST_CLAIM_SCOPES } from "./constants";
 import { NO_STORE_HEADERS, oauthError, oauthJson } from "./errors";
+import { issuer } from "./http";
 import { maxAuthAgeSeconds } from "./id-jag";
-import { linkOrgIdJag, verifyOrgIdJag } from "./org-id-jag";
+import { linkOrgIdJag, MAX_LIFETIME_WITHOUT_AUTH_TIME_SECS, verifyOrgIdJag } from "./org-id-jag";
 import { claimEndpointUrl } from "./registrations";
 
 /**
@@ -12,14 +15,33 @@ import { claimEndpointUrl } from "./registrations";
  * draft-ietf-oauth-identity-assertion-authz-grant Section 4.4.3:
  * invalid_grant for an assertion that failed a check, access_denied for a
  * valid one whose person is not a member of a team trusting the issuer.
- * The first use of an identity answers interaction_required with a claim
- * ceremony (the same block /api/agent/identity hands out); its claim grant
- * returns the account's tokens, and later assertions get a token at once.
- * No refresh token: a fresh assertion is the way to a new access token.
+ * An identity binds at once inside a window the member opened on the team
+ * page ("Connect"); outside one, its first use answers interaction_required
+ * naming the team page, with a claim ceremony (the same block
+ * /api/agent/identity hands out) for agents that relay it. Once bound,
+ * later assertions get a token at once. No refresh token: a fresh assertion
+ * is the way to a new access token.
+ *
+ * Rate limits: the token route counts an assertion from a trusted issuer
+ * per issuer (600 a minute) before its signature is checked, since an
+ * organisation's members share its platform's few addresses; once
+ * verified, it is counted per identity (iss, sub) here, 30 a minute.
  */
 
 const KIND = "identity_assertion";
 const SOURCE = "team_issuer";
+/** Verified assertions one identity may present a minute. */
+export const IDENTITY_RATE_LIMIT = 30;
+
+/** The rate-limit key of a verified identity; never the raw sub. */
+export function identityRateKey(iss: string, sub: string): string {
+  return `agent-token-org-identity:${createHash("sha256").update(`${iss}#${sub}`).digest("hex")}`;
+}
+
+/** The team page, where a member opens a window to connect. */
+export function teamConnectUrl(teamId: string): string {
+  return `${issuer()}/teams/${encodeURIComponent(teamId)}#agent-sign-in`;
+}
 
 function text(body: Record<string, unknown>, key: string, max = 512): string | null {
   const value = body[key];
@@ -43,17 +65,33 @@ export async function orgIdJagGrant(
       status: 400,
       metadata: { kind: KIND, source: SOURCE, code: verified.error },
     });
-    if (verified.error === "auth_time_missing" || verified.error === "auth_time_too_old") {
-      const maxAge = maxAuthAgeSeconds();
+    if (verified.error === "auth_time_too_old") {
       return oauthError(
         400,
         "invalid_grant",
-        verified.error === "auth_time_missing"
-          ? `The assertion carries no auth_time; the sign-in must be at most ${maxAge}s old.`
-          : `auth_time is ${verified.authAge}s old; the sign-in must be at most ${maxAge}s old.`
+        `auth_time is ${verified.authAge}s old; the sign-in must be at most ${maxAuthAgeSeconds()}s old.`
+      );
+    }
+    if (verified.error === "lifetime_too_long") {
+      return oauthError(
+        400,
+        "invalid_grant",
+        `The assertion carries no auth_time, so exp - iat must be at most ${MAX_LIFETIME_WITHOUT_AUTH_TIME_SECS}s.`
       );
     }
     return oauthError(400, "invalid_grant", `The assertion was rejected (${verified.error}).`);
+  }
+
+  // Per identity, now that it is known to be real.
+  const pace = await checkRateLimitByKeyWithInfo(
+    identityRateKey(verified.iss, verified.sub),
+    IDENTITY_RATE_LIMIT,
+    60_000
+  );
+  if (pace.response) {
+    return oauthError(429, "rate_limited", "Too many requests for this identity. Wait and retry.", {
+      "Retry-After": pace.response.headers.get("Retry-After") ?? "60",
+    });
   }
 
   const link = await linkOrgIdJag(verified);
@@ -101,6 +139,12 @@ export async function orgIdJagGrant(
         "too_many_pending",
         "Too many agents are waiting for this person already."
       );
+    case "too_many_agents":
+      return refused(
+        400,
+        "too_many_agents",
+        "The member has as many connected agents as allowed. Disconnect one first."
+      );
     case "interaction_required": {
       const { registration, claimToken, attempt, teamId } = link;
       if (link.created) {
@@ -127,8 +171,9 @@ export async function orgIdJagGrant(
       return Response.json(
         {
           error: "interaction_required",
-          error_description:
-            "The member confirms this agent once. Show the human verification_uri and user_code, then poll with the claim grant.",
+          error_description: teamId
+            ? `Not connected yet. The member opens ${teamConnectUrl(teamId)}, chooses Connect next to the issuer, and the agent tries again within 10 minutes. An agent that can show the human a link may instead show verification_uri and user_code and poll with the claim grant.`
+            : "The member confirms this agent once. Show the human verification_uri and user_code, then poll with the claim grant.",
           registration_id: registration.id,
           registration_type: KIND,
           claim_url: claimEndpointUrl(),
@@ -142,6 +187,21 @@ export async function orgIdJagGrant(
     }
     case "linked": {
       const { token, teamId } = link;
+      if (link.bound) {
+        await auditAgentEvent(request, {
+          action: "team.idjag_connect_bound",
+          status: 200,
+          targetId: token.registration.id,
+          targetUserId: token.registration.user_id,
+          teamId,
+          metadata: {
+            source: SOURCE,
+            issuer: verified.iss,
+            trust_id: link.trustId,
+            client: token.registration.client_name,
+          },
+        });
+      }
       await auditAgentEvent(request, {
         action: "agent.token.issued",
         status: 200,

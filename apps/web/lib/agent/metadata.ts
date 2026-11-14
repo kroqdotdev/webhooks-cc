@@ -785,15 +785,25 @@ settings. A member's agent then sends the member's ID-JAG to ${tokenUrl}
 as \`grant_type=${JWT_BEARER_GRANT}\` with \`assertion\` and \`client_id\`.
 The assertion must be \`typ: oauth-id-jag+jwt\` signed with ES256 (keys from
 the issuer's \`/.well-known/openid-configuration\`), \`aud\` \`${appUrl}\`, a
-\`client_id\` equal to the request's, a unique \`jti\`, an \`auth_time\`
-within the last ${maxAuthAge} seconds, and \`email\` with
-\`email_verified: true\` belonging to a member of a team that trusts the
-issuer. No account is ever created this way.
+\`client_id\` equal to the request's, a unique \`jti\`, and an \`email\`
+belonging to a member of a team that trusts the issuer. \`auth_time\`, when
+present, must be within the last ${maxAuthAge} seconds; without it, \`exp\`
+must be at most 300 seconds after \`iat\`. \`email_verified\` may be left
+out, but \`false\` is refused. No account is ever created this way.
 
-The first assertion for an identity answers 400 \`interaction_required\`
-with a \`claim\` block: the member confirms once (Step 4b), and the claim
-grant returns the account's tokens. Later assertions answer an access token
-at once, with no refresh token. Removing the issuer, or the member leaving
-the team, revokes the connection and its tokens.
+To connect, the member opens the team's page on webhooks.cc and chooses
+Connect next to the issuer: for 10 minutes, the first assertion from that
+issuer with the member's email answers an access token at once. Outside
+that window, an identity that is not connected yet answers 400
+\`interaction_required\`; its \`error_description\` names the team page, and
+a \`claim\` block lets an agent that can show the human a code confirm
+through Step 4b instead. Once connected, later assertions answer an access
+token at once, with no refresh token. Disconnecting on the team page,
+removing the issuer, or the member leaving the team revokes the connection
+and its tokens.
+
+The token endpoint counts assertions from a trusted issuer per issuer, 600
+a minute, and each verified identity 30 a minute; other assertions count
+per address, 60 a minute.
 `;
 }

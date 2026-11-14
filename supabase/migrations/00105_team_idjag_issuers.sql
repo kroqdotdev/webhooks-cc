@@ -13,16 +13,24 @@
 -- 2. agent_registrations.idjag_team_issuer_id: the trust row a delegation was
 --    made through, so removing the row, or the member leaving the team,
 --    revokes exactly the delegations it made.
--- 3. link_team_idjag_identity(): resolves an assertion to a member of a team
---    that trusts its issuer, by the verified email, and then follows
---    link_agent_idjag_identity() (00057): a delegation on file links at once;
---    otherwise the member confirms through the claim ceremony first. It never
---    creates an account and never binds silently.
--- 4. add_team_idjag_issuer() and remove_team_idjag_issuer(): owner only.
--- 5. Triggers revoke the delegations (and delete their tokens) when a trust
+-- 3. team_idjag_connect_windows: a member's pre-approval ("Connect Claude"
+--    on the team page). The member opens a 10-minute window for one trust
+--    row; the first assertion from that issuer inside it whose email is the
+--    member's verified account email binds its (iss, sub) to the member, and
+--    the window closes. Windows that close unused are deleted every minute
+--    with an audit row each.
+-- 4. link_team_idjag_identity(): resolves an assertion to a member of a team
+--    that trusts its issuer, by the verified email, and then: a delegation
+--    on file links at once; an open window binds; otherwise it follows
+--    link_agent_idjag_identity() (00057) and the member confirms through the
+--    claim ceremony. It never creates an account and never binds silently.
+-- 5. add_team_idjag_issuer() and remove_team_idjag_issuer(): owner only;
+--    open_team_idjag_connect_window() and disconnect_team_idjag_member():
+--    the member themselves.
+-- 6. Triggers revoke the delegations (and delete their tokens) when a trust
 --    row goes, whatever deleted it (the owner, the team's deletion), and when
---    a member leaves or is removed; every revocation is written to
---    audit_events.
+--    a member leaves or is removed (closing their windows too); every
+--    revocation is written to audit_events.
 --
 -- Service role only. Apply in autocommit mode (see AGENTS.md): the index on
 -- agent_registrations is built concurrently, outside the transaction.
@@ -59,6 +67,25 @@ revoke all on table public.team_idjag_issuers from public, anon, authenticated;
 alter table public.agent_registrations
   add column if not exists idjag_team_issuer_id uuid
     references public.team_idjag_issuers(id) on delete set null;
+
+-- 3. Pre-approval windows, one per (trust row, member). Reopening one moves
+-- its expiry; binding or expiry deletes it.
+create table public.team_idjag_connect_windows (
+  trust_id   uuid not null references public.team_idjag_issuers(id) on delete cascade,
+  user_id    uuid not null references public.users(id) on delete cascade,
+  opened_at  timestamptz not null default now(),
+  expires_at timestamptz not null,
+  primary key (trust_id, user_id),
+  check (expires_at > opened_at)
+);
+
+-- The member's side: their windows, and the cascade when they are deleted.
+create index team_idjag_connect_windows_user on public.team_idjag_connect_windows (user_id);
+-- The expiry job.
+create index team_idjag_connect_windows_expires on public.team_idjag_connect_windows (expires_at);
+
+alter table public.team_idjag_connect_windows enable row level security;
+revoke all on table public.team_idjag_connect_windows from public, anon, authenticated;
 
 -- Revokes registrations made through the given trust rows: all of them, or
 -- only one member's (claimed as that user, or still waiting for that email).
@@ -119,19 +146,21 @@ revoke all on function public.revoke_team_idjag_delegations(uuid[], uuid, uuid, 
 grant execute on function public.revoke_team_idjag_delegations(uuid[], uuid, uuid, text)
   to service_role;
 
--- 3. Resolve an organisation ID-JAG to a team member and link it.
+-- 4. Resolve an organisation ID-JAG to a team member and link it.
 create or replace function public.link_team_idjag_identity(
   p_iss                text,
   p_sub                text,
   p_email              text,
   p_client_id          text,
+  p_client_name        text,
   p_claim_token_hash   text,
   p_attempt_token_hash text,
   p_user_code_hash     text,
   p_lifetime_seconds   integer,
   p_attempt_seconds    integer,
   p_max_attempts       integer,
-  p_max_pending        integer
+  p_max_pending        integer,
+  p_max_agents         integer
 )
 returns jsonb
 language plpgsql
@@ -142,7 +171,9 @@ declare
   v_trust_ids    uuid[];
   v_trust_id     uuid;
   v_team_id      uuid;
+  v_window       public.team_idjag_connect_windows%rowtype;
   v_registration public.agent_registrations%rowtype;
+  v_connected    integer;
   v_result       jsonb;
 begin
   -- Exact match: emails are stored lower-cased.
@@ -196,12 +227,72 @@ begin
       'registration_id', v_registration.id,
       'user_id', v_registration.user_id,
       'team_id', v_team_id,
-      'created', false
+      'created', false,
+      'bound', false
     );
   end if;
 
-  -- No delegation yet: the member confirms through the claim ceremony. Never
-  -- a new account (p_jit_user_id null).
+  -- The member opened a window for one of these trust rows: the first
+  -- assertion inside it binds, if the account's email is verified. The
+  -- window is locked and deleted, so only one assertion ever uses it.
+  select w.* into v_window
+    from public.team_idjag_connect_windows w
+    join public.team_idjag_issuers t on t.id = w.trust_id
+   where w.user_id = v_user_id
+     and w.trust_id = any(v_trust_ids)
+     and w.expires_at > now()
+   order by t.created_at, t.id
+   limit 1
+     for update of w;
+
+  if found and exists (
+    select 1 from auth.users where id = v_user_id and email_confirmed_at is not null
+  ) then
+    -- Serialize this user's connections so the cap holds, as a claim does.
+    perform 1 from public.users where id = v_user_id for update;
+    select count(*) into v_connected
+      from public.agent_registrations
+     where user_id = v_user_id
+       and claimed_at is not null
+       and revoked_at is null;
+    if v_connected >= p_max_agents then
+      return jsonb_build_object('status', 'too_many_agents');
+    end if;
+
+    -- A ceremony this identity started holds nothing (no tokens, no
+    -- endpoints); the bound delegation takes its place.
+    if v_registration.id is not null then
+      delete from public.agent_registrations where id = v_registration.id;
+    end if;
+
+    insert into public.agent_registrations (
+      kind, user_id, client_name, claimed_at, expires_at,
+      idjag_iss, idjag_sub, idjag_team_issuer_id
+    ) values (
+      -- Claimed from the start: no unclaimed lifetime.
+      'identity_assertion', v_user_id, left(p_client_name, 200), now(), now(),
+      p_iss, p_sub, v_window.trust_id
+    )
+    returning * into v_registration;
+
+    delete from public.team_idjag_connect_windows
+     where trust_id = v_window.trust_id and user_id = v_user_id;
+
+    select team_id into v_team_id from public.team_idjag_issuers where id = v_window.trust_id;
+    return jsonb_build_object(
+      'status', 'linked',
+      'registration_id', v_registration.id,
+      'user_id', v_user_id,
+      'team_id', v_team_id,
+      'trust_id', v_window.trust_id,
+      'created', true,
+      'bound', true,
+      'window_opened_at', v_window.opened_at
+    );
+  end if;
+
+  -- No delegation and no window: the member confirms through the claim
+  -- ceremony. Never a new account (p_jit_user_id null).
   v_result := public.link_agent_idjag_identity(
     p_iss, p_sub, p_email, null,
     p_claim_token_hash, p_attempt_token_hash, p_user_code_hash,
@@ -220,6 +311,10 @@ begin
          set idjag_team_issuer_id = v_trust_id
        where id = (v_result->>'registration_id')::uuid;
     end if;
+    -- The agent's name, for the claim page.
+    update public.agent_registrations
+       set client_name = coalesce(client_name, left(p_client_name, 200))
+     where id = (v_result->>'registration_id')::uuid;
     select team_id into v_team_id from public.team_idjag_issuers where id = v_trust_id;
     v_result := v_result || jsonb_build_object('team_id', v_team_id);
   end if;
@@ -229,13 +324,13 @@ end;
 $$;
 
 revoke all on function public.link_team_idjag_identity(
-  text, text, text, text, text, text, text, integer, integer, integer, integer
+  text, text, text, text, text, text, text, text, integer, integer, integer, integer, integer
 ) from public, anon, authenticated;
 grant execute on function public.link_team_idjag_identity(
-  text, text, text, text, text, text, text, integer, integer, integer, integer
+  text, text, text, text, text, text, text, text, integer, integer, integer, integer, integer
 ) to service_role;
 
--- 4. Owner-only changes. The team row is locked so the cap holds.
+-- 5. Owner-only changes. The team row is locked so the cap holds.
 create or replace function public.add_team_idjag_issuer(
   p_team_id    uuid,
   p_user_id    uuid,
@@ -328,7 +423,129 @@ revoke all on function public.remove_team_idjag_issuer(uuid, uuid, uuid)
   from public, anon, authenticated;
 grant execute on function public.remove_team_idjag_issuer(uuid, uuid, uuid) to service_role;
 
--- 5. Revocation, whatever removed the trust or the membership.
+-- 5b. The member's own pre-approval: open a window for a trust row of a team
+-- they belong to, or disconnect what it connected. Session only in the app.
+create or replace function public.open_team_idjag_connect_window(
+  p_team_id   uuid,
+  p_issuer_id uuid,
+  p_user_id   uuid,
+  p_seconds   integer
+)
+returns jsonb
+language plpgsql
+security definer set search_path = ''
+as $$
+declare
+  v_issuer  text;
+  v_expires timestamptz;
+begin
+  if p_seconds is null or p_seconds < 1 or p_seconds > 3600 then
+    raise exception 'window length out of range';
+  end if;
+  if not exists (
+    select 1 from public.team_members where team_id = p_team_id and user_id = p_user_id
+  ) then
+    return jsonb_build_object('status', 'not_found');
+  end if;
+  select issuer into v_issuer
+    from public.team_idjag_issuers
+   where id = p_issuer_id and team_id = p_team_id;
+  if not found then
+    return jsonb_build_object('status', 'not_found');
+  end if;
+
+  v_expires := now() + make_interval(secs => p_seconds);
+  insert into public.team_idjag_connect_windows (trust_id, user_id, opened_at, expires_at)
+  values (p_issuer_id, p_user_id, now(), v_expires)
+  on conflict (trust_id, user_id)
+    do update set opened_at = excluded.opened_at, expires_at = excluded.expires_at;
+
+  return jsonb_build_object('status', 'ok', 'issuer', v_issuer, 'expires_at', v_expires);
+end;
+$$;
+
+revoke all on function public.open_team_idjag_connect_window(uuid, uuid, uuid, integer)
+  from public, anon, authenticated;
+grant execute on function public.open_team_idjag_connect_window(uuid, uuid, uuid, integer)
+  to service_role;
+
+create or replace function public.disconnect_team_idjag_member(
+  p_team_id   uuid,
+  p_issuer_id uuid,
+  p_user_id   uuid
+)
+returns jsonb
+language plpgsql
+security definer set search_path = ''
+as $$
+declare
+  v_issuer  text;
+  v_revoked uuid[];
+begin
+  if not exists (
+    select 1 from public.team_members where team_id = p_team_id and user_id = p_user_id
+  ) then
+    return jsonb_build_object('status', 'not_found');
+  end if;
+  select issuer into v_issuer
+    from public.team_idjag_issuers
+   where id = p_issuer_id and team_id = p_team_id;
+  if not found then
+    return jsonb_build_object('status', 'not_found');
+  end if;
+
+  delete from public.team_idjag_connect_windows
+   where trust_id = p_issuer_id and user_id = p_user_id;
+  v_revoked := public.revoke_team_idjag_delegations(
+    array[p_issuer_id], p_user_id, p_team_id, 'team_member_disconnected'
+  );
+
+  return jsonb_build_object('status', 'ok', 'issuer', v_issuer, 'revoked', to_jsonb(v_revoked));
+end;
+$$;
+
+revoke all on function public.disconnect_team_idjag_member(uuid, uuid, uuid)
+  from public, anon, authenticated;
+grant execute on function public.disconnect_team_idjag_member(uuid, uuid, uuid) to service_role;
+
+-- Windows that closed unused, each recorded once. Every minute from pg_cron.
+create or replace function public.expire_team_idjag_connect_windows()
+returns integer
+language plpgsql
+security definer set search_path = ''
+as $$
+declare
+  v_count integer;
+begin
+  with gone as (
+    delete from public.team_idjag_connect_windows
+     where expires_at <= now()
+    returning trust_id, user_id, opened_at, expires_at
+  ),
+  audited as (
+    insert into public.audit_events (
+      actor_type, action, outcome, team_id, target_id, target_user_id, metadata
+    )
+    select 'system', 'team.idjag_connect_expired', 'ok', t.team_id, g.trust_id::text, g.user_id,
+           jsonb_build_object(
+             'issuer', left(t.issuer, 200),
+             'opened_at', g.opened_at,
+             'expires_at', g.expires_at
+           )
+      from gone g
+      join public.team_idjag_issuers t on t.id = g.trust_id
+    returning 1
+  )
+  select count(*) into v_count from gone;
+  return v_count;
+end;
+$$;
+
+revoke all on function public.expire_team_idjag_connect_windows()
+  from public, anon, authenticated;
+grant execute on function public.expire_team_idjag_connect_windows() to service_role;
+
+-- 6. Revocation, whatever removed the trust or the membership.
 create or replace function public.team_idjag_issuers_before_delete()
 returns trigger
 language plpgsql
@@ -361,6 +578,8 @@ begin
     from public.team_idjag_issuers
    where team_id = old.team_id;
   if v_trust_ids is not null then
+    delete from public.team_idjag_connect_windows
+     where trust_id = any(v_trust_ids) and user_id = old.user_id;
     perform public.revoke_team_idjag_delegations(
       v_trust_ids, old.user_id, old.team_id, 'team_member_left'
     );
@@ -377,6 +596,14 @@ create trigger team_members_revoke_idjag
   for each row execute function public.team_members_revoke_idjag();
 
 commit;
+
+-- Windows that closed unused are recorded and deleted every minute.
+select cron.unschedule(jobid) from cron.job where jobname = 'team-idjag-connect-windows-expire';
+select cron.schedule(
+  'team-idjag-connect-windows-expire',
+  '* * * * *',
+  $$select public.expire_team_idjag_connect_windows()$$
+);
 
 -- The revocations above look registrations up by trust row.
 create index concurrently if not exists agent_registrations_idjag_team_issuer

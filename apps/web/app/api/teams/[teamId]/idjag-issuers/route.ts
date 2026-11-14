@@ -1,12 +1,15 @@
 import { z } from "zod";
-import { authenticateSessionRequest } from "@/lib/api-auth";
+import { authenticateRequestRequireUser, authenticateSessionRequest } from "@/lib/api-auth";
 import { auditUserAction } from "@/lib/audit";
 import {
   addTeamIssuer,
   checkAllowedClientIds,
   checkOrgIssuer,
+  CONNECT_WINDOW_SECONDS,
   listTeamIssuers,
   MAX_TEAM_ISSUERS,
+  memberConnectStates,
+  type MemberConnectState,
   orgIssuerPrefixes,
   orgIssuersEnabled,
   teamRole,
@@ -17,10 +20,13 @@ import { parseJsonBodyWith } from "@/lib/request-validation";
 
 /**
  * Organisation ID-JAG issuers a team trusts (lib/agent/org-issuers.ts,
- * migration 00105). Session only: trusting an issuer lets its assertions
- * connect agents to members' accounts, so a person decides. Members may
- * look; only the owner adds. With AGENT_IDJAG_ORG_ISSUER_PREFIXES empty
- * (production until announced) every call answers 404.
+ * migration 00105). Members may look, with a session, an API key or an
+ * agent token (each issuer with the caller's own window and connections,
+ * so an agent can tell its human where to connect). Adding takes the
+ * owner's session: trusting an issuer lets its assertions connect agents
+ * to members' accounts, so a person decides. With
+ * AGENT_IDJAG_ORG_ISSUER_PREFIXES empty (production until announced) every
+ * call answers 404.
  */
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -34,18 +40,30 @@ function notFound(): Response {
   return Response.json({ error: "Not found" }, { status: 404 });
 }
 
-function issuerJson(row: TeamIdJagIssuer) {
+function issuerJson(row: TeamIdJagIssuer, connect?: MemberConnectState) {
   return {
     id: row.id,
     issuer: row.issuer,
     allowed_client_ids: row.allowedClientIds,
     created_at: row.createdAt,
+    ...(connect
+      ? {
+          connect: {
+            window_expires_at: connect.windowExpiresAt,
+            connections: connect.connections.map((c) => ({
+              id: c.id,
+              client_name: c.clientName,
+              connected_at: c.connectedAt,
+            })),
+          },
+        }
+      : {}),
   };
 }
 
 export async function GET(request: Request, { params }: { params: Promise<{ teamId: string }> }) {
   if (!orgIssuersEnabled()) return notFound();
-  const auth = await authenticateSessionRequest(request);
+  const auth = await authenticateRequestRequireUser(request);
   if (!auth.success) return auth.response;
 
   const { teamId } = await params;
@@ -55,10 +73,16 @@ export async function GET(request: Request, { params }: { params: Promise<{ team
     const role = await teamRole(teamId, auth.userId);
     if (!role) return notFound();
     const issuers = await listTeamIssuers(teamId);
+    const states = await memberConnectStates(
+      auth.userId,
+      issuers.map((row) => row.id)
+    );
     return Response.json({
-      issuers: issuers.map(issuerJson),
+      issuers: issuers.map((row) => issuerJson(row, states.get(row.id))),
       prefixes: orgIssuerPrefixes(),
       max_issuers: MAX_TEAM_ISSUERS,
+      connect_window_seconds: CONNECT_WINDOW_SECONDS,
+      // Adding and removing take the owner's session.
       can_manage: role === "owner",
     });
   } catch (error) {

@@ -9,6 +9,7 @@ import { accountEmail, newAttemptSecrets, type ClaimAttempt } from "./claims";
 import {
   CLAIMED_ASSERTION_TTL_SECONDS,
   MAX_CLAIM_ATTEMPTS,
+  MAX_CONNECTED_AGENTS,
   UNCLAIMED_LIFETIME_SECONDS,
   USER_CODE_TTL_SECONDS,
 } from "./constants";
@@ -50,10 +51,17 @@ import {
  *   users are matched by it; no DCR, the client must be known beforehand.
  *   The pages are silent on `auth_time` and `email_verified`.
  *
- * Beyond the draft, this path requires `email_verified: true` and a recent
- * `auth_time`, like the ID-JAG path of /api/agent/identity, and accepts only
- * ES256. An assertion that lacks either is refused (see the PR's open
- * decisions: Claude's pages do not say whether they send them).
+ * Since Claude's pages do not say whether `auth_time` and `email_verified`
+ * are sent, this path (issuers under AGENT_IDJAG_ORG_ISSUER_PREFIXES only;
+ * the ID-JAG path of /api/agent/identity keeps its stricter rules) treats
+ * them so:
+ * - `auth_time`, when present, must be recent
+ *   (AGENT_IDJAG_MAX_AUTH_AGE_SECONDS). When absent, the assertion must be
+ *   short-lived: `exp - iat` at most 5 minutes (Claude's expire within a
+ *   minute), so it was minted for this sign-in. `jti` stays single-use.
+ * - `email_verified` absent is accepted (Claude's `email` is the account's
+ *   own); an explicit `false`, or any value but `true`, is refused.
+ * Only ES256 is accepted.
  *
  * Every check runs before anything is looked up by email, and the trust
  * check (an issuer some team trusts, under a configured prefix) runs before
@@ -67,6 +75,8 @@ const ALGORITHM = "ES256";
 const CLOCK_TOLERANCE_SECS = 60;
 /** An assertion issued earlier than this is refused whatever its exp. */
 const MAX_TOKEN_AGE = "10m";
+/** Without auth_time, an assertion may live at most this long (exp - iat). */
+export const MAX_LIFETIME_WITHOUT_AUTH_TIME_SECS = 300;
 
 export type OrgIdJagError =
   | "feature_disabled"
@@ -81,7 +91,7 @@ export type OrgIdJagError =
   | "credential_expired"
   | "not_yet_valid"
   | "replay_detected"
-  | "auth_time_missing"
+  | "lifetime_too_long"
   | "auth_time_too_old"
   | "client_mismatch"
   | "missing_verified_email";
@@ -93,7 +103,8 @@ export interface OrgIdJagSuccess {
   clientId: string;
   /** Verified and lower-cased. */
   email: string;
-  authTime: number;
+  /** Null when the assertion carries none (then it was short-lived). */
+  authTime: number | null;
 }
 
 export type OrgIdJagResult =
@@ -112,6 +123,37 @@ export function looksLikeIdJag(jwt: string): boolean {
 function normalizedTyp(typ: unknown): string {
   // RFC 7515 4.1.9: an "application/" prefix on typ is implied and may be sent.
   return typeof typ === "string" ? typ.toLowerCase().replace(/^application\//, "") : "";
+}
+
+/**
+ * The issuer of an ID-JAG that some team trusts, read without verifying
+ * anything, or null. Picks the token endpoint's rate limit (per issuer for
+ * a trusted one, per address otherwise) before the signature is checked.
+ */
+export async function trustedOrgIssuerOf(jwt: string): Promise<string | null> {
+  if (!orgIssuersEnabled() || !looksLikeIdJag(jwt)) return null;
+  let iss: unknown;
+  try {
+    iss = jose.decodeJwt(jwt).iss;
+  } catch {
+    return null;
+  }
+  if (typeof iss !== "string" || iss.length > 512 || !issuerUnderPrefix(iss)) return null;
+  return (await issuerTrustedByAnyTeam(iss)) ? iss : null;
+}
+
+/**
+ * A name for the client an assertion names, for Connected agents and the
+ * team page: the host of a client id that is a URL, else the id itself.
+ */
+export function orgClientName(clientId: string): string {
+  try {
+    const url = new URL(clientId);
+    if (url.protocol === "https:" || url.protocol === "http:") return url.host.slice(0, 200);
+  } catch {
+    // Not a URL: an opaque client id.
+  }
+  return clientId.slice(0, 200);
 }
 
 /** The audiences we answer to: our authorization server's issuer, or the API. */
@@ -192,15 +234,23 @@ export async function verifyOrgIdJag(jwt: string, clientId: string): Promise<Org
     return { ok: false, error: "replay_detected" };
   }
 
-  const authTime =
-    typeof payload.auth_time === "number" && Number.isFinite(payload.auth_time)
-      ? payload.auth_time
-      : null;
-  if (authTime === null) return { ok: false, error: "auth_time_missing" };
-  const authAge = Math.floor(Date.now() / 1000) - authTime;
-  if (authAge < -CLOCK_TOLERANCE_SECS) return { ok: false, error: "invalid_token" };
-  if (authAge > maxAuthAgeSeconds()) {
-    return { ok: false, error: "auth_time_too_old", authAge };
+  let authTime: number | null = null;
+  if (payload.auth_time !== undefined) {
+    if (typeof payload.auth_time !== "number" || !Number.isFinite(payload.auth_time)) {
+      return { ok: false, error: "invalid_token" };
+    }
+    authTime = payload.auth_time;
+    const authAge = Math.floor(Date.now() / 1000) - authTime;
+    if (authAge < -CLOCK_TOLERANCE_SECS) return { ok: false, error: "invalid_token" };
+    if (authAge > maxAuthAgeSeconds()) {
+      return { ok: false, error: "auth_time_too_old", authAge };
+    }
+  } else {
+    // No auth_time: only an assertion minted for this exchange will do.
+    const iat = typeof payload.iat === "number" ? payload.iat : null;
+    if (iat === null || exp - iat > MAX_LIFETIME_WITHOUT_AUTH_TIME_SECS) {
+      return { ok: false, error: "lifetime_too_long" };
+    }
   }
 
   // Section 4.4.1: the client_id claim identifies the client asking.
@@ -209,7 +259,8 @@ export async function verifyOrgIdJag(jwt: string, clientId: string): Promise<Org
   }
 
   const email = typeof payload.email === "string" ? payload.email.trim().toLowerCase() : "";
-  if (!email || payload.email_verified !== true) {
+  // Absent is accepted; false (or anything but true) is not.
+  if (!email || (payload.email_verified !== undefined && payload.email_verified !== true)) {
     return { ok: false, error: "missing_verified_email" };
   }
 
@@ -222,6 +273,10 @@ export type OrgIdJagLink =
       registration: RegistrationRow;
       teamId: string | null;
       token: AccessToken;
+      /** True when a member's open window bound the identity just now. */
+      bound: boolean;
+      /** The trust row whose window bound it. */
+      trustId: string | null;
     }
   | {
       status: "interaction_required";
@@ -238,7 +293,8 @@ export type OrgIdJagLink =
         | "identity_mismatch"
         | "email_not_usable"
         | "too_many_attempts"
-        | "too_many_pending";
+        | "too_many_pending"
+        | "too_many_agents";
     };
 
 async function readRegistration(id: string): Promise<RegistrationRow> {
@@ -254,9 +310,11 @@ async function readRegistration(id: string): Promise<RegistrationRow> {
 /**
  * Links a verified organisation assertion to a member of a team that trusts
  * its issuer (link_team_idjag_identity(), migration 00105). Never creates an
- * account: a person who is not a member is refused. The first use answers
- * interaction_required with a claim ceremony; once the member confirmed it,
- * later assertions for the same identity get an access token at once.
+ * account: a person who is not a member is refused. Inside a window the
+ * member opened on the team page, the first assertion binds at once;
+ * otherwise the first use answers interaction_required with a claim
+ * ceremony. Once bound, later assertions for the same identity get an
+ * access token at once.
  */
 export async function linkOrgIdJag(verified: OrgIdJagSuccess): Promise<OrgIdJagLink> {
   const email = verified.email;
@@ -277,6 +335,7 @@ export async function linkOrgIdJag(verified: OrgIdJagSuccess): Promise<OrgIdJagL
     p_sub: verified.sub,
     p_email: email,
     p_client_id: verified.clientId,
+    p_client_name: orgClientName(verified.clientId),
     p_claim_token_hash: hashClaimToken(claimToken),
     p_attempt_token_hash: secrets.attemptTokenHash,
     p_user_code_hash: secrets.userCodeHash,
@@ -284,13 +343,16 @@ export async function linkOrgIdJag(verified: OrgIdJagSuccess): Promise<OrgIdJagL
     p_attempt_seconds: USER_CODE_TTL_SECONDS,
     p_max_attempts: MAX_CLAIM_ATTEMPTS,
     p_max_pending: serverEnv().AGENT_MAX_PENDING_PER_LOGIN_HINT,
+    p_max_agents: MAX_CONNECTED_AGENTS,
   });
   if (error) throw error;
   const result = data as {
     status: string;
     registration_id?: string;
     team_id?: string | null;
+    trust_id?: string | null;
     created?: boolean;
+    bound?: boolean;
     attempt?: number;
     attempt_expires_at?: string;
   };
@@ -307,7 +369,14 @@ export async function linkOrgIdJag(verified: OrgIdJagSuccess): Promise<OrgIdJagL
       // The same exchange as the jwt-bearer grant with our own assertion,
       // so the registration is read again and the token capped the same way.
       const token = await exchangeAssertion(assertion);
-      return { status: "linked", registration, teamId: result.team_id ?? null, token };
+      return {
+        status: "linked",
+        registration,
+        teamId: result.team_id ?? null,
+        token,
+        bound: result.bound === true,
+        trustId: result.trust_id ?? null,
+      };
     }
     case "pending": {
       const registration = await readRegistration(result.registration_id!);
@@ -333,6 +402,7 @@ export async function linkOrgIdJag(verified: OrgIdJagSuccess): Promise<OrgIdJagL
     case "identity_mismatch":
     case "too_many_attempts":
     case "too_many_pending":
+    case "too_many_agents":
       return { status: result.status };
     default:
       throw new Error(`Unexpected link_team_idjag_identity status: ${result.status}`);
