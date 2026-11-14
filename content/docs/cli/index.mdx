@@ -72,7 +72,7 @@ Puts your local site at a public link on sharehooks.cc, for showing work in prog
 | Status | Code | Meaning |
 | --- | --- | --- |
 | 0 | | Success |
-| 1 | `error`, `bad_request` | Any other failure, or the server refused the input |
+| 1 | `error`, `bad_request`, `delivery_failed` | Any other failure, the server refused the input, or a destination did not accept `whk destinations test` |
 | 2 | `usage` | Bad arguments |
 | 3 | `not_logged_in`, `unauthorized`, `connection_revoked`, `login_expired`, `login_denied` | No credentials, they were refused, an agent's connection was revoked, or a login code expired or was refused on its page |
 | 4 | `not_found` | No such endpoint, request, team or share |
