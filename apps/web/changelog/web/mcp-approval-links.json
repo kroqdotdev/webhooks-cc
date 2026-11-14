@@ -1,0 +1,6 @@
+{
+  "title": "Approvals open in the MCP client",
+  "items": [
+    "MCP clients that can open a link for the person get an approval as a request to open the approval page, with the code to compare, and the tool finishes once it is approved; other clients keep getting the link and code as text"
+  ]
+}

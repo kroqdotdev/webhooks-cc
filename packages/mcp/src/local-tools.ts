@@ -1,4 +1,10 @@
-import { CLIENT_INFO_META_KEY, type McpServer, type Transport } from "@modelcontextprotocol/server";
+import {
+  CLIENT_INFO_META_KEY,
+  type McpServer,
+  type ServerContext,
+  type Transport,
+} from "@modelcontextprotocol/server";
+import { sdkToolResult, toolCallFrom } from "./sdk-call";
 import type { WebhooksCC } from "@webhooks-cc/sdk";
 import { z } from "zod";
 import {
@@ -38,7 +44,10 @@ export function asToolServer(server: McpServer): ToolServer {
           inputSchema: z.object(shape),
           annotations,
         },
-        async (args: unknown) => handler(args as Parameters<typeof handler>[0])
+        async (args: unknown, ctx: ServerContext) =>
+          sdkToolResult(
+            await handler(args as Parameters<typeof handler>[0], toolCallFrom(server, ctx))
+          )
       );
       return { remove: () => registered.remove() };
     },
