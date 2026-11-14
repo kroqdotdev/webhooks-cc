@@ -22,10 +22,15 @@ export function AgentSection({ endpoint }: { endpoint: DashboardEndpoint }) {
   const sent = useRef<string | null>(null);
 
   useEffect(() => {
-    setValue((current) =>
-      asSaved(current) === shown.current || current === sent.current ? initial : current
-    );
+    // Read the refs before the update is queued, so it compares what they
+    // held when this value arrived.
+    const previous = shown.current;
+    const lastSent = sent.current;
     shown.current = initial;
+    sent.current = null;
+    setValue((current) =>
+      asSaved(current) === previous || current === lastSent ? initial : current
+    );
   }, [initial]);
 
   const parsed = parseAgentRepo(value);
@@ -57,8 +62,12 @@ export function AgentSection({ endpoint }: { endpoint: DashboardEndpoint }) {
               if (!parsed.ok)
                 throw new Error("Enter the repository as owner/name, or leave it empty.");
             }).then((ok) => {
+              if (!ok) {
+                sent.current = null;
+                return;
+              }
               // Show the saved form (no .git, no spaces) unless it was edited meanwhile.
-              if (ok) setValue((current) => (current === submitted ? asSaved(submitted) : current));
+              setValue((current) => (current === submitted ? asSaved(submitted) : current));
             });
           }}
         />

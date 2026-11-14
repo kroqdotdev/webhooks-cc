@@ -528,6 +528,7 @@ function DeliveryCard({
             )
           ) && (
             <FixPromptActions
+              key={delivery.id}
               delivery={delivery}
               agentRepo={fixPrompt.agentRepo}
               canRedeliver={fixPrompt.canRedeliver}
