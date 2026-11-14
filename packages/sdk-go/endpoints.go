@@ -143,14 +143,14 @@ type UpdateEndpointOptions struct {
 // name of letters, digits, dots, dashes and underscores (at most 100).
 var agentRepoPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9-]{0,38}/[A-Za-z0-9._-]{1,100}$`)
 
-// validAgentRepo reports whether repo is owner/name and its name is not
-// only dots.
+// validAgentRepo reports whether repo is owner/name and its name does not
+// end in "." or ".git".
 func validAgentRepo(repo string) bool {
 	if !agentRepoPattern.MatchString(repo) {
 		return false
 	}
-	_, name, _ := strings.Cut(repo, "/")
-	return strings.Trim(name, ".") != ""
+	lower := strings.ToLower(repo)
+	return !strings.HasSuffix(lower, ".") && !strings.HasSuffix(lower, ".git")
 }
 
 // normalizeAgentRepo reads an AgentRepo as the API does: spaces around it

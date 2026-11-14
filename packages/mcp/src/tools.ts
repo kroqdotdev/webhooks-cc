@@ -68,8 +68,8 @@ const TIME_SEPARATOR = " — ";
 
 // GitHub's own rules, as the API checks them (apps/web/lib/fix-prompt.ts): an
 // owner of letters, digits and dashes (not starting with a dash, at most 39),
-// a name of letters, digits, dots, dashes and underscores (at most 100), and
-// not only dots.
+// a name of letters, digits, dots, dashes and underscores (at most 100), not
+// ending in "." or ".git".
 const AGENT_REPO = /^[A-Za-z0-9][A-Za-z0-9-]{0,38}\/[A-Za-z0-9._-]{1,100}$/;
 
 /**
@@ -80,7 +80,7 @@ const AGENT_REPO = /^[A-Za-z0-9][A-Za-z0-9-]{0,38}\/[A-Za-z0-9._-]{1,100}$/;
 function normalizeAgentRepo(input: string): string | null | undefined {
   const value = input.trim().replace(/\.git$/i, "");
   if (value === "") return null;
-  return AGENT_REPO.test(value) && !/\/\.+$/.test(value) ? value : undefined;
+  return AGENT_REPO.test(value) && !/(\.|\.git)$/i.test(value) ? value : undefined;
 }
 
 const httpUrlSchema = z

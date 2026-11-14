@@ -202,6 +202,9 @@ export function alertDestinationFormat(format: string | null, url: string): stri
   return format ?? (isChatUrl(url) ? "chat" : null);
 }
 
+/** A failed-delivery alert's fix prompt, its T3 Code link and the repository it opens in. */
+export type AlertFix = { prompt: string; link: string; repo: string };
+
 /**
  * The fix prompt and its T3 Code link for an open failed-delivery alert, when
  * the endpoint names its repository, keeps its requests after delivery (with
@@ -214,7 +217,7 @@ export function alertFixPrompt(
   agentRepo: string | null,
   destinationFormat: string | null | undefined,
   deleteAfterDelivery = false
-): { prompt: string; link: string } | null {
+): AlertFix | null {
   if (event.kind !== "destination" || event.resolved_at !== null || !agentRepo) return null;
   if (deleteAfterDelivery) return null;
   if (!takesFixPrompt(destinationFormat)) return null;
@@ -225,7 +228,7 @@ export function alertFixPrompt(
     lastStatus: typeof details.lastStatus === "number" ? details.lastStatus : null,
     lastError: typeof details.lastError === "string" ? details.lastError : null,
   });
-  return prompt ? { prompt, link: t3CodeLink(prompt, agentRepo) } : null;
+  return prompt ? { prompt, link: t3CodeLink(prompt, agentRepo), repo: agentRepo } : null;
 }
 
 /** The alert email's subject and text. */
@@ -234,13 +237,15 @@ export function alertEmail(
   summary: string,
   lines: string[],
   endpointLink: string,
-  fix: { prompt: string; link: string } | null
+  fix: AlertFix | null
 ): { subject: string; text: string } {
   const text = [summary, "", ...lines, "", `Open the endpoint: ${endpointLink}`];
   if (fix) {
     text.push(
       "",
-      `Hand it to a coding agent in T3 Code: ${fix.link}`,
+      // The repository in words, so a link someone changed shows, and the
+      // link in angle brackets, so a mail client's autolinker takes all of it.
+      `Hand it to a coding agent in T3 Code, in ${fix.repo}: <${fix.link}>`,
       "",
       "Or give this prompt to any agent with the webhooks.cc MCP server or whk:",
       fix.prompt

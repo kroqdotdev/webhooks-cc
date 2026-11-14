@@ -215,7 +215,8 @@ pub struct EndpointUpdate {
 
 /// GitHub's rules, as the API checks them: an owner of letters, digits and
 /// dashes (not starting with a dash, at most 39), then a repository name of
-/// letters, digits, dots, dashes and underscores (at most 100, not only dots).
+/// letters, digits, dots, dashes and underscores (at most 100, not ending in
+/// `.` or `.git`).
 /// Spaces around it and a trailing `.git` are dropped, and what is then empty
 /// (`--agent-repo ""`) clears it, as the API reads it: `Ok(None)`.
 pub fn parse_agent_repo(value: &str) -> Result<Option<String>> {
@@ -236,7 +237,8 @@ pub fn parse_agent_repo(value: &str) -> Result<Option<String>> {
             && owner.chars().all(|c| c.is_ascii_alphanumeric() || c == '-');
         let name_ok = !name.is_empty()
             && name.len() <= 100
-            && !name.chars().all(|c| c == '.')
+            && !name.ends_with('.')
+            && !name.to_ascii_lowercase().ends_with(".git")
             && name
                 .chars()
                 .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '_'));
@@ -410,6 +412,8 @@ mod tests {
             "acme/api/extra",
             "acme/..",
             "acme/.git",
+            "acme/api.",
+            "acme/api.git.git",
             "acme_inc/api",
             "ac me/api",
             "https://github.com/acme/api",

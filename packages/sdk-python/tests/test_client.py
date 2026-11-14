@@ -280,7 +280,15 @@ def test_update_sets_and_clears_the_agent_repo() -> None:
     assert endpoints.update("acme", agent_repo=" acme/api.git ").agent_repo == "acme/api"
     endpoints.update("acme", agent_repo=None)
     assert bodies == [{"agentRepo": "acme/api"}, {"agentRepo": None}]
-    for bad in ["acme", "https://github.com/acme/api", "-acme/api", "acme/..", "a" * 40 + "/b"]:
+    for bad in [
+        "acme",
+        "https://github.com/acme/api",
+        "-acme/api",
+        "acme/..",
+        "acme/api.",
+        "acme/api.git.git",
+        "a" * 40 + "/b",
+    ]:
         with pytest.raises(ValueError, match="agent_repo"):
             endpoints.update("acme", agent_repo=bad)
     assert len(bodies) == 2

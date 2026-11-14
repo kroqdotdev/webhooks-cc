@@ -891,7 +891,7 @@ def _agent_repo(value: str | None) -> str | None:
         repo = repo[:-4]
     if repo == "":
         return None
-    if not _AGENT_REPO.fullmatch(repo) or set(repo.split("/", 1)[1]) == {"."}:
+    if not _AGENT_REPO.fullmatch(repo) or repo.lower().endswith((".", ".git")):
         raise ValueError("agent_repo must be a GitHub repository as owner/name")
     return repo
 

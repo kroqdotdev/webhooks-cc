@@ -140,12 +140,13 @@ export function buildFixPrompt(
 // GitHub's own rules, which T3 Code's prompt links check too: an owner is
 // letters, digits and dashes, not starting with a dash, at most 39; a
 // repository name is letters, digits, dots, dashes and underscores, at most
-// 100, and not only dots. Mirrored by endpoints_agent_repo_check (00103).
+// 100, and not ending in "." (which a mail client's autolinker drops) or in
+// ".git" (GitHub drops that). Mirrored by endpoints_agent_repo_check (00103).
 const AGENT_REPO = /^[A-Za-z0-9][A-Za-z0-9-]{0,38}\/[A-Za-z0-9._-]{1,100}$/;
 
 /** Whether the value is a repository as `owner/name`. */
 export function isAgentRepo(value: unknown): value is string {
-  return typeof value === "string" && AGENT_REPO.test(value) && !/\/\.+$/.test(value);
+  return typeof value === "string" && AGENT_REPO.test(value) && !/(\.|\.git)$/i.test(value);
 }
 
 export type AgentRepoInput = { ok: true; value: string | null } | { ok: false; error: string };
@@ -165,7 +166,7 @@ export function parseAgentRepo(input: unknown): AgentRepoInput {
     return {
       ok: false,
       error:
-        "agentRepo must be a GitHub repository as owner/name: letters, digits and dashes for the owner (at most 39), letters, digits, dots, dashes and underscores for the name (at most 100)",
+        "agentRepo must be a GitHub repository as owner/name: letters, digits and dashes for the owner (at most 39), letters, digits, dots, dashes and underscores for the name (at most 100, not ending in . or .git)",
     };
   }
   return { ok: true, value };

@@ -23,7 +23,7 @@ alter table public.endpoints
       agent_repo is null
       or (
         agent_repo ~ '^[A-Za-z0-9][A-Za-z0-9-]{0,38}/[A-Za-z0-9._-]{1,100}$'
-        and agent_repo !~ '/\.+$'
+        and agent_repo !~* '(\.|\.git)$'
       )
     ) not valid;
 

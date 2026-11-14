@@ -139,7 +139,7 @@ export function validateAgentRepo(repo: unknown): void {
   if (repo === undefined || repo === null || repo === "") return;
   const value = typeof repo === "string" ? repo.trim().replace(/\.git$/i, "") : null;
   if (value === "") return;
-  if (value === null || !AGENT_REPO.test(value) || /\/\.+$/.test(value)) {
+  if (value === null || !AGENT_REPO.test(value) || /(\.|\.git)$/i.test(value)) {
     throw new Error("agentRepo must be a GitHub repository as owner/name");
   }
 }

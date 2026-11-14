@@ -173,6 +173,9 @@ describe("agent repositories", () => {
       "acme/api/extra",
       "acme/..",
       "acme/.",
+      "acme/api.",
+      "acme/api.git",
+      "acme/api.GIT",
       "ac me/api",
       "acme/api?x=1",
       "https://github.com/acme/api",
@@ -193,6 +196,7 @@ describe("agent repositories", () => {
     expect(parseAgentRepo("  acme/api.git ")).toEqual({ ok: true, value: "acme/api" });
     expect(parseAgentRepo("acme/api")).toEqual({ ok: true, value: "acme/api" });
     expect(parseAgentRepo("acme").ok).toBe(false);
+    expect(parseAgentRepo("acme/api.git.git").ok).toBe(false);
     expect(parseAgentRepo(7).ok).toBe(false);
   });
 });

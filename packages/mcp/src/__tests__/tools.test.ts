@@ -806,6 +806,8 @@ describe("registerTools", () => {
       "acme/..",
       "acme/.",
       "acme/.git",
+      "acme/api.",
+      "acme/api.git.git",
     ]) {
       expect(schema.safeParse({ slug: "acme", agentRepo }).success).toBe(false);
     }

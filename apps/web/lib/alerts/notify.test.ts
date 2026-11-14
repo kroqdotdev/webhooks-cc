@@ -94,9 +94,9 @@ describe("failed-delivery alert email", () => {
     expect(fix).not.toBeNull();
     const email = alertEmail(event, summary, lines, link, fix);
     expect(email.text).toContain(
-      "Hand it to a coding agent in T3 Code: https://app.t3.codes/new?prompt="
+      "Hand it to a coding agent in T3 Code, in acme/api: <https://app.t3.codes/new?prompt="
     );
-    expect(email.text).toContain("&repo=acme/api");
+    expect(email.text).toContain("&repo=acme/api>");
     expect(email.text).toContain(
       "A webhooks.cc delivery failed with status 500. Using the webhooks.cc MCP server or `whk`, read delivery 6f1c2a4e-8b3d-4c5e-9f00-1a2b3c4d5e6f of request 0d9e8f7a-6b5c-4d3e-8f21-a0b1c2d3e4f5"
     );

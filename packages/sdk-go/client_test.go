@@ -227,7 +227,7 @@ func TestUpdateSetsAndClearsTheAgentRepo(t *testing.T) {
 			t.Errorf("%q: body = %s", in, body)
 		}
 	}
-	for _, bad := range []string{"acme", "https://github.com/acme/api", "-acme/api", "acme/..", "acme/.git", strings.Repeat("a", 40) + "/b"} {
+	for _, bad := range []string{"acme", "https://github.com/acme/api", "-acme/api", "acme/..", "acme/.git", "acme/api.", "acme/api.git.git", strings.Repeat("a", 40) + "/b"} {
 		if _, err := client.Endpoints.Update(context.Background(), "acme-test", webhookscc.UpdateEndpointOptions{
 			AgentRepo: webhookscc.Value(bad),
 		}); err == nil || !strings.Contains(err.Error(), "AgentRepo") {
