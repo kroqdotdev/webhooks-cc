@@ -1,6 +1,7 @@
 package webhookscc
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -15,6 +16,9 @@ var (
 	ErrNotFound = errors.New("webhooks.cc: not found")
 	// ErrRateLimited: too many requests (429).
 	ErrRateLimited = errors.New("webhooks.cc: rate limited")
+	// ErrInvalidCursor: a search cursor the server did not issue for this
+	// search (400). Start the search again without a cursor.
+	ErrInvalidCursor = errors.New("webhooks.cc: invalid search cursor")
 	// ErrTimeout: an API call, a wait or a stream ran out of time.
 	ErrTimeout = errors.New("webhooks.cc: timed out")
 	// ErrMissingAPIKey: New got no API key, WHK_API_KEY is not set, and no
@@ -28,7 +32,8 @@ var (
 // Error is an error response from the webhooks.cc API.
 //
 // errors.Is matches it against ErrUnauthorized, ErrNotFound and
-// ErrRateLimited by status code.
+// ErrRateLimited by status code, and against ErrInvalidCursor by the server's
+// error code.
 type Error struct {
 	StatusCode int
 	Message    string
@@ -36,6 +41,8 @@ type Error struct {
 	RetryAfter time.Duration
 	// RateLimit is set on a 429 that carried all the X-RateLimit headers.
 	RateLimit *RateLimit
+	// code is the "error" of a 429's JSON body ("search_busy").
+	code string
 }
 
 // RateLimit is what a 429's X-RateLimit headers said.
@@ -52,7 +59,8 @@ func (e *Error) Error() string {
 	return fmt.Sprintf("webhooks.cc: %s (HTTP %d)", e.Message, e.StatusCode)
 }
 
-// Is reports whether the error has the status code of target.
+// Is reports whether the error has the status code of target (for
+// ErrInvalidCursor, the server's "invalid_cursor").
 func (e *Error) Is(target error) bool {
 	switch target {
 	case ErrUnauthorized:
@@ -61,6 +69,12 @@ func (e *Error) Is(target error) bool {
 		return e.StatusCode == http.StatusNotFound
 	case ErrRateLimited:
 		return e.StatusCode == http.StatusTooManyRequests
+	case ErrInvalidCursor:
+		var body struct {
+			Error string `json:"error"`
+		}
+		return e.StatusCode == http.StatusBadRequest &&
+			json.Unmarshal([]byte(e.Message), &body) == nil && body.Error == "invalid_cursor"
 	}
 	return false
 }

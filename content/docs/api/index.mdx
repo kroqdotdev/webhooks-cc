@@ -792,6 +792,8 @@ The time limit depends on `paged`:
 - **With `paged=true`**, a call reads for about 2 seconds at most, and you read on with the cursor. Use this in anything new.
 - **Without it**, a call reads for about 10 seconds at most before it answers, so a client written to read one answer still reaches older matches. The headers and the cursor work the same way.
 
+The current [SDKs](/docs/sdk/api), the [CLI](/docs/cli/commands#requests) and the [MCP server](/docs/mcp/tools#search_requests) send `paged=true` and follow the cursor, or hand it to you.
+
 Three response headers say how far the call got:
 
 | Header                    | Description                                                                                                                                                                                 |

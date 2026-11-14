@@ -399,7 +399,8 @@ pub struct PaginatedRequestList {
 }
 
 /// One row from `GET /api/search/requests`. Search rows carry the endpoint
-/// slug instead of an endpoint id because a search spans endpoints.
+/// slug instead of an endpoint id because a search spans endpoints. `id` is
+/// the request's own id, the one `whk requests get` takes.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SearchHit {
     pub id: String,
@@ -456,16 +457,30 @@ impl From<SearchHit> for CapturedRequest {
 }
 
 /// The search route returns a bare JSON array (one page), so this wraps it
-/// transparently. Use `count_requests` for the total across pages.
+/// transparently. How far the search read travels in `X-Search-*` headers.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct SearchResult {
     pub requests: Vec<SearchHit>,
 }
 
+/// What `GET /api/search/requests/count` answers. `exact: false` means the
+/// count covers only up to `searched_until`; `cursor` counts the next
+/// stretch, and the counts add up.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CountResult {
     pub count: u64,
+    /// A server from before cursors sends only `count`, which was exact.
+    #[serde(default = "yes")]
+    pub exact: bool,
+    #[serde(rename = "searchedUntil", default)]
+    pub searched_until: Option<i64>,
+    #[serde(default)]
+    pub cursor: Option<String>,
+}
+
+fn yes() -> bool {
+    true
 }
 
 // ---------------------------------------------------------------------------

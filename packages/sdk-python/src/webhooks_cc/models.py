@@ -1436,6 +1436,46 @@ class RequestPage:
 
 
 @dataclass(frozen=True)
+class SearchPage:
+    """One page of ``requests.search_page()``.
+
+    A search reads requests one stretch of time after another and answers within
+    about two seconds, so a page can be short or empty without being the end.
+    """
+
+    requests: list[Request]
+    """The matches this page found. Each ``id`` is the request's own id, the one
+    ``requests.get()`` and the other request calls take; ``raw["slug"]`` is its
+    endpoint's slug (search results carry no ``endpoint_id``)."""
+    complete: bool
+    """Whether the whole range was read. When ``False``, older requests (newer ones
+    with ``order="asc"``) were not searched yet: pass ``cursor`` to read on."""
+    searched_until: int | None
+    """How far the search read, in milliseconds since the epoch; ``None`` when the
+    server did not say."""
+    cursor: str | None
+    """Continues the search with the same filters; ``None`` once it is complete.
+    Opaque: pass it back as it is."""
+
+
+@dataclass(frozen=True)
+class CountPage:
+    """One answer of ``requests.count_page()``."""
+
+    count: int
+    """The matches counted by this call."""
+    exact: bool
+    """Whether the whole range was counted. When ``False``, ``count`` covers only
+    the requests back to ``searched_until``: pass ``cursor`` to count the next
+    stretch and add the counts up."""
+    searched_until: int | None
+    """How far the count read, in milliseconds since the epoch; ``None`` when the
+    server did not say."""
+    cursor: str | None
+    """Continues the count with the same filters; ``None`` once it is exact."""
+
+
+@dataclass(frozen=True)
 class SendTestEmailResult:
     """The sample email ``emails.send_test()`` delivered."""
 

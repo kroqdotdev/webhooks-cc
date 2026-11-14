@@ -450,7 +450,7 @@ export interface EmailRequest extends Request {
  * The id is synthetic and is not compatible with requests.get()/replay().
  */
 export interface SearchResult {
-  /** Synthetic identifier derived from retained request contents */
+  /** The request's id, usable with `requests.get()` and the other request routes */
   id: string;
   /** Endpoint slug that received this request */
   slug: string;
@@ -875,18 +875,48 @@ export interface SearchFilters {
   method?: string;
   /** Only HTTP requests or only emails */
   kind?: RequestKind;
-  /** Free-text substring search across path, body, and headers */
+  /** Substring to find in the path, headers, body and decoded email fields (up to 1,000 characters) */
   q?: string;
   /** Lower bound for receivedAt (absolute ms or relative duration) */
   from?: number | string;
   /** Upper bound for receivedAt (absolute ms or relative duration) */
   to?: number | string;
-  /** Maximum number of results to return */
+  /** Maximum number of results to return (default 50; a page holds up to 200) */
   limit?: number;
-  /** Result offset for pagination */
+  /** Matches to skip. Applies to the first page; a cursor carries what is left of it. */
   offset?: number;
   /** Result ordering by receivedAt */
   order?: "asc" | "desc";
+}
+
+/** Options for `requests.searchPage()` and `requests.countPage()`. */
+export interface SearchPageOptions {
+  /** The `cursor` of the previous page, to read on from where it stopped. Opaque: pass it as given. */
+  cursor?: string;
+}
+
+/** One page of `requests.searchPage()`. */
+export interface SearchPage {
+  /** The matches this page found */
+  requests: SearchResult[];
+  /** Whether the whole range was read. When false, `cursor` reads on. */
+  complete: boolean;
+  /** How far the search read (Unix ms), or null when the server did not say */
+  searchedUntil: number | null;
+  /** Pass to the next call to continue, or null when the search is complete */
+  cursor: string | null;
+}
+
+/** One page of `requests.countPage()`. */
+export interface SearchCountPage {
+  /** Matches counted by this page */
+  count: number;
+  /** Whether the whole range was counted. When false, `count` covers up to `searchedUntil`. */
+  exact: boolean;
+  /** How far the count read (Unix ms), or null when it read everything or the server did not say */
+  searchedUntil: number | null;
+  /** Pass to the next call to count the next stretch (the counts add up), or null when exact */
+  cursor: string | null;
 }
 
 /**

@@ -2,6 +2,7 @@ package webhookscc
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -318,16 +319,21 @@ func collect(
 	return nil, &TimeoutError{After: timeout}
 }
 
-// SearchOptions narrow Requests.Search and Count. All are optional.
+// SearchOptions narrow Requests.Search, SearchPage, Count and CountPage. All
+// are optional.
 type SearchOptions struct {
 	Slug   string
 	Method string
 	Kind   RequestKind
-	// Query is searched for in the path, body and headers.
+	// Query is found as a substring of the path, the headers and the body,
+	// and of an email's decoded subject, text and addresses.
 	Query string
 	From  time.Time
 	To    time.Time
-	// Limit, Offset and Order ("asc" or "desc") apply to Search only.
+	// Limit, Offset and Order ("asc" or "desc") apply to Search and
+	// SearchPage only. Limit defaults to 50; one page holds at most 200.
+	// Offset belongs to a search's first page: a cursor carries what is left
+	// of it.
 	Limit  int
 	Offset int
 	Order  string
@@ -359,8 +365,138 @@ func (o SearchOptions) values() (url.Values, error) {
 	return query, nil
 }
 
-// Search searches retained requests across path, body and headers.
+// searchDeadline is how long Search and Count keep following the cursor. Each
+// page reads for about two seconds on the server.
+var searchDeadline = 25 * time.Second
+
+const defaultSearchLimit = 50
+
+// waitOutBusySearch sleeps as long as a busy search server asked (a second at
+// least) when err is its 429 and the wait still fits before the deadline. It
+// reports whether it slept; the error is the context's, when it ended first.
+func waitOutBusySearch(ctx context.Context, err error, deadline time.Time) (bool, error) {
+	var apiErr *Error
+	if !errors.As(err, &apiErr) || apiErr.StatusCode != http.StatusTooManyRequests || apiErr.code != "search_busy" {
+		return false, nil
+	}
+	wait := max(apiErr.RetryAfter, time.Second)
+	if !time.Now().Add(wait).Before(deadline) {
+		return false, nil
+	}
+	if err := sleep(ctx, wait); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+// SearchPage is one page of a search, as Requests.SearchPage returns it. The
+// server reads requests one stretch of time after another and answers within
+// about two seconds, so a page can be short or empty without being the end.
+type SearchPage struct {
+	// Requests are the matches this page found. Each ID is the request's own
+	// ID, the one Requests.Get and the other request calls take.
+	Requests []Request
+	// Complete reports whether the whole range was read. When false, older
+	// requests (newer ones with Order "asc") were not searched yet: pass
+	// Cursor to read on.
+	Complete bool
+	// SearchedUntil is how far the search read; zero when the server did not
+	// say.
+	SearchedUntil time.Time
+	// Cursor continues the search with the same options; empty once it is
+	// complete. It is opaque: pass it back as it is.
+	Cursor string
+}
+
+// CountPage is one answer of Requests.CountPage.
+type CountPage struct {
+	// Count is the matches counted by this call.
+	Count int
+	// Exact reports whether the whole range was counted. When false, Count
+	// covers only the requests back to SearchedUntil: pass Cursor to count
+	// the next stretch and add the counts up.
+	Exact bool
+	// SearchedUntil is how far the count read; zero when the server did not
+	// say.
+	SearchedUntil time.Time
+	// Cursor continues the count with the same options; empty once it is
+	// exact.
+	Cursor string
+}
+
+// Search searches retained requests: Query is found as a substring of the
+// path, the headers and the body, and of an email's decoded subject, text and
+// addresses. Each result's ID is the request's own ID, as Get takes it.
+//
+// It returns at most Limit matches (50 by default), newest first unless Order
+// is "asc". A search reads a long history in pages; Search follows them until
+// it has Limit matches, the whole range was read, or 25 seconds have passed,
+// so a rare term in a long history can return fewer matches than exist.
+// SearchPage reads one page and says how far it got.
+//
+// When the server is busy with other searches (a 429 "search_busy"), Search
+// waits as long as the server asks and tries the page again while that fits
+// in the 25 seconds; after that it returns what it has, or the error (matching
+// ErrRateLimited) when it has read no page yet.
 func (s *RequestsService) Search(ctx context.Context, opts SearchOptions) ([]Request, error) {
+	query, err := opts.values()
+	if err != nil {
+		return nil, err
+	}
+	if opts.Order != "" {
+		query.Set("order", opts.Order)
+	}
+	wanted := opts.Limit
+	if wanted <= 0 {
+		wanted = defaultSearchLimit
+	}
+	deadline := time.Now().Add(searchDeadline)
+	var found []Request
+	cursor := ""
+	for {
+		if opts.Limit > 0 || len(found) > 0 {
+			query.Set("limit", strconv.Itoa(wanted-len(found)))
+		}
+		// The cursor carries what is left of the offset.
+		if opts.Offset > 0 && cursor == "" {
+			query.Set("offset", strconv.Itoa(opts.Offset))
+		} else {
+			query.Del("offset")
+		}
+		page, err := s.searchPage(ctx, query, cursor)
+		if err != nil {
+			waited, waitErr := waitOutBusySearch(ctx, err, deadline)
+			if waitErr != nil {
+				return nil, waitErr
+			}
+			if waited {
+				continue
+			}
+			if cursor == "" {
+				return nil, err
+			}
+			break
+		}
+		found = append(found, page.Requests...)
+		cursor = page.Cursor
+		if len(found) >= wanted || page.Complete || cursor == "" || !time.Now().Before(deadline) {
+			break
+		}
+	}
+	if len(found) > wanted {
+		found = found[:wanted]
+	}
+	return found, nil
+}
+
+// SearchPage reads one page of a search and reports how far it read. An
+// empty cursor starts the search; to read on, pass the same options with the
+// Cursor of the page before. Offset is sent with the first page only.
+//
+// A cursor the server did not issue for this search (one that was changed, or
+// that came from a search in the other order) is an error matching
+// ErrInvalidCursor. Keep From and To the same across pages.
+func (s *RequestsService) SearchPage(ctx context.Context, opts SearchOptions, cursor string) (*SearchPage, error) {
 	query, err := opts.values()
 	if err != nil {
 		return nil, err
@@ -368,32 +504,123 @@ func (s *RequestsService) Search(ctx context.Context, opts SearchOptions) ([]Req
 	if opts.Limit > 0 {
 		query.Set("limit", strconv.Itoa(opts.Limit))
 	}
-	if opts.Offset > 0 {
+	if opts.Offset > 0 && cursor == "" {
 		query.Set("offset", strconv.Itoa(opts.Offset))
 	}
 	if opts.Order != "" {
 		query.Set("order", opts.Order)
 	}
-	var requests []Request
-	if err := s.c.api(ctx, http.MethodGet, "/search/requests", query, nil, &requests); err != nil {
+	return s.searchPage(ctx, query, cursor)
+}
+
+func (s *RequestsService) searchPage(ctx context.Context, query url.Values, cursor string) (*SearchPage, error) {
+	query.Set("paged", "true")
+	if cursor != "" {
+		query.Set("cursor", cursor)
+	}
+	response, err := s.c.call(ctx, http.MethodGet, "/search/requests", query, nil, true)
+	if err != nil {
 		return nil, err
 	}
-	return requests, nil
+	page := &SearchPage{Cursor: response.header.Get("X-Search-Cursor")}
+	if len(response.body) > 0 {
+		if err := json.Unmarshal(response.body, &page.Requests); err != nil {
+			return nil, fmt.Errorf("webhooks.cc: reading the response: %w", err)
+		}
+	}
+	if complete := response.header.Get("X-Search-Complete"); complete != "" {
+		page.Complete = strings.EqualFold(strings.TrimSpace(complete), "true")
+	} else {
+		// A server that sends no progress has nothing more to give.
+		page.Complete = page.Cursor == ""
+	}
+	if until, ok := headerInt64(response.header, "X-Search-Searched-Until"); ok {
+		page.SearchedUntil = time.UnixMilli(until)
+	}
+	return page, nil
 }
 
 // Count returns how many retained requests match the search.
+//
+// Without Query and Method the count is exact. With them the server counts a
+// long history in stretches; Count adds them up until the count is exact or
+// 25 seconds have passed, and then returns what it counted, which is a lower
+// bound. CountPage says whether a count is exact. A busy server (a 429
+// "search_busy") is waited out as Search does.
 func (s *RequestsService) Count(ctx context.Context, opts SearchOptions) (int, error) {
 	query, err := opts.values()
 	if err != nil {
 		return 0, err
 	}
+	deadline := time.Now().Add(searchDeadline)
+	total := 0
+	cursor := ""
+	for {
+		page, err := s.countPage(ctx, query, cursor)
+		if err != nil {
+			waited, waitErr := waitOutBusySearch(ctx, err, deadline)
+			if waitErr != nil {
+				return 0, waitErr
+			}
+			if waited {
+				continue
+			}
+			if cursor == "" {
+				return 0, err
+			}
+			return total, nil
+		}
+		total += page.Count
+		cursor = page.Cursor
+		if page.Exact || cursor == "" || !time.Now().Before(deadline) {
+			return total, nil
+		}
+	}
+}
+
+// CountPage counts once and reports whether the count is exact. Without Query
+// and Method it always is. With them the server counts for about two seconds:
+// when Exact is false, Count covers the requests back to SearchedUntil, and
+// the same options with Cursor count the next stretch (the counts add up).
+//
+// A cursor the server did not issue for this search is an error matching
+// ErrInvalidCursor.
+func (s *RequestsService) CountPage(ctx context.Context, opts SearchOptions, cursor string) (*CountPage, error) {
+	query, err := opts.values()
+	if err != nil {
+		return nil, err
+	}
+	return s.countPage(ctx, query, cursor)
+}
+
+func (s *RequestsService) countPage(ctx context.Context, query url.Values, cursor string) (*CountPage, error) {
+	query.Set("paged", "true")
+	if cursor != "" {
+		query.Set("cursor", cursor)
+	}
 	var response struct {
-		Count int `json:"count"`
+		Count         int     `json:"count"`
+		Exact         *bool   `json:"exact"`
+		SearchedUntil *int64  `json:"searchedUntil"`
+		Cursor        *string `json:"cursor"`
 	}
 	if err := s.c.api(ctx, http.MethodGet, "/search/requests/count", query, nil, &response); err != nil {
-		return 0, err
+		return nil, err
 	}
-	return response.Count, nil
+	page := &CountPage{Count: response.Count}
+	if response.Cursor != nil {
+		page.Cursor = *response.Cursor
+	}
+	if response.Exact != nil {
+		page.Exact = *response.Exact
+	} else {
+		// A server that does not say counted everything it will.
+		page.Exact = page.Cursor == ""
+	}
+	if response.SearchedUntil != nil {
+		page.SearchedUntil = time.UnixMilli(*response.SearchedUntil)
+	}
+	return page, nil
 }
 
 // ClearOptions narrow Requests.Clear.

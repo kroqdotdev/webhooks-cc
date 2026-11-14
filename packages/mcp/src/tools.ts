@@ -649,6 +649,26 @@ function fitArrayField(value: Record<string, unknown>, key: string): Record<stri
   return cut(low);
 }
 
+/** Epoch milliseconds as ISO 8601, or null. */
+function isoTime(ms: number | null): string | null {
+  if (ms === null || !Number.isFinite(ms)) return null;
+  const date = new Date(ms);
+  return Number.isNaN(date.getTime()) ? null : date.toISOString();
+}
+
+/** What a search that did not read everything tells the agent. */
+function searchStoppedNote(
+  searchedUntil: string | null,
+  order: "asc" | "desc",
+  hasCursor: boolean
+): string {
+  const [direction, rest] = order === "asc" ? ["forward", "newer"] : ["back", "older"];
+  const reached = searchedUntil
+    ? `Searched ${direction} to ${searchedUntil}; ${rest} requests were not searched yet.`
+    : `The search stopped before it read everything; ${rest} requests were not searched yet.`;
+  return hasCursor ? `${reached} Call search_requests again with cursor to continue.` : reached;
+}
+
 export function jsonContent(value: unknown): ToolResult {
   return textContent(serializeJson(value));
 }
@@ -711,6 +731,16 @@ function serializeError(error: unknown): string {
     payload.code = "timeout";
   } else if (error instanceof WebhooksCCError) {
     payload.code = error.statusCode >= 500 ? "server_error" : "validation_error";
+  }
+
+  if (error instanceof WebhooksCCError && payload.hint === null) {
+    if (error.code === "invalid_cursor") {
+      payload.hint =
+        "The cursor is not one this search returned, or the order changed since. Pass a cursor exactly as a result gave it, or search again without one.";
+    } else if (error.code === "search_busy") {
+      payload.hint =
+        "The account's other searches are still running. Wait retryAfter seconds, then call again with the same inputs.";
+    }
   }
 
   return JSON.stringify(payload, null, 2);
@@ -1701,12 +1731,17 @@ export function registerTools(
 
   server.tool(
     "search_requests",
-    "Search captured webhook requests across endpoints using retained full-text search.",
+    "Search captured requests and emails across endpoints: a substring match on path, headers, body and decoded email fields. One call reads back through history for about 2 seconds and returns { requests, complete, searchedUntil, cursor }. When complete is false, older requests were not searched yet: call again with the cursor and the same filters to continue.",
     {
       slug: z.string().optional().describe("Filter to a specific endpoint slug"),
       method: z.string().optional().describe("Filter by HTTP method"),
       kind: kindSchema,
-      q: z.string().optional().describe("Free-text search across path, body, and headers"),
+      q: z
+        .string()
+        .optional()
+        .describe(
+          "Substring to find in the path, headers, body and decoded email fields (up to 1,000 characters)"
+        ),
       from: durationOrTimestampSchema
         .optional()
         .describe('Start time as a timestamp or duration like "1h" or "7d"'),
@@ -1714,43 +1749,101 @@ export function registerTools(
         .optional()
         .describe('End time as a timestamp or duration like "1h" or "7d"'),
       limit: z.number().int().min(1).max(200).default(50).describe("Max results to return"),
-      offset: z.number().int().min(0).max(10_000).default(0).describe("Result offset"),
+      offset: z
+        .number()
+        .int()
+        .min(0)
+        .max(10_000)
+        .default(0)
+        .describe("Matches to skip (first call only; a cursor carries what is left of it)"),
       order: z.enum(["asc", "desc"]).default("desc").describe("Sort order by received time"),
+      cursor: z
+        .string()
+        .optional()
+        .describe(
+          "The cursor from a previous search_requests result, to continue that search. Keep the other inputs the same."
+        ),
     },
-    withErrorHandling(async ({ slug, method, kind, q, from, to, limit, offset, order }) => {
-      const results = await client.requests.search({
-        slug,
-        method,
-        kind,
-        q,
-        from,
-        to,
-        limit,
-        offset,
-        order,
-      });
-      return jsonContent(results.map(compactRequest));
+    withErrorHandling(async ({ slug, method, kind, q, from, to, limit, offset, order, cursor }) => {
+      const page = await client.requests.searchPage(
+        { slug, method, kind, q, from, to, limit, offset, order },
+        { cursor }
+      );
+      const searchedUntil = isoTime(page.searchedUntil);
+      const result = (cutNote?: string) => {
+        const notes = [
+          ...(page.complete ? [] : [searchStoppedNote(searchedUntil, order, Boolean(page.cursor))]),
+          ...(cutNote ? [cutNote] : []),
+        ];
+        return fitArrayField(
+          {
+            requests: page.requests.map(compactRequest),
+            complete: page.complete,
+            searchedUntil,
+            cursor: page.cursor,
+            ...(notes.length > 0 ? { note: notes.join(" ") } : {}),
+          },
+          "requests"
+        );
+      };
+      const fitted = result();
+      // The cursor reads on after every match of this page, shown or not.
+      return jsonContent(
+        fitted.truncated
+          ? result(
+              "Not every match of this page fit the output (see returned), and the cursor continues after all of them: search again with a smaller limit to see the rest."
+            )
+          : fitted
+      );
     })
   );
 
   server.tool(
     "count_requests",
-    "Count captured webhook requests that match the given filters.",
+    "Count captured requests and emails that match the given filters (q is a substring match on path, headers, body and decoded email fields). Returns { count, exact, searchedUntil, cursor }. With q or method a call counts back through history for about 2 seconds: when exact is false, count covers history back to searchedUntil only, and calling again with the cursor counts the next stretch (add the counts up).",
     {
       slug: z.string().optional().describe("Filter to a specific endpoint slug"),
       method: z.string().optional().describe("Filter by HTTP method"),
       kind: kindSchema,
-      q: z.string().optional().describe("Free-text search across path, body, and headers"),
+      q: z
+        .string()
+        .optional()
+        .describe(
+          "Substring to find in the path, headers, body and decoded email fields (up to 1,000 characters)"
+        ),
       from: durationOrTimestampSchema
         .optional()
         .describe('Start time as a timestamp or duration like "1h" or "7d"'),
       to: durationOrTimestampSchema
         .optional()
         .describe('End time as a timestamp or duration like "1h" or "7d"'),
+      cursor: z
+        .string()
+        .optional()
+        .describe(
+          "The cursor from a previous count_requests result, to count the next stretch. Keep the other inputs the same."
+        ),
     },
-    withErrorHandling(async ({ slug, method, kind, q, from, to }) => {
-      const count = await client.requests.count({ slug, method, kind, q, from, to });
-      return jsonContent({ count });
+    withErrorHandling(async ({ slug, method, kind, q, from, to, cursor }) => {
+      const page = await client.requests.countPage({ slug, method, kind, q, from, to }, { cursor });
+      const searchedUntil = isoTime(page.searchedUntil);
+      return jsonContent({
+        count: page.count,
+        exact: page.exact,
+        searchedUntil,
+        cursor: page.cursor,
+        ...(page.exact
+          ? {}
+          : {
+              note: `At least ${page.count}, counted ${
+                searchedUntil ? `back to ${searchedUntil}` : "over part of the history"
+              }; ${
+                page.cursor
+                  ? "call count_requests again with cursor to count further (the counts add up)."
+                  : "there is no cursor to count further with."
+              }`,
+            }),
+      });
     })
   );
 

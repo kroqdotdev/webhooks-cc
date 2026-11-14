@@ -1793,10 +1793,12 @@ describe("WebhooksCC", () => {
       expect(description.requests.waitForAll).toBeDefined();
       expect(description.requests.export).toBeDefined();
       expect(description.requests.search).toBeDefined();
+      expect(description.requests.searchPage.params.cursor).toBe("string?");
+      expect(description.requests.countPage.params.cursor).toBe("string?");
       expect(description.requests.count).toBeDefined();
       expect(description.requests.clear).toBeDefined();
       expect(description.requests.subscribe.params.reconnect).toBe("boolean?");
-      expect(Object.keys(description.requests)).toHaveLength(14);
+      expect(Object.keys(description.requests)).toHaveLength(16);
       expect(description.requests.redeliver.params).toEqual({ requestId: "string" });
       expect(description.requests.attachment.params).toEqual({
         requestId: "string",

@@ -252,34 +252,48 @@ Poll until a specified number of requests arrive at an endpoint.
 
 ### search_requests
 
-Search captured requests for text. Supports time ranges, method filters, and pagination.
+Search captured requests and emails for text. Supports time ranges, method filters, and a cursor to continue.
 
-`q` matches as a case-insensitive substring of the path, the headers or the body, and an email also matches on its decoded subject, text and sender and recipient addresses; a request id finds that request first. A search reads the most recent requests first and answers within about 10 seconds, so a rare term on a long history can come back with fewer results than exist: narrow `from` and `to` to search one stretch of time at a time.
+`q` matches as a case-insensitive substring of the path, the headers or the body, and an email also matches on its decoded subject, text and sender and recipient addresses; a request id finds that request first. One call reads back through history for about 2 seconds, most recent requests first, and answers with what it found and how far it got, so a rare term on a long history can come back short or empty without being the end: when `complete` is `false`, call again with the `cursor` and the same inputs.
+
+| Parameter | Type     | Required | Description                                                                        |
+| --------- | -------- | -------- | ---------------------------------------------------------------------------------- |
+| `slug`    | `string` | no       | Filter by endpoint slug                                                            |
+| `method`  | `string` | no       | Filter by HTTP method                                                              |
+| `kind`    | `string` | no       | `http` for HTTP requests only, `email` for emails only                             |
+| `q`       | `string` | no       | Text to find in the path, headers, body or email fields (1,000 characters at most) |
+| `from`    | `string` | no       | Start time: a duration back like `"1h"`, or a timestamp                            |
+| `to`      | `string` | no       | End time: a duration back, or a timestamp                                          |
+| `limit`   | `number` | no       | Max results                                                                        |
+| `offset`  | `number` | no       | Matches to skip (first call only; a cursor carries what is left of it)             |
+| `order`   | `string` | no       | `"asc"` or `"desc"`                                                                |
+| `cursor`  | `string` | no       | The `cursor` of a previous result, to continue that search                         |
+
+The result is an object:
+
+| Field           | Description                                                                                                   |
+| --------------- | ------------------------------------------------------------------------------------------------------------- |
+| `requests`      | The matches this call found                                                                                   |
+| `complete`      | `true` when the whole range was read; `false` when older requests were not searched yet                       |
+| `searchedUntil` | How far the search read, as an ISO 8601 time, or `null`                                                       |
+| `cursor`        | Pass as `cursor` to continue, or `null` when the search is complete                                           |
+| `note`          | Present when the search is not complete: how far it searched and that calling again with the cursor continues |
+
+### count_requests
+
+Count requests matching the given filters. Takes the filters of `search_requests`, without its paging and order. Without `q` and `method` the count is exact. With either, one call counts for about 2 seconds, so on a long history it can stop before the end: `exact` is then `false`, and calling again with the `cursor` counts the next stretch (the counts add up).
 
 | Parameter | Type     | Required | Description                                                  |
 | --------- | -------- | -------- | ------------------------------------------------------------ |
 | `slug`    | `string` | no       | Filter by endpoint slug                                      |
 | `method`  | `string` | no       | Filter by HTTP method                                        |
-| `kind`    | `string` | no       | `http` for HTTP requests only, `email` for emails only       |
-| `q`       | `string` | no       | Text to find in the path, headers or body                    |
-| `from`    | `string` | no       | Start time: a duration back like `"1h"`, or a timestamp      |
-| `to`      | `string` | no       | End time: a duration back, or a timestamp                    |
-| `limit`   | `number` | no       | Max results                                                  |
-| `offset`  | `number` | no       | Pagination offset                                            |
-| `order`   | `string` | no       | `"asc"` or `"desc"`                                          |
+| `kind`    | `string` | no       | `http` or `email`                                            |
+| `q`       | `string` | no       | Text to find                                                 |
+| `from`    | `string` | no       | Start time                                                   |
+| `to`      | `string` | no       | End time                                                     |
+| `cursor`  | `string` | no       | The `cursor` of a previous result, to count the next stretch |
 
-### count_requests
-
-Count requests matching the given filters. Takes the filters of `search_requests`, without its paging and order. Without `q` and `method` the count is exact. With either, it covers what about 10 seconds of reading reached, so on a long history it can be lower than the real number.
-
-| Parameter | Type     | Required | Description             |
-| --------- | -------- | -------- | ----------------------- |
-| `slug`    | `string` | no       | Filter by endpoint slug |
-| `method`  | `string` | no       | Filter by HTTP method   |
-| `kind`    | `string` | no       | `http` or `email`       |
-| `q`       | `string` | no       | Search query            |
-| `from`    | `string` | no       | Start time              |
-| `to`      | `string` | no       | End time                |
+The result is `{ count, exact, searchedUntil, cursor }`, with `searchedUntil` as an ISO 8601 time or `null`. When `exact` is `false` it also has a `note` saying the count is "at least" that many, how far back it counted, and to call again with the cursor.
 
 ### clear_requests
 

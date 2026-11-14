@@ -187,6 +187,20 @@ print(preview.rule, preview.response.status if preview.response else 200)
 
 It runs against the endpoint's newest HTTP request unless you pass `request_id`, and uses the saved settings unless you pass `mock_response` or `response_rules` (`None` tries none at all). `client.endpoints.update(slug, response_rules=[...])` saves them.
 
+## Search
+
+`requests.search()` finds requests you still have by a substring of their path, headers or body (for an email also its decoded subject, text and addresses), across your endpoints:
+
+```python
+found = client.requests.search(slug=endpoint.slug, q="invoice.paid", limit=20)
+
+page = client.requests.search_page(q="invoice.paid")
+while not page.complete:
+    page = client.requests.search_page(q="invoice.paid", cursor=page.cursor)
+```
+
+There is no text index behind search, so the server reads a long history in pages of about two seconds each. `search()` and `count()` follow them for up to 25 seconds and return what they found by then (`limit` matches at most, 50 by default). `search_page()` and `count_page()` read one page and say how far it got: `complete` (or `exact`), `searched_until` (ms since the epoch) and the `cursor` that reads on with the same filters. A cursor the server did not issue raises `InvalidCursorError`.
+
 ## Stream requests as they arrive
 
 ```python
@@ -238,7 +252,7 @@ client = WebhooksCC()            # without WHK_API_KEY, acts for the connected a
 
 ## Errors
 
-API errors raise `WebhooksCCError` with a `status_code`, or one of its subclasses: `UnauthorizedError` (401), `NotFoundError` (404), `RateLimitError` (429, with `retry_after`) and `TimeoutError`, which is also Python's built-in `TimeoutError`. Network failures raise httpx's exceptions. Retries are off unless you pass `retry=RetryOptions(max_attempts=3)`. They repeat GET, PUT and DELETE calls after a network error, a timeout or a status in `retry_on` (429, 500, 502, 503 and 504 by default), and any call after a 429; a POST or PATCH that failed any other way may have gone through, so it is not repeated, and neither is `requests.clear()` without `before`.
+API errors raise `WebhooksCCError` with a `status_code`, or one of its subclasses: `UnauthorizedError` (401), `NotFoundError` (404), `InvalidCursorError` (400, a search cursor the server did not issue), `RateLimitError` (429, with `retry_after`) and `TimeoutError`, which is also Python's built-in `TimeoutError`. Network failures raise httpx's exceptions. Retries are off unless you pass `retry=RetryOptions(max_attempts=3)`. They repeat GET, PUT and DELETE calls after a network error, a timeout or a status in `retry_on` (429, 500, 502, 503 and 504 by default), and any call after a 429; a POST or PATCH that failed any other way may have gone through, so it is not repeated, and neither is `requests.clear()` without `before`.
 
 ## Same behaviour as the TypeScript SDK
 

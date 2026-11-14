@@ -1,0 +1,8 @@
+{
+  "title": "MCP search tools that continue",
+  "items": [
+    "The MCP server's search_requests takes a cursor and says how far back it searched, so an agent can continue a search on a long history instead of getting a short answer",
+    "count_requests says whether its count is exact, and counts on with a cursor when it is not",
+    "Each search or count call from the MCP server answers within about 2 seconds"
+  ]
+}

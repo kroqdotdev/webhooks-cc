@@ -150,7 +150,9 @@ function createMockClient(overrides: Partial<WebhooksCC> = {}): WebhooksCC {
       subscribe: vi.fn(),
       replay: vi.fn(),
       search: vi.fn(),
+      searchPage: vi.fn(),
       count: vi.fn(),
+      countPage: vi.fn(),
       clear: vi.fn(),
       export: vi.fn(),
       ...(overrides.requests ?? {}),
@@ -2740,5 +2742,171 @@ describe("get_billing", () => {
     const client = createMockClient({ billing: { get } as unknown as WebhooksCC["billing"] });
     const result = await getRegisteredTools(client).get_billing.handler({});
     expect(JSON.parse(result.content[0].text)).toMatchObject({ plan: "pro" });
+  });
+});
+
+describe("search_requests and count_requests", () => {
+  function searchClient(requests: Record<string, unknown>) {
+    return createMockClient({ requests: requests as unknown as WebhooksCC["requests"] });
+  }
+
+  it("returns one page with how far it read, and says how to continue", async () => {
+    const searchPage = vi.fn(async () => ({
+      requests: [makeRequest({ id: "r1" })],
+      complete: false,
+      searchedUntil: 1_700_000_000_000,
+      cursor: "c1",
+    }));
+    const tools = getRegisteredTools(searchClient({ searchPage }));
+
+    const result = parseJsonResult(
+      await tools.search_requests.handler({
+        slug: "acme",
+        q: "needle",
+        limit: 10,
+        offset: 2,
+        order: "desc",
+      })
+    );
+
+    expect(searchPage).toHaveBeenCalledWith(
+      expect.objectContaining({ slug: "acme", q: "needle", limit: 10, offset: 2, order: "desc" }),
+      { cursor: undefined }
+    );
+    expect(result).toEqual({
+      requests: [makeRequest({ id: "r1" })],
+      complete: false,
+      searchedUntil: "2023-11-14T22:13:20.000Z",
+      cursor: "c1",
+      note: "Searched back to 2023-11-14T22:13:20.000Z; older requests were not searched yet. Call search_requests again with cursor to continue.",
+    });
+  });
+
+  it("passes the cursor on and adds no note to a complete search", async () => {
+    const searchPage = vi.fn(async () => ({
+      requests: [],
+      complete: true,
+      searchedUntil: null,
+      cursor: null,
+    }));
+    const tools = getRegisteredTools(searchClient({ searchPage }));
+
+    const result = parseJsonResult(
+      await tools.search_requests.handler({ q: "needle", cursor: "c1" })
+    );
+
+    expect(searchPage).toHaveBeenCalledWith(expect.objectContaining({ q: "needle" }), {
+      cursor: "c1",
+    });
+    expect(result).toEqual({ requests: [], complete: true, searchedUntil: null, cursor: null });
+  });
+
+  it("names the direction of an ascending search", async () => {
+    const searchPage = vi.fn(async () => ({
+      requests: [],
+      complete: false,
+      searchedUntil: 1_700_000_000_000,
+      cursor: "c1",
+    }));
+    const tools = getRegisteredTools(searchClient({ searchPage }));
+    const result = parseJsonResult(
+      await tools.search_requests.handler({ q: "needle", order: "asc" })
+    );
+    expect(result.note).toBe(
+      "Searched forward to 2023-11-14T22:13:20.000Z; newer requests were not searched yet. Call search_requests again with cursor to continue."
+    );
+  });
+
+  it("keeps the output inside its budget and says the cursor skips what was cut", async () => {
+    const searchPage = vi.fn(async () => ({
+      requests: Array.from({ length: 50 }, (_, i) =>
+        makeRequest({ id: `r${i}`, body: "x".repeat(4_000) })
+      ),
+      complete: false,
+      searchedUntil: 1_700_000_000_000,
+      cursor: "c1",
+    }));
+    const tools = getRegisteredTools(searchClient({ searchPage }));
+
+    const output = await tools.search_requests.handler({ q: "x" });
+    expect(output.content[0].text.length).toBeLessThanOrEqual(32_768);
+    const result = JSON.parse(output.content[0].text);
+    expect(result.truncated).toBe(true);
+    expect(result.returned).toBe(result.requests.length);
+    expect(result.requests.length).toBeLessThan(50);
+    expect(result.cursor).toBe("c1");
+    expect(result.note).toContain("Call search_requests again with cursor to continue.");
+    expect(result.note).toContain("search again with a smaller limit");
+  });
+
+  it("counts one page and says when the count is a lower bound", async () => {
+    const countPage = vi.fn(async () => ({
+      count: 12,
+      exact: false,
+      searchedUntil: 1_700_000_000_000,
+      cursor: "c1",
+    }));
+    const tools = getRegisteredTools(searchClient({ countPage }));
+
+    const result = parseJsonResult(
+      await tools.count_requests.handler({ slug: "acme", q: "needle", cursor: "c0" })
+    );
+
+    expect(countPage).toHaveBeenCalledWith(expect.objectContaining({ slug: "acme", q: "needle" }), {
+      cursor: "c0",
+    });
+    expect(result).toEqual({
+      count: 12,
+      exact: false,
+      searchedUntil: "2023-11-14T22:13:20.000Z",
+      cursor: "c1",
+      note: "At least 12, counted back to 2023-11-14T22:13:20.000Z; call count_requests again with cursor to count further (the counts add up).",
+    });
+  });
+
+  it("returns an exact count without a note", async () => {
+    const countPage = vi.fn(async () => ({
+      count: 7,
+      exact: true,
+      searchedUntil: null,
+      cursor: null,
+    }));
+    const tools = getRegisteredTools(searchClient({ countPage }));
+    const result = parseJsonResult(await tools.count_requests.handler({ slug: "acme" }));
+    expect(result).toEqual({ count: 7, exact: true, searchedUntil: null, cursor: null });
+  });
+
+  it("says what to do about a cursor the server refuses and a busy search", async () => {
+    const refused = Object.assign(new WebhooksCCError(400, '{"error":"invalid_cursor"}'), {
+      code: "invalid_cursor",
+    });
+    const busy = Object.assign(new RateLimitError(2), { code: "search_busy" });
+    const searchPage = vi.fn().mockRejectedValueOnce(refused).mockRejectedValueOnce(busy);
+    const tools = getRegisteredTools(searchClient({ searchPage }));
+
+    const first = await tools.search_requests.handler({ q: "needle", cursor: "made-up" });
+    expect(first.isError).toBe(true);
+    expect(JSON.parse(first.content[0].text)).toMatchObject({
+      code: "validation_error",
+      hint: expect.stringContaining("search again without one"),
+    });
+
+    const second = await tools.search_requests.handler({ q: "needle" });
+    expect(JSON.parse(second.content[0].text)).toMatchObject({
+      code: "rate_limited",
+      retryAfter: 2,
+      hint: expect.stringContaining("Wait retryAfter seconds"),
+    });
+  });
+
+  it("describes search as a substring match with a cursor", () => {
+    const tools = getRegisteredTools(createMockClient());
+    for (const name of ["search_requests", "count_requests"] as const) {
+      const description = tools[name].description;
+      expect(description).toContain("substring");
+      expect(description).toContain("cursor");
+      expect(description).toContain("decoded email fields");
+      expect(description).not.toContain("full-text");
+    }
   });
 });

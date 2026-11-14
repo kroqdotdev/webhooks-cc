@@ -142,15 +142,15 @@ The local server exposes 57 tools your AI agent can call, and the remote server 
 
 ### Request management
 
-| Tool                | Description                                                   |
-| ------------------- | ------------------------------------------------------------- |
-| `list_requests`     | List captured requests for an endpoint                        |
-| `get_request`       | Get full details of a captured request                        |
-| `wait_for_request`  | Wait for an incoming request (polling)                        |
-| `wait_for_requests` | Wait for multiple incoming requests                           |
-| `search_requests`   | Search requests across endpoints for text in path, headers or body |
-| `count_requests`    | Count requests matching filters                               |
-| `clear_requests`    | Delete requests for an endpoint without deleting the endpoint |
+| Tool                | Description                                                                 |
+| ------------------- | --------------------------------------------------------------------------- |
+| `list_requests`     | List captured requests for an endpoint                                      |
+| `get_request`       | Get full details of a captured request                                      |
+| `wait_for_request`  | Wait for an incoming request (polling)                                      |
+| `wait_for_requests` | Wait for multiple incoming requests                                         |
+| `search_requests`   | Search requests for text; says how far it searched, continues with a cursor |
+| `count_requests`    | Count requests matching filters; says whether the count is exact            |
+| `clear_requests`    | Delete requests for an endpoint without deleting the endpoint               |
 
 ### Request analysis
 

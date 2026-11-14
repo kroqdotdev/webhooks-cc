@@ -50,6 +50,8 @@ func (h Headers) Lookup(name string) (string, bool) {
 // KindEmail. For emails Method is "EMAIL" and Path is the address it was
 // delivered to.
 type Request struct {
+	// ID is the request's own ID, on search results too: Requests.Get and the
+	// other request calls take it.
 	ID         string
 	EndpointID string
 	// Slug is the endpoint's slug, on search results (which carry no EndpointID).

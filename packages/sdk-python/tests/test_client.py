@@ -1890,3 +1890,366 @@ def test_downloads_are_retried_like_other_reads() -> None:
     client = make_client(handler, retry=RetryOptions(max_attempts=2, backoff=1))
     assert client.requests.raw("r1") == STORED_BYTES
     assert len(calls) == 2
+
+
+# --- search ----------------------------------------------------------------------------
+
+
+def search_response(
+    ids: list[str],
+    *,
+    complete: bool,
+    cursor: str | None = None,
+    until: int | None = None,
+) -> httpx.Response:
+    headers = {"x-search-complete": "true" if complete else "false"}
+    if cursor is not None:
+        headers["x-search-cursor"] = cursor
+    if until is not None:
+        headers["x-search-searched-until"] = str(until)
+    return httpx.Response(
+        200, json=[captured(i, slug="acme", endpointId=None) for i in ids], headers=headers
+    )
+
+
+def test_search_page_reads_one_page_and_its_progress() -> None:
+    seen: list[dict[str, str]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path == "/api/search/requests"
+        seen.append(dict(request.url.params))
+        return search_response(["r1", "r2"], complete=False, cursor="c1.mac", until=NOW_MS - 5000)
+
+    client = make_client(handler)
+    page = client.requests.search_page(
+        slug="acme",
+        q="invoice",
+        method="POST",
+        kind="http",
+        from_=1000,
+        to=2000,
+        limit=20,
+        offset=5,
+        order="asc",
+    )
+    assert [r.id for r in page.requests] == ["r1", "r2"]
+    assert page.requests[0].raw["slug"] == "acme"
+    assert (page.complete, page.searched_until, page.cursor) == (False, NOW_MS - 5000, "c1.mac")
+    assert seen[0] == {
+        "slug": "acme",
+        "q": "invoice",
+        "method": "POST",
+        "kind": "http",
+        "from": "1000",
+        "to": "2000",
+        "limit": "20",
+        "offset": "5",
+        "order": "asc",
+        "paged": "true",
+    }
+
+    # With a cursor, the offset is the cursor's to carry.
+    client.requests.search_page(q="invoice", offset=5, cursor="c1.mac")
+    assert seen[1] == {"q": "invoice", "paged": "true", "cursor": "c1.mac"}
+
+
+@pytest.mark.parametrize(
+    ("headers", "expected"),
+    [
+        ({"x-search-complete": "true"}, (True, None, None)),
+        ({"x-search-complete": "false", "x-search-cursor": "c"}, (False, None, "c")),
+        (
+            {"x-search-complete": "TRUE", "x-search-searched-until": "1767225600000"},
+            (True, 1767225600000, None),
+        ),
+        ({"x-search-complete": "false", "x-search-searched-until": "soon"}, (False, None, None)),
+        # A server from before the cursor sends no progress: that answer is all there is.
+        ({}, (True, None, None)),
+    ],
+)
+def test_search_page_reads_the_progress_headers(
+    headers: dict[str, str], expected: tuple[bool, int | None, str | None]
+) -> None:
+    client = make_client(lambda request: httpx.Response(200, json=[], headers=headers))
+    page = client.requests.search_page(q="x")
+    assert (page.complete, page.searched_until, page.cursor) == expected
+    assert page.requests == []
+
+
+def test_search_follows_the_cursor_until_it_has_the_limit() -> None:
+    seen: list[dict[str, str]] = []
+    pages = [
+        search_response(["r1", "r2"], complete=False, cursor="c1"),
+        search_response([], complete=False, cursor="c2"),
+        search_response(["r3", "r4", "r5"], complete=False, cursor="c3"),
+    ]
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(dict(request.url.params))
+        return pages[len(seen) - 1]
+
+    found = make_client(handler).requests.search(q="invoice", limit=4, offset=10)
+    assert [r.id for r in found] == ["r1", "r2", "r3", "r4"]
+    assert seen == [
+        {"q": "invoice", "limit": "4", "offset": "10", "paged": "true"},
+        {"q": "invoice", "limit": "2", "paged": "true", "cursor": "c1"},
+        {"q": "invoice", "limit": "2", "paged": "true", "cursor": "c2"},
+    ]
+
+
+def test_search_stops_when_the_search_is_complete() -> None:
+    seen: list[dict[str, str]] = []
+    pages = [
+        search_response(["r1"], complete=False, cursor="c1"),
+        search_response(["r2"], complete=True),
+    ]
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(dict(request.url.params))
+        return pages[len(seen) - 1]
+
+    found = make_client(handler).requests.search(slug="acme")
+    assert [r.id for r in found] == ["r1", "r2"]
+    # The default limit is the server's on the first page, and what is left of 50 after.
+    assert seen == [
+        {"slug": "acme", "paged": "true"},
+        {"slug": "acme", "limit": "49", "paged": "true", "cursor": "c1"},
+    ]
+
+
+def test_search_stops_at_its_deadline(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("webhooks_cc.client._SEARCH_DEADLINE_MS", 0)
+    calls: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(request.url.params.get("cursor", ""))
+        return search_response(["r1"], complete=False, cursor="more")
+
+    client = make_client(handler)
+    assert [r.id for r in client.requests.search(q="rare")] == ["r1"]
+    assert calls == [""]
+
+
+def test_count_adds_up_the_stretches() -> None:
+    seen: list[dict[str, str]] = []
+    answers: list[dict[str, Any]] = [
+        {"count": 3, "exact": False, "searchedUntil": NOW_MS - 1000, "cursor": "c1"},
+        {"count": 0, "exact": False, "searchedUntil": NOW_MS - 2000, "cursor": "c2"},
+        {"count": 4, "exact": True, "searchedUntil": None, "cursor": None},
+    ]
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path == "/api/search/requests/count"
+        seen.append(dict(request.url.params))
+        return httpx.Response(200, json=answers[len(seen) - 1])
+
+    client = make_client(handler)
+    assert client.requests.count(q="invoice", kind="email") == 7
+    assert seen == [
+        {"q": "invoice", "kind": "email", "paged": "true"},
+        {"q": "invoice", "kind": "email", "paged": "true", "cursor": "c1"},
+        {"q": "invoice", "kind": "email", "paged": "true", "cursor": "c2"},
+    ]
+
+
+def test_count_stops_at_its_deadline(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("webhooks_cc.client._SEARCH_DEADLINE_MS", 0)
+    calls: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(request.url.params.get("cursor", ""))
+        return httpx.Response(
+            200, json={"count": 2, "exact": False, "searchedUntil": 1, "cursor": "more"}
+        )
+
+    assert make_client(handler).requests.count(q="rare") == 2
+    assert calls == [""]
+
+
+def test_count_page_says_whether_the_count_is_exact() -> None:
+    seen: list[dict[str, str]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(dict(request.url.params))
+        if "cursor" in request.url.params:
+            return httpx.Response(
+                200, json={"count": 1, "exact": True, "searchedUntil": None, "cursor": None}
+            )
+        return httpx.Response(
+            200,
+            json={"count": 5, "exact": False, "searchedUntil": 1767225600000, "cursor": "c1"},
+        )
+
+    client = make_client(handler)
+    first = client.requests.count_page(slug="acme", q="invoice")
+    assert (first.count, first.exact, first.searched_until, first.cursor) == (
+        5,
+        False,
+        1767225600000,
+        "c1",
+    )
+    rest = client.requests.count_page(slug="acme", q="invoice", cursor=first.cursor)
+    assert (rest.count, rest.exact, rest.searched_until, rest.cursor) == (1, True, None, None)
+    assert seen[1] == {"slug": "acme", "q": "invoice", "paged": "true", "cursor": "c1"}
+    # An answer from before the cursor is only a count.
+    old = make_client(lambda request: httpx.Response(200, json={"count": 3}))
+    assert old.requests.count_page() == old.requests.count_page()
+    assert (old.requests.count_page().exact, old.requests.count()) == (True, 3)
+
+
+def test_an_invalid_cursor_has_its_own_error() -> None:
+    client = make_client(lambda request: httpx.Response(400, json={"error": "invalid_cursor"}))
+    with pytest.raises(errors.InvalidCursorError) as caught:
+        client.requests.search_page(q="x", cursor="tampered")
+    assert caught.value.status_code == 400
+    with pytest.raises(errors.InvalidCursorError):
+        client.requests.count_page(q="x", cursor="tampered")
+    # Another 400 stays a plain API error.
+    other = make_client(lambda request: httpx.Response(400, json={"error": "invalid_q"}))
+    with pytest.raises(errors.WebhooksCCError) as plain:
+        other.requests.search_page(q="x")
+    assert not isinstance(plain.value, errors.InvalidCursorError)
+    assert "invalid_q" in plain.value.message
+
+
+def test_a_busy_search_is_retried_after_retry_after(monkeypatch: pytest.MonkeyPatch) -> None:
+    slept: list[float] = []
+    monkeypatch.setattr("webhooks_cc.client._sleep_ms", slept.append)
+    calls: list[int] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(1)
+        if len(calls) == 1:
+            return httpx.Response(429, json={"error": "search_busy"}, headers={"retry-after": "2"})
+        return search_response(["r1"], complete=True)
+
+    client = make_client(handler, retry=RetryOptions(max_attempts=2, backoff=1))
+    assert [r.id for r in client.requests.search(q="x")] == ["r1"]
+    assert slept == [2000]
+    # Without retries it is the rate-limit error, with the wait the server asked for.
+    calls.clear()
+    with pytest.raises(errors.RateLimitError) as caught:
+        make_client(handler).requests.search_page(q="x")
+    assert caught.value.retry_after == 2
+
+
+def busy_response(retry_after: str | None = "3") -> httpx.Response:
+    headers = {"retry-after": retry_after} if retry_after is not None else {}
+    return httpx.Response(429, json={"error": "search_busy", "message": "busy"}, headers=headers)
+
+
+def test_search_waits_out_a_busy_server_without_retry_options(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    slept: list[float] = []
+    monkeypatch.setattr("webhooks_cc.client._sleep_ms", slept.append)
+    seen: list[str] = []
+    answers = [
+        busy_response("3"),
+        search_response(["r1"], complete=False, cursor="c1"),
+        busy_response(None),
+        search_response(["r2"], complete=True),
+    ]
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request.url.params.get("cursor", ""))
+        return answers[len(seen) - 1]
+
+    found = make_client(handler).requests.search(q="x")
+    assert [r.id for r in found] == ["r1", "r2"]
+    # The same page again each time; a second at least when the server names no wait.
+    assert seen == ["", "", "c1", "c1"]
+    assert slept == [3000, 1000]
+
+
+def test_count_waits_out_a_busy_server(monkeypatch: pytest.MonkeyPatch) -> None:
+    slept: list[float] = []
+    monkeypatch.setattr("webhooks_cc.client._sleep_ms", slept.append)
+    seen: list[str] = []
+    answers = [
+        httpx.Response(200, json={"count": 2, "exact": False, "cursor": "c1"}),
+        busy_response("0"),
+        httpx.Response(200, json={"count": 5, "exact": True, "cursor": None}),
+    ]
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request.url.params.get("cursor", ""))
+        return answers[len(seen) - 1]
+
+    assert make_client(handler).requests.count(q="x") == 7
+    assert seen == ["", "c1", "c1"]
+    assert slept == [1000]
+
+
+def test_a_busy_wait_past_the_deadline_ends_the_search(monkeypatch: pytest.MonkeyPatch) -> None:
+    slept: list[float] = []
+    monkeypatch.setattr("webhooks_cc.client._sleep_ms", slept.append)
+
+    def busy_after_first(request: httpx.Request) -> httpx.Response:
+        if "cursor" in request.url.params:
+            return busy_response("60")
+        if request.url.path.endswith("/count"):
+            return httpx.Response(200, json={"count": 2, "exact": False, "cursor": "c1"})
+        return search_response(["r1"], complete=False, cursor="c1")
+
+    # After the first page: what was found so far.
+    client = make_client(busy_after_first)
+    assert [r.id for r in client.requests.search(q="x")] == ["r1"]
+    assert client.requests.count(q="x") == 2
+    # On the first page: the error, with the wait the server asked for.
+    always_busy = make_client(lambda request: busy_response("60"))
+    with pytest.raises(errors.RateLimitError) as caught:
+        always_busy.requests.search(q="x")
+    assert (caught.value.retry_after, caught.value.code) == (60, "search_busy")
+    with pytest.raises(errors.RateLimitError):
+        always_busy.requests.count(q="x")
+    assert slept == []
+
+
+def test_an_ordinary_rate_limit_is_not_waited_out(monkeypatch: pytest.MonkeyPatch) -> None:
+    slept: list[float] = []
+    monkeypatch.setattr("webhooks_cc.client._sleep_ms", slept.append)
+    calls: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(request.url.path)
+        return httpx.Response(
+            429, json={"error": "Too many requests"}, headers={"retry-after": "1"}
+        )
+
+    client = make_client(handler)
+    with pytest.raises(errors.RateLimitError) as caught:
+        client.requests.search(q="x")
+    assert caught.value.code == "Too many requests"
+    with pytest.raises(errors.RateLimitError):
+        client.requests.count(q="x")
+    assert (len(calls), slept) == (2, [])
+
+
+def test_the_page_calls_leave_a_busy_server_to_the_caller(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    slept: list[float] = []
+    monkeypatch.setattr("webhooks_cc.client._sleep_ms", slept.append)
+    client = make_client(lambda request: busy_response("2"))
+    with pytest.raises(errors.RateLimitError) as caught:
+        client.requests.search_page(q="x")
+    assert (caught.value.retry_after, caught.value.code) == (2, "search_busy")
+    with pytest.raises(errors.RateLimitError):
+        client.requests.count_page(q="x")
+    assert slept == []
+
+
+def test_search_collects_more_than_a_page_holds() -> None:
+    seen: list[dict[str, str]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(dict(request.url.params))
+        start = 200 * (len(seen) - 1)
+        return search_response(
+            [f"r{start + i}" for i in range(200)], complete=False, cursor=f"c{len(seen)}"
+        )
+
+    found = make_client(handler).requests.search(q="x", limit=450)
+    assert len(found) == 450 and len({r.id for r in found}) == 450
+    assert [p["limit"] for p in seen] == ["450", "250", "50"]

@@ -75,7 +75,10 @@ import type {
   ClearRequestsOptions,
   ExportRequestsOptions,
   RequestsExport,
+  SearchCountPage,
   SearchFilters,
+  SearchPage,
+  SearchPageOptions,
   SearchResult,
   WaitForOptions,
   WaitForAllOptions,
@@ -244,6 +247,24 @@ function mapStatusToError(
   response: Response,
   path?: string
 ): WebhooksCCError {
+  const error = statusError(status, message, response, path);
+  const code = errorCodeOf(message);
+  if (code !== undefined) error.code = code;
+  return error;
+}
+
+/** The API's error code in a JSON error body (`{ "error": "invalid_cursor" }`), when it is one. */
+function errorCodeOf(body: string): string | undefined {
+  // Matched rather than parsed: a long body arrives here cut short.
+  return /^\{\s*"error"\s*:\s*"([a-z][a-z0-9_]*)"/.exec(body)?.[1];
+}
+
+function statusError(
+  status: number,
+  message: string,
+  response: Response,
+  path?: string
+): WebhooksCCError {
   // Append recovery hints when server message is generic (< 30 chars)
   const isGeneric = message.length < 30;
 
@@ -365,7 +386,15 @@ function resolveTimestampFilter(value: number | string, now: number): number {
   return now - parseDuration(trimmed);
 }
 
-function buildSearchQuery(filters: SearchFilters, includePagination: boolean): string {
+// How long requests.search() and requests.count() keep following the cursor.
+const SEARCH_DEADLINE_MS = 25_000;
+const DEFAULT_SEARCH_LIMIT = 50;
+
+/**
+ * The query of a search or a count, with `from` and `to` resolved to
+ * timestamps once, so every page of one search covers the same range.
+ */
+function buildSearchParams(filters: SearchFilters, includePagination: boolean): URLSearchParams {
   const params = new URLSearchParams();
   const now = Date.now();
 
@@ -397,9 +426,31 @@ function buildSearchQuery(filters: SearchFilters, includePagination: boolean): s
   if (includePagination && filters.order !== undefined) {
     params.set("order", filters.order);
   }
+  // Pages of about 2 seconds that say where they stopped; without it the
+  // server answers as it did for clients that knew no cursor.
+  params.set("paged", "true");
+  return params;
+}
 
-  const query = params.toString();
-  return query ? `?${query}` : "";
+/** One page's query: the search's own, plus the cursor to read on from. */
+function searchPageQuery(base: URLSearchParams, cursor: string | undefined): string {
+  const params = new URLSearchParams(base);
+  if (cursor) {
+    params.set("cursor", cursor);
+    // The cursor carries what is left of the offset.
+    params.delete("offset");
+  }
+  return `?${params.toString()}`;
+}
+
+function parseSearchedUntil(value: string | null): number | null {
+  if (value === null || value.trim() === "") return null;
+  const ms = Number(value);
+  return Number.isFinite(ms) ? ms : null;
+}
+
+function isSearchBusy(error: unknown): error is RateLimitError {
+  return error instanceof RateLimitError && error.code === "search_busy";
 }
 
 function buildClearQuery(options: ClearRequestsOptions = {}): string {
@@ -974,7 +1025,13 @@ export class WebhooksCC {
     {
       repeatable = IDEMPOTENT_METHODS.has(method),
       timeoutMs,
-    }: { repeatable?: boolean; timeoutMs?: number } = {}
+      onHeaders,
+    }: {
+      repeatable?: boolean;
+      timeoutMs?: number;
+      /** Given the headers of the successful response, before its body is read. */
+      onHeaders?: (headers: Headers) => void;
+    } = {}
   ): Promise<T> {
     const url = `${this.baseUrl}/api${path}`;
     let attempt = 0;
@@ -1063,6 +1120,8 @@ export class WebhooksCC {
           // Hooks must not break the request flow
         }
 
+        onHeaders?.(response.headers);
+
         // Handle empty responses (204 No Content)
         if (response.status === 204 || response.headers.get("content-length") === "0") {
           return undefined as T;
@@ -1124,6 +1183,62 @@ export class WebhooksCC {
         throw error;
       } finally {
         clearTimeout(timeoutId);
+      }
+    }
+  }
+
+  /** One page of a search: the matches, and how far the server read. */
+  private async fetchSearchPage(base: URLSearchParams, cursor?: string): Promise<SearchPage> {
+    let headers: Headers | undefined;
+    const requests = await this.request<SearchResult[]>(
+      "GET",
+      `/search/requests${searchPageQuery(base, cursor)}`,
+      undefined,
+      {
+        onHeaders: (received) => {
+          headers = received;
+        },
+      }
+    );
+    const complete = headers?.get("x-search-complete") ?? null;
+    const next = headers?.get("x-search-cursor")?.trim();
+    return {
+      requests,
+      // A server that says nothing read everything it was going to.
+      complete: complete === null ? !next : complete.trim().toLowerCase() === "true",
+      searchedUntil: parseSearchedUntil(headers?.get("x-search-searched-until") ?? null),
+      cursor: next || null,
+    };
+  }
+
+  /** One page of a count: the matches counted, and how far the server read. */
+  private async fetchCountPage(base: URLSearchParams, cursor?: string): Promise<SearchCountPage> {
+    const body = await this.request<Partial<SearchCountPage> & { count: number }>(
+      "GET",
+      `/search/requests/count${searchPageQuery(base, cursor)}`
+    );
+    return {
+      count: body.count,
+      exact: body.exact ?? true,
+      searchedUntil: typeof body.searchedUntil === "number" ? body.searchedUntil : null,
+      cursor: body.cursor || null,
+    };
+  }
+
+  /**
+   * A page of a search that is following its cursor: when the server is busy
+   * with the account's other searches (429 `search_busy`), waits as long as
+   * it asks and tries again, while that fits before the deadline.
+   */
+  private async searchStep<T>(fetchPage: () => Promise<T>, deadline: number): Promise<T> {
+    while (true) {
+      try {
+        return await fetchPage();
+      } catch (error) {
+        if (!isSearchBusy(error)) throw error;
+        const waitMs = Math.max(1, error.retryAfter ?? 1) * 1000;
+        if (Date.now() + waitMs >= deadline) throw error;
+        await sleep(waitMs);
       }
     }
   }
@@ -1367,7 +1482,8 @@ export class WebhooksCC {
           },
         },
         search: {
-          description: "Search retained requests across path, body, and headers",
+          description:
+            "Search retained requests (substring match on path, headers, body and decoded email fields), following the cursor until limit matches, the end, or 25 s",
           params: {
             slug: "string?",
             method: "string?",
@@ -1380,8 +1496,9 @@ export class WebhooksCC {
             order: '"asc"|"desc"?',
           },
         },
-        count: {
-          description: "Count retained requests matching search filters",
+        searchPage: {
+          description:
+            "One page of a search (about 2 s of reading): { requests, complete, searchedUntil, cursor }; pass cursor to read on",
           params: {
             slug: "string?",
             method: "string?",
@@ -1389,6 +1506,35 @@ export class WebhooksCC {
             q: "string?",
             from: "number|string?",
             to: "number|string?",
+            limit: "number?",
+            offset: "number?",
+            order: '"asc"|"desc"?',
+            cursor: "string?",
+          },
+        },
+        count: {
+          description:
+            "Count retained requests matching search filters, following the cursor until exact or 25 s",
+          params: {
+            slug: "string?",
+            method: "string?",
+            kind: '"http"|"email"?',
+            q: "string?",
+            from: "number|string?",
+            to: "number|string?",
+          },
+        },
+        countPage: {
+          description:
+            "One page of a count: { count, exact, searchedUntil, cursor }; pass cursor to count on (the counts add up)",
+          params: {
+            slug: "string?",
+            method: "string?",
+            kind: '"http"|"email"?',
+            q: "string?",
+            from: "number|string?",
+            to: "number|string?",
+            cursor: "string?",
           },
         },
         clear: {
@@ -3373,19 +3519,95 @@ export class WebhooksCC {
       );
     },
 
+    /**
+     * Search retained requests: a substring match on path, headers, body and
+     * decoded email fields. A search reads back through history in pages of
+     * about 2 seconds; this follows the cursor until it has `limit` matches
+     * (default 50), the whole range was read, or 25 seconds passed, and
+     * returns the matches found. Use `searchPage()` to see how far a search
+     * read and to continue it yourself.
+     */
     search: async (filters: SearchFilters = {}): Promise<SearchResult[]> => {
-      return this.request<SearchResult[]>(
-        "GET",
-        `/search/requests${buildSearchQuery(filters, true)}`
-      );
+      const base = buildSearchParams(filters, true);
+      const limit =
+        filters.limit !== undefined && Number.isFinite(filters.limit)
+          ? Math.max(1, Math.floor(filters.limit))
+          : DEFAULT_SEARCH_LIMIT;
+      const deadline = Date.now() + SEARCH_DEADLINE_MS;
+      const found: SearchResult[] = [];
+      let cursor: string | undefined;
+
+      while (true) {
+        let page: SearchPage;
+        try {
+          page = await this.searchStep(() => this.fetchSearchPage(base, cursor), deadline);
+        } catch (error) {
+          // Still busy at the deadline: what was found so far is the answer.
+          if (cursor !== undefined && isSearchBusy(error)) break;
+          throw error;
+        }
+        found.push(...page.requests);
+        if (found.length >= limit || page.complete || !page.cursor) break;
+        if (Date.now() >= deadline) break;
+        cursor = page.cursor;
+        // Later pages only need what is still missing.
+        base.set("limit", String(limit - found.length));
+      }
+      return found.slice(0, limit);
     },
 
+    /**
+     * One page of a search: a single request that reads for about 2 seconds.
+     * `complete` says whether the whole range was read, `searchedUntil` how
+     * far back (or forward, with `order: "asc"`) it got, and `cursor` reads
+     * on from there: pass it with the same filters. `offset` applies to the
+     * first page only. Give `from` and `to` as timestamps when continuing,
+     * since a duration is counted from each call's own clock.
+     */
+    searchPage: async (
+      filters: SearchFilters = {},
+      options: SearchPageOptions = {}
+    ): Promise<SearchPage> => {
+      return this.fetchSearchPage(buildSearchParams(filters, true), options.cursor);
+    },
+
+    /**
+     * Count retained requests matching the filters. With `q` or `method` a
+     * count reads history in pages; this follows the cursor until the count
+     * is exact or 25 seconds passed, and returns the sum (then a lower
+     * bound). Use `countPage()` to know which.
+     */
     count: async (filters: SearchFilters = {}): Promise<number> => {
-      const response = await this.request<{ count: number }>(
-        "GET",
-        `/search/requests/count${buildSearchQuery(filters, false)}`
-      );
-      return response.count;
+      const base = buildSearchParams(filters, false);
+      const deadline = Date.now() + SEARCH_DEADLINE_MS;
+      let total = 0;
+      let cursor: string | undefined;
+
+      while (true) {
+        let page: SearchCountPage;
+        try {
+          page = await this.searchStep(() => this.fetchCountPage(base, cursor), deadline);
+        } catch (error) {
+          if (cursor !== undefined && isSearchBusy(error)) break;
+          throw error;
+        }
+        total += page.count;
+        if (page.exact || !page.cursor || Date.now() >= deadline) break;
+        cursor = page.cursor;
+      }
+      return total;
+    },
+
+    /**
+     * One page of a count: a single request. When `exact` is false, `count`
+     * covers history up to `searchedUntil` only, and calling again with
+     * `cursor` and the same filters counts the next stretch (add them up).
+     */
+    countPage: async (
+      filters: SearchFilters = {},
+      options: SearchPageOptions = {}
+    ): Promise<SearchCountPage> => {
+      return this.fetchCountPage(buildSearchParams(filters, false), options.cursor);
     },
 
     clear: async (endpointSlug: string, options: ClearRequestsOptions = {}): Promise<void> => {

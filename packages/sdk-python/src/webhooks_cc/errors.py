@@ -54,6 +54,7 @@ class RateLimitError(WebhooksCCError):
         limit: int | None = None,
         remaining: int | None = None,
         reset: int | None = None,
+        code: str | None = None,
     ) -> None:
         message = (
             f"Rate limited, retry after {retry_after}s"
@@ -65,6 +66,21 @@ class RateLimitError(WebhooksCCError):
         self.limit = limit
         self.remaining = remaining
         self.reset = reset
+        self.code = code
+        """The server's error code when it sent one: ``"search_busy"`` when the
+        account already runs two searches or the server is at its limit."""
+
+
+class InvalidCursorError(WebhooksCCError):
+    """The search cursor is not one the server issued for this search (400).
+
+    Raised by ``requests.search_page()`` and ``requests.count_page()`` for a cursor
+    that was changed, or that came from a search in the other order. Start the
+    search again without a cursor.
+    """
+
+    def __init__(self, message: str = "Invalid search cursor") -> None:
+        super().__init__(400, message)
 
 
 WebhookVerificationErrorCode = Literal[

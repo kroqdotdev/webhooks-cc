@@ -456,6 +456,12 @@ func errorFromResponse(response *apiResponse, path string) *Error {
 			apiErr.Message = strings.TrimSpace(message + " " + notFoundHint(path))
 		}
 	case http.StatusTooManyRequests:
+		var body struct {
+			Error string `json:"error"`
+		}
+		if json.Unmarshal(response.body, &body) == nil {
+			apiErr.code = body.Error
+		}
 		if seconds, ok := headerInt(response.header, "Retry-After"); ok {
 			apiErr.RetryAfter = time.Duration(seconds) * time.Second
 		}

@@ -1,10 +1,13 @@
 use anyhow::Result;
 
 use crate::api::ApiClient;
+use crate::api::requests::{SEARCH_DEADLINE, SearchFilters, SearchPage};
 use crate::cli::ExportFormat;
 use crate::cli::output::{
     bold, dim, green, print_request_detail, print_request_line, print_search_hit,
 };
+use crate::types::CountResult;
+use crate::util::format::format_timestamp;
 
 pub async fn list(
     client: &ApiClient,
@@ -67,81 +70,182 @@ pub async fn get(client: &ApiClient, id: &str, json: bool) -> Result<()> {
     Ok(())
 }
 
-#[allow(clippy::too_many_arguments)]
+/// `whk requests search`: follows the cursor until it has `limit` matches,
+/// the whole range was read, or the deadline passed. `--json` prints the
+/// matches as one array; how far the search read goes to stderr.
 pub async fn search(
     client: &ApiClient,
-    slug: Option<&str>,
-    method: Option<&str>,
-    q: Option<&str>,
-    from: Option<&str>,
-    to: Option<&str>,
+    filters: &SearchFilters<'_>,
     limit: u32,
     offset: u32,
     order: &str,
+    cursor: Option<&str>,
     json: bool,
 ) -> Result<()> {
-    // The route clamps limit to 1..=200; mirror it so the footer describes the
-    // page that actually came back.
+    // The route clamps limit to 1..=200; mirror it so the search stops at the
+    // number of matches it was asked for.
     let limit = limit.clamp(1, 200);
     let result = client
-        .search_requests(
-            slug,
-            method,
-            q,
-            from,
-            to,
-            Some(limit),
-            Some(offset),
-            Some(order),
-        )
+        .search_requests(filters, limit, offset, order, cursor, SEARCH_DEADLINE)
         .await?;
+    let next = (!result.complete)
+        .then(|| {
+            result
+                .cursor
+                .as_deref()
+                .map(|c| continue_command("search", filters, Some((limit, order)), c))
+        })
+        .flatten();
 
     if json {
-        println!("{}", serde_json::to_string_pretty(&result.json())?);
+        println!("{}", serde_json::to_string_pretty(&result.raw)?);
+        if !result.complete {
+            eprintln!("{}", search_progress_json(&result, next.as_deref()));
+        }
         return Ok(());
     }
 
     if result.requests.is_empty() {
         println!("  No matching requests found.");
-        return Ok(());
-    }
-
-    for hit in &result.requests {
-        print_search_hit(hit);
-    }
-    let shown = result.requests.len();
-    if shown as u32 >= limit {
-        println!(
-            "\n  {} {} (a full page; more may exist: use --offset {} or {} for the total)",
-            dim("Shown:"),
-            shown,
-            offset + limit,
-            bold("whk requests count")
-        );
     } else {
-        println!("\n  {} {}", dim("Shown:"), shown);
+        for hit in &result.requests {
+            print_search_hit(hit);
+        }
+        println!("\n  {} {}", dim("Shown:"), result.requests.len());
+    }
+    if !result.complete {
+        eprintln!(
+            "  {}",
+            search_progress_line(result.searched_until, order, next.as_deref())
+        );
     }
 
     Ok(())
 }
 
+/// What `--json` writes to stderr when a search stopped before the end.
+fn search_progress_json(result: &SearchPage, next: Option<&str>) -> serde_json::Value {
+    serde_json::json!({
+        "search": {
+            "complete": result.complete,
+            "searchedUntil": result.searched_until,
+            "cursor": result.cursor,
+            "continue": next,
+        }
+    })
+}
+
+/// "back to" for a search from the newest, "up to" for one from the oldest.
+fn searched_to(searched_until: Option<i64>, order: &str) -> Option<String> {
+    let direction = if order == "asc" { "up to" } else { "back to" };
+    searched_until.map(|ms| format!("{direction} {}", format_timestamp(ms)))
+}
+
+fn search_progress_line(searched_until: Option<i64>, order: &str, next: Option<&str>) -> String {
+    let rest = if order == "asc" { "newer" } else { "older" };
+    let mut line = match searched_to(searched_until, order) {
+        Some(to) => format!("Searched {to}; {rest} requests were not searched."),
+        None => format!("The search stopped early; {rest} requests were not searched."),
+    };
+    if let Some(next) = next {
+        line.push_str(&format!(" Continue with: {next}"));
+    }
+    line
+}
+
+/// The command that goes on from `cursor`, with the same filters.
+fn continue_command(
+    action: &str,
+    filters: &SearchFilters<'_>,
+    page: Option<(u32, &str)>,
+    cursor: &str,
+) -> String {
+    let mut parts = vec![format!("whk requests {action}")];
+    for (flag, value) in [
+        ("--slug", filters.slug),
+        ("--method", filters.method),
+        ("--kind", filters.kind),
+        ("-q", filters.query),
+        ("--from", filters.from),
+        ("--to", filters.to),
+    ] {
+        if let Some(v) = value {
+            parts.push(format!("{flag} {}", shell_word(v)));
+        }
+    }
+    if let Some((limit, order)) = page {
+        if limit != 50 {
+            parts.push(format!("--limit {limit}"));
+        }
+        if order != "desc" {
+            parts.push(format!("--order {}", shell_word(order)));
+        }
+    }
+    parts.push(format!("--cursor {}", shell_word(cursor)));
+    parts.join(" ")
+}
+
+/// `s` as one shell word: as it is when plain, else in single quotes.
+fn shell_word(s: &str) -> String {
+    let plain = !s.is_empty()
+        && s.chars()
+            .all(|c| c.is_ascii_alphanumeric() || "_-./:=@%+,".contains(c));
+    if plain {
+        s.to_string()
+    } else {
+        format!("'{}'", shell_escape(s))
+    }
+}
+
+/// `whk requests count`: adds the counts up along the cursor until the count
+/// is exact or the deadline passed.
 pub async fn count(
     client: &ApiClient,
-    slug: Option<&str>,
-    method: Option<&str>,
-    q: Option<&str>,
-    from: Option<&str>,
-    to: Option<&str>,
+    filters: &SearchFilters<'_>,
+    cursor: Option<&str>,
     json: bool,
 ) -> Result<()> {
-    let result = client.count_requests(slug, method, q, from, to).await?;
+    let result = client
+        .count_requests(filters, cursor, SEARCH_DEADLINE)
+        .await?;
 
     if json {
-        println!("{}", serde_json::json!({ "count": result.count }));
-    } else {
-        println!("  {} {}", bold("Count:"), result.count);
+        println!("{}", count_json(&result));
+        return Ok(());
+    }
+    println!("  {}", count_line(&result));
+    if !result.exact
+        && let Some(c) = result.cursor.as_deref()
+    {
+        eprintln!(
+            "  Count the rest (add it to this) with: {}",
+            continue_command("count", filters, None, c)
+        );
     }
     Ok(())
+}
+
+fn count_json(result: &CountResult) -> serde_json::Value {
+    serde_json::json!({
+        "count": result.count,
+        "exact": result.exact,
+        "searchedUntil": result.searched_until,
+        "cursor": result.cursor,
+    })
+}
+
+fn count_line(result: &CountResult) -> String {
+    if result.exact {
+        return format!("{} {}", bold("Count:"), result.count);
+    }
+    match searched_to(result.searched_until, "desc") {
+        Some(to) => format!(
+            "{} at least {} (searched {to})",
+            bold("Count:"),
+            result.count
+        ),
+        None => format!("{} at least {}", bold("Count:"), result.count),
+    }
 }
 
 pub async fn clear(
@@ -295,4 +399,94 @@ fn build_curl_export(base_url: &str, requests: &[crate::types::CapturedRequest])
 
 fn shell_escape(s: &str) -> String {
     s.replace('\'', "'\\''")
+}
+
+#[cfg(test)]
+mod search_output_tests {
+    use super::*;
+    use serde_json::json;
+
+    fn filters() -> SearchFilters<'static> {
+        SearchFilters {
+            slug: Some("abc"),
+            query: Some("it's paid"),
+            from: Some("7d"),
+            ..SearchFilters::default()
+        }
+    }
+
+    #[test]
+    fn the_continue_command_repeats_the_filters() {
+        assert_eq!(
+            continue_command("search", &filters(), Some((50, "desc")), "abc.def"),
+            r"whk requests search --slug abc -q 'it'\''s paid' --from 7d --cursor abc.def"
+        );
+        assert_eq!(
+            continue_command("search", &SearchFilters::default(), Some((20, "asc")), "c"),
+            "whk requests search --limit 20 --order asc --cursor c"
+        );
+        assert_eq!(
+            continue_command("count", &filters(), None, "c"),
+            r"whk requests count --slug abc -q 'it'\''s paid' --from 7d --cursor c"
+        );
+    }
+
+    #[test]
+    fn an_unfinished_search_says_how_far_it_read() {
+        let time = format_timestamp(1_700_000_000_000);
+        assert_eq!(
+            search_progress_line(Some(1_700_000_000_000), "desc", Some("whk x")),
+            format!(
+                "Searched back to {time}; older requests were not searched. Continue with: whk x"
+            )
+        );
+        assert_eq!(
+            search_progress_line(Some(1_700_000_000_000), "asc", None),
+            format!("Searched up to {time}; newer requests were not searched.")
+        );
+        assert!(search_progress_line(None, "desc", None).starts_with("The search stopped early"));
+
+        let page = SearchPage {
+            requests: vec![],
+            raw: vec![],
+            complete: false,
+            searched_until: Some(5),
+            cursor: Some("c".into()),
+        };
+        assert_eq!(
+            search_progress_json(&page, Some("whk x")),
+            json!({"search": {"complete": false, "searchedUntil": 5, "cursor": "c", "continue": "whk x"}})
+        );
+    }
+
+    #[test]
+    fn a_count_prints_exact_or_at_least() {
+        crate::cli::output::set_no_color(true);
+        let mut result = CountResult {
+            count: 7,
+            exact: true,
+            searched_until: None,
+            cursor: None,
+        };
+        assert_eq!(count_line(&result), "Count: 7");
+        assert_eq!(
+            count_json(&result),
+            json!({"count": 7, "exact": true, "searchedUntil": null, "cursor": null})
+        );
+
+        result.exact = false;
+        result.searched_until = Some(1_700_000_000_000);
+        result.cursor = Some("c".into());
+        assert_eq!(
+            count_line(&result),
+            format!(
+                "Count: at least 7 (searched back to {})",
+                format_timestamp(1_700_000_000_000)
+            )
+        );
+        assert_eq!(
+            count_json(&result),
+            json!({"count": 7, "exact": false, "searchedUntil": 1_700_000_000_000_i64, "cursor": "c"})
+        );
+    }
 }

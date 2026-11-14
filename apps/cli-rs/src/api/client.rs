@@ -12,6 +12,8 @@ pub struct ApiResponse {
     pub body: String,
     /// The server's clock from the `Date` header, in ms (whole seconds).
     pub server_time_ms: Option<i64>,
+    /// The answer's headers (search reports its progress in `X-Search-*`).
+    pub headers: HeaderMap,
 }
 
 impl ApiResponse {
@@ -242,6 +244,7 @@ async fn read_response(resp: Response) -> Result<ApiResponse> {
         .and_then(|v| v.to_str().ok())
         .and_then(|v| chrono::DateTime::parse_from_rfc2822(v).ok())
         .map(|t| t.timestamp() * 1000);
+    let headers = resp.headers().clone();
     let body = resp.text().await.context("failed to read response body")?;
 
     if status.is_client_error() || status.is_server_error() {
@@ -251,6 +254,7 @@ async fn read_response(resp: Response) -> Result<ApiResponse> {
     Ok(ApiResponse {
         body,
         server_time_ms,
+        headers,
     })
 }
 

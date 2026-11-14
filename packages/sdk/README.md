@@ -140,7 +140,7 @@ With `retry`, GET, PUT and DELETE calls are repeated after a network error, a ti
 ## API overview
 
 - `client.endpoints`: `create`, `list`, `get`, `update`, `delete`, `favorite`, `unfavorite`, `send`, `sendTemplate`
-- `client.requests`: `list`, `listPaginated`, `get`, `waitFor`, `waitForAll`, `subscribe`, `replay`, `search`, `count`, `clear`, `export`
+- `client.requests`: `list`, `listPaginated`, `get`, `waitFor`, `waitForAll`, `subscribe`, `replay`, `search`, `searchPage`, `count`, `countPage`, `clear`, `export`
 - `client.emails`: `address`, `list`, `get`, `latest`, `waitFor`, `waitForAll`, `sendTest`, `toJson`
 - `client.forwarding`: `configure`, `secret`, `rotateSecret`, `test`, `deliveries`, `summary`, `requestDeliveries`, `redeliver`, `redeliverFailed`
 - `client.templates`: `listProviders`, `get`
@@ -278,7 +278,7 @@ const harExport = await client.requests.export(endpoint.slug, {
 await client.requests.clear(endpoint.slug, { before: "24h" });
 ```
 
-Search and count use the retained request store rather than the live endpoint request table:
+Search and count read every retained request of the account, across endpoints:
 
 ```typescript
 const retained = await client.requests.search({
@@ -295,7 +295,26 @@ const total = await client.requests.count({
 });
 ```
 
-`search()` returns `SearchResult[]`. Their `id` field is synthetic and is not valid for `requests.get()` or `requests.replay()`.
+`search()` returns `SearchResult[]`; each `id` is the request's own, valid for `requests.get()` and `requests.replay()`. `q` is a substring match on the path, headers, body and decoded email fields.
+
+A search reads back through history in pages of about two seconds. `search()` follows the cursor until it has `limit` matches (default 50), the whole range was read, or 25 seconds passed; `count()` adds the pages up the same way. To see how far a search got, or to continue one yourself, read a page at a time:
+
+```typescript
+let page = await client.requests.searchPage({ q: "checkout.session.completed", limit: 20 });
+while (!page.complete && page.cursor && page.requests.length === 0) {
+  // page.searchedUntil is how far back this page read (Unix ms)
+  page = await client.requests.searchPage(
+    { q: "checkout.session.completed", limit: 20 },
+    { cursor: page.cursor }
+  );
+}
+
+const counted = await client.requests.countPage({ q: "checkout.session.completed" });
+// { count, exact, searchedUntil, cursor }: when exact is false, count covers
+// history back to searchedUntil, and the next page's count adds to it
+```
+
+Pass the same filters with a cursor, with `from` and `to` as timestamps (a duration like `"7d"` is counted from each call's clock). A cursor the server did not issue fails with a `WebhooksCCError` whose `code` is `"invalid_cursor"`; when the account already runs two searches the error is a `RateLimitError` with `code` `"search_busy"`, which `search()` and `count()` wait out.
 
 `requests.list()`, `listPaginated()`, `search()` and `count()` take `kind: "http" | "email"`.
 `waitFor()` and `waitForAll()` look back five minutes by default, so a request that arrived just

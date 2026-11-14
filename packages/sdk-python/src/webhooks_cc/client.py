@@ -50,6 +50,7 @@ from .email import (
     is_valid_email_tag,
 )
 from .errors import (
+    InvalidCursorError,
     NotFoundError,
     RateLimitError,
     TimeoutError,
@@ -60,6 +61,7 @@ from .matchers import Matcher, is_email_request, match_email
 from .models import (
     AttachmentDownload,
     BuiltRequest,
+    CountPage,
     Destination,
     DestinationAttachments,
     DestinationFilter,
@@ -76,6 +78,7 @@ from .models import (
     RequestKind,
     RequestPage,
     ResponsePreview,
+    SearchPage,
     SendTestEmailResult,
     TunnelName,
     TunnelNameList,
@@ -111,6 +114,10 @@ _IDEMPOTENT_METHODS = frozenset({"GET", "HEAD", "OPTIONS", "PUT", "DELETE"})
 _MIN_POLL_INTERVAL_MS = 10
 _MAX_POLL_INTERVAL_MS = 60_000
 _MAX_WAIT_ITERATIONS = 10_000
+# How long requests.search() and requests.count() keep following the cursor. Each
+# page reads for about two seconds on the server.
+_SEARCH_DEADLINE_MS = 25_000
+_SEARCH_DEFAULT_LIMIT = 50
 _STREAM_CONNECT_TIMEOUT_S = 30.0
 _STREAM_DEDUP_WINDOW = 1000
 _STREAM_RAPID_ROTATION_MS = 5000
@@ -218,6 +225,8 @@ def _map_error(
             if generic
             else message
         )
+    if status == 400 and _error_code(message) == "invalid_cursor":
+        return InvalidCursorError("Invalid search cursor: start the search again without a cursor")
     if status == 404:
         return NotFoundError(f"{message}: {_not_found_hint(path)}" if generic else message)
     if status == 429:
@@ -230,8 +239,19 @@ def _map_error(
             limit=limit if complete else None,
             remaining=remaining if complete else None,
             reset=reset if complete else None,
+            code=_error_code(message),
         )
     return WebhooksCCError(status, message)
+
+
+def _error_code(message: str) -> str | None:
+    """The ``error`` of a JSON error body, when it is one."""
+    try:
+        parsed = json.loads(message)
+    except ValueError:
+        return None
+    code = parsed.get("error") if isinstance(parsed, dict) else None
+    return code if isinstance(code, str) else None
 
 
 def _error_from_response(response: httpx.Response) -> WebhooksCCError:
@@ -1265,21 +1285,110 @@ class Requests:
         offset: int | None = None,
         order: Literal["asc", "desc"] | None = None,
     ) -> builtins.list[Request]:
-        """Search retained requests across path, body and headers.
+        """Search retained requests: ``q`` is found as a substring of the path, the
+        headers and the body, and of an email's decoded subject, text and addresses.
 
+        Returns at most ``limit`` matches (50 by default), newest first unless
+        ``order="asc"``. A search reads a long history in pages; this follows them
+        until it has ``limit`` matches, the whole range was read, or 25 seconds
+        have passed, so a rare term in a long history can return fewer matches
+        than exist. :meth:`search_page` reads one page and says how far it got.
+
+        When the server is busy with other searches (a 429 ``search_busy``), this
+        waits as long as the server asks and tries the page again while that fits
+        in the 25 seconds; after that it returns what it has, or raises
+        :class:`~webhooks_cc.errors.RateLimitError` when it has read no page yet.
+
+        Each result's ``id`` is the request's own id, as :meth:`get` takes it.
         ``from_`` and ``to`` take ms since the epoch, or a duration ago (``"1h"``).
+        """
+        params = _search_params(slug, method, kind, q, from_, to)
+        if order is not None:
+            params["order"] = order
+        wanted = _SEARCH_DEFAULT_LIMIT if limit is None else max(1, int(limit))
+        deadline = time.monotonic() * 1000 + _SEARCH_DEADLINE_MS
+        found: builtins.list[Request] = []
+        cursor: str | None = None
+        while True:
+            page_params = dict(params)
+            if limit is not None or found:
+                page_params["limit"] = str(wanted - len(found))
+            # The cursor carries what is left of the offset.
+            if offset is not None and cursor is None:
+                page_params["offset"] = str(int(offset))
+            try:
+                page = self._search_page(page_params, cursor)
+            except RateLimitError as error:
+                if _wait_out_busy_search(error, deadline):
+                    continue
+                if cursor is None:
+                    raise
+                break
+            found.extend(page.requests)
+            cursor = page.cursor
+            if (
+                len(found) >= wanted
+                or page.complete
+                or cursor is None
+                or time.monotonic() * 1000 >= deadline
+            ):
+                break
+        return found[:wanted]
+
+    def search_page(
+        self,
+        *,
+        slug: str | None = None,
+        method: str | None = None,
+        kind: RequestKind | None = None,
+        q: str | None = None,
+        from_: float | str | None = None,
+        to: float | str | None = None,
+        limit: int | None = None,
+        offset: int | None = None,
+        order: Literal["asc", "desc"] | None = None,
+        cursor: str | None = None,
+    ) -> SearchPage:
+        """One page of a search, and how far it read.
+
+        The server reads for about two seconds and answers with what it found, so
+        a page can be short or empty without being the end: ``complete`` says
+        whether the whole range was read, and ``cursor`` reads on. Pass the same
+        filters with the ``cursor`` of the page before; ``offset`` belongs to the
+        first page only and is left out with a cursor (the cursor carries what is
+        left of it). ``limit`` is at most 200 a page (50 by default).
+
+        Raises :class:`~webhooks_cc.errors.InvalidCursorError` for a cursor the
+        server did not issue for this search. Keep the bounds of ``from_`` and
+        ``to`` the same across pages: pass times, since a duration is counted
+        back from each call.
         """
         params = _search_params(slug, method, kind, q, from_, to)
         if limit is not None:
             params["limit"] = str(int(limit))
-        if offset is not None:
+        if offset is not None and cursor is None:
             params["offset"] = str(int(offset))
         if order is not None:
             params["order"] = order
-        return [
-            Request.from_dict(item)
-            for item in self._client._api("GET", "/search/requests", params=params) or []
-        ]
+        return self._search_page(params, cursor)
+
+    def _search_page(self, params: dict[str, str], cursor: str | None) -> SearchPage:
+        params = {**params, "paged": "true"}
+        if cursor is not None:
+            params["cursor"] = cursor
+        response = self._client._call("GET", "/search/requests", params=params)
+        items = response.json() if response.content else []
+        next_cursor = response.headers.get("x-search-cursor") or None
+        complete = response.headers.get("x-search-complete")
+        return SearchPage(
+            requests=[Request.from_dict(item) for item in items or []],
+            # A server that sends no progress has nothing more to give.
+            complete=js_trim(complete).lower() == "true"
+            if complete is not None
+            else next_cursor is None,
+            searched_until=_int_header(response.headers, "x-search-searched-until"),
+            cursor=next_cursor,
+        )
 
     def count(
         self,
@@ -1291,9 +1400,78 @@ class Requests:
         from_: float | str | None = None,
         to: float | str | None = None,
     ) -> int:
-        """How many retained requests match the search."""
+        """How many retained requests match the search.
+
+        Without ``q`` and ``method`` the count is exact. With them the server
+        counts a long history in stretches; this adds them up until the count is
+        exact or 25 seconds have passed, and then returns what it counted, which
+        is a lower bound. :meth:`count_page` says whether a count is exact. A busy
+        server (a 429 ``search_busy``) is waited out as :meth:`search` does.
+        """
         params = _search_params(slug, method, kind, q, from_, to)
-        return int(self._client._api("GET", "/search/requests/count", params=params)["count"])
+        deadline = time.monotonic() * 1000 + _SEARCH_DEADLINE_MS
+        total = 0
+        cursor: str | None = None
+        while True:
+            try:
+                page = self._count_page(params, cursor)
+            except RateLimitError as error:
+                if _wait_out_busy_search(error, deadline):
+                    continue
+                if cursor is None:
+                    raise
+                return total
+            total += page.count
+            cursor = page.cursor
+            if page.exact or cursor is None or time.monotonic() * 1000 >= deadline:
+                return total
+
+    def count_page(
+        self,
+        *,
+        slug: str | None = None,
+        method: str | None = None,
+        kind: RequestKind | None = None,
+        q: str | None = None,
+        from_: float | str | None = None,
+        to: float | str | None = None,
+        cursor: str | None = None,
+    ) -> CountPage:
+        """One count, and whether it is exact.
+
+        Without ``q`` and ``method`` a count is always exact. With them, the
+        server counts for about two seconds: when ``exact`` is ``False``,
+        ``count`` covers the requests back to ``searched_until``, and the same
+        filters with ``cursor`` count the next stretch (the counts add up).
+
+        Raises :class:`~webhooks_cc.errors.InvalidCursorError` for a cursor the
+        server did not issue for this search.
+        """
+        return self._count_page(_search_params(slug, method, kind, q, from_, to), cursor)
+
+    def _count_page(self, params: dict[str, str], cursor: str | None) -> CountPage:
+        params = {**params, "paged": "true"}
+        if cursor is not None:
+            params["cursor"] = cursor
+        data = self._client._api("GET", "/search/requests/count", params=params)
+        if not isinstance(data, Mapping):
+            data = {}
+        until = data.get("searchedUntil")
+        count = data.get("count")
+        next_cursor = data.get("cursor")
+        next_cursor = next_cursor if isinstance(next_cursor, str) and next_cursor else None
+        exact = data.get("exact")
+        return CountPage(
+            count=int(count)
+            if isinstance(count, (int, float)) and not isinstance(count, bool)
+            else 0,
+            # A server that does not say counted everything it will.
+            exact=exact if isinstance(exact, bool) else next_cursor is None,
+            searched_until=int(until)
+            if isinstance(until, (int, float)) and not isinstance(until, bool)
+            else None,
+            cursor=next_cursor,
+        )
 
     def clear(self, slug: str, *, before: float | str | None = None) -> None:
         """Delete an endpoint's requests: all of them, or those ``before`` a time.
@@ -2159,6 +2337,18 @@ def _resolve_time(value: float | str) -> float:
     if not math.isnan(number):
         return number
     return _now_ms() - parse_duration(text)
+
+
+def _wait_out_busy_search(error: RateLimitError, deadline_ms: float) -> bool:
+    """Sleep as long as a busy search server asked (a second at least), when that
+    still fits before the deadline. ``False`` for any other 429, and when it does not."""
+    if error.code != "search_busy":
+        return False
+    wait_ms = max(error.retry_after or 0, 1) * 1000
+    if time.monotonic() * 1000 + wait_ms >= deadline_ms:
+        return False
+    _sleep_ms(wait_ms)
+    return True
 
 
 def _search_params(

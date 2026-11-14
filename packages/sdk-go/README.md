@@ -128,6 +128,21 @@ preview, err := client.Destinations.Preview(ctx, endpoint.Slug, webhookscc.Previ
 
 Filters take the conditions of response rules, plus `kind`, `email` (with `Name` subject, from, to, text or tag), `spam_score`, `email_auth` (with `Name` spf, dkim or dmarc) and `signature`. `Format` may also be an inbound mail provider's shape (`FormatPostmark`, `FormatSendGrid`, `FormatMailgun` or `FormatCloudMailin`): emails go out as that provider posts them and HTTP requests as received. `MailgunSigningKey` signs the Mailgun form; it is never returned, and `HasMailgunSigningKey` says whether one is saved. `Preview` is a dry run: whether the filter lets a captured request through and the exact request the destination would send. `Update` changes only the fields set with `Value` or `Null`, `Test` sends one delivery now, and `List`, `Get`, `Delete`, `Reorder`, `Secret` and `RotateSecret` do what they say.
 
+## Search
+
+`Requests.Search` finds requests you still have by a substring of their path, headers or body (for an email also its decoded subject, text and addresses), across your endpoints:
+
+```go
+found, err := client.Requests.Search(ctx, webhookscc.SearchOptions{Slug: endpoint.Slug, Query: "invoice.paid", Limit: 20})
+
+page, err := client.Requests.SearchPage(ctx, webhookscc.SearchOptions{Query: "invoice.paid"}, "")
+for err == nil && !page.Complete {
+	page, err = client.Requests.SearchPage(ctx, webhookscc.SearchOptions{Query: "invoice.paid"}, page.Cursor)
+}
+```
+
+There is no text index behind search, so the server reads a long history in pages of about two seconds each. `Search` and `Count` follow them for up to 25 seconds and return what they found by then (`Limit` matches at most, 50 by default). `SearchPage` and `CountPage` read one page and say how far it got: `Complete` (or `Exact`), `SearchedUntil` and the `Cursor` that reads on with the same options. A cursor the server did not issue matches `ErrInvalidCursor`.
+
 ## Share a local port
 
 `Share` puts a port on this computer at a public link on sharehooks.cc by running the [whk CLI](https://webhooks.cc/docs/share) (`whk share`), and returns once the link works. `client.Shares.Start` does the same as the client's account:
