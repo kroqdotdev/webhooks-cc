@@ -87,6 +87,7 @@ impl Sandbox {
     }
 
     async fn call(&self, method: Method, path: &str, body: Option<Value>) -> Result<Option<Value>> {
+        crate::api::client::checked_path(&format!("/api/agent/sandbox{path}"))?;
         let url = format!("{}/api/agent/sandbox{path}", self.base_url);
         let resp = self
             .session

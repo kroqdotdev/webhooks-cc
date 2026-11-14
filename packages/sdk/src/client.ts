@@ -3362,7 +3362,7 @@ export class WebhooksCC {
       return this.request<{ id: string }>(
         "POST",
         `/requests/${requestId}/deliveries`,
-        options.destinationId ? { destinationId: options.destinationId } : undefined
+        options.destinationId !== undefined ? { destinationId: options.destinationId } : undefined
       );
     },
 
@@ -3377,9 +3377,10 @@ export class WebhooksCC {
       options: { destinationId?: string } = {}
     ): Promise<{ queued: number }> => {
       validatePathSegment(endpointSlug, "endpointSlug");
-      const query = options.destinationId
-        ? `?destination=${encodeURIComponent(options.destinationId)}`
-        : "";
+      const query =
+        options.destinationId !== undefined
+          ? `?destination=${encodeURIComponent(options.destinationId)}`
+          : "";
       return this.request<{ queued: number }>(
         "POST",
         `/endpoints/${endpointSlug}/deliveries/redeliver-failed${query}`

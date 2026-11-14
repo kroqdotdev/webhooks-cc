@@ -284,21 +284,27 @@ impl ApiClient {
 /// or slug of `..` would otherwise be resolved away by the URL parser, so
 /// `whk destinations rm acme ..` reached `DELETE /api/endpoints/acme`, and an
 /// empty id would name the collection instead of one item.
-fn checked_path(path: &str) -> Result<()> {
+pub(crate) fn checked_path(path: &str) -> Result<()> {
     let route = path.split(['?', '#']).next().unwrap_or("");
-    let bad = route.split('/').skip(1).find(|segment| {
+    // The URL parser drops tabs and line breaks and reads `\` as `/` in an
+    // http(s) path, so they are taken the same way here.
+    let route: String = route
+        .chars()
+        .filter(|c| !matches!(c, '\t' | '\n' | '\r'))
+        .collect();
+    let bad = route.split(['/', '\\']).skip(1).find(|segment| {
         // The URL parser reads `%2e` as a dot in a path segment too.
         let plain = segment.replace("%2e", ".").replace("%2E", ".");
         plain.is_empty() || plain == "." || plain == ".."
     });
     if let Some(segment) = bad {
         let shown = if segment.is_empty() {
-            "an empty value"
+            "An empty value".to_string()
         } else {
-            segment
+            format!("`{segment}`")
         };
         return Err(crate::error::CliError::Usage(format!(
-            "{shown} is not a slug or id; give the one the command names."
+            "{shown} cannot be part of an API path: give a slug or id, not an empty value, . or .."
         ))
         .into());
     }
@@ -374,6 +380,8 @@ mod tests {
             "/api/endpoints/../keys?x=1",
             "/api/endpoints/%2E%2E",
             "/api/endpoints/acme/.%2e",
+            "/api/endpoints\\..\\api-keys",
+            "/api/endpoints/.\t./api-keys",
         ] {
             let error = super::checked_path(path).unwrap_err();
             assert_eq!(crate::error::classify(&error).code, "usage", "{path}");

@@ -62,6 +62,10 @@ percent-encoding = "2"
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
 
+# Windows: unread console input is dropped after a hidden prompt.
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_System_Console"] }
+
 [dev-dependencies]
 axum = "0.8"
 rqrr = "0.11"

@@ -261,7 +261,9 @@ const NEW_KEY_ADVICE =
 function usablePrivateKey(value: string): string | { problem: string } {
   // A key as a secret store hands it out: on one line with literal \n escapes.
   const unescaped =
-    !/[\r\n]/.test(value) && value.includes("\\n") ? value.replaceAll("\\n", "\n") : value;
+    !/[\r\n]/.test(value) && value.includes("\\n")
+      ? value.replaceAll("\\r\\n", "\n").replaceAll("\\r", "\n").replaceAll("\\n", "\n")
+      : value;
   let key =
     onlyPrivateKeyBlock(unescaped)
       .split(/\r?\n|\r/)
