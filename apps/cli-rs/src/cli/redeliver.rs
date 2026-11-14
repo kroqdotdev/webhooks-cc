@@ -24,6 +24,13 @@ fn print_json(answer: &crate::api::client::Fetched<Value>) -> Result<()> {
 
 pub async fn one(client: &ApiClient, request_id: &str, yes: bool, json: bool) -> Result<()> {
     let request_id = request_id.trim();
+    if !crate::util::is_uuid(request_id) {
+        return Err(CliError::Usage(format!(
+            "{} is not a request id: `whk requests list <slug>` shows them",
+            sanitize_line(request_id)
+        ))
+        .into());
+    }
     confirm(
         &format!(
             "Run request {} through its endpoint again now (layouts, then every destination that takes it)?",
@@ -164,13 +171,23 @@ pub async fn range(
         bold(&sanitize_line(slug))
     );
     let limit = count("limit");
-    if limit > 0 && found >= limit {
+    if let Some(next) = answer.value.get("nextSince").and_then(Value::as_u64) {
+        let mut command = format!(
+            "whk requests replay-range {} --since {next}",
+            sanitize_line(slug)
+        );
+        if let Some(until) = body.get("until").and_then(Value::as_i64) {
+            command.push_str(&format!(" --until {until}"));
+        }
+        if let Some(kind) = body.get("kind").and_then(Value::as_str) {
+            command.push_str(&format!(" --kind {kind}"));
+        }
         println!(
-            "  {}",
+            "  {} {}",
             dim(&format!(
-                "That is the most one call takes ({limit}). For the rest, find the last one's time with `whk requests list {} --json` (receivedAt, in epoch milliseconds) and run this again with --since that time plus 1.",
-                sanitize_line(slug)
-            ))
+                "That is the most one call takes ({limit}). For the rest:"
+            )),
+            command
         );
     }
     if count("queued") < found {
@@ -258,7 +275,14 @@ mod tests {
                 ),
             );
         let base = serve(app).await;
-        one(&client(&base), "r1", true, true).await.unwrap();
+        one(
+            &client(&base),
+            "0d9e8f7a-6b5c-4d3e-8f21-a0b1c2d3e4f5",
+            true,
+            true,
+        )
+        .await
+        .unwrap();
         range(
             &client(&base),
             "acme",
@@ -273,7 +297,7 @@ mod tests {
         assert_eq!(
             *sent.lock().unwrap(),
             vec![
-                "one r1".to_string(),
+                "one 0d9e8f7a-6b5c-4d3e-8f21-a0b1c2d3e4f5".to_string(),
                 "range acme {\"kind\":\"http\"}".to_string()
             ]
         );

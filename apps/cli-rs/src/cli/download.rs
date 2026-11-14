@@ -131,8 +131,51 @@ fn write_whole(path: &str, bytes: &[u8]) -> std::io::Result<()> {
         .file_name()
         .map(|name| name.to_string_lossy().to_string())
         .unwrap_or_else(|| "download".into());
-    let temp = dir.join(format!(".{name}.whk-{}.part", std::process::id()));
-    let written = std::fs::write(&temp, bytes).and_then(|()| std::fs::rename(&temp, target));
+    // The old file's permissions, or private ones for a new file: an email
+    // can hold anything.
+    #[cfg(unix)]
+    let mode = {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::metadata(target)
+            .ok()
+            .filter(|meta| meta.is_file())
+            .map(|meta| meta.permissions().mode() & 0o7777)
+            .unwrap_or(0o600)
+    };
+    // A fresh name each try, created only if nothing is there (O_EXCL), so a
+    // file or link planted at a guessable name is never written through.
+    let mut attempt = 0u32;
+    let (temp, mut file) = loop {
+        let suffix: u64 = rand::random();
+        let temp = dir.join(format!(".{name}.whk-{suffix:016x}.part"));
+        let mut options = std::fs::OpenOptions::new();
+        options.write(true).create_new(true);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            options.mode(mode);
+        }
+        match options.open(&temp) {
+            Ok(file) => break (temp, file),
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists && attempt < 8 => {
+                attempt += 1;
+            }
+            Err(e) => return Err(e),
+        }
+    };
+    let written = (|| {
+        use std::io::Write as _;
+        file.write_all(bytes)?;
+        file.sync_all()?;
+        #[cfg(unix)]
+        {
+            // The umask may have narrowed the mode it was created with.
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&temp, std::fs::Permissions::from_mode(mode))?;
+        }
+        drop(file);
+        std::fs::rename(&temp, target)
+    })();
     if written.is_err() {
         let _ = std::fs::remove_file(&temp);
     }
@@ -284,6 +327,49 @@ mod tests {
 
     fn client(base: &str) -> ApiClient {
         ApiClient::with_credentials(Some(base), Some(base), Some("whcc_test".into()), None).unwrap()
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_replaced_file_keeps_its_mode_and_a_link_there_is_not_followed() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = std::env::temp_dir().join(format!("whk-write-whole-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let target = dir.join("m.eml");
+        std::fs::write(&target, b"old").unwrap();
+        std::fs::set_permissions(&target, std::fs::Permissions::from_mode(0o600)).unwrap();
+        write_whole(target.to_str().unwrap(), b"new").unwrap();
+        assert_eq!(std::fs::read(&target).unwrap(), b"new");
+        let mode = std::fs::metadata(&target).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode, 0o600);
+        // A new file is private.
+        let fresh = dir.join("fresh.eml");
+        write_whole(fresh.to_str().unwrap(), b"x").unwrap();
+        assert_eq!(
+            std::fs::metadata(&fresh).unwrap().permissions().mode() & 0o777,
+            0o600
+        );
+        // A link at the path is replaced; what it pointed at is untouched.
+        let victim = dir.join("victim.txt");
+        std::fs::write(&victim, b"keep").unwrap();
+        let link = dir.join("link.eml");
+        std::os::unix::fs::symlink(&victim, &link).unwrap();
+        write_whole(link.to_str().unwrap(), b"mail").unwrap();
+        assert_eq!(std::fs::read(&victim).unwrap(), b"keep");
+        assert!(
+            !std::fs::symlink_metadata(&link)
+                .unwrap()
+                .file_type()
+                .is_symlink()
+        );
+        // No temporary file is left behind.
+        let leftovers: Vec<_> = std::fs::read_dir(&dir)
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .filter(|e| e.file_name().to_string_lossy().ends_with(".part"))
+            .collect();
+        assert!(leftovers.is_empty());
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

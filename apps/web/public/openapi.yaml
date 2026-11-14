@@ -783,6 +783,9 @@ paths:
                   limit:
                     type: integer
                     description: The most one call replays (500)
+                  nextSince:
+                    type: integer
+                    description: Present when the call stopped at the limit; send it as `since` to go on with the rest (milliseconds, the one after the last request replayed)
         "400":
           $ref: "#/components/responses/BadRequest"
         "401":

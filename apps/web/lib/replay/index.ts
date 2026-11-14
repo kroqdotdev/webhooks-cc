@@ -22,9 +22,21 @@ export interface ReplayRange {
 
 /** The ids of an endpoint's requests in a range and within retention, oldest first, at most MAX_REPLAY. */
 export async function requestIdsInRange(endpointId: string, range: ReplayRange): Promise<string[]> {
+  return (await requestsInRange(endpointId, range)).ids;
+}
+
+/**
+ * The ids in the range, oldest first and at most MAX_REPLAY, and when the
+ * last of them arrived (epoch milliseconds), so a caller cut off at the
+ * limit can go on from there.
+ */
+export async function requestsInRange(
+  endpointId: string,
+  range: ReplayRange
+): Promise<{ ids: string[]; lastReceivedAt: number | null }> {
   let query = createAdminClient()
     .from("requests")
-    .select("id")
+    .select("id, received_at")
     .eq("endpoint_id", endpointId)
     .order("received_at", { ascending: true })
     .limit(MAX_REPLAY);
@@ -36,7 +48,12 @@ export async function requestIdsInRange(endpointId: string, range: ReplayRange):
   await applyRequestRetention(query, endpointId);
   const { data, error } = await query;
   if (error) throw error;
-  return ((data ?? []) as { id: string }[]).map((row) => row.id);
+  const rows = (data ?? []) as { id: string; received_at: string }[];
+  const last = rows.at(-1);
+  return {
+    ids: rows.map((row) => row.id),
+    lastReceivedAt: last ? Date.parse(last.received_at) : null,
+  };
 }
 
 /**

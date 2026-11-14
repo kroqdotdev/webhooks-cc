@@ -2,7 +2,7 @@ import { auditUserAction } from "@/lib/audit";
 import { authenticateRequestRequireUser } from "@/lib/api-auth";
 import { parseJsonBody } from "@/lib/request-validation";
 import { applyRateLimitHeaders, checkRateLimitWithInfo } from "@/lib/rate-limit";
-import { MAX_REPLAY, replayRequests, requestIdsInRange } from "@/lib/replay";
+import { MAX_REPLAY, replayRequests, requestsInRange } from "@/lib/replay";
 import { resolveEndpointAccess } from "@/lib/supabase/teams-endpoints";
 import { reportError } from "@/lib/observability";
 
@@ -49,7 +49,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ slu
   if (!access?.isOwner) return reply({ error: "Endpoint not found" }, 404);
 
   try {
-    const ids = await requestIdsInRange(access.endpointId, {
+    const { ids, lastReceivedAt } = await requestsInRange(access.endpointId, {
       since,
       until,
       kind: (body.kind as "email" | "http" | null | undefined) ?? null,
@@ -61,7 +61,17 @@ export async function POST(request: Request, { params }: { params: Promise<{ slu
       targetId: slug,
       metadata: { requests: ids.length, queued },
     });
-    return reply({ requests: ids.length, queued, limit: MAX_REPLAY });
+    // Cut off at the limit: where the next call starts, the millisecond after
+    // the last one replayed (one that arrived in that same millisecond is
+    // left for the person to check).
+    const nextSince =
+      ids.length >= MAX_REPLAY && lastReceivedAt !== null ? Math.floor(lastReceivedAt) + 1 : null;
+    return reply({
+      requests: ids.length,
+      queued,
+      limit: MAX_REPLAY,
+      ...(nextSince !== null ? { nextSince } : {}),
+    });
   } catch (error) {
     reportError("Failed to replay requests", error);
     return reply({ error: "Internal server error" }, 500);

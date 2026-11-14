@@ -311,7 +311,12 @@ pub async fn set(client: &ApiClient, slug: &str, fields: &AlertFields, json: boo
         println!("{line}");
     }
     // The server keeps only destinations that can take a notice.
-    let asked = fields.notify_destinations.len();
+    let asked = fields
+        .notify_destinations
+        .iter()
+        .map(|id| id.trim().to_ascii_lowercase())
+        .collect::<std::collections::HashSet<_>>()
+        .len();
     let kept = settings
         .get("notifyDestinationIds")
         .and_then(Value::as_array)

@@ -1622,7 +1622,7 @@ pub enum RequestsAction {
         #[arg(long, value_name = "N", conflicts_with = "raw", value_parser = clap::value_parser!(u32).range(0..=99))]
         attachment: Option<u32>,
 
-        /// The file to write (replaced if it exists)
+        /// The file to write: replaced if it exists (a link there is replaced too, never followed), `-` for stdout
         #[arg(short, long, value_name = "FILE")]
         output: Option<String>,
     },
