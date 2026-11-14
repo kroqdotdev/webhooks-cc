@@ -291,6 +291,8 @@ export async function decideApproval(
   /** For an action that ran on approval: what it did, and its parameters. */
   result?: Json;
   params?: unknown;
+  /** What only this browser gets (a billing change's checkout), never stored. */
+  forBrowser?: Record<string, unknown>;
 }> {
   const row = await pendingByCode(code);
   if (!row) throw new ApprovalError(400, "This code has expired or was already answered.");
@@ -330,8 +332,9 @@ export async function decideApproval(
   }
 
   let stored: Json;
+  let forBrowser: Record<string, unknown> | undefined;
   try {
-    ({ stored } = await spec.run(row.user_id, row.params, input));
+    ({ stored, browser: forBrowser } = await spec.run(row.user_id, row.params, input));
   } catch (err) {
     // Only a clean refusal (ActionError: checked, nothing done) gives the
     // approval back to approve again. Anything else may have failed after
@@ -366,7 +369,14 @@ export async function decideApproval(
   // Done all the same: the person is told so and the trail records it; only
   // the asker misses the result (its poll ends at expiry).
   if (recordError) reportError("Recording an approval's result failed", recordError);
-  return { id: row.id, action: row.action, done: true, result: stored, params: row.params };
+  return {
+    id: row.id,
+    action: row.action,
+    done: true,
+    result: stored,
+    params: row.params,
+    ...(forBrowser ? { forBrowser } : {}),
+  };
 }
 
 /**

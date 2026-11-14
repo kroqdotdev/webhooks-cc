@@ -74,9 +74,21 @@ export async function POST(request: Request) {
       if (outcome.executed === false) {
         return Response.json({ status: "unchanged", reason: outcome.reason });
       }
-      // Paid at a checkout: this browser goes on to pay it.
-      if (typeof outcome.checkoutUrl === "string") {
-        return Response.json({ status: "redirect", url: outcome.checkoutUrl });
+      // Polar was asked and then something failed: it may have happened.
+      if (outcome.executed === null) {
+        return Response.json({ status: "unknown", reason: outcome.reason });
+      }
+      // Paid at a checkout: this browser (and only it) goes on to pay it.
+      const checkoutUrl = decided.forBrowser?.checkoutUrl;
+      if (typeof checkoutUrl === "string") {
+        return Response.json({ status: "redirect", url: checkoutUrl });
+      }
+      // Made, but a waiting seat reduction was dropped with the plan change.
+      if (typeof outcome.seatReductionLost === "number") {
+        return Response.json({
+          status: "done",
+          note: `The reduction to ${outcome.seatReductionLost} seats was dropped with the plan change. Set the seats again to remove them at the renewal.`,
+        });
       }
     }
     // "done": the action ran on approval; "approved": the asker collects it.
@@ -103,7 +115,7 @@ async function auditDone(
   const result = (decided.result ?? {}) as Record<string, unknown>;
   const params = (decided.params ?? {}) as Record<string, unknown>;
   const via = { approvalId: decided.id };
-  if (decided.action === "askedshares.create") {
+  if (decided.action === "request_shares.create") {
     await auditUserAction(request, userId, {
       action: "request.share_created",
       status: 200,
@@ -153,11 +165,13 @@ async function auditDone(
   } else if (decided.action === "billing.change") {
     const asked = parseBillingChangeRequest(params);
     if (!asked) return;
-    const executed = result.executed === true;
+    // Made (200), refused with nothing changed (409), or outcome unknown
+    // after Polar was asked (500: check billing).
+    const status = result.executed === true ? 200 : result.executed === null ? 500 : 409;
     await auditUserAction(request, userId, {
       action: auditActionFor(asked),
-      status: executed ? 200 : 409,
-      reason: executed ? undefined : String(result.reason ?? ""),
+      status,
+      reason: status === 200 ? undefined : String(result.reason ?? ""),
       teamId: asked.teamId,
       metadata: {
         ...via,
@@ -171,6 +185,9 @@ async function auditDone(
               : {}),
         applied: result.applied,
         code: result.code,
+        ...(typeof result.seatReductionLost === "number"
+          ? { seatReductionLost: result.seatReductionLost }
+          : {}),
       },
     });
   } else if (decided.action === "account.rename") {

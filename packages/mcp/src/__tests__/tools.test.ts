@@ -3360,6 +3360,41 @@ describe("API keys and approvals", () => {
     expect(await run()).toContain("call wait_for_approval with id appr_1 again");
   });
 
+  it("wait_for_approval words every billing outcome for what it is", async () => {
+    const wait = vi
+      .fn()
+      .mockResolvedValueOnce({ executed: true, applied: "checkout", checkout: "opened" })
+      .mockResolvedValueOnce({
+        executed: false,
+        code: "payment_failed",
+        reason: "Nothing was changed: the card was declined.",
+      })
+      .mockResolvedValueOnce({
+        executed: false,
+        code: "quote_changed",
+        reason: "Nothing was changed: the price moved.",
+      })
+      .mockResolvedValueOnce({
+        executed: null,
+        code: "outcome_unknown",
+        reason: "The change may or may not have been made.",
+      });
+    const client = createMockClient({
+      approvals: { wait } as unknown as WebhooksCC["approvals"],
+    });
+    const tools = getRegisteredTools(client);
+    const run = async () =>
+      (await tools.wait_for_approval.handler({ id: "appr_1", timeout: "45s" })).content[0].text;
+    expect(await run()).toContain("nothing is bought until they pay");
+    const declined = await run();
+    expect(declined).toContain("payment_failed");
+    expect(declined).not.toContain("new quote");
+    expect(await run()).toContain("new quote");
+    const unknown = await run();
+    expect(unknown).toContain("outcome_unknown");
+    expect(unknown).toContain("get_billing");
+  });
+
   it("caps the wait on the hosted server", async () => {
     const wait = vi.fn().mockResolvedValue({ key: "whcc_new" });
     const client = createMockClient({

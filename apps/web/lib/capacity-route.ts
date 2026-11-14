@@ -17,6 +17,7 @@ import {
   getCapacityState,
   setOverage,
   type CapacityAccount,
+  type CheckoutUnits,
   type CapacityResource,
 } from "@/lib/supabase/capacity-billing";
 import { TeamBillingError } from "@/lib/supabase/team-billing";
@@ -120,21 +121,25 @@ export async function handleCapacityGet(
 /**
  * Makes a capacity change for `userId` (the account itself, or the team's
  * owner): a checkout's link when the change is paid at a checkout, else
- * null. Shared by the route and the billing approval.
+ * null. Shared by the route and the billing approval, whose checkouts are
+ * pinned to the approved count (`units.exactUnits`).
  */
 export async function applyCapacityAction(
   account: CapacityAccount,
   userId: string,
-  action: CapacityAction
+  action: CapacityAction,
+  units: CheckoutUnits = {}
 ): Promise<{ url: string | null }> {
   await assertCanManage(account, userId);
   const resource = action.resource ?? "requests";
   const blockSize = resource === "pages" ? BLOCK_PAGES : BLOCK_REQUESTS;
   if (action.action === "buy_blocks") {
-    return { url: await createOneTimeBlocksCheckout(account, userId, action.blocks, resource) };
+    return {
+      url: await createOneTimeBlocksCheckout(account, userId, action.blocks, resource, units),
+    };
   }
   if (action.action === "set_monthly_blocks") {
-    const result = await changeMonthlyBlocks(account, userId, action.blocks, resource);
+    const result = await changeMonthlyBlocks(account, userId, action.blocks, resource, units);
     return { url: result.kind === "checkout" ? result.url : null };
   }
   const result = await setOverage(

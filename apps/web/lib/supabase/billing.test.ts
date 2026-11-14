@@ -578,6 +578,23 @@ describe("changePlanForUser", () => {
     expect(userUpdatePayload()).toBeUndefined();
   });
 
+  test("a declined card on Pro to Business is payment_failed and changes nothing", async () => {
+    const { errors } = await import("@polar-sh/sdk/2026-10");
+    mockFns.createAdminClient.mockReturnValue(createFakeAdmin({ "users:select": [billingUser()] }));
+    update.mockRejectedValueOnce(
+      new errors.SubscriptionsUpdate402Error(402, {
+        error: "PaymentFailed",
+        detail: "Payment failed with reason: card_error.",
+      })
+    );
+
+    await expect(changePlanForUser("user_1", "business", "month")).rejects.toMatchObject({
+      name: "BillingActionError",
+      code: "payment_failed",
+    });
+    expect(userUpdatePayload()).toBeUndefined();
+  });
+
   test("Pro to Business annual waits for the renewal and shows as pending", async () => {
     mockFns.createAdminClient.mockReturnValue(
       createFakeAdmin({ "users:select": [billingUser()], "users:update": [{}] })

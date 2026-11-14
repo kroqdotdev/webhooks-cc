@@ -105,6 +105,7 @@ import {
   addonStatus,
   applyCapacityWebhookEvent,
   changeMonthlyBlocks,
+  createOneTimeBlocksCheckout,
   reconcileAddonsWithPlan,
 } from "./capacity-billing";
 
@@ -177,6 +178,21 @@ describe("changeMonthlyBlocks", () => {
     });
     expect(mockFns.checkoutsCreate).toHaveBeenCalledWith(
       expect.objectContaining({ products: ["prod_monthly"], units: 3, customer_id: "cus_user" })
+    );
+  });
+
+  it("pins an approval's checkouts to the approved count; a session's stays adjustable", async () => {
+    await changeMonthlyBlocks(USER, "user_1", 3, "requests", { exactUnits: true });
+    expect(mockFns.checkoutsCreate).toHaveBeenLastCalledWith(
+      expect.objectContaining({ units: 3, min_units: 3, max_units: 3 })
+    );
+    await createOneTimeBlocksCheckout(USER, "user_1", 4, "requests", { exactUnits: true });
+    expect(mockFns.checkoutsCreate).toHaveBeenLastCalledWith(
+      expect.objectContaining({ products: ["prod_one_time"], units: 4, min_units: 4, max_units: 4 })
+    );
+    await createOneTimeBlocksCheckout(USER, "user_1", 4);
+    expect(mockFns.checkoutsCreate).toHaveBeenLastCalledWith(
+      expect.objectContaining({ units: 4, min_units: 1, max_units: 400 })
     );
   });
 

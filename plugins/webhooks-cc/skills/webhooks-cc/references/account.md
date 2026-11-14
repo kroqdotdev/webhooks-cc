@@ -30,6 +30,9 @@ change; never to spend money on your own.
   to a Polar checkout when they approve.
 - If the price or the subscription changed before they approve,
   `wait_for_approval` says nothing was changed: ask again for a new quote.
+  Another refusal (a declined card) says why; fix that first.
+- An unknown outcome means Polar was asked and then something failed: the
+  change may have been made. Read `get_billing` before asking again.
 - A first plan or a team's first subscription is a checkout the person
   starts in the browser.
 

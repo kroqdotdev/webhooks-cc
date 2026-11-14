@@ -902,6 +902,30 @@ describe("updateTeamSeats", () => {
     expect(recorded.filter((call) => call.table === "rpc:update_team_seats")).toEqual([]);
   });
 
+  test("increase: an approved one refuses before Polar when the period or seats moved", async () => {
+    const row = () => teamRow({ polar_subscription_id: "sub_1", seats: 2 });
+    mockFns.createAdminClient.mockReturnValue(
+      createFakeAdmin({
+        "team_members:select": [OWNER_MEMBERSHIP, OWNER_MEMBERSHIP],
+        "teams:select": [row(), row()],
+      })
+    );
+    const subscriptionUpdate = vi.fn();
+    mockFns.createPolarClient.mockReturnValue({ subscriptions: { update: subscriptionUpdate } });
+
+    // The renewal crossed since the quote: Polar would charge a new period.
+    const past = new Date(Date.now() - 1000).toISOString();
+    await expect(
+      updateTeamSeats("user_1", "team_1", 3, { currentSeats: 2, periodEnd: past })
+    ).rejects.toMatchObject({ code: "quote_changed" });
+    // Seats changed since the quote.
+    const later = new Date(Date.now() + 86_400_000).toISOString();
+    await expect(
+      updateTeamSeats("user_1", "team_1", 3, { currentSeats: 4, periodEnd: later })
+    ).rejects.toMatchObject({ code: "quote_changed" });
+    expect(subscriptionUpdate).not.toHaveBeenCalled();
+  });
+
   test("increase: surfaces a DB write failure after Polar accepted and logs it", async () => {
     const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
     mockFns.createAdminClient.mockReturnValue(

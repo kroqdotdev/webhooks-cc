@@ -749,12 +749,19 @@ function keyText(key: { key?: string; name?: string; expiresAt?: string }): stri
 function approvalResultText(result: Record<string, unknown>): string {
   if (typeof result.key === "string") return keyText(result);
   if (result.executed === false) {
-    return `${String(result.reason ?? "Nothing was changed.")} Ask again for a new quote if the person still wants it.`;
+    const next =
+      result.code === "quote_changed"
+        ? "Ask again for a new quote if the person still wants it."
+        : "Nothing was changed; tell the person why, and ask again once they have fixed it.";
+    return `${String(result.reason ?? "Nothing was changed.")} (${String(result.code ?? "refused")}) ${next}`;
+  }
+  if (result.executed === null) {
+    return `${String(result.reason ?? "The change may or may not have been made.")} (outcome_unknown) Do not ask again until get_billing shows whether it was made.`;
   }
   if (result.executed === true) {
     const change = typeof result.change === "string" ? ` ${result.change}` : "";
     if (result.applied === "checkout") {
-      return `Approved.${change} The person was sent to a Polar checkout; it takes effect once they pay there${typeof result.checkoutUrl === "string" ? ` (${result.checkoutUrl})` : ""}. Check get_billing afterwards.`;
+      return `Approved.${change} A Polar checkout was opened in the person's browser: nothing is bought until they pay there. Check get_billing afterwards.`;
     }
     const lost =
       typeof result.seatReductionLost === "number"

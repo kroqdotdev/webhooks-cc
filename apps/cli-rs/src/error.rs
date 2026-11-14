@@ -6,7 +6,7 @@
 //! | Status | Code                    | Meaning                                         |
 //! | ------ | ----------------------- | ----------------------------------------------- |
 //! | 0      |                         | Success                                         |
-//! | 1      | `error`, `bad_request`, `delivery_failed` | Any other failure, the server refused input, or a test delivery was not accepted |
+//! | 1      | `error`, `bad_request`, `delivery_failed`, `billing_refused`, `outcome_unknown` | Any other failure, the server refused input, a test delivery was not accepted, an approved billing change was refused with nothing changed (the server's code in `reason`), or it may or may not have been made (check billing) |
 //! | 2      | `usage`                 | Bad arguments (clap answers these itself)        |
 //! | 3      | `not_logged_in`, `unauthorized`, `connection_revoked`, `login_expired`, `login_denied` | No credentials, or they were refused |
 //! | 4      | `not_found`             | No such endpoint, request, team or share         |
@@ -65,6 +65,13 @@ pub enum CliError {
     /// An approved billing change was not made: its price or the
     /// subscription moved after it was asked for.
     QuoteChanged(String),
+    /// An approved billing change was refused with nothing changed for
+    /// another reason (a declined card, too few seats for the members): the
+    /// server's code and its words.
+    BillingRefused { code: String, reason: String },
+    /// An approved billing change may or may not have been made: Polar was
+    /// asked, then something failed. Check billing before asking again.
+    OutcomeUnknown(String),
 }
 
 impl std::fmt::Display for CliError {
@@ -75,7 +82,9 @@ impl std::fmt::Display for CliError {
             | CliError::Timeout(m)
             | CliError::Usage(m)
             | CliError::DeliveryFailed(m)
-            | CliError::QuoteChanged(m) => f.write_str(m),
+            | CliError::QuoteChanged(m)
+            | CliError::OutcomeUnknown(m) => f.write_str(m),
+            CliError::BillingRefused { reason, .. } => f.write_str(reason),
             CliError::Cancelled => f.write_str("Cancelled."),
             CliError::LoginExpired => f.write_str("The login code expired before it was approved."),
             CliError::LoginDenied => f.write_str("The login was refused on its approval page."),
@@ -99,6 +108,8 @@ pub struct Classified {
     pub status: Option<u16>,
     pub hint: Option<String>,
     pub retry_after: Option<u64>,
+    /// The server's own code behind a refusal (`billing_refused`).
+    pub reason: Option<String>,
 }
 
 impl Classified {
@@ -109,6 +120,7 @@ impl Classified {
             status: None,
             hint: None,
             retry_after: None,
+            reason: None,
         }
     }
 
@@ -172,6 +184,16 @@ pub fn classify(error: &anyhow::Error) -> Classified {
                 ),
                 CliError::QuoteChanged(_) => Classified::new("quote_changed", 8)
                     .hint("Nothing was changed. Ask again for a new quote."),
+                CliError::BillingRefused { code, .. } => {
+                    let mut c = Classified::new("billing_refused", 1).hint(format!(
+                        "Nothing was changed ({code}). Fix what the message says, then ask again."
+                    ));
+                    c.reason = Some(code.clone());
+                    c
+                }
+                CliError::OutcomeUnknown(_) => Classified::new("outcome_unknown", 1).hint(
+                    "The change may have been made. Check `whk billing` (or the team's billing) before asking again.",
+                ),
             };
         }
         if let Some(e) = cause.downcast_ref::<ApiError>() {
@@ -220,6 +242,9 @@ pub fn error_json(error: &anyhow::Error, c: &Classified) -> Value {
     }
     if let Some(seconds) = c.retry_after {
         body["retryAfter"] = json!(seconds);
+    }
+    if let Some(reason) = &c.reason {
+        body["reason"] = json!(reason);
     }
     json!({ "error": body })
 }
@@ -282,6 +307,20 @@ mod tests {
         assert_eq!((c.code, c.exit), ("login_denied", 3));
         let c = classify(&anyhow::Error::new(CliError::DeliveryFailed("x".into())));
         assert_eq!((c.code, c.exit), ("delivery_failed", 1));
+        let error = anyhow::Error::new(CliError::BillingRefused {
+            code: "payment_failed".into(),
+            reason: "Nothing was changed: the card was declined.".into(),
+        });
+        let c = classify(&error);
+        assert_eq!((c.code, c.exit), ("billing_refused", 1));
+        let json = error_json(&error, &c);
+        assert_eq!(json["error"]["reason"], "payment_failed");
+        assert_eq!(
+            json["error"]["message"],
+            "Nothing was changed: the card was declined."
+        );
+        let c = classify(&anyhow::Error::new(CliError::OutcomeUnknown("x".into())));
+        assert_eq!((c.code, c.exit), ("outcome_unknown", 1));
     }
 
     #[test]

@@ -313,6 +313,38 @@ describe("billing changes", () => {
     await expect(billing.changePlan({ plan: "pro", teamId: TEAM })).rejects.toThrow("own plans");
   });
 
+  it("never treats an empty or invalid teamId as the account's own billing", async () => {
+    const fetch = vi.fn();
+    globalThis.fetch = fetch;
+    const { billing } = client();
+    for (const teamId of ["", "../billing", "a b"]) {
+      await expect(billing.keepPlan({ teamId })).rejects.toThrow("teamId");
+      await expect(billing.cancel({ teamId })).rejects.toThrow("teamId");
+      await expect(billing.resubscribe({ teamId })).rejects.toThrow("teamId");
+      await expect(billing.setMonthlyBlocks({ teamId, blocks: 1 })).rejects.toThrow("teamId");
+      await expect(billing.buyBlocks({ teamId, blocks: 1 })).rejects.toThrow("teamId");
+      await expect(billing.setOverage({ teamId, enabled: false })).rejects.toThrow("teamId");
+      await expect(billing.changePlan({ teamId, plan: "pro" })).rejects.toThrow("teamId");
+      await expect(billing.setSeats(teamId, 3)).rejects.toThrow("teamId");
+      await expect(billing.capacity({ teamId })).rejects.toThrow("teamId");
+    }
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it("hands over an unknown outcome as executed: null", async () => {
+    const result = { executed: null, code: "outcome_unknown", reason: "Check billing." };
+    globalThis.fetch = vi
+      .fn()
+      .mockResolvedValueOnce(
+        answer({ approval: { ...approval("pending"), action: "billing.change" } }, 202)
+      )
+      .mockResolvedValueOnce(
+        answer({ approval: { ...approval("completed"), action: "billing.change" }, result })
+      );
+    const pending = await client().billing.setSeats(TEAM, 4);
+    expect(await pending.wait({ pollInterval: 1_000 })).toEqual(result);
+  });
+
   it("hands over a refusal on a fresh quote as executed: false", async () => {
     const result = { executed: false, code: "quote_changed", reason: "Nothing was changed." };
     globalThis.fetch = vi

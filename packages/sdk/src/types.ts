@@ -2163,24 +2163,44 @@ export interface TeamPlanQuote {
 }
 
 /**
- * What an approved billing change did. `executed: false` means nothing was
- * changed (its price or the subscription moved after it was asked for, or
- * Polar declined the card): ask again for a new quote.
+ * What an approved billing change did.
+ *
+ * - `executed: true`: made, at once or from the renewal. `applied:
+ *   "checkout"` means only that a Polar checkout was opened for the owner
+ *   (`checkout: "opened"`): nothing is bought until it is paid there. The
+ *   checkout's link goes to the owner's browser, never to the asker;
+ *   `checkoutUrl` is set only for a browser session's own call.
+ * - `executed: false`: nothing was changed. `code` is `quote_changed` when
+ *   the price or the subscription moved after it was asked for (ask again
+ *   for a new quote), or the refusal's own code (`payment_failed`,
+ *   `seats_below_members`, ...), with `reason` in plain words.
+ * - `executed: null` (`code: "outcome_unknown"`): Polar was asked to make
+ *   it and then something failed, so it may or may not have happened.
+ *   Check billing before asking again.
  */
 export type BillingChangeResult =
   | {
       executed: true;
-      /** "now": made at once; "renewal": from the period end; "checkout": the owner pays at a checkout. */
+      /** "now": made at once; "renewal": from the period end; "checkout": a checkout was opened for the owner. */
       applied: "now" | "renewal" | "checkout";
       /** The change, in one sentence. */
       change?: string;
-      /** The checkout the owner was sent to, for a change paid there. */
+      /** "opened" for a checkout: nothing is bought until it is paid. */
+      checkout?: "opened";
+      /** A browser session's own checkout link (never on an approval's result). */
       checkoutUrl?: string;
-      /** A scheduled seat reduction a plan change dropped. */
+      /** A scheduled seat reduction that was dropped (set the seats again). */
       seatReductionLost?: number;
       [field: string]: unknown;
     }
-  | { executed: false; code: string; reason: string; change?: string; [field: string]: unknown };
+  | { executed: false; code: string; reason: string; change?: string; [field: string]: unknown }
+  | {
+      executed: null;
+      code: "outcome_unknown";
+      reason: string;
+      change?: string;
+      [field: string]: unknown;
+    };
 
 /** Where a billing change goes: the account's own billing, or a team you own. */
 export interface BillingTarget {

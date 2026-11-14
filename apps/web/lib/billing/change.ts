@@ -1,11 +1,15 @@
 import {
   BLOCK_PAGES,
   BLOCK_REQUESTS,
+  DEFAULT_OVERAGE_MAX_REQUESTS,
+  DEFAULT_PAGE_OVERAGE_MAX_PAGES,
   MONTHLY_BLOCK_CENTS,
   MONTHLY_DOMAIN_CENTS,
   MONTHLY_PAGE_BLOCK_CENTS,
   ONE_TIME_BLOCK_CENTS,
   ONE_TIME_PAGE_BLOCK_CENTS,
+  overageCents,
+  PAGE_OVERAGE_CENTS,
 } from "@/lib/capacity";
 import {
   applyCapacityAction,
@@ -41,6 +45,9 @@ import {
   TeamBillingError,
   updateTeamSeats,
 } from "@/lib/supabase/team-billing";
+import { reportError } from "@/lib/observability";
+import { createPolarClient, loggablePolarError } from "@/lib/polar";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { formatCents, teamPlanLabel } from "@/lib/team-pricing";
 import { isUuid } from "@/lib/uuid";
 
@@ -86,6 +93,13 @@ export interface BillingQuote {
   approximate: boolean;
   /** What it renews at from then on, when it renews. */
   renewalCents: number | null;
+  /** When it next renews at `renewalCents`, when that is known. */
+  renewsAt?: string | null;
+  /**
+   * For overage: the most a period's overage can be billed, at the end of
+   * each period. Nothing is charged on approval.
+   */
+  maxPeriodCents?: number;
   /** Further facts, in plain words. */
   notes: string[];
   basis: Record<string, Json>;
@@ -110,11 +124,13 @@ const PERSONAL_STATUS: Record<string, number> = {
   unchanged: 409,
   not_scheduled: 409,
   user_not_found: 404,
+  payment_failed: 402,
 };
 
 const TEAM_STATUS: Record<string, number> = {
   not_owner: 403,
   team_not_found: 404,
+  owner_not_found: 409,
   invalid_seats: 400,
   no_subscription: 409,
   not_scheduled: 409,
@@ -125,13 +141,12 @@ const TEAM_STATUS: Record<string, number> = {
   plan_ending: 409,
   change_pending: 409,
   seats_below_minimum: 409,
-  seat_reduction_lost: 409,
+  quote_changed: 409,
 };
 
 /**
- * Our own refusals (checked before anything changed, or a declined card,
- * which changes nothing) as one error; null for anything else, which may
- * have failed after Polar made the change.
+ * Our own refusals while asking or quoting again, when nothing has been
+ * changed yet, as one error; null for anything else.
  */
 export function refusalOf(error: unknown): BillingChangeRefusal | null {
   if (error instanceof BillingChangeRefusal) return error;
@@ -145,6 +160,75 @@ export function refusalOf(error: unknown): BillingChangeRefusal | null {
     return new BillingChangeRefusal(error.status, error.message, error.code);
   }
   return null;
+}
+
+/**
+ * The codes the change functions raise only before they ask Polar for
+ * anything, or for a charge Polar declined (`payment_failed`), which changes
+ * nothing either. Every other error from making a change may come after
+ * Polar acted (`seat_update_failed` is raised once Polar accepted and
+ * invoiced an increase), so it is never read as "nothing was changed".
+ */
+const BEFORE_POLAR = {
+  personal: new Set([
+    "user_not_found",
+    "no_subscription",
+    "plan_ending",
+    "not_offered",
+    "unchanged",
+    "not_scheduled",
+    "payment_failed",
+  ]),
+  team: new Set([
+    "not_owner",
+    "team_not_found",
+    "owner_not_found",
+    "invalid_seats",
+    "no_subscription",
+    "not_scheduled",
+    "seats_below_members",
+    "payment_failed",
+    "not_offered",
+    "unchanged",
+    "plan_ending",
+    "change_pending",
+    "seats_below_minimum",
+    "quote_changed",
+  ]),
+  capacity: new Set([
+    "not_found",
+    "forbidden",
+    "plan_required",
+    "plan_ending",
+    "not_offered",
+    "past_due",
+    "invalid_max",
+  ]),
+};
+
+/** A refusal raised while making the change that certainly changed nothing; null otherwise. */
+export function changeRefusalOf(error: unknown): BillingChangeRefusal | null {
+  if (error instanceof BillingChangeRefusal) return error;
+  const known =
+    (error instanceof BillingActionError && BEFORE_POLAR.personal.has(error.code)) ||
+    (error instanceof TeamBillingError && BEFORE_POLAR.team.has(error.code)) ||
+    (error instanceof CapacityError && BEFORE_POLAR.capacity.has(error.code));
+  return known ? refusalOf(error) : null;
+}
+
+/**
+ * Nothing was touched and the approval may be approved again: billing could
+ * not be read for the fresh quote, or another change for the account is
+ * running. The approval goes back to pending (an ActionError there).
+ */
+export class BillingChangeRetry extends Error {
+  constructor(
+    readonly status: number,
+    message: string
+  ) {
+    super(message);
+    this.name = "BillingChangeRetry";
+  }
 }
 
 /** The change an approval carries, checked again (it is stored, then read back). */
@@ -187,14 +271,38 @@ export function parseBillingChangeRequest(input: unknown): BillingChangeRequest 
 
 /** A quote's inputs, read once, priced at any moment. */
 export interface LoadedQuote {
+  /** The team's name as the owner's page shows it (cleanTeamName), null for the account itself. */
   teamName: string | null;
   at(nowMs: number): BillingQuote;
+}
+
+/**
+ * A team's name for the owner's page. The asker controls it (a key may
+ * rename a team without an approval), so it is only ever shown as the name
+ * in the Account row, never inside the sentence that says what changes,
+ * and without quotes or control and formatting characters that could make
+ * it read as part of that sentence.
+ */
+export function cleanTeamName(name: string): string {
+  const cleaned = name
+    .replace(/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}"'`\u201C\u201D\u2018\u2019\u00AB\u00BB]/gu, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 80);
+  return cleaned || "(no name)";
 }
 
 function planName(plan: string, interval: Interval): string {
   if (plan === "team" || plan === "team_business") return teamPlanLabel(plan, interval);
   const name = plan === "business" ? "Business" : plan === "pro" ? "Pro" : plan;
   return interval === "year" ? `${name} (annual)` : `${name} (monthly)`;
+}
+
+/** Who a capacity change is for, and what else its quote needs. */
+export interface CapacityContext {
+  team: boolean;
+  /** The account's verified domains in the order they were verified (extra domains only). */
+  verifiedDomains?: string[];
 }
 
 /**
@@ -210,15 +318,87 @@ export async function loadBillingQuote(
   if (change.kind === "capacity") {
     const account: CapacityAccount = teamId ? { kind: "team", teamId } : { kind: "user", userId };
     await assertCanManage(account, userId);
-    const teamName = teamId ? (await getTeamForOwner(userId, teamId)).name : null;
-    const state = await getCapacityState(account, change.capacity.resource ?? "requests");
-    return { teamName, at: (nowMs) => capacityQuote(change.capacity, state, nowMs) };
+    const teamName = teamId ? cleanTeamName((await getTeamForOwner(userId, teamId)).name) : null;
+    const resource = change.capacity.resource ?? "requests";
+    const [state, verifiedDomains] = await Promise.all([
+      getCapacityState(account, resource),
+      resource === "domains" ? verifiedDomainsOf(account) : Promise.resolve(undefined),
+    ]);
+    const context: CapacityContext = { team: teamId !== null, verifiedDomains };
+    return { teamName, at: (nowMs) => capacityQuote(change.capacity, state, nowMs, context) };
   }
   return teamId ? loadTeamQuote(userId, teamId, change) : loadPersonalQuote(userId, change);
 }
 
+/** Verified domains in the order inbound_domains_allowed() counts them (00072). */
+async function verifiedDomainsOf(account: CapacityAccount): Promise<string[]> {
+  let query = createAdminClient()
+    .from("inbound_domains")
+    .select("domain, verified_at, id")
+    .eq("status", "verified")
+    .order("verified_at", { ascending: true })
+    .order("id", { ascending: true });
+  query =
+    account.kind === "team"
+      ? query.eq("team_id", account.teamId)
+      : query.eq("user_id", account.userId);
+  const { data, error } = await query;
+  if (error) throw error;
+  return (data ?? []).map((row) => row.domain);
+}
+
 function iso(ms: number): string {
   return new Date(ms).toISOString();
+}
+
+function longDay(isoTime: string | null | undefined): string {
+  if (!isoTime) return "the end of the period";
+  return new Date(isoTime).toLocaleDateString("en-US", {
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+    timeZone: "UTC",
+  });
+}
+
+/**
+ * What a subscription renews at and when, from Polar's live state: the
+ * quote of keeping, resuming or cancelling a plan shows it, and compares
+ * it on approval like the rest of its basis.
+ */
+interface SubscriptionFacts {
+  status: string;
+  cancelAtPeriodEnd: boolean;
+  amountCents: number;
+  seats: number | null;
+  periodEnd: string;
+  pendingProduct: string | null;
+  pendingSeats: number | null;
+}
+
+async function subscriptionFacts(subscriptionId: string): Promise<SubscriptionFacts> {
+  const subscription = await createPolarClient().subscriptions.get(subscriptionId);
+  return {
+    status: subscription.status,
+    cancelAtPeriodEnd: subscription.cancel_at_period_end,
+    amountCents: subscription.amount,
+    seats: subscription.seats ?? null,
+    periodEnd: iso(Date.parse(String(subscription.current_period_end))),
+    pendingProduct: subscription.pending_update?.product_id ?? null,
+    pendingSeats: subscription.pending_update?.seats ?? null,
+  };
+}
+
+function factsBasis(facts: SubscriptionFacts): Record<string, Json> {
+  return {
+    polarStatus: facts.status,
+    polarCancelAtPeriodEnd: facts.cancelAtPeriodEnd,
+    amount: facts.amountCents,
+    polarSeats: facts.seats,
+    periodEnd: facts.periodEnd,
+    pendingProduct: facts.pendingProduct,
+    pendingSeats: facts.pendingSeats,
+  };
 }
 
 async function loadPersonalQuote(
@@ -249,6 +429,7 @@ async function loadPersonalQuote(
           dueNowCents: q.dueNowCents,
           approximate: now,
           renewalCents: q.renewalCents,
+          renewsAt: q.periodEnd,
           notes: now
             ? [
                 `Charged the difference for the rest of this period: ${formatCents(q.chargeCents)} for ${to}, less ${formatCents(q.creditCents)} unused of ${from}${q.creditAppliedCents > 0 ? ` and ${formatCents(q.creditAppliedCents)} of account credit` : ""}.`,
@@ -265,13 +446,6 @@ async function loadPersonalQuote(
   if (!user.polar_subscription_id || user.plan === "free") {
     throw new BillingActionError("no_subscription", "No active subscription");
   }
-  const basis = {
-    subscriptionId: user.polar_subscription_id,
-    plan: user.plan,
-    interval: user.billing_interval,
-    cancelAtPeriodEnd: user.cancel_at_period_end,
-    pendingPlan: user.pending_plan,
-  };
   const current = planName(user.plan, user.billing_interval === "year" ? "year" : "month");
   if (change.kind === "keep_plan" && !user.pending_plan) {
     throw new BillingActionError("unchanged", "No plan change is waiting");
@@ -282,41 +456,56 @@ async function loadPersonalQuote(
   if (change.kind === "resubscribe" && !user.cancel_at_period_end) {
     throw new BillingActionError("not_scheduled", "Subscription is not scheduled for cancellation");
   }
+  const facts = await subscriptionFacts(user.polar_subscription_id);
+  const basis = {
+    subscriptionId: user.polar_subscription_id,
+    plan: user.plan,
+    interval: user.billing_interval,
+    cancelAtPeriodEnd: user.cancel_at_period_end,
+    pendingPlan: user.pending_plan,
+    ...factsBasis(facts),
+  };
+  // Keeping the plan drops the waiting change, so it renews at today's
+  // price; resuming keeps a waiting change, whose price Polar holds.
+  const renewal =
+    change.kind === "cancel"
+      ? 0
+      : change.kind === "resubscribe" && (user.pending_plan || facts.pendingProduct)
+        ? null
+        : facts.amountCents;
   const sentence =
     change.kind === "keep_plan"
       ? `Keep ${current}: drop the plan change waiting for the renewal.`
       : change.kind === "cancel"
         ? `Cancel ${current} at the end of the period.`
         : `Keep ${current}: undo the cancellation, so it renews.`;
-  const end = await personalPeriodEnd(userId);
+  const notes =
+    change.kind === "cancel"
+      ? [
+          `The plan, monthly blocks and overage stay until ${longDay(facts.periodEnd)}, then end with it.`,
+        ]
+      : renewal === null
+        ? [
+            `It renews on ${longDay(facts.periodEnd)} on the plan change waiting for the renewal, at that plan's price.`,
+          ]
+        : [
+            `It renews on ${longDay(facts.periodEnd)} at ${formatCents(renewal)}, then every ${user.billing_interval === "year" ? "year" : "month"}.`,
+          ];
   return {
     teamName: null,
     at: (nowMs) => ({
       quotedAt: iso(nowMs),
       change: sentence,
       applies: change.kind === "cancel" ? "renewal" : "now",
-      effectiveAt: change.kind === "cancel" ? end : iso(nowMs),
+      effectiveAt: change.kind === "cancel" ? facts.periodEnd : iso(nowMs),
       dueNowCents: 0,
       approximate: false,
-      renewalCents: null,
-      notes:
-        change.kind === "cancel"
-          ? ["The plan, monthly blocks and overage stay until the period ends, then end with it."]
-          : [],
+      renewalCents: renewal,
+      renewsAt: change.kind === "cancel" ? null : facts.periodEnd,
+      notes,
       basis,
     }),
   };
-}
-
-async function personalPeriodEnd(userId: string): Promise<string | null> {
-  const { createAdminClient } = await import("@/lib/supabase/admin");
-  const { data, error } = await createAdminClient()
-    .from("users")
-    .select("billing_period_end, period_end")
-    .eq("id", userId)
-    .maybeSingle();
-  if (error) throw error;
-  return data?.billing_period_end ?? data?.period_end ?? null;
 }
 
 async function loadTeamQuote(
@@ -332,7 +521,7 @@ async function loadTeamQuote(
       change.interval
     );
     return {
-      teamName: loaded.team.name,
+      teamName: cleanTeamName(loaded.team.name),
       at: (nowMs) => {
         const q = loaded.at(nowMs);
         const from = teamPlanLabel(loaded.current.plan, loaded.current.interval);
@@ -341,12 +530,13 @@ async function loadTeamQuote(
         const newYear = q.interval === "year" && loaded.current.interval !== "year";
         return {
           quotedAt: iso(nowMs),
-          change: `Change the team "${loaded.team.name}" from ${from} to ${to} (${q.seats} ${q.seats === 1 ? "seat" : "seats"}).`,
+          change: `Change the team from ${from} to ${to} (${q.seats} ${q.seats === 1 ? "seat" : "seats"}).`,
           applies: q.applies,
           effectiveAt: now ? iso(nowMs) : q.periodEnd,
           dueNowCents: q.dueNowCents,
           approximate: now,
           renewalCents: q.renewalCents,
+          renewsAt: q.periodEnd,
           notes: now
             ? [
                 newYear
@@ -368,7 +558,7 @@ async function loadTeamQuote(
       throw new TeamBillingError("unchanged", `The team has ${change.seats} seats already`);
     }
     return {
-      teamName: loaded.team.name,
+      teamName: cleanTeamName(loaded.team.name),
       at: (nowMs) => {
         const q = loaded.at(nowMs);
         const more = q.newSeats > q.currentSeats;
@@ -376,13 +566,14 @@ async function loadTeamQuote(
           quotedAt: iso(nowMs),
           change:
             q.newSeats === q.currentSeats
-              ? `Keep ${q.currentSeats} seats on the team "${loaded.team.name}": drop the reduction to ${q.pendingSeats} waiting for the renewal.`
-              : `Change the team "${loaded.team.name}" from ${q.currentSeats} to ${q.newSeats} seats.`,
+              ? `Keep ${q.currentSeats} seats on the team: drop the reduction to ${q.pendingSeats} waiting for the renewal.`
+              : `Change the team from ${q.currentSeats} to ${q.newSeats} seats.`,
           applies: more || q.newSeats === q.currentSeats ? "now" : "renewal",
           effectiveAt: q.appliesAtRenewal ? q.periodEnd : iso(nowMs),
           dueNowCents: q.dueNowCents,
           approximate: false,
           renewalCents: q.renewalCents,
+          renewsAt: q.periodEnd,
           notes: more
             ? [
                 `The added seats cost ${formatCents(q.prorationCents)} for the rest of this period${q.creditAppliedCents > 0 ? `, ${formatCents(q.creditAppliedCents)} of it from account credit` : ""}.`,
@@ -390,7 +581,9 @@ async function loadTeamQuote(
             : q.appliesAtRenewal
               ? ["The current seats stay until the renewal; nothing is credited."]
               : [],
-          basis: loaded.basis,
+          // The seats and the period the charge is for: the increase checks
+          // them again right before Polar is asked (updateTeamSeats).
+          basis: { ...loaded.basis, currentSeats: q.currentSeats, periodEnd: q.periodEnd },
         };
       },
     };
@@ -400,10 +593,8 @@ async function loadTeamQuote(
   if (!team.polar_subscription_id || team.subscription_status === null) {
     throw new TeamBillingError("no_subscription", "No active subscription");
   }
-  const current = teamPlanLabel(
-    team.business ? "team_business" : "team",
-    team.billing_interval === "year" ? "year" : "month"
-  );
+  const interval = team.billing_interval === "year" ? "year" : "month";
+  const current = teamPlanLabel(team.business ? "team_business" : "team", interval);
   if (change.kind === "keep_plan" && !team.pending_plan) {
     throw new TeamBillingError("unchanged", "No plan change is waiting");
   }
@@ -413,6 +604,7 @@ async function loadTeamQuote(
   if (change.kind === "resubscribe" && !team.cancel_at_period_end) {
     throw new TeamBillingError("not_scheduled", "Subscription is not scheduled for cancellation");
   }
+  const facts = await subscriptionFacts(team.polar_subscription_id);
   const basis = {
     subscriptionId: team.polar_subscription_id,
     status: team.subscription_status,
@@ -421,43 +613,63 @@ async function loadTeamQuote(
     seats: team.seats,
     cancelAtPeriodEnd: team.cancel_at_period_end,
     pendingPlan: team.pending_plan,
-    pendingSeats: team.pending_seats,
+    teamPendingSeats: team.pending_seats,
+    ...factsBasis(facts),
   };
+  // What it renews at: keeping the plan drops the waiting plan change and
+  // schedules a waiting seat reduction again; resuming keeps whatever
+  // waits, which Polar prices only when that is seats alone.
+  const seatsNow = facts.seats ?? team.seats;
+  const perSeat = seatsNow > 0 ? Math.round(facts.amountCents / seatsNow) : 0;
+  const reduction =
+    team.pending_seats !== null && team.pending_seats < team.seats ? team.pending_seats : null;
+  const renewal =
+    change.kind === "cancel"
+      ? 0
+      : change.kind === "keep_plan"
+        ? reduction !== null
+          ? perSeat * reduction
+          : facts.amountCents
+        : team.pending_plan || facts.pendingProduct
+          ? null
+          : facts.pendingSeats !== null
+            ? perSeat * facts.pendingSeats
+            : facts.amountCents;
+  const renewSeats =
+    change.kind === "keep_plan"
+      ? (reduction ?? seatsNow)
+      : (facts.pendingSeats ?? team.pending_seats ?? seatsNow);
   const sentence =
     change.kind === "keep_plan"
-      ? `Keep the team "${team.name}" on ${current}: drop the plan change waiting for the renewal.`
+      ? `Keep the team on ${current}: drop the plan change waiting for the renewal.`
       : change.kind === "cancel"
-        ? `Cancel the team "${team.name}"'s ${current} subscription at the end of the period.`
-        : `Keep the team "${team.name}"'s ${current} subscription: undo the cancellation, so it renews.`;
-  const end = await teamPeriodEnd(teamId);
+        ? `Cancel the team's ${current} subscription at the end of the period.`
+        : `Keep the team's ${current} subscription: undo the cancellation, so it renews.`;
+  const notes =
+    change.kind === "cancel"
+      ? [`Members keep the team's endpoints and pool until ${longDay(facts.periodEnd)}.`]
+      : renewal === null
+        ? [
+            `It renews on ${longDay(facts.periodEnd)} on the plan change waiting for the renewal, at that plan's price.`,
+          ]
+        : [
+            `It renews on ${longDay(facts.periodEnd)} at ${formatCents(renewal)} for ${renewSeats} ${renewSeats === 1 ? "seat" : "seats"}, then every ${interval}.`,
+          ];
   return {
-    teamName: team.name,
+    teamName: cleanTeamName(team.name),
     at: (nowMs) => ({
       quotedAt: iso(nowMs),
       change: sentence,
       applies: change.kind === "cancel" ? "renewal" : "now",
-      effectiveAt: change.kind === "cancel" ? end : iso(nowMs),
+      effectiveAt: change.kind === "cancel" ? facts.periodEnd : iso(nowMs),
       dueNowCents: 0,
       approximate: false,
-      renewalCents: null,
-      notes:
-        change.kind === "cancel"
-          ? ["Members keep the team's endpoints and pool until the period ends."]
-          : [],
+      renewalCents: renewal,
+      renewsAt: change.kind === "cancel" ? null : facts.periodEnd,
+      notes,
       basis,
     }),
   };
-}
-
-async function teamPeriodEnd(teamId: string): Promise<string | null> {
-  const { createAdminClient } = await import("@/lib/supabase/admin");
-  const { data, error } = await createAdminClient()
-    .from("teams")
-    .select("billing_period_end, period_end")
-    .eq("id", teamId)
-    .maybeSingle();
-  if (error) throw error;
-  return data?.billing_period_end ?? data?.period_end ?? null;
 }
 
 /** What one block of a resource is, and costs. */
@@ -467,6 +679,8 @@ function blockFacts(resource: "requests" | "pages" | "domains") {
       monthly: MONTHLY_PAGE_BLOCK_CENTS,
       oneTime: ONE_TIME_PAGE_BLOCK_CENTS,
       size: BLOCK_PAGES,
+      defaultOverageMax: DEFAULT_PAGE_OVERAGE_MAX_PAGES,
+      overageCents: (pages: number) => pages * PAGE_OVERAGE_CENTS,
       noun: (n: number) => `${(n * BLOCK_PAGES).toLocaleString("en-US")} parsed pages`,
     };
   }
@@ -475,6 +689,8 @@ function blockFacts(resource: "requests" | "pages" | "domains") {
       monthly: MONTHLY_DOMAIN_CENTS,
       oneTime: 0,
       size: 1,
+      defaultOverageMax: 0,
+      overageCents: () => 0,
       noun: (n: number) => `${n} extra ${n === 1 ? "domain" : "domains"}`,
     };
   }
@@ -482,23 +698,43 @@ function blockFacts(resource: "requests" | "pages" | "domains") {
     monthly: MONTHLY_BLOCK_CENTS,
     oneTime: ONE_TIME_BLOCK_CENTS,
     size: BLOCK_REQUESTS,
+    defaultOverageMax: DEFAULT_OVERAGE_MAX_REQUESTS,
+    overageCents,
     noun: (n: number) => `${(n * BLOCK_REQUESTS).toLocaleString("en-US")} requests`,
   };
 }
 
 /**
+ * Which verified domains stop receiving mail once the allowance is
+ * `allowed`: those past it in the order they were verified, the most
+ * recently verified first to go (resolve_inbound_recipient(), 00072).
+ */
+function domainsPast(allowed: number, verified: string[] | undefined): string | null {
+  if (!verified) return null;
+  const stopping = verified.slice(Math.max(0, allowed));
+  if (stopping.length === 0) {
+    return `Every verified domain stays within the new allowance of ${allowed}.`;
+  }
+  return `At the renewal ${stopping.length === 1 ? "this domain stops" : "these domains stop"} receiving mail (the most recently verified past the new allowance of ${allowed}; ${stopping.length === 1 ? "it stays" : "they stay"} listed): ${stopping.join(", ")}.`;
+}
+
+/**
  * A capacity change priced from the dashboard's own prices and the
  * account's add-on state, deciding as changeMonthlyBlocks and setOverage
- * do whether it is a checkout, made now, or from the renewal.
+ * do whether it is a checkout, made now, or from the renewal. `context`
+ * says whether it is a team's (the sentence says so; the Account row names
+ * the team) and, for extra domains, which domains are verified.
  */
 export function capacityQuote(
   action: CapacityAction,
   state: CapacityState,
-  nowMs: number
+  nowMs: number,
+  context: CapacityContext = { team: false }
 ): BillingQuote {
   const resource = action.resource ?? "requests";
   const facts = blockFacts(resource);
   const blocks = state.blocks;
+  const whose = context.team ? " for the team" : "";
   // What the decision rests on; usage counters are left out, since every
   // capture moves them.
   const basis: Record<string, Json> = {
@@ -511,6 +747,7 @@ export function capacityQuote(
           pendingUnits: blocks.pendingUnits,
           cancelAtPeriodEnd: blocks.cancelAtPeriodEnd,
           pastDue: blocks.pastDue,
+          periodEnd: blocks.periodEnd,
         }
       : null,
     overage: {
@@ -526,6 +763,8 @@ export function capacityQuote(
     basis,
   };
   const now = iso(nowMs);
+  // When the monthly blocks renew: their own period, else the plan's.
+  const blocksRenewAt = blocks?.periodEnd ?? state.periodEnd;
   const unchanged = (message: string) => new CapacityError("unchanged", message, 409);
   // Ending or lowering what renews needs no live plan; anything that adds does.
   const adds =
@@ -551,18 +790,24 @@ export function capacityQuote(
   if (action.action === "buy_blocks") {
     return {
       ...base,
-      change: `Buy ${facts.noun(action.blocks)} that never expire.`,
+      change: `Buy ${facts.noun(action.blocks)} that never expire${whose}.`,
       applies: "checkout",
       effectiveAt: now,
       dueNowCents: action.blocks * facts.oneTime,
       renewalCents: null,
-      notes: ["Paid at a Polar checkout that approving opens; nothing is bought until it is paid."],
+      notes: [
+        `Paid at a Polar checkout that approving opens, for exactly ${action.blocks} ${action.blocks === 1 ? "block" : "blocks"}; nothing is bought until it is paid.`,
+      ],
     };
   }
 
   if (action.action === "set_monthly_blocks") {
     const target = action.blocks;
     const monthly = (n: number) => n * facts.monthly;
+    const domainNote = (allowedExtra: number) =>
+      resource === "domains"
+        ? domainsPast(state.planRequests + allowedExtra, context.verifiedDomains)
+        : null;
     if (!blocks || (blocks.cancelAtPeriodEnd && target === 0)) {
       if (target === 0) throw unchanged("There are no monthly blocks to end");
     }
@@ -575,35 +820,38 @@ export function capacityQuote(
     if (!blocks) {
       return {
         ...base,
-        change: `Add ${facts.noun(target)} every period.`,
+        change: `Add ${facts.noun(target)} every period${whose}.`,
         applies: "checkout",
         effectiveAt: now,
         dueNowCents: monthly(target),
         renewalCents: monthly(target),
+        renewsAt: state.periodEnd,
         notes: [
           "Paid at a Polar checkout that approving opens, for the rest of this period; they then renew with the plan.",
         ],
       };
     }
     if (target === 0) {
+      const note = domainNote(0);
       return {
         ...base,
-        change: `End the ${facts.noun(blocks.units)} added every period.`,
+        change: `End the ${facts.noun(blocks.units)} added every period${whose}.`,
         applies: "renewal",
-        effectiveAt: state.periodEnd,
+        effectiveAt: blocksRenewAt,
         dueNowCents: 0,
         renewalCents: 0,
-        notes: ["They stay until the period ends and are not renewed."],
+        notes: ["They stay until the period ends and are not renewed.", ...(note ? [note] : [])],
       };
     }
     if (target > blocks.units) {
       return {
         ...base,
-        change: `Add ${facts.noun(target - blocks.units)} more every period (${facts.noun(target)} in all).`,
+        change: `Add ${facts.noun(target - blocks.units)} more every period${whose} (${facts.noun(target)} in all).`,
         applies: "checkout",
         effectiveAt: now,
         dueNowCents: monthly(target - blocks.units),
         renewalCents: monthly(target),
+        renewsAt: blocksRenewAt,
         notes: [
           "The added blocks are paid at their full monthly price at a Polar checkout that approving opens.",
         ],
@@ -613,17 +861,19 @@ export function capacityQuote(
     if (target === renews && !blocks.cancelAtPeriodEnd) {
       throw unchanged(`The monthly blocks renew at ${facts.noun(target)} already`);
     }
+    const note = target < blocks.units ? domainNote(target) : null;
     return {
       ...base,
       change:
         target === blocks.units
-          ? `Keep ${facts.noun(target)} every period${blocks.cancelAtPeriodEnd ? " instead of ending them" : ", dropping the scheduled reduction"}.`
-          : `Reduce the monthly blocks from ${facts.noun(blocks.units)} to ${facts.noun(target)} at the renewal.`,
+          ? `Keep ${facts.noun(target)} every period${whose}${blocks.cancelAtPeriodEnd ? " instead of ending them" : ", dropping the scheduled reduction"}.`
+          : `Reduce the monthly blocks${whose} from ${facts.noun(blocks.units)} to ${facts.noun(target)} at the renewal.`,
       applies: "renewal",
-      effectiveAt: state.periodEnd,
+      effectiveAt: blocksRenewAt,
       dueNowCents: 0,
       renewalCents: monthly(target),
-      notes: ["Nothing is charged or credited now."],
+      renewsAt: blocksRenewAt,
+      notes: ["Nothing is charged or credited now.", ...(note ? [note] : [])],
     };
   }
 
@@ -635,7 +885,7 @@ export function capacityQuote(
     }
     return {
       ...base,
-      change: `Turn off overage for ${noun}.`,
+      change: `Turn off overage for ${noun}${whose}.`,
       applies: "now",
       effectiveAt: now,
       dueNowCents: 0,
@@ -643,14 +893,15 @@ export function capacityQuote(
       notes: ["Counting stops now; what was used this period is billed at its end."],
     };
   }
+  // The maximum setOverage stores: the one asked for, else the one kept,
+  // else the default.
   const max =
     action.maxBlocks !== undefined
       ? action.maxBlocks * facts.size
       : state.overage.maxRequests > 0
         ? state.overage.maxRequests
-        : null;
-  const maxWords =
-    max === null ? "the default maximum" : `at most ${max.toLocaleString("en-US")} ${noun}`;
+        : facts.defaultOverageMax;
+  const maxPeriodCents = facts.overageCents(max);
   if (
     state.overage.subscribed &&
     !state.overage.cancelAtPeriodEnd &&
@@ -658,17 +909,19 @@ export function capacityQuote(
   ) {
     throw unchanged(`Overage is on with that maximum already`);
   }
+  const on = state.overage.subscribed && !state.overage.cancelAtPeriodEnd;
   return {
     ...base,
-    change: `Turn on overage for ${noun}, ${maxWords} a period.`,
+    change: `${on ? "Set the overage maximum" : "Turn on overage"} for ${noun}${whose} to at most ${max.toLocaleString("en-US")} ${noun} a period: up to ${formatCents(maxPeriodCents)} per period.`,
     applies: state.overage.subscribed ? "now" : "checkout",
     effectiveAt: now,
     dueNowCents: 0,
     renewalCents: null,
+    maxPeriodCents,
     notes: [
       state.overage.subscribed
-        ? "Nothing is charged now; what is used past the allowance is billed at the end of each period."
-        : "Starts at a Polar checkout that approving opens (nothing is charged there); what is used is billed at the end of each period.",
+        ? `Nothing is charged now; what is used past the allowance is billed at the end of each period, up to ${formatCents(maxPeriodCents)}.`
+        : `Starts at a Polar checkout that approving opens (nothing is charged there); what is used is billed at the end of each period, up to ${formatCents(maxPeriodCents)}.`,
     ],
   };
 }
@@ -697,16 +950,40 @@ export function chargeCeiling(quotedCents: number): number {
   return quotedCents + Math.max(1, Math.ceil(quotedCents / 100));
 }
 
-/** What a billing approval did, kept for its asker. */
+/**
+ * What a billing approval did, kept on the approval for its asker and the
+ * owner's page.
+ *
+ * - `executed: true`: made, at once or from the renewal. `applied:
+ *   "checkout"` means only that a checkout was opened for the owner:
+ *   nothing is bought until it is paid there.
+ * - `executed: false`: nothing was changed, and `reason` says why.
+ * - `executed: null`: Polar was asked to make it and then something failed,
+ *   so it may or may not have happened (`outcome_unknown`): check billing
+ *   before asking again.
+ */
 export type BillingChangeOutcome =
-  | {
-      executed: true;
-      applied: "now" | "renewal" | "checkout";
-      /** The checkout the owner was sent to, for a change paid there. */
-      checkoutUrl?: string;
-      seatReductionLost?: number;
-    }
-  | { executed: false; code: string; reason: string };
+  | { executed: true; applied: "now" | "renewal"; seatReductionLost?: number }
+  | { executed: true; applied: "checkout"; checkout: "opened" }
+  | { executed: false; code: string; reason: string }
+  | { executed: null; code: "outcome_unknown"; reason: string };
+
+/** An outcome, and the checkout the owner's browser goes on to (never stored). */
+export interface BillingChangeRun {
+  outcome: BillingChangeOutcome;
+  checkoutUrl?: string;
+}
+
+const OUTCOME_UNKNOWN =
+  "The change may or may not have been made: Polar was asked to make it, and then something failed. Check billing before asking again.";
+
+/** How long one account's change may hold its lease (re-quote, Polar, the writes after). */
+const LOCK_SECONDS = 120;
+
+/** The billing account a change is for, as the lease names it. */
+function accountKey(userId: string, teamId: string | null): string {
+  return teamId ? `team:${teamId}` : `user:${userId}`;
+}
 
 /**
  * Makes an approved change, only if a fresh quote, priced at the moment of
@@ -715,65 +992,145 @@ export type BillingChangeOutcome =
  * explains. Otherwise nothing is changed and the outcome says why: the
  * asker asks again. A replay of a change already made finds the state it
  * changed and refuses, so nothing is ever made or charged twice.
- * Errors other than refusals propagate: they may come after Polar acted.
+ *
+ * Changes for one billing account run one at a time (a lease in
+ * billing_change_locks), so two approvals approved together cannot both
+ * pass against the state before either. BillingChangeRetry means nothing
+ * was touched (the lease is held, or billing could not be read), and the
+ * approval may be approved again.
  */
 export async function runBillingChange(
   userId: string,
   request: BillingChangeRequest,
   approved: BillingQuote
-): Promise<BillingChangeOutcome> {
-  const quotedAt = Date.parse(approved.quotedAt);
-  let loaded: LoadedQuote;
+): Promise<BillingChangeRun> {
+  const key = accountKey(userId, request.teamId);
+  const holder = crypto.randomUUID();
+  const admin = createAdminClient();
+  const { data: claimed, error: claimError } = await admin.rpc("claim_billing_change_lock", {
+    p_account_key: key,
+    p_holder: holder,
+    p_seconds: LOCK_SECONDS,
+  });
+  if (claimError) {
+    reportError("Taking the billing change lease failed", claimError);
+    throw new BillingChangeRetry(
+      503,
+      "Billing could not be reached just now, so nothing was changed. Try approving again in a minute."
+    );
+  }
+  if (claimed !== true) {
+    throw new BillingChangeRetry(
+      409,
+      "Another billing change for this account is being made. Nothing was changed; try approving again in a moment."
+    );
+  }
   try {
-    loaded = await loadBillingQuote(userId, request);
+    return await runLocked(userId, request, approved);
+  } finally {
+    const { error } = await admin.rpc("release_billing_change_lock", {
+      p_account_key: key,
+      p_holder: holder,
+    });
+    // It expires on its own; until then the account's next change waits.
+    if (error) reportError("Releasing the billing change lease failed", error);
+  }
+}
+
+async function runLocked(
+  userId: string,
+  request: BillingChangeRequest,
+  approved: BillingQuote
+): Promise<BillingChangeRun> {
+  const quotedAt = Date.parse(approved.quotedAt);
+  let again: BillingQuote;
+  let fresh: BillingQuote;
+  try {
+    const loaded = await loadBillingQuote(userId, request);
+    // Pricing can refuse too (a capacity change that is now a no-op, or
+    // whose plan is ending): the state moved, so it is a changed quote.
+    again = loaded.at(quotedAt);
+    fresh = loaded.at(Date.now());
   } catch (error) {
     const refusal = refusalOf(error);
-    if (!refusal) throw error;
+    if (!refusal) {
+      // Nothing was touched: reading billing failed (Polar or the database
+      // unreachable), so the approval goes back to pending.
+      reportError("Quoting an approved billing change again failed", loggablePolarError(error));
+      throw new BillingChangeRetry(
+        503,
+        "Billing could not be read just now, so nothing was changed. Try approving again in a minute."
+      );
+    }
     return {
-      executed: false,
-      code: "quote_changed",
-      reason: `Nothing was changed: ${refusal.message}`,
+      outcome: {
+        executed: false,
+        code: "quote_changed",
+        reason: `Nothing was changed: ${refusal.message}`,
+      },
     };
   }
-  const again = loaded.at(quotedAt);
-  const fresh = loaded.at(Date.now());
   if (
     quoteFingerprint(again) !== quoteFingerprint(approved) ||
     fresh.dueNowCents > chargeCeiling(approved.dueNowCents)
   ) {
     return {
-      executed: false,
-      code: "quote_changed",
-      reason:
-        "Nothing was changed: the price or the subscription changed after this was asked for. Ask again for a new quote.",
+      outcome: {
+        executed: false,
+        code: "quote_changed",
+        reason:
+          "Nothing was changed: the price or the subscription changed after this was asked for. Ask again for a new quote.",
+      },
     };
   }
 
   try {
-    return await makeChange(userId, request);
+    return await makeChange(userId, request, again);
   } catch (error) {
-    // A refusal is raised before Polar changes anything, or is a declined
-    // card, which changes nothing either.
-    const refusal = refusalOf(error);
-    if (!refusal) throw error;
-    return {
-      executed: false,
-      code: refusal.code,
-      reason: `Nothing was changed: ${refusal.message}`,
-    };
+    const refusal = changeRefusalOf(error);
+    if (refusal) {
+      return {
+        outcome: {
+          executed: false,
+          code: refusal.code,
+          reason: `Nothing was changed: ${refusal.message}`,
+        },
+      };
+    }
+    // Polar may have made the change (a timeout once it landed, a write
+    // after it that failed): never "nothing was changed", and never run
+    // again by approving twice.
+    reportError(
+      "An approved billing change failed after Polar was asked",
+      loggablePolarError(error),
+      {
+        teamId: request.teamId,
+        change: request.change.kind,
+      }
+    );
+    return { outcome: { executed: null, code: "outcome_unknown", reason: OUTCOME_UNKNOWN } };
   }
 }
 
 async function makeChange(
   userId: string,
-  { teamId, change }: BillingChangeRequest
-): Promise<BillingChangeOutcome> {
+  { teamId, change }: BillingChangeRequest,
+  quote: BillingQuote
+): Promise<BillingChangeRun> {
   if (change.kind === "capacity") {
     const account: CapacityAccount = teamId ? { kind: "team", teamId } : { kind: "user", userId };
-    const { url } = await applyCapacityAction(account, userId, change.capacity);
+    // A checkout sells exactly the approved count.
+    const { url } = await applyCapacityAction(account, userId, change.capacity, {
+      exactUnits: true,
+    });
     return url
-      ? { executed: true, applied: "checkout", checkoutUrl: url }
-      : { executed: true, applied: change.capacity.action === "set_overage" ? "now" : "renewal" };
+      ? { outcome: { executed: true, applied: "checkout", checkout: "opened" }, checkoutUrl: url }
+      : {
+          outcome: {
+            executed: true,
+            applied: change.capacity.action === "set_overage" ? "now" : "renewal",
+          },
+        };
   }
   if (teamId) {
     switch (change.kind) {
@@ -784,39 +1141,62 @@ async function makeChange(
           change.plan as "team" | "team_business",
           change.interval
         );
-        return { executed: true, ...result };
+        return { outcome: { executed: true, ...result } };
       }
       case "seats": {
-        const team = await getTeamForOwner(userId, teamId);
-        await updateTeamSeats(userId, teamId, change.seats);
-        return { executed: true, applied: change.seats < team.seats ? "renewal" : "now" };
+        await updateTeamSeats(userId, teamId, change.seats, {
+          currentSeats: Number(quote.basis.currentSeats),
+          periodEnd: String(quote.basis.periodEnd),
+        });
+        return {
+          outcome: { executed: true, applied: quote.applies === "renewal" ? "renewal" : "now" },
+        };
       }
-      case "keep_plan":
-        await keepTeamPlan(userId, teamId);
-        return { executed: true, applied: "now" };
+      case "keep_plan": {
+        const team = await getTeamForOwner(userId, teamId);
+        try {
+          await keepTeamPlan(userId, teamId);
+        } catch (error) {
+          // The plan is kept, but Polar dropped the waiting seat reduction
+          // with the plan change: made, and the owner sets the seats again.
+          if (
+            error instanceof TeamBillingError &&
+            error.code === "seat_reduction_lost" &&
+            team.pending_seats !== null
+          ) {
+            return {
+              outcome: { executed: true, applied: "now", seatReductionLost: team.pending_seats },
+            };
+          }
+          throw error;
+        }
+        return { outcome: { executed: true, applied: "now" } };
+      }
       case "cancel":
         await cancelTeamSubscription(userId, teamId);
-        return { executed: true, applied: "renewal" };
+        return { outcome: { executed: true, applied: "renewal" } };
       case "resubscribe":
         await resubscribeTeam(userId, teamId);
-        return { executed: true, applied: "now" };
+        return { outcome: { executed: true, applied: "now" } };
     }
   }
   switch (change.kind) {
     case "plan":
       return {
-        executed: true,
-        ...(await changePlanForUser(userId, change.plan as "pro" | "business", change.interval)),
+        outcome: {
+          executed: true,
+          ...(await changePlanForUser(userId, change.plan as "pro" | "business", change.interval)),
+        },
       };
     case "keep_plan":
       await keepCurrentPlanForUser(userId);
-      return { executed: true, applied: "now" };
+      return { outcome: { executed: true, applied: "now" } };
     case "cancel":
       await cancelSubscriptionForUser(userId);
-      return { executed: true, applied: "renewal" };
+      return { outcome: { executed: true, applied: "renewal" } };
     case "resubscribe":
       await resubscribeForUser(userId);
-      return { executed: true, applied: "now" };
+      return { outcome: { executed: true, applied: "now" } };
     default:
       throw new BillingChangeRefusal(400, "Seats belong to a team: name the team", "invalid_seats");
   }

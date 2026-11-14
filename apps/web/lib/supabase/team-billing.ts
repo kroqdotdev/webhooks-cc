@@ -605,10 +605,25 @@ export async function resubscribeTeam(userId: string, teamId: string): Promise<v
   await updateTeamById(team.id, { cancel_at_period_end: false });
 }
 
+/**
+ * What an approved seat increase was priced on (a `billing.change`
+ * approval): the seats it added to and the end of the period its prorated
+ * charge covers. The increase refuses, right before Polar is asked, when
+ * either moved, because Polar would then charge for another period.
+ */
+export interface ApprovedSeatIncrease {
+  currentSeats: number;
+  periodEnd: string;
+}
+
+/** How close to the renewal an approved increase still goes ahead. */
+const RENEWAL_MARGIN_MS = 60_000;
+
 export async function updateTeamSeats(
   userId: string,
   teamId: string,
-  seats: number
+  seats: number,
+  approved?: ApprovedSeatIncrease
 ): Promise<void> {
   const team = await getTeamForOwner(userId, teamId);
   assertValidSeatCount(seats, team.seats);
@@ -638,6 +653,19 @@ export async function updateTeamSeats(
     const polar = createPolarClient();
     let increased: Record<string, unknown>;
     let increasedAt: Date;
+    // Checked with no await before the update: a renewal crossed since the
+    // approval's quote (or seats changed meanwhile) would charge a price
+    // nobody approved.
+    if (
+      approved &&
+      (team.seats !== approved.currentSeats ||
+        !(Date.now() < Date.parse(approved.periodEnd) - RENEWAL_MARGIN_MS))
+    ) {
+      throw new TeamBillingError(
+        "quote_changed",
+        "The billing period or the seats moved since this was priced"
+      );
+    }
     try {
       increased = (await polar.subscriptions.update(team.polar_subscription_id, {
         seats,

@@ -40,6 +40,7 @@ import {
 } from "@/lib/integrations/google";
 import { googleRefreshToken, listGoogleConnections } from "@/lib/supabase/google-connections";
 import {
+  BillingChangeRetry,
   loadBillingQuote,
   parseBillingChangeRequest,
   refusalOf,
@@ -112,7 +113,15 @@ interface ActionSpec<P> {
     userId: string,
     params: P,
     input?: unknown
-  ): Promise<{ result: Record<string, unknown>; stored: Json }>;
+  ): Promise<{
+    result: Record<string, unknown>;
+    stored: Json;
+    /**
+     * What only the approving browser gets, never stored nor handed to the
+     * asker ("approve" only): the checkout a billing change is paid at.
+     */
+    browser?: Record<string, unknown>;
+  }>;
   /** Takes back what `run` did, when the owner withdrew while it ran ("collect" only). */
   undo?(userId: string, stored: Json): Promise<void>;
 }
@@ -678,7 +687,7 @@ interface BillingParams extends BillingChangeRequest {
   quote: BillingQuote;
 }
 
-function longDay(isoTime: string | null): string {
+function longDay(isoTime: string | null | undefined): string {
   if (!isoTime) return "the end of the period";
   return new Date(isoTime).toLocaleDateString("en-US", {
     year: "numeric",
@@ -689,6 +698,9 @@ function longDay(isoTime: string | null): string {
 }
 
 function chargeWords(quote: BillingQuote): string {
+  if (typeof quote.maxPeriodCents === "number") {
+    return `Up to ${formatCents(quote.maxPeriodCents)} per period, billed at the end of each period for what was used; nothing now`;
+  }
   if (quote.dueNowCents <= 0) {
     return quote.applies === "checkout"
       ? "Nothing is charged at the checkout"
@@ -717,16 +729,23 @@ const billingChange: ActionSpec<BillingParams> = {
       return { ok: false, error: refusal.message, status: refusal.status };
     }
   },
+  // The sentence never holds the team's name (the asker controls it); the
+  // Account row names the team.
   summary: ({ quote }) => {
     const money =
-      quote.dueNowCents > 0
-        ? ` ${quote.approximate ? "About " : ""}${formatCents(quote.dueNowCents)} ${quote.applies === "checkout" ? "is paid at a checkout" : "is charged now"}.`
-        : " Nothing is charged now.";
+      typeof quote.maxPeriodCents === "number"
+        ? " Nothing is charged now."
+        : quote.dueNowCents > 0
+          ? ` ${quote.approximate ? "About " : ""}${formatCents(quote.dueNowCents)} ${quote.applies === "checkout" ? "is paid at a checkout" : "is charged now"}.`
+          : " Nothing is charged now.";
     return `${quote.change}${money}`;
   },
   details: ({ quote, teamName }) => {
     const facts: ActionDetail[] = [
-      { label: "Account", value: teamName ? `The team "${teamName}"` : "Your account" },
+      {
+        label: "Account",
+        value: teamName ? `A team you own, named ${teamName}` : "Your account",
+      },
       { label: "Change", value: quote.change },
       {
         label: "When",
@@ -742,7 +761,10 @@ const billingChange: ActionSpec<BillingParams> = {
     if (quote.renewalCents !== null) {
       facts.push({
         label: "Then renews at",
-        value: quote.renewalCents > 0 ? formatCents(quote.renewalCents) : "Nothing (it ends)",
+        value:
+          quote.renewalCents > 0
+            ? `${formatCents(quote.renewalCents)}${quote.renewsAt ? ` on ${longDay(quote.renewsAt)}` : ""}`
+            : "Nothing (it ends)",
       });
     }
     if (quote.notes.length > 0) facts.push({ label: "Details", value: quote.notes.join(" ") });
@@ -760,11 +782,25 @@ const billingChange: ActionSpec<BillingParams> = {
     applies: quote.applies,
     dueNowCents: quote.dueNowCents,
     approximate: quote.approximate,
+    ...(typeof quote.maxPeriodCents === "number" ? { maxPeriodCents: quote.maxPeriodCents } : {}),
   }),
   async run(userId, { teamId, change, quote }) {
-    const outcome = await runBillingChange(userId, { teamId, change }, quote);
-    const result = { ...outcome, change: quote.change } as Record<string, unknown>;
-    return { result, stored: result as Json };
+    let run;
+    try {
+      run = await runBillingChange(userId, { teamId, change }, quote);
+    } catch (error) {
+      // Nothing was touched: the approval goes back to pending.
+      if (error instanceof BillingChangeRetry) throw new ActionError(error.status, error.message);
+      throw error;
+    }
+    // The checkout's link goes to the approving browser only: the asker
+    // never gets a link that pays on the owner's card.
+    const result = { ...run.outcome, change: quote.change } as Record<string, unknown>;
+    return {
+      result,
+      stored: result as Json,
+      ...(run.checkoutUrl ? { browser: { checkoutUrl: run.checkoutUrl } } : {}),
+    };
   },
 };
 

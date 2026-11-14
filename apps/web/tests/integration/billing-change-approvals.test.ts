@@ -6,6 +6,11 @@ import { createClient } from "@supabase/supabase-js";
 const fake = vi.hoisted(() => ({
   subs: new Map<string, Record<string, unknown>>(),
   updates: [] as Array<{ id: string; body: Record<string, unknown> }>,
+  checkouts: [] as Array<Record<string, unknown>>,
+  // The next update fails like a timeout after Polar applied it.
+  failNextUpdate: false,
+  // The next read fails like Polar being unreachable.
+  failNextGet: false,
 }));
 
 vi.mock("@/lib/polar", async (importOriginal) => {
@@ -15,6 +20,10 @@ vi.mock("@/lib/polar", async (importOriginal) => {
     createPolarClient: () => ({
       subscriptions: {
         get: async (id: string) => {
+          if (fake.failNextGet) {
+            fake.failNextGet = false;
+            throw new Error("connect ECONNREFUSED");
+          }
           const sub = fake.subs.get(id);
           if (!sub) throw new Error(`no fake subscription ${id}`);
           return { ...sub };
@@ -29,7 +38,20 @@ vi.mock("@/lib/polar", async (importOriginal) => {
           if (typeof body.cancel_at_period_end === "boolean") {
             sub.cancel_at_period_end = body.cancel_at_period_end;
           }
+          if (fake.failNextUpdate) {
+            fake.failNextUpdate = false;
+            throw new Error("socket hang up");
+          }
           return { ...sub };
+        },
+      },
+      checkouts: {
+        create: async (body: Record<string, unknown>) => {
+          fake.checkouts.push(body);
+          return {
+            id: `chk_${fake.checkouts.length}`,
+            url: `https://polar.test/checkout/${fake.checkouts.length}`,
+          };
         },
       },
       orders: {
@@ -173,6 +195,9 @@ describe("billing changes an agent asks for", () => {
   beforeEach(() => {
     resetTeamSubscription();
     fake.updates = [];
+    fake.checkouts = [];
+    fake.failNextUpdate = false;
+    fake.failNextGet = false;
   });
 
   afterAll(async () => {
@@ -186,6 +211,8 @@ describe("billing changes an agent asks for", () => {
     const approval = asked.body.approval;
     expect(approval.action).toBe("billing.change");
     expect(approval.summary).toContain("from 3 to 5 seats");
+    // The asker names the team; the sentence never carries the name.
+    expect(approval.summary).not.toContain("Acme agents");
     expect(approval.summary).toMatch(/\$\d+\.\d\d is charged now/);
 
     const { data: row } = await admin
@@ -222,7 +249,7 @@ describe("billing changes an agent asks for", () => {
       { teamId, change: { kind: "seats", seats: 5 } },
       quote
     );
-    expect(again.executed).toBe(false);
+    expect(again.outcome.executed).toBe(false);
     expect(fake.updates).toHaveLength(1);
 
     await admin.from("teams").update({ seats: 3 }).eq("id", teamId);
@@ -251,6 +278,92 @@ describe("billing changes an agent asks for", () => {
     const unknown = await ask(owner, ownerKey, { teamId, change: { kind: "refund" } });
     expect(unknown.status).toBe(400);
     expect(fake.updates).toEqual([]);
+  });
+
+  it("records an unknown outcome when Polar fails after being asked, for both sides", async () => {
+    const asked = await ask(owner, ownerKey, { teamId, change: { kind: "seats", seats: 4 } });
+    expect(asked.status).toBe(202);
+    fake.failNextUpdate = true;
+    const decided = await approve(owner, asked.body.approval.code);
+    expect(decided.result).toMatchObject({ executed: null, code: "outcome_unknown" });
+    const polled = await pollApproval(asked.body.approval.id, { userId: owner, keyId: ownerKey });
+    expect(polled?.approval.status).toBe("completed");
+    expect(polled?.result).toMatchObject({ executed: null, code: "outcome_unknown" });
+    expect(String(polled?.result?.reason)).toMatch(/Check billing/);
+    // Never back to pending: approving again could charge twice.
+    await expect(approve(owner, asked.body.approval.code)).rejects.toThrow(/already answered/);
+  });
+
+  it("gives the approval back when billing cannot be read for the fresh quote", async () => {
+    const asked = await ask(owner, ownerKey, { teamId, change: { kind: "seats", seats: 4 } });
+    expect(asked.status).toBe(202);
+    fake.failNextGet = true;
+    await expect(approve(owner, asked.body.approval.code)).rejects.toMatchObject({ status: 503 });
+    const { data: row } = await admin
+      .from("approvals")
+      .select("status")
+      .eq("id", asked.body.approval.id)
+      .single();
+    expect(row!.status).toBe("pending");
+    expect(fake.updates).toEqual([]);
+    // Approved again once Polar answers, it runs.
+    const decided = await approve(owner, asked.body.approval.code);
+    expect(decided.result).toMatchObject({ executed: true });
+    await admin.from("teams").update({ seats: 3 }).eq("id", teamId);
+  });
+
+  it("two approvals for one team approved together never both run", async () => {
+    const a = await ask(owner, ownerKey, { teamId, change: { kind: "seats", seats: 4 } });
+    const b = await ask(owner, ownerKey, { teamId, change: { kind: "seats", seats: 5 } });
+    const results = await Promise.allSettled([
+      approve(owner, a.body.approval.code),
+      approve(owner, b.body.approval.code),
+    ]);
+    const ran = results.filter(
+      (r) =>
+        r.status === "fulfilled" && (r.value.result as { executed?: unknown }).executed === true
+    );
+    expect(ran).toHaveLength(1);
+    expect(fake.updates).toHaveLength(1);
+    const { count } = await admin
+      .from("billing_change_locks")
+      .select("account_key", { count: "exact", head: true })
+      .eq("account_key", `team:${teamId}`);
+    expect(count).toBe(0);
+    await admin.from("teams").update({ seats: 3 }).eq("id", teamId);
+  });
+
+  it("opens a checkout pinned to the approved count, and only the owner's browser gets it", async () => {
+    vi.stubEnv("POLAR_REQUEST_BLOCKS_PRODUCT_ID", "prod_bca_one_time");
+    vi.stubEnv("POLAR_MONTHLY_BLOCKS_PRODUCT_ID", "prod_bca_monthly");
+    vi.stubEnv("POLAR_MONTHLY_BLOCKS_ADD_PRODUCT_ID", "prod_bca_monthly_add");
+    vi.stubEnv("POLAR_OVERAGE_PRODUCT_ID", "prod_bca_overage");
+    try {
+      const asked = await ask(owner, ownerKey, {
+        teamId,
+        change: { kind: "capacity", capacity: { action: "buy_blocks", blocks: 3 } },
+      });
+      expect(asked.status).toBe(202);
+      expect(asked.body.approval.summary).toContain("for the team");
+      const decided = await approve(owner, asked.body.approval.code);
+      expect(decided.forBrowser).toEqual({ checkoutUrl: "https://polar.test/checkout/1" });
+      expect(decided.result).toMatchObject({
+        executed: true,
+        applied: "checkout",
+        checkout: "opened",
+      });
+      expect(fake.checkouts[0]).toMatchObject({ units: 3, min_units: 3, max_units: 3 });
+      const polled = await pollApproval(asked.body.approval.id, { userId: owner, keyId: ownerKey });
+      expect(JSON.stringify(polled)).not.toContain("polar.test");
+      const { data: row } = await admin
+        .from("approvals")
+        .select("result")
+        .eq("id", asked.body.approval.id)
+        .single();
+      expect(JSON.stringify(row!.result)).not.toContain("polar.test");
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 
   it("cancels the account's own plan at the period end once approved", async () => {

@@ -121,8 +121,40 @@ pub async fn change(
     .await
 }
 
-/// What an approved billing change did ("executed": false is reported as
-/// the quote_changed error instead).
+/// The error an approved billing change that was not (or maybe not) made
+/// reports: `executed: false` with `quote_changed` is quote_changed, with
+/// any other code billing_refused carrying the server's code, and
+/// `executed: null` is outcome_unknown. None when it was made.
+pub(crate) fn outcome_error(result: &Value) -> Option<CliError> {
+    let reason = || {
+        result
+            .get("reason")
+            .and_then(Value::as_str)
+            .unwrap_or("Nothing was changed.")
+            .to_string()
+    };
+    match result.get("executed")? {
+        Value::Bool(false) => {
+            let code = result
+                .get("code")
+                .and_then(Value::as_str)
+                .unwrap_or("refused");
+            Some(if code == "quote_changed" {
+                CliError::QuoteChanged(reason())
+            } else {
+                CliError::BillingRefused {
+                    code: code.to_string(),
+                    reason: reason(),
+                }
+            })
+        }
+        Value::Null => Some(CliError::OutcomeUnknown(reason())),
+        _ => None,
+    }
+}
+
+/// What an approved billing change did (one that was not made is reported
+/// as an error instead, outcome_error).
 pub(crate) fn print_outcome(result: &Value, executed: bool) {
     if !executed {
         return;
@@ -130,19 +162,13 @@ pub(crate) fn print_outcome(result: &Value, executed: bool) {
     let change = sanitize(result.get("change").and_then(Value::as_str).unwrap_or(""));
     println!("\n  {} {change}", green("Approved."));
     match result.get("applied").and_then(Value::as_str) {
-        Some("checkout") => {
-            let url = result
-                .get("checkoutUrl")
-                .and_then(Value::as_str)
-                .unwrap_or("");
-            println!(
-                "  {}",
-                dim("The owner was sent to a Polar checkout; it takes effect once paid.")
-            );
-            if !url.is_empty() {
-                println!("    {}", bold(url));
-            }
-        }
+        // Only the owner's browser gets the checkout; nothing is bought yet.
+        Some("checkout") => println!(
+            "  {}",
+            dim(
+                "A Polar checkout was opened for the owner; nothing is bought until it is paid there."
+            )
+        ),
         Some("renewal") => println!("  {}", dim("It takes effect at the renewal.")),
         _ => println!("  {}", dim("It took effect at once.")),
     }
@@ -522,5 +548,49 @@ mod tests {
             .unwrap_err();
         let c = crate::error::classify(&error);
         assert_eq!((c.code, c.exit), ("quote_changed", 8));
+    }
+
+    #[tokio::test]
+    async fn another_refusal_keeps_the_servers_code() {
+        let seen = std::sync::Arc::new(std::sync::Mutex::new(None));
+        let base = serve(app(
+            json!({
+                "executed": false, "code": "payment_failed",
+                "reason": "Nothing was changed: your payment method was declined."
+            }),
+            seen,
+        ))
+        .await;
+        let error = change(&client(&base), Some(TEAM), Change::Seats(5), opts(), true)
+            .await
+            .unwrap_err();
+        let c = crate::error::classify(&error);
+        assert_eq!((c.code, c.exit), ("billing_refused", 1));
+        assert_eq!(c.reason.as_deref(), Some("payment_failed"));
+        assert!(error.to_string().contains("declined"));
+    }
+
+    #[tokio::test]
+    async fn an_unknown_outcome_says_to_check_billing() {
+        let seen = std::sync::Arc::new(std::sync::Mutex::new(None));
+        let base = serve(app(
+            json!({
+                "executed": null, "code": "outcome_unknown",
+                "reason": "The change may or may not have been made. Check billing before asking again."
+            }),
+            seen,
+        ))
+        .await;
+        let error = change(&client(&base), Some(TEAM), Change::Seats(5), opts(), true)
+            .await
+            .unwrap_err();
+        let c = crate::error::classify(&error);
+        assert_eq!((c.code, c.exit), ("outcome_unknown", 1));
+    }
+
+    #[test]
+    fn a_made_change_is_no_error() {
+        assert!(outcome_error(&json!({ "executed": true, "applied": "now" })).is_none());
+        assert!(outcome_error(&json!({ "executed": true, "applied": "checkout" })).is_none());
     }
 }

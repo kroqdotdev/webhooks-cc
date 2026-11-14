@@ -343,6 +343,18 @@ export function validatePathSegment(segment: string, name: string): void {
 }
 
 /**
+ * The team a billing call names: undefined only when `teamId` was left out
+ * (the account's own billing). Any value given, an empty string included,
+ * must be a valid id, so a bad one never falls back to the account.
+ */
+function billingTeamId(options: { teamId?: string } | undefined): string | undefined {
+  if (!options || options.teamId === undefined) return undefined;
+  if (typeof options.teamId !== "string") throw new Error("Invalid teamId: must be a string");
+  validatePathSegment(options.teamId, "teamId");
+  return options.teamId;
+}
+
+/**
  * Picks one of the caller's teams by id (exact) or name (case-insensitive).
  * Team names are not unique, so a name that matches several teams is an
  * error rather than a guess; the CLI resolves `--team` the same way.
@@ -2560,12 +2572,9 @@ export class WebhooksCC {
       options: { resource?: CapacityResource; teamId?: string } = {}
     ): Promise<CapacityState> => {
       const query = `?resource=${encodeURIComponent(options.resource ?? "requests")}`;
-      if (options.teamId) {
-        validatePathSegment(options.teamId, "teamId");
-        return this.request<CapacityState>(
-          "GET",
-          `/teams/${options.teamId}/billing/capacity${query}`
-        );
+      const teamId = billingTeamId(options);
+      if (teamId !== undefined) {
+        return this.request<CapacityState>("GET", `/teams/${teamId}/billing/capacity${query}`);
       }
       return this.request<CapacityState>("GET", `/billing/capacity${query}`);
     },
@@ -2606,12 +2615,13 @@ export class WebhooksCC {
       }
     ): Promise<PendingApproval<BillingChangeResult>> => {
       const team = options.plan === "team" || options.plan === "team_business";
-      if (team !== Boolean(options.teamId)) {
+      const teamId = billingTeamId(options);
+      if (team !== (teamId !== undefined)) {
         throw new Error(
           team ? "a team plan needs teamId" : "pro and business are the account's own plans"
         );
       }
-      return this.billingChange(options.teamId, options.teamId ? "plan" : "change-plan", {
+      return this.billingChange(teamId, teamId !== undefined ? "plan" : "change-plan", {
         plan: options.plan,
         interval: options.interval ?? "month",
       });
@@ -2621,8 +2631,9 @@ export class WebhooksCC {
     keepPlan: async (
       options: BillingTarget = {}
     ): Promise<PendingApproval<BillingChangeResult>> => {
-      return options.teamId
-        ? this.billingChange(options.teamId, "plan", { action: "keep" })
+      const teamId = billingTeamId(options);
+      return teamId !== undefined
+        ? this.billingChange(teamId, "plan", { action: "keep" })
         : this.billingChange(undefined, "change-plan", null);
     },
 
@@ -2635,7 +2646,9 @@ export class WebhooksCC {
       seats: number
     ): Promise<PendingApproval<BillingChangeResult>> => {
       if (!Number.isInteger(seats) || seats < 1) throw new Error("seats must be a whole number");
-      return this.billingChange(teamId, "seats", { seats });
+      const team = billingTeamId({ teamId });
+      if (team === undefined) throw new Error("setSeats needs a teamId");
+      return this.billingChange(team, "seats", { seats });
     },
 
     /**
@@ -2646,7 +2659,7 @@ export class WebhooksCC {
     setMonthlyBlocks: async (
       options: BillingTarget & { blocks: number; resource?: CapacityResource }
     ): Promise<PendingApproval<BillingChangeResult>> => {
-      return this.billingChange(options.teamId, "capacity", {
+      return this.billingChange(billingTeamId(options), "capacity", {
         action: "set_monthly_blocks",
         blocks: options.blocks,
         resource: options.resource ?? "requests",
@@ -2657,7 +2670,7 @@ export class WebhooksCC {
     buyBlocks: async (
       options: BillingTarget & { blocks: number; resource?: "requests" | "pages" }
     ): Promise<PendingApproval<BillingChangeResult>> => {
-      return this.billingChange(options.teamId, "capacity", {
+      return this.billingChange(billingTeamId(options), "capacity", {
         action: "buy_blocks",
         blocks: options.blocks,
         resource: options.resource ?? "requests",
@@ -2675,7 +2688,7 @@ export class WebhooksCC {
         resource?: "requests" | "pages";
       }
     ): Promise<PendingApproval<BillingChangeResult>> => {
-      return this.billingChange(options.teamId, "capacity", {
+      return this.billingChange(billingTeamId(options), "capacity", {
         action: "set_overage",
         enabled: options.enabled,
         ...(options.maxBlocks !== undefined ? { maxBlocks: options.maxBlocks } : {}),
@@ -2685,14 +2698,14 @@ export class WebhooksCC {
 
     /** Cancel the subscription at the end of the period. With an API key the owner approves first. */
     cancel: async (options: BillingTarget = {}): Promise<PendingApproval<BillingChangeResult>> => {
-      return this.billingChange(options.teamId, "cancel", {});
+      return this.billingChange(billingTeamId(options), "cancel", {});
     },
 
     /** Undo a cancellation, so the subscription renews. With an API key the owner approves first. */
     resubscribe: async (
       options: BillingTarget = {}
     ): Promise<PendingApproval<BillingChangeResult>> => {
-      return this.billingChange(options.teamId, "resubscribe", {});
+      return this.billingChange(billingTeamId(options), "resubscribe", {});
     },
   };
 
@@ -2706,7 +2719,7 @@ export class WebhooksCC {
     body: Record<string, unknown> | null
   ): Promise<PendingApproval<BillingChangeResult>> {
     if (teamId !== undefined) validatePathSegment(teamId, "teamId");
-    const path = teamId ? `/teams/${teamId}/billing/${route}` : `/billing/${route}`;
+    const path = teamId !== undefined ? `/teams/${teamId}/billing/${route}` : `/billing/${route}`;
     const answer = await this.request<Record<string, unknown> | undefined>(
       body === null ? "DELETE" : "POST",
       path,
@@ -2719,7 +2732,7 @@ export class WebhooksCC {
       "Made the billing change.",
       (): BillingChangeResult =>
         typeof answer?.url === "string"
-          ? { executed: true, applied: "checkout", checkoutUrl: answer.url }
+          ? { executed: true, applied: "checkout", checkout: "opened", checkoutUrl: answer.url }
           : {
               executed: true,
               applied: answer?.applied === "renewal" ? "renewal" : "now",

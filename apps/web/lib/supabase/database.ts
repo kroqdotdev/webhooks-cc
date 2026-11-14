@@ -3089,6 +3089,14 @@ export interface Database {
         Args: { p_token: string };
         Returns: undefined;
       };
+      claim_billing_change_lock: {
+        Args: { p_account_key: string; p_holder: string; p_seconds: number };
+        Returns: boolean;
+      };
+      release_billing_change_lock: {
+        Args: { p_account_key: string; p_holder: string };
+        Returns: undefined;
+      };
       claim_quota_exhausted_users: {
         Args: { p_limit?: number };
         Returns: Array<{

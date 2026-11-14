@@ -391,7 +391,7 @@ whk billing overage on --max 4                # at most 4 blocks a period; or: o
 whk billing cancel                            # at the period end; whk billing resume undoes it
 ```
 
-Each change is quoted and waits for the account's owner (the team's owner with `--team`) to approve it, as `keys create` does, with the same `--remote`, `--no-browser`, `--no-wait` and `--timeout`: the page shows what changes, when, and what is charged now. Approving makes it only while a fresh quote still matches; otherwise nothing is changed and whk exits with `quote_changed` (status 8), so ask again. Adding blocks or turning overage on for the first time sends the owner to a Polar checkout. A browser session's change is made at once.
+Each change is quoted and waits for the account's owner (the team's owner with `--team`) to approve it, as `keys create` does, with the same `--remote`, `--no-browser`, `--no-wait` and `--timeout`: the page shows what changes, when, and what is charged now. Approving makes it only while a fresh quote still matches; otherwise nothing is changed and whk exits with `quote_changed` (status 8), so ask again. Refused with nothing changed for another reason (a declined card, fewer seats than members), it exits with `billing_refused` (status 1), the server's own code in the JSON error's `reason`; if Polar was asked and then something failed, it exits with `outcome_unknown` (status 1): the change may have been made, so check `whk billing` before asking again. Adding blocks or turning overage on for the first time sends the owner to a Polar checkout; whk reports only that a checkout was opened. A browser session's change is made at once.
 
 ## keys
 

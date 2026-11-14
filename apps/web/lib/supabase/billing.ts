@@ -9,6 +9,7 @@ import {
   type BillingInterval,
   type PaidPlan,
 } from "@/lib/polar";
+import { errors } from "@polar-sh/sdk/2026-10";
 import { planEntitlements } from "@/lib/entitlements";
 import { recordRefund } from "@/lib/billing/refunds";
 import {
@@ -246,10 +247,24 @@ export async function changePlanForUser(
   const { productId, applies } = planChangeFor(user, plan, interval);
   const now = applies === "now";
 
-  await createPolarClient().subscriptions.update(user.polar_subscription_id!, {
-    product_id: productId,
-    proration_behavior: now ? "invoice" : "next_period",
-  });
+  try {
+    await createPolarClient().subscriptions.update(user.polar_subscription_id!, {
+      product_id: productId,
+      proration_behavior: now ? "invoice" : "next_period",
+    });
+  } catch (error) {
+    // 402: a declined card (PaymentFailed) or a charge the cardholder must
+    // authenticate (PaymentActionRequired); neither changes the subscription.
+    if (error instanceof errors.SubscriptionsUpdate402Error) {
+      throw new BillingActionError(
+        "payment_failed",
+        error.error.error === "PaymentActionRequired"
+          ? "Your bank needs you to approve this payment, so the plan was not changed yet. Approve it from the link in your Polar receipt email, or update the payment method under Invoices and payment method, and try again."
+          : "Your payment method was declined, so the plan was not changed. Update the payment method under Invoices and payment method and try again."
+      );
+    }
+    throw error;
+  }
   if (!now) {
     // The webhook records it too; this shows it before that arrives.
     await updateUserById(user.id, { pending_plan: plan, pending_interval: interval });

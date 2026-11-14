@@ -687,12 +687,28 @@ async function domainState(account: CapacityAccount, row: AccountRow): Promise<C
 // Customer actions
 // ---------------------------------------------------------------------------
 
+/**
+ * How a checkout may change its count: a session's own checkout lets the
+ * customer adjust it there; one an approval opens (`exactUnits`) is pinned
+ * to the count the owner approved, so the checkout cannot sell more.
+ */
+export interface CheckoutUnits {
+  exactUnits?: boolean;
+}
+
+function unitBounds(blocks: number, maxBlocks: number, { exactUnits }: CheckoutUnits) {
+  return exactUnits
+    ? { min_units: blocks, max_units: blocks }
+    : { min_units: 1, max_units: maxBlocks };
+}
+
 /** A checkout for one-time blocks. */
 export async function createOneTimeBlocksCheckout(
   account: CapacityAccount,
   actingUserId: string,
   blocks: number,
-  resource: CapacityResource = "requests"
+  resource: CapacityResource = "requests",
+  units: CheckoutUnits = {}
 ): Promise<string> {
   const spec = RESOURCES[resource];
   const { oneTime } = requireProducts(resource);
@@ -703,8 +719,7 @@ export async function createOneTimeBlocksCheckout(
   const checkout = await createPolarClient().checkouts.create({
     products: [oneTime],
     units: blocks,
-    min_units: 1,
-    max_units: spec.maxBlocks,
+    ...unitBounds(blocks, spec.maxBlocks, units),
     customer_id: customerId,
     success_url: await successUrl(account, "blocks", spec),
     metadata: { capacity: "one_time", resource },
@@ -724,7 +739,8 @@ export async function changeMonthlyBlocks(
   account: CapacityAccount,
   actingUserId: string,
   blocks: number,
-  resource: CapacityResource = "requests"
+  resource: CapacityResource = "requests",
+  units: CheckoutUnits = {}
 ): Promise<MonthlyBlocksResult> {
   const spec = RESOURCES[resource];
   // Ending them never needs the plan, and only a checkout needs the products:
@@ -739,8 +755,7 @@ export async function changeMonthlyBlocks(
     const checkout = await polar.checkouts.create({
       products: [requireProducts(resource).monthly],
       units: blocks,
-      min_units: 1,
-      max_units: spec.maxBlocks,
+      ...unitBounds(blocks, spec.maxBlocks, units),
       customer_id: customerId,
       success_url: await successUrl(account, "monthly", spec),
       metadata: { capacity: "monthly", resource },

@@ -3056,27 +3056,16 @@ paths:
         content:
           application/json:
             schema:
-              type: object
-              required: [action]
-              properties:
-                action:
-                  type: string
-                  enum: [set_monthly_blocks, buy_blocks, set_overage]
-                resource:
-                  type: string
-                  enum: [requests, pages, domains]
-                  default: requests
-                blocks:
-                  type: integer
-                  minimum: 0
-                enabled:
-                  type: boolean
-                maxBlocks:
-                  type: integer
-                  minimum: 1
+              $ref: "#/components/schemas/CapacityChangeRequest"
       responses:
         "200":
-          description: Changed at once (a browser session)
+          description: >-
+            Changed at once (a browser session): `{ url }` for a change paid at a Polar checkout
+            (send the person there), else `{ state }`, the add-ons as they are now.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CapacityChanged"
         "202":
           $ref: "#/components/responses/BillingChangeAsked"
         "400":
@@ -3266,27 +3255,16 @@ paths:
         content:
           application/json:
             schema:
-              type: object
-              required: [action]
-              properties:
-                action:
-                  type: string
-                  enum: [set_monthly_blocks, buy_blocks, set_overage]
-                resource:
-                  type: string
-                  enum: [requests, pages, domains]
-                  default: requests
-                blocks:
-                  type: integer
-                  minimum: 0
-                enabled:
-                  type: boolean
-                maxBlocks:
-                  type: integer
-                  minimum: 1
+              $ref: "#/components/schemas/CapacityChangeRequest"
       responses:
         "200":
-          description: Changed at once (a browser session)
+          description: >-
+            Changed at once (a browser session): `{ url }` for a change paid at a Polar checkout
+            (send the person there), else `{ state }`, the add-ons as they are now.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CapacityChanged"
         "202":
           $ref: "#/components/responses/BillingChangeAsked"
         "400":
@@ -5536,6 +5514,148 @@ components:
         type: string
 
   schemas:
+    CapacityChangeRequest:
+      description: >-
+        One add-on change. `resource` is requests when left out; extra domains (`domains`) take
+        only set_monthly_blocks, a block being one domain.
+      oneOf:
+        - type: object
+          title: Monthly blocks
+          required: [action, blocks]
+          properties:
+            action:
+              type: string
+              const: set_monthly_blocks
+            resource:
+              type: string
+              enum: [requests, pages, domains]
+              default: requests
+            blocks:
+              type: integer
+              minimum: 0
+              description: Blocks renewed every period; 0 ends them at the renewal.
+        - type: object
+          title: One-time blocks
+          required: [action, blocks]
+          properties:
+            action:
+              type: string
+              const: buy_blocks
+            resource:
+              type: string
+              enum: [requests, pages]
+              default: requests
+            blocks:
+              type: integer
+              minimum: 1
+        - type: object
+          title: Overage
+          required: [action, enabled]
+          properties:
+            action:
+              type: string
+              const: set_overage
+            resource:
+              type: string
+              enum: [requests, pages]
+              default: requests
+            enabled:
+              type: boolean
+            maxBlocks:
+              type: integer
+              minimum: 1
+              description: The most a period may use, in blocks; the kept or default maximum when left out.
+      discriminator:
+        propertyName: action
+    CapacityChanged:
+      oneOf:
+        - type: object
+          title: Checkout
+          required: [url]
+          properties:
+            url:
+              type: string
+              format: uri
+              description: The Polar checkout the change is paid at; nothing changes until it is paid.
+        - type: object
+          title: Changed
+          required: [state]
+          properties:
+            state:
+              $ref: "#/components/schemas/CapacityState"
+    CapacityState:
+      type: object
+      description: >-
+        An account's or team's add-ons for one resource. For pages and domains the request
+        names count pages or domains.
+      required:
+        [
+          offered,
+          eligible,
+          planEnding,
+          periodStart,
+          periodEnd,
+          planRequests,
+          blockRequests,
+          used,
+          creditRequests,
+          blocks,
+          overage,
+        ]
+      properties:
+        offered:
+          type: boolean
+        eligible:
+          type: boolean
+        planEnding:
+          type: boolean
+        periodStart:
+          type: [string, "null"]
+          format: date-time
+        periodEnd:
+          type: [string, "null"]
+          format: date-time
+        planRequests:
+          type: integer
+        blockRequests:
+          type: integer
+        used:
+          type: integer
+        creditRequests:
+          type: integer
+        blocks:
+          oneOf:
+            - type: "null"
+            - type: object
+              required: [units, pendingUnits, cancelAtPeriodEnd, pastDue, periodEnd]
+              properties:
+                units:
+                  type: integer
+                pendingUnits:
+                  type: [integer, "null"]
+                cancelAtPeriodEnd:
+                  type: boolean
+                pastDue:
+                  type: boolean
+                periodEnd:
+                  type: [string, "null"]
+                  format: date-time
+        overage:
+          type: object
+          required: [subscribed, active, cancelAtPeriodEnd, pastDue, maxRequests, usedRequests]
+          properties:
+            subscribed:
+              type: boolean
+            active:
+              type: boolean
+            cancelAtPeriodEnd:
+              type: boolean
+            pastDue:
+              type: boolean
+            maxRequests:
+              type: integer
+            usedRequests:
+              type: integer
     Approval:
       type: object
       required: [id, status, action, summary, code, url, expiresAt]
@@ -8751,8 +8871,13 @@ components:
         Asked by an API key or agent token: the change is quoted and the account's owner (the
         team's owner) approves it at `url`, comparing `code`. The summary says what changes and
         what is charged now. Poll `GET /api/approvals/{id}`: its result is `{ executed: true,
-        applied: "now" | "renewal" | "checkout" }`, or `{ executed: false, code, reason }` when
-        the price or the subscription changed before the approval and nothing was changed.
+        applied: "now" | "renewal" }` (with `seatReductionLost` when a waiting seat reduction was
+        dropped), `{ executed: true, applied: "checkout", checkout: "opened" }` when a Polar
+        checkout was opened in the owner's browser (nothing is bought until it is paid; the
+        link never reaches the asker), `{ executed: false, code, reason }` when nothing was
+        changed (`quote_changed` when the price or the subscription moved, or the refusal's own
+        code, such as `payment_failed`), or `{ executed: null, code: "outcome_unknown", reason }`
+        when Polar was asked and then something failed: check billing before asking again.
       content:
         application/json:
           schema:
