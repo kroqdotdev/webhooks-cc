@@ -5,7 +5,7 @@ import {
   type HostInit,
   type ToolResultParams,
 } from "./bridge";
-import { el } from "./dom";
+import { button, el } from "./dom";
 import { recentOf, slugForEndpoint, viewOf, type RecentItem, type View } from "./model";
 import { problem, skeleton, strip, viewPanel, type Abilities, type StripState } from "./view";
 
@@ -127,7 +127,17 @@ function present(next: View): void {
   upgrading = next.kind === "email" && !next.full && next.id !== null;
   renderView();
   if (upgrading && next.id) void upgrade(next.id, generation);
-  void findRecent(next);
+  // The endpoint's recent requests cost tool calls (counted against the
+  // account's limit on the hosted server): loaded when asked, then kept up
+  // as the person clicks through.
+  if (recent) void findRecent(next);
+  else offerRecent(next);
+}
+
+function offerRecent(current: View): void {
+  recentSlot.replaceChildren(
+    button("Show recent requests at this endpoint", () => void findRecent(current))
+  );
 }
 
 /**

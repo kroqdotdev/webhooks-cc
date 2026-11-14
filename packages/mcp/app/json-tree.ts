@@ -3,10 +3,12 @@ import { el, type Child } from "./dom";
 /**
  * A JSON value as a tree of <details> elements: objects and arrays fold,
  * the first levels start open. Keys and values are text nodes. Past
- * MAX_NODES the caller shows the raw body instead.
+ * MAX_NODES or MAX_DEPTH the caller shows the raw body instead.
  */
 
 const MAX_NODES = 4_000;
+/** Deeper than this, the raw body: a recursion per level would run out of stack. */
+const MAX_DEPTH = 64;
 const OPEN_DEPTH = 3;
 
 class TooLarge extends Error {}
@@ -27,6 +29,7 @@ export function jsonTree(value: unknown): HTMLElement | null {
   };
 
   const node = (input: unknown, key: Child, depth: number, last: boolean): HTMLElement => {
+    if (depth > MAX_DEPTH) throw new TooLarge();
     const comma = last ? null : el("span", { class: "j-punct" }, ",");
     const label =
       key === null
@@ -89,8 +92,8 @@ export function jsonTree(value: unknown): HTMLElement | null {
 
   try {
     return el("div", { class: "j-tree" }, node(value, null, 0, true));
-  } catch (error) {
-    if (error instanceof TooLarge) return null;
-    throw error;
+  } catch {
+    // Too large, too deep, or anything else: the caller shows the raw body.
+    return null;
   }
 }

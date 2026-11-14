@@ -56,7 +56,7 @@ import {
   TEXT_FLOOR,
 } from "./compact";
 import { TOOL_CATALOG, toolAnnotations, type ToolGroup } from "./catalog";
-import { appToolHandler, appToolMeta } from "./app";
+import { appToolMeta } from "./app";
 
 const MAX_BODY_SIZE = MAX_OUTPUT;
 const HTTP_METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"] as const;
@@ -531,7 +531,6 @@ export type ToolResult = {
    * The text's JSON as an object, for the tools with the request inspector
    * (app.ts), which reads it. Always the same data as the text.
    */
-  structuredContent?: Record<string, unknown>;
   /**
    * An approval the person opens: a server whose client can open a URL for
    * the person (URL elicitation) asks it to, and the retried call finishes
@@ -1409,7 +1408,7 @@ function toolTarget(
         name,
         description,
         shape,
-        appToolHandler(name, wrapped),
+        wrapped,
         toolAnnotations(name),
         appToolMeta(name)
       );

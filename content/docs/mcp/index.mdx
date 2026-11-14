@@ -251,11 +251,11 @@ For provider templates in `send_webhook`, `secret` is required for every signed 
 
 - **A request:** the method, path and query, when it arrived and its size, the answer the sender got and the rule that chose it, the signature check, the headers (authorization, cookies and other secrets stay masked until you reveal them), and the body as folding JSON or as it was received.
 - **An email:** the sender, recipients and subject, the SPF, DKIM, DMARC and spam verdicts, the one-time code and the links found in it, the endpoint's named fields, the text part and the attachments. The HTML part is not shown there; `get_email` with `includeHtml` returns it.
-- **The endpoint's recent requests,** to open one after another. The inspector loads them through your client with `list_requests`, `get_request` and `get_email`, as your agent would.
+- **The endpoint's recent requests,** when you ask for them, to open one after another. The inspector loads them through your client with `list_requests`, `get_request` and `get_email`, as your agent would, so they count like your agent's own calls.
 
 The inspector reaches nothing on the network itself, opens a link only when you click Open, and shows every captured value as text. Copy buttons appear when your client lets the view use the clipboard.
 
-Clients without MCP Apps, Claude Code among them, show the same result as before. Both tools also return their JSON as `structuredContent`, the same data as the text, so a client that reads either one sees the same thing.
+Clients without MCP Apps, Claude Code among them, show the same result as before: the inspector reads the same text the model gets, so nothing is sent twice.
 
 ## Prompts
 

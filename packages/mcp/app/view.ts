@@ -181,7 +181,7 @@ function bodySection(view: HttpView, abilities: Abilities): HTMLElement | null {
     }
   }
   const tree = json ? jsonTree(parsed) : null;
-  const raw = el("pre", { class: "code raw" }, json ? JSON.stringify(parsed, null, 2) : text);
+  const raw = el("pre", { class: "code raw" }, json ? indented(parsed, text) : text);
   const frame = el("div", { class: "code-frame" });
   const aside: Child[] = [];
   if (tree) {
@@ -628,4 +628,13 @@ export function strip(
   const root = el("nav", { class: "recent", attrs: { "aria-label": "Recent requests" } }, head);
   append(root, body);
   return root;
+}
+
+/** The JSON indented, or as received when it cannot be (nested too deep). */
+function indented(value: unknown, fallback: string): string {
+  try {
+    return JSON.stringify(value, null, 2);
+  } catch {
+    return fallback;
+  }
 }

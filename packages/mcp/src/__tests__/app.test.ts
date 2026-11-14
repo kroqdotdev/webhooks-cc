@@ -5,7 +5,7 @@ import { InMemoryTransport } from "@modelcontextprotocol/server";
 import { serveStdio } from "@modelcontextprotocol/server/stdio";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { buildInspectorHtml, inspectorExports } from "../../scripts/build-app.mjs";
-import { APP_MIME_TYPE, INSPECTOR_URI, appToolMeta, withStructuredContent } from "../app";
+import { APP_MIME_TYPE, INSPECTOR_URI, appToolMeta } from "../app";
 import { INSPECTOR_HASH, INSPECTOR_HTML } from "../app-html";
 import { TOOL_CATALOG } from "../catalog";
 import { createServer, type CreateServerOptions } from "../index";
@@ -79,22 +79,7 @@ describe("the request inspector", () => {
     });
   });
 
-  it("adds structuredContent only to a successful JSON object answer", () => {
-    const text = JSON.stringify({ id: "req_1", headers: { a: "b" } }, null, 2);
-    expect(withStructuredContent({ content: [{ type: "text", text }] })).toEqual({
-      content: [{ type: "text", text }],
-      structuredContent: { id: "req_1", headers: { a: "b" } },
-    });
-    for (const result of [
-      { content: [{ type: "text" as const, text }], isError: true },
-      { content: [{ type: "text" as const, text: "[1, 2]" }] },
-      { content: [{ type: "text" as const, text: "Not JSON" }] },
-    ]) {
-      expect(withStructuredContent(result)).toEqual(result);
-    }
-  });
-
-  it("is served by the local server, and its tools name it and return structuredContent", async () => {
+  it("is served by the local server, and its tools name it; the answer stays text", async () => {
     const request = {
       id: "req_1",
       endpointId: "ep_1",
@@ -154,8 +139,9 @@ describe("the request inspector", () => {
       arguments: { requestId: "req_1" },
     })) as { content: Array<{ text: string }>; structuredContent?: unknown; isError?: boolean };
     expect(result.isError).toBeFalsy();
-    expect(result.structuredContent).toEqual(JSON.parse(result.content[0].text));
-    expect(result.structuredContent).toMatchObject({ id: "req_1", method: "POST" });
+    // The inspector reads the text: a second copy would only cost the model tokens.
+    expect(result.structuredContent).toBeUndefined();
+    expect(JSON.parse(result.content[0].text)).toMatchObject({ id: "req_1", method: "POST" });
   });
 
   it("is named by the sandbox's get_request too", async () => {

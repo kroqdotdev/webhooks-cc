@@ -1,7 +1,6 @@
 import type { McpServer } from "@modelcontextprotocol/server";
 import { INSPECTOR_HASH, INSPECTOR_HTML } from "./app-html";
 import { TOOL_CATALOG } from "./catalog";
-import type { ToolResult } from "./tools";
 
 /**
  * The request inspector: an MCP App (the io.modelcontextprotocol/ui
@@ -36,36 +35,6 @@ export function appToolMeta(name: string): Record<string, unknown> | undefined {
   if (TOOL_CATALOG[name]?.ui !== true) return undefined;
   // The nested key is the spec's; the flat one is what older hosts read.
   return { ui: { resourceUri: INSPECTOR_URI }, "ui/resourceUri": INSPECTOR_URI };
-}
-
-/**
- * A successful answer with its JSON also as structuredContent, which the
- * inspector reads. It is the very object the text holds (parsed back from
- * it), because some clients (Claude Code) give the model structuredContent
- * instead of the text: the model sees the same data either way.
- */
-export function withStructuredContent(result: ToolResult): ToolResult {
-  if (result.isError || result.approval || result.content.length !== 1) return result;
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(result.content[0].text);
-  } catch {
-    return result;
-  }
-  if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) return result;
-  return { ...result, structuredContent: parsed as Record<string, unknown> };
-}
-
-/**
- * A handler for registration: the inspector's tools also return
- * structuredContent, the rest are left as they are.
- */
-export function appToolHandler<A, C>(
-  name: string,
-  handler: (args: A, call?: C) => Promise<ToolResult>
-): (args: A, call?: C) => Promise<ToolResult> {
-  if (TOOL_CATALOG[name]?.ui !== true) return handler;
-  return async (args, call) => withStructuredContent(await handler(args, call));
 }
 
 /** Serves the inspector from `server`; call it before connecting. */
