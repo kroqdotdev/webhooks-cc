@@ -207,6 +207,14 @@ describe("parseDestinationInput", () => {
       });
     });
 
+    it("keeps a Sheets destination's config: null is refused while it stays one", () => {
+      expect(change({ config: null }, sheets)).toEqual({
+        ok: false,
+        error: "A Google Sheets destination needs its config.",
+      });
+      expect(change({ format: "sheets", config: null }, sheets)).toMatchObject({ ok: false });
+    });
+
     it("refuses a config for a format that takes none", () => {
       const refused = {
         ok: false,

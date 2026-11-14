@@ -328,8 +328,10 @@ export function parseDestinationInput(
     changes.config = config as unknown as Json;
     changes.url = dropUrl(config);
   } else if (body.config !== undefined && !leaving) {
-    if (body.config === null) changes.config = null;
-    else {
+    if (body.config === null) {
+      if (nextFormat === "sheets") return fail("A Google Sheets destination needs its config.");
+      changes.config = null;
+    } else {
       const config = parseSheetsConfig(body.config, {
         http: changes.http ?? options.current?.http ?? true,
         email: changes.email ?? options.current?.email ?? true,

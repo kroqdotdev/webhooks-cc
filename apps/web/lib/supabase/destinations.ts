@@ -350,6 +350,12 @@ export async function updateDestination(
   const current = await rowFor(endpointId, id);
   if (!current) return null;
   const update = columnsFor(changes, current.headers_encrypted);
+  // A Sheets destination or a file drop is never what the endpoint's old
+  // forward* or notificationUrl fields stand for: it gives up the role, so
+  // the next forwardUrl or notificationUrl makes a destination that takes it.
+  // (The only SQL reading the role re-homes deliveries queued without a
+  // destination by the capture_webhook() of before migration 00063.)
+  if (changes.format === "sheets" || changes.format === "file_drop") update.legacy_role = null;
   // Formats that sign need a secret; destinations made for notifications had none.
   if (!current.secret_encrypted && isSigningKeyConfigured()) {
     update.secret_encrypted = toBytea(encryptSigningSecret(generateForwardSecret()));
@@ -581,9 +587,7 @@ export async function getDestinationSummaries(
 export function primaryDestination<
   T extends { role: string | null; position: number; format?: string | null },
 >(destinations: T[]): T | null {
-  const urls = destinations.filter(
-    (destination) => destination.format !== "sheets" && destination.format !== "file_drop"
-  );
+  const urls = destinations.filter((destination) => !holdsTarget(destination.format ?? null));
   return (
     urls.find((destination) => destination.role === "forward") ??
     urls.find((destination) => destination.role !== "notify") ??
@@ -591,11 +595,42 @@ export function primaryDestination<
   );
 }
 
-/** The destination the old notificationUrl stands for. */
-export function notificationDestination<T extends { role: string | null }>(
+/** The destination the old notificationUrl stands for; never a Sheets destination or a drop. */
+export function notificationDestination<T extends { role: string | null; format?: string | null }>(
   destinations: T[]
 ): T | null {
-  return destinations.find((destination) => destination.role === "notify") ?? null;
+  return (
+    destinations.find(
+      (destination) => destination.role === "notify" && !holdsTarget(destination.format ?? null)
+    ) ?? null
+  );
+}
+
+/** Sheets destinations and file drops: their target is in their config, not a URL. */
+function holdsTarget(format: string | null): boolean {
+  return format === "sheets" || format === "file_drop";
+}
+
+/**
+ * Takes a role from a Sheets destination or a file drop that still holds
+ * it (one changed before updateDestination gave roles up), so a new
+ * destination can take it: the role is unique per endpoint.
+ */
+async function releaseRole(
+  endpointId: string,
+  destinations: { id: string; role: string | null; format?: string | null }[],
+  role: "forward" | "notify"
+): Promise<void> {
+  const holder = destinations.find(
+    (destination) => destination.role === role && holdsTarget(destination.format ?? null)
+  );
+  if (!holder) return;
+  const { error } = await createAdminClient()
+    .from("endpoint_destinations")
+    .update({ legacy_role: null })
+    .eq("endpoint_id", endpointId)
+    .eq("id", holder.id);
+  if (error) throw error;
 }
 
 /** The old forwarding fields as set before (lib/supabase/endpoints.ts). */
@@ -643,6 +678,7 @@ export async function applyLegacyForwarding(
       if (fields.forwardEnabled) throw new Error("Add a URL before turning forwarding on.");
       return;
     }
+    await releaseRole(endpointId, destinations, "forward");
     await createDestination(
       endpointId,
       {
@@ -653,9 +689,7 @@ export async function applyLegacyForwarding(
         ...changes,
         url,
       },
-      // A forward row that became a Sheets destination or a drop keeps the
-      // role (one per endpoint); the new one is the primary all the same.
-      destinations.some((destination) => destination.role === "forward") ? null : "forward"
+      "forward"
     );
     return;
   }
@@ -687,6 +721,7 @@ export async function applyLegacyNotificationUrl(
     await updateDestination(endpointId, current.id, { url, enabled: true });
     return;
   }
+  await releaseRole(endpointId, destinations, "notify");
   await createDestination(
     endpointId,
     {

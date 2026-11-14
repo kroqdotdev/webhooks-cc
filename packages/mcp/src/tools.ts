@@ -3190,7 +3190,7 @@ export function registerTools(
 
   server.tool(
     "configure_forwarding",
-    "Change an endpoint's primary forwarding destination (the one the endpoint's forward* fields stand for): the URL, on or off, which kinds, the format, your own headers, and the advanced options. Only the arguments you pass change. Owner only. For several destinations, filters, templates, throttling or delays, use add_destination and update_destination.",
+    "Change an endpoint's primary forwarding destination (the one the endpoint's forward* fields stand for): the URL, on or off, which kinds, the format, your own headers, and the advanced options. Only the arguments you pass change. The primary is the first destination that sends to a URL: Google Sheets destinations and file drops never are, and turning forwarding off leaves them as they are. Owner only. For several destinations, filters, templates, throttling or delays, use add_destination and update_destination.",
     {
       slug: z.string().describe("The endpoint slug"),
       url: httpUrlSchema

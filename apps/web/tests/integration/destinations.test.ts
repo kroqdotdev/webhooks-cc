@@ -578,7 +578,8 @@ describe("destinations through the API: formats and their configs", () => {
 
   it("keeps the endpoint's old forward fields off Sheets destinations and drops", async () => {
     const e = await endpoint();
-    // The old forward row, since turned into a Sheets destination.
+    // An old forward row turned into a Sheets destination before roles were
+    // given up on the change (written straight to the table).
     const sheets = await createDestination(
       e.id,
       {
@@ -610,14 +611,112 @@ describe("destinations through the API: formats and their configs", () => {
       url: `https://docs.google.com/spreadsheets/d/${spreadsheetId}/edit`,
       config: sheetsConfig,
     });
-    // A later change goes to the same new destination, not a third one.
+    // The new destination took the role; a later change goes to it.
     await updateEndpointBySlugForUser({ userId, slug: e.slug, forwardUrl: `${base}/legacy2` });
     const listed = await listDestinations(e.id);
     expect(listed).toHaveLength(2);
+    expect(listed.find((d) => d.id === sheets.id)?.role).toBeNull();
     expect(listed.find((d) => d.id !== sheets.id)).toMatchObject({
       url: `${base}/legacy2`,
       format: "json",
-      role: null,
+      role: "forward",
     });
+  });
+
+  it("moves the forward role off a destination that becomes a Sheets one, for good", async () => {
+    const e = await endpoint();
+    const connection = await saveGoogleConnection(userId, {
+      sub: `sub-forward-role-${Date.now()}`,
+      email: "owner@acme.example",
+      refreshToken: "rt-forward-role",
+      scopes: "drive.file",
+    });
+    // R1: made by the old fields.
+    await updateEndpointBySlugForUser({ userId, slug: e.slug, forwardUrl: `${base}/r1` });
+    const [r1] = await listDestinations(e.id);
+    expect(r1).toMatchObject({ role: "forward", url: `${base}/r1` });
+
+    // R1 becomes a Sheets destination through the API and gives up the role.
+    const config = { ...sheetsConfig, connectionId: connection.id };
+    const toSheets = await call("PATCH", `/endpoints/${e.slug}/destinations/${r1.id}`, {
+      format: "sheets",
+      config,
+    });
+    expect(toSheets.status).toBe(200);
+    expect((await listDestinations(e.id))[0].role).toBeNull();
+
+    // forwardUrl makes R2, with the role.
+    const r2Record = await updateEndpointBySlugForUser({
+      userId,
+      slug: e.slug,
+      forwardUrl: `${base}/r2`,
+    });
+    expect(r2Record?.forwardUrl).toBe(`${base}/r2`);
+    const r2 = (await listDestinations(e.id)).find((d) => d.id !== r1.id)!;
+    expect(r2).toMatchObject({ role: "forward", url: `${base}/r2` });
+
+    // R1 back to json: R2 stays the primary.
+    const back = await call("PATCH", `/endpoints/${e.slug}/destinations/${r1.id}`, {
+      format: "json",
+      url: `${base}/r1-again`,
+    });
+    expect(back.status).toBe(200);
+    const after = await updateEndpointBySlugForUser({ userId, slug: e.slug, name: "R2 stays" });
+    expect(after?.forwardUrl).toBe(`${base}/r2`);
+    await updateEndpointBySlugForUser({ userId, slug: e.slug, forwardUrl: `${base}/r2b` });
+    expect(await row(r1.id)).toMatchObject({ url: `${base}/r1-again` });
+    expect(await row(r2.id)).toMatchObject({ url: `${base}/r2b` });
+  });
+
+  it("keeps notificationUrl off a Sheets destination", async () => {
+    const e = await endpoint();
+    const sheets = await createDestination(
+      e.id,
+      {
+        url: `https://docs.google.com/spreadsheets/d/${spreadsheetId}/edit`,
+        format: "sheets",
+        email: true,
+        http: false,
+        config: sheetsConfig,
+      },
+      "notify"
+    );
+    const before = await updateEndpointBySlugForUser({ userId, slug: e.slug, name: "Notify" });
+    expect(before?.notificationUrl).toBeNull();
+
+    // Setting it adds a chat destination; clearing it removes only that one.
+    await updateEndpointBySlugForUser({ userId, slug: e.slug, notificationUrl: `${base}/notify` });
+    expect(await row(sheets.id)).toMatchObject({
+      format: "sheets",
+      url: `https://docs.google.com/spreadsheets/d/${spreadsheetId}/edit`,
+    });
+    const listed = await listDestinations(e.id);
+    expect(listed).toHaveLength(2);
+    expect(listed.find((d) => d.id !== sheets.id)).toMatchObject({
+      role: "notify",
+      format: "chat",
+      url: `${base}/notify`,
+    });
+    await updateEndpointBySlugForUser({ userId, slug: e.slug, notificationUrl: null });
+    expect((await listDestinations(e.id)).map((d) => d.id)).toEqual([sheets.id]);
+  });
+
+  it("refuses config: null on a Sheets destination", async () => {
+    const e = await endpoint();
+    const sheets = await createDestination(e.id, {
+      url: `https://docs.google.com/spreadsheets/d/${spreadsheetId}/edit`,
+      format: "sheets",
+      email: true,
+      http: false,
+      config: sheetsConfig,
+    });
+    const res = await call("PATCH", `/endpoints/${e.slug}/destinations/${sheets.id}`, {
+      config: null,
+    });
+    expect(res.status).toBe(400);
+    expect(((await res.json()) as { error: string }).error).toBe(
+      "A Google Sheets destination needs its config."
+    );
+    expect(await row(sheets.id)).toMatchObject({ config: sheetsConfig });
   });
 });
