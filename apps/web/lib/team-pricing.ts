@@ -197,8 +197,49 @@ export function quotePlanChange(input: {
   creditBalanceCents: number;
   nowMs?: number;
 }): PlanChangeQuote {
+  return {
+    plan: input.plan,
+    interval: input.interval,
+    seats: input.seats,
+    applies: input.applies,
+    ...prorateProductSwitch({
+      ...input,
+      newAmountCents: input.seats * input.newPricePerSeatCents,
+    }),
+  };
+}
+
+/** What a product switch costs, as Polar bills it. All amounts are in cents. */
+export interface ProductSwitchPrice {
+  creditCents: number;
+  chargeCents: number;
+  creditAppliedCents: number;
+  dueNowCents: number;
+  renewalCents: number;
+  periodEnd: string;
+}
+
+/**
+ * The arithmetic behind quotePlanChange, for any subscription moving to
+ * another product (a team's plan, or a person's: Pro to Business). "now"
+ * with the same interval keeps the period, crediting the unused share of
+ * the current price and charging the same share of the new one; "now" to
+ * annual starts a new year at the full price less that credit; "renewal"
+ * costs nothing now.
+ */
+export function prorateProductSwitch(input: {
+  interval: TeamInterval;
+  currentInterval: TeamInterval;
+  currentAmountCents: number;
+  newAmountCents: number;
+  applies: "now" | "renewal";
+  periodStartMs: number;
+  periodEndMs: number;
+  creditBalanceCents: number;
+  nowMs?: number;
+}): ProductSwitchPrice {
   const nowMs = input.nowMs ?? Date.now();
-  const renewalCents = input.seats * input.newPricePerSeatCents;
+  const renewalCents = input.newAmountCents;
   const periodMs = input.periodEndMs - input.periodStartMs;
   const left = periodMs > 0 ? Math.min(1, Math.max(0, (input.periodEndMs - nowMs) / periodMs)) : 0;
   const newYear = input.interval === "year" && input.currentInterval !== "year";
@@ -211,10 +252,6 @@ export function quotePlanChange(input: {
     ? new Date(nowMs).setUTCFullYear(new Date(nowMs).getUTCFullYear() + 1)
     : input.periodEndMs;
   return {
-    plan: input.plan,
-    interval: input.interval,
-    seats: input.seats,
-    applies: input.applies,
     creditCents,
     chargeCents,
     creditAppliedCents,

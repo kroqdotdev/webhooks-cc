@@ -237,3 +237,93 @@ describe("teams and layouts without the dashboard", () => {
     expect(JSON.parse(fetchMock.mock.calls[2][1].body)).toEqual({ requestId: ID });
   });
 });
+
+describe("billing changes", () => {
+  const TEAM = "4f8d6a5e-1c2f-4f3a-9d7e-2a1b3c4d5e6f";
+  const original = globalThis.fetch;
+  afterEach(() => {
+    globalThis.fetch = original;
+  });
+
+  it("asks the owner, then hands over what was done", async () => {
+    const asked = { ...approval("pending"), action: "billing.change" };
+    const done = { ...approval("completed"), action: "billing.change" };
+    const result = { executed: true, applied: "now", change: 'Change the team "Acme".' };
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(answer({ approval: asked }, 202))
+      .mockResolvedValueOnce(answer({ approval: done, result }));
+    globalThis.fetch = fetchMock;
+
+    const pending = await client().billing.setSeats(TEAM, 5);
+    expect(pending.action).toBe("billing.change");
+    expect(await pending.wait({ pollInterval: 1_000 })).toEqual(result);
+    expect(fetchMock.mock.calls[0][0]).toBe(`${BASE_URL}/api/teams/${TEAM}/billing/seats`);
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({ seats: 5 });
+  });
+
+  it("sends each change to its route", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockImplementation(() =>
+        Promise.resolve(
+          answer({ approval: { ...approval("pending"), action: "billing.change" } }, 202)
+        )
+      );
+    globalThis.fetch = fetchMock;
+    const billing = client().billing;
+    await billing.changePlan({ plan: "business", interval: "year" });
+    await billing.changePlan({ plan: "team_business", teamId: TEAM });
+    await billing.keepPlan();
+    await billing.keepPlan({ teamId: TEAM });
+    await billing.setMonthlyBlocks({ blocks: 2, resource: "pages" });
+    await billing.buyBlocks({ blocks: 1, teamId: TEAM });
+    await billing.setOverage({ enabled: true, maxBlocks: 4 });
+    await billing.cancel();
+    await billing.resubscribe({ teamId: TEAM });
+    const calls = fetchMock.mock.calls.map(([url, opts]) => [
+      opts.method,
+      url.replace(BASE_URL, ""),
+      opts.body ? JSON.parse(opts.body) : undefined,
+    ]);
+    expect(calls).toEqual([
+      ["POST", "/api/billing/change-plan", { plan: "business", interval: "year" }],
+      ["POST", `/api/teams/${TEAM}/billing/plan`, { plan: "team_business", interval: "month" }],
+      ["DELETE", "/api/billing/change-plan", undefined],
+      ["POST", `/api/teams/${TEAM}/billing/plan`, { action: "keep" }],
+      [
+        "POST",
+        "/api/billing/capacity",
+        { action: "set_monthly_blocks", blocks: 2, resource: "pages" },
+      ],
+      [
+        "POST",
+        `/api/teams/${TEAM}/billing/capacity`,
+        { action: "buy_blocks", blocks: 1, resource: "requests" },
+      ],
+      [
+        "POST",
+        "/api/billing/capacity",
+        { action: "set_overage", enabled: true, maxBlocks: 4, resource: "requests" },
+      ],
+      ["POST", "/api/billing/cancel", {}],
+      ["POST", `/api/teams/${TEAM}/billing/resubscribe`, {}],
+    ]);
+    await expect(billing.changePlan({ plan: "team" })).rejects.toThrow("teamId");
+    await expect(billing.changePlan({ plan: "pro", teamId: TEAM })).rejects.toThrow("own plans");
+  });
+
+  it("hands over a refusal on a fresh quote as executed: false", async () => {
+    const result = { executed: false, code: "quote_changed", reason: "Nothing was changed." };
+    globalThis.fetch = vi
+      .fn()
+      .mockResolvedValueOnce(
+        answer({ approval: { ...approval("pending"), action: "billing.change" } }, 202)
+      )
+      .mockResolvedValueOnce(
+        answer({ approval: { ...approval("completed"), action: "billing.change" }, result })
+      );
+    const pending = await client().billing.cancel();
+    expect(await pending.wait({ pollInterval: 1_000 })).toEqual(result);
+  });
+});

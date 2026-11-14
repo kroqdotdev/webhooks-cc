@@ -9,6 +9,7 @@ import {
 } from "@/lib/approvals/store";
 import { authorizationUrl, browserCookie, googleConfig } from "@/lib/integrations/google";
 import { reportError } from "@/lib/observability";
+import { auditActionFor, parseBillingChangeRequest } from "@/lib/billing/change";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { parseJsonBodyWith } from "@/lib/request-validation";
 import { z } from "zod";
@@ -67,6 +68,17 @@ export async function POST(request: Request) {
       metadata: { action: decided.action },
     });
     if (decided.done) await auditDone(request, approver.userId, decided);
+    if (decided.done && decided.action === "billing.change") {
+      const outcome = (decided.result ?? {}) as Record<string, unknown>;
+      // Refused on a fresh quote: nothing changed, and the page says why.
+      if (outcome.executed === false) {
+        return Response.json({ status: "unchanged", reason: outcome.reason });
+      }
+      // Paid at a checkout: this browser goes on to pay it.
+      if (typeof outcome.checkoutUrl === "string") {
+        return Response.json({ status: "redirect", url: outcome.checkoutUrl });
+      }
+    }
     // "done": the action ran on approval; "approved": the asker collects it.
     return Response.json({ status: approve ? (decided.done ? "done" : "approved") : "denied" });
   } catch (err) {
@@ -91,7 +103,7 @@ async function auditDone(
   const result = (decided.result ?? {}) as Record<string, unknown>;
   const params = (decided.params ?? {}) as Record<string, unknown>;
   const via = { approvalId: decided.id };
-  if (decided.action === "request_shares.create") {
+  if (decided.action === "askedshares.create") {
     await auditUserAction(request, userId, {
       action: "request.share_created",
       status: 200,
@@ -136,6 +148,29 @@ async function auditDone(
         samples: Array.isArray(params.requestIds) ? params.requestIds.length : 0,
         proposed: Array.isArray(result.fields) ? result.fields.length : 0,
         dropped: result.dropped,
+      },
+    });
+  } else if (decided.action === "billing.change") {
+    const asked = parseBillingChangeRequest(params);
+    if (!asked) return;
+    const executed = result.executed === true;
+    await auditUserAction(request, userId, {
+      action: auditActionFor(asked),
+      status: executed ? 200 : 409,
+      reason: executed ? undefined : String(result.reason ?? ""),
+      teamId: asked.teamId,
+      metadata: {
+        ...via,
+        change: asked.change.kind,
+        ...(asked.change.kind === "plan"
+          ? { plan: asked.change.plan, interval: asked.change.interval }
+          : asked.change.kind === "seats"
+            ? { seats: asked.change.seats }
+            : asked.change.kind === "capacity"
+              ? { ...asked.change.capacity }
+              : {}),
+        applied: result.applied,
+        code: result.code,
       },
     });
   } else if (decided.action === "account.rename") {

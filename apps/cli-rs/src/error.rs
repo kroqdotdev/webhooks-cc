@@ -13,7 +13,7 @@
 //! | 5      | `forbidden`             | Not allowed: the plan, a limit, or a permission  |
 //! | 6      | `rate_limited`          | Too many requests; wait and retry                |
 //! | 7      | `server_error`, `network_error`, `request_timeout` | Our side or the network failed; retry |
-//! | 8      | `timeout`, `approval_expired` | `whk wait` (or another wait) ran out of time, or an approval expired |
+//! | 8      | `timeout`, `approval_expired`, `quote_changed` | `whk wait` (or another wait) ran out of time, an approval expired, or an approved billing change was not made because its quote changed |
 //! | 9      | `confirmation_required`, `cancelled`, `approval_denied` | A destructive command was not confirmed, or an approval was refused |
 
 use serde_json::{Value, json};
@@ -62,6 +62,9 @@ pub enum CliError {
     /// A test delivery reached its destination's server (or tried to) and
     /// was not accepted: the destination's fault, so no retry of ours helps.
     DeliveryFailed(String),
+    /// An approved billing change was not made: its price or the
+    /// subscription moved after it was asked for.
+    QuoteChanged(String),
 }
 
 impl std::fmt::Display for CliError {
@@ -71,7 +74,8 @@ impl std::fmt::Display for CliError {
             | CliError::ConfirmationRequired(m)
             | CliError::Timeout(m)
             | CliError::Usage(m)
-            | CliError::DeliveryFailed(m) => f.write_str(m),
+            | CliError::DeliveryFailed(m)
+            | CliError::QuoteChanged(m) => f.write_str(m),
             CliError::Cancelled => f.write_str("Cancelled."),
             CliError::LoginExpired => f.write_str("The login code expired before it was approved."),
             CliError::LoginDenied => f.write_str("The login was refused on its approval page."),
@@ -166,6 +170,8 @@ pub fn classify(error: &anyhow::Error) -> Classified {
                 CliError::DeliveryFailed(_) => Classified::new("delivery_failed", 1).hint(
                     "Fix the destination (its URL, headers or server), then run the test again.",
                 ),
+                CliError::QuoteChanged(_) => Classified::new("quote_changed", 8)
+                    .hint("Nothing was changed. Ask again for a new quote."),
             };
         }
         if let Some(e) = cause.downcast_ref::<ApiError>() {

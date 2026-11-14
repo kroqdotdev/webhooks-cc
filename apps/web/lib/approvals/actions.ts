@@ -39,6 +39,15 @@ import {
   spreadsheetUrl,
 } from "@/lib/integrations/google";
 import { googleRefreshToken, listGoogleConnections } from "@/lib/supabase/google-connections";
+import {
+  loadBillingQuote,
+  parseBillingChangeRequest,
+  refusalOf,
+  runBillingChange,
+  type BillingChangeRequest,
+  type BillingQuote,
+} from "@/lib/billing/change";
+import { formatCents } from "@/lib/team-pricing";
 
 /**
  * What an approval can ask for. Each action checks its parameters when the
@@ -65,7 +74,8 @@ export type ApprovalAction =
   | "google.pick"
   | "ai.assist"
   | "teams.delete"
-  | "teams.invite";
+  | "teams.invite"
+  | "billing.change";
 
 export interface ActionDetail {
   label: string;
@@ -659,6 +669,105 @@ const aiAssist: ActionSpec<AssistParams> = {
   },
 };
 
+// ---------------------------------------------------------------------------
+// A billing change: a plan, seats, add-ons, cancelling or keeping a plan
+// ---------------------------------------------------------------------------
+
+interface BillingParams extends BillingChangeRequest {
+  teamName: string | null;
+  quote: BillingQuote;
+}
+
+function longDay(isoTime: string | null): string {
+  if (!isoTime) return "the end of the period";
+  return new Date(isoTime).toLocaleDateString("en-US", {
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+    timeZone: "UTC",
+  });
+}
+
+function chargeWords(quote: BillingQuote): string {
+  if (quote.dueNowCents <= 0) {
+    return quote.applies === "checkout"
+      ? "Nothing is charged at the checkout"
+      : "Nothing is charged now";
+  }
+  const amount = `${quote.approximate ? "about " : ""}${formatCents(quote.dueNowCents)}`;
+  return quote.applies === "checkout"
+    ? `${amount}, paid at a checkout`
+    : `${amount}, charged to the card on file when you approve`;
+}
+
+const billingChange: ActionSpec<BillingParams> = {
+  runAt: "approve",
+  async parse(input, userId) {
+    const request = parseBillingChangeRequest(input);
+    if (!request) return { ok: false, error: "Unknown billing change" };
+    try {
+      const loaded = await loadBillingQuote(userId, request);
+      return {
+        ok: true,
+        params: { ...request, teamName: loaded.teamName, quote: loaded.at(Date.now()) },
+      };
+    } catch (error) {
+      const refusal = refusalOf(error);
+      if (!refusal) throw error;
+      return { ok: false, error: refusal.message, status: refusal.status };
+    }
+  },
+  summary: ({ quote }) => {
+    const money =
+      quote.dueNowCents > 0
+        ? ` ${quote.approximate ? "About " : ""}${formatCents(quote.dueNowCents)} ${quote.applies === "checkout" ? "is paid at a checkout" : "is charged now"}.`
+        : " Nothing is charged now.";
+    return `${quote.change}${money}`;
+  },
+  details: ({ quote, teamName }) => {
+    const facts: ActionDetail[] = [
+      { label: "Account", value: teamName ? `The team "${teamName}"` : "Your account" },
+      { label: "Change", value: quote.change },
+      {
+        label: "When",
+        value:
+          quote.applies === "renewal"
+            ? `At the renewal on ${longDay(quote.effectiveAt)}`
+            : quote.applies === "checkout"
+              ? "Once paid at the checkout that approving opens"
+              : "At once, when you approve",
+      },
+      { label: "Charged", value: chargeWords(quote) },
+    ];
+    if (quote.renewalCents !== null) {
+      facts.push({
+        label: "Then renews at",
+        value: quote.renewalCents > 0 ? formatCents(quote.renewalCents) : "Nothing (it ends)",
+      });
+    }
+    if (quote.notes.length > 0) facts.push({ label: "Details", value: quote.notes.join(" ") });
+    facts.push(
+      { label: "Prices", value: "VAT included where it applies" },
+      {
+        label: "If anything changed",
+        value: "Approving changes nothing when the price or the subscription moved since the ask",
+      }
+    );
+    return facts;
+  },
+  // The approve button names what approving costs.
+  page: ({ quote }) => ({
+    applies: quote.applies,
+    dueNowCents: quote.dueNowCents,
+    approximate: quote.approximate,
+  }),
+  async run(userId, { teamId, change, quote }) {
+    const outcome = await runBillingChange(userId, { teamId, change }, quote);
+    const result = { ...outcome, change: quote.change } as Record<string, unknown>;
+    return { result, stored: result as Json };
+  },
+};
+
 function days(count: number): string {
   if (count === 1) return "1 day";
   if (count % 365 === 0) return count === 365 ? "1 year" : `${count / 365} years`;
@@ -675,6 +784,7 @@ const ACTIONS: Record<ApprovalAction, ActionSpec<unknown>> = {
   "ai.assist": aiAssist as ActionSpec<unknown>,
   "teams.delete": deleteTeamAction as ActionSpec<unknown>,
   "teams.invite": inviteToTeam as ActionSpec<unknown>,
+  "billing.change": billingChange as ActionSpec<unknown>,
 };
 
 export function actionSpec(action: ApprovalAction): ActionSpec<unknown> {

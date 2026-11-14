@@ -14,8 +14,26 @@ Business adds attachment parsing at volume, 50 layouts per endpoint, a
 custom inbound domain and file drops. Past the quota, captures and emails
 get 429 or a bounce until it resets. `get_usage` (or `whk usage`) shows
 usage, what is left and when it resets; `get_billing` (or `whk billing`)
-shows what the account pays for. Plan changes, seats and add-ons are bought
-by the person in the browser; never start a checkout yourself.
+shows what the account pays for.
+
+## Billing changes (account group)
+
+Each is an approval shown with its quote: what changes, when (at once or at
+the renewal) and what is charged now. Ask only when the person wants the
+change; never to spend money on your own.
+
+- `change_plan` (pro or business; team or team_business with `teamId`;
+  `keep: true` drops a change waiting for the renewal), `set_seats` for a
+  team, `change_addons` (monthly blocks, one-time blocks, overage),
+  `cancel_subscription`, `resume_subscription`.
+- Adding blocks, or turning overage on for the first time, sends the owner
+  to a Polar checkout when they approve.
+- If the price or the subscription changed before they approve,
+  `wait_for_approval` says nothing was changed: ask again for a new quote.
+- A first plan or a team's first subscription is a checkout the person
+  starts in the browser.
+
+CLI: `whk billing plan|keep-plan|seats|blocks|buy|overage|cancel|resume`.
 
 ## Teams (teams group)
 
@@ -25,7 +43,7 @@ A team shares endpoints between its members under one pooled quota.
   for an endpoint you own. Requests on a shared endpoint bill the team.
 - `create_team` makes it, but it stays suspended until the owner subscribes
   in the browser (2 seats or more). `quote_team_change` prices a seat or
-  plan change without making it.
+  plan change without making it; `set_seats` and `change_plan` ask for it.
 - `invite_to_team` emails someone, so it is an approval; `list_invites`,
   `answer_invite`, `withdraw_invite`, `remove_team_member`, `leave_team`,
   `rename_team`. `delete_team` is an approval and ends the subscription.

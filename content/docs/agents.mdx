@@ -100,7 +100,7 @@ When you want to keep what an agent set up, or let it work in your account, conn
 After you connect it:
 
 - Its sandbox endpoints become ordinary endpoints in your account, with the same URLs and the requests they already captured. They no longer expire, and new captures count against your plan.
-- The agent can use the API on your behalf, like an API key: manage endpoints and read what they capture, list or revoke API keys, share links and connected agents, and add and route custom domains. A new API key, a new share link, removing a domain, inviting someone to a team, deleting a team and renaming the account need your approval (see [Approvals](#approvals)). It cannot pay for anything, change your plan or delete the account.
+- The agent can use the API on your behalf, like an API key: manage endpoints and read what they capture, list or revoke API keys, share links and connected agents, and add and route custom domains. A new API key, a new share link, removing a domain, inviting someone to a team, deleting a team and renaming the account need your approval (see [Approvals](#approvals)). It cannot delete the account, and a billing change (a plan, seats, add-ons, cancelling) waits for your approval with its price.
 - The connection lasts 90 days and is saved in [the agent credential file](#the-agent-credential-file), so later sessions of the MCP server, the CLI and the SDKs on that machine start connected. You approve the agent once, not every session.
 - You get an email saying an agent was connected.
 
@@ -189,7 +189,7 @@ auth.md also lets an agent present a signed statement from an identity provider 
 
 ## Approvals
 
-Some things only you should allow, even when an agent or an API key asks for them: a new API key, a new [share link](/docs/dashboard-features#share-a-request) (it publishes a request to anyone with the link), removing a [custom domain](/docs/email-capture#your-own-domain) (getting it back means verifying it again), inviting someone to a [team](/docs/teams) (it emails the address the asker names) or deleting one (its subscription ends at once), and renaming the account, connecting a Google account or choosing a spreadsheet from Drive for [Sheets destinations](/docs/forwarding#google-sheets), and [AI setup](/docs/layouts#set-it-up-with-ai), which sends the emails you see listed to Anthropic. The route answers such a request with `202` and an approval instead of acting:
+Some things only you should allow, even when an agent or an API key asks for them: a new API key, a new [share link](/docs/dashboard-features#share-a-request) (it publishes a request to anyone with the link), removing a [custom domain](/docs/email-capture#your-own-domain) (getting it back means verifying it again), inviting someone to a [team](/docs/teams) (it emails the address the asker names) or deleting one (its subscription ends at once), and renaming the account, connecting a Google account or choosing a spreadsheet from Drive for [Sheets destinations](/docs/forwarding#google-sheets), [AI setup](/docs/layouts#set-it-up-with-ai), which sends the emails you see listed to Anthropic, and [billing changes](#billing-changes). The route answers such a request with `202` and an approval instead of acting:
 
 ```json
 {
@@ -211,7 +211,11 @@ The asker polls `GET /api/approvals/{id}` with the same API key (or any token of
 
 An MCP client that can open a link for you (URL elicitation, in the MCP specification) gets the approval as a request to open the page: it shows you the link with the code to compare, and the tool finishes on its own once you approve, without a `wait_for_approval` call. Other clients get the link and the code as text.
 
-Billing is read only for agents: `GET /api/billing` (`whk billing`, `client.billing.get()`, the `get_billing` tool) says what the account pays for, and the price of a change to a team's plan or seats can be quoted (`client.billing.quoteTeamPlan()`, `quoteTeamSeats()`), but paying for anything stays with you in the browser.
+### Billing changes
+
+An agent can ask for a billing change, never make one: changing the plan or its interval, a team's seats, add-on blocks or overage, cancelling a plan or undoing a cancellation. The route quotes it first, as the dashboard would (what changes, whether it applies at once or at the renewal, and what is charged now), and the approval page shows that quote. Approving it makes exactly that change, and only while a fresh quote, read again at that moment, still matches: if the price, the period, the seats or the subscription moved in the meantime, nothing is changed, the page says why, and the asker's result is `{ "executed": false, "reason": "..." }`, so it asks again. An approval is answered once, and a change already made cannot be made again from it, so nothing is charged twice. Adding blocks, buying one-time blocks or turning overage on for the first time sends you to a Polar checkout when you approve, where you pay; a first plan, a team's first subscription and the billing portal stay in the browser.
+
+A personal change is asked with a key or agent of the account; a team's only with one of the team's owner, and members' keys are refused. `GET /api/billing` (`whk billing`, `client.billing.get()`, `get_billing`) says what the account pays for, and `quoteTeamPlan()` and `quoteTeamSeats()` price a team change without asking for it. The CLI (`whk billing plan`, `keep-plan`, `seats`, `blocks`, `buy`, `overage`, `cancel`, `resume`), the TypeScript SDK (`client.billing.changePlan()`, `keepPlan()`, `setSeats()`, `setMonthlyBlocks()`, `buyBlocks()`, `setOverage()`, `cancel()`, `resubscribe()`) and the MCP server (`change_plan`, `set_seats`, `change_addons`, `cancel_subscription`, `resume_subscription`) ask and wait like the other approvals.
 
 To get the link by email as well, for an agent that runs where nobody sees its output, turn on **Email me when an agent asks for approval** under **Account, Connected agents**.
 

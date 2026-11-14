@@ -14,13 +14,17 @@ const mocks = vi.hoisted(() => {
   return {
     TeamBillingError,
     authenticateSessionRequest: vi.fn(),
+    askForBillingChange: vi.fn(),
     resubscribeTeam: vi.fn(),
   };
 });
 
 vi.mock("@/lib/api-auth", () => ({
   authenticateSessionRequest: mocks.authenticateSessionRequest,
+  authenticateRequestRequireUser: mocks.authenticateSessionRequest,
 }));
+
+vi.mock("@/lib/billing/ask", () => ({ askForBillingChange: mocks.askForBillingChange }));
 
 vi.mock("@/lib/supabase/team-billing", () => ({
   TeamBillingError: mocks.TeamBillingError,
@@ -41,6 +45,7 @@ describe("POST /api/teams/[teamId]/billing/resubscribe", () => {
     vi.clearAllMocks();
     vi.spyOn(console, "error").mockImplementation(() => {});
     mocks.authenticateSessionRequest.mockResolvedValue({ success: true, userId: "user_123" });
+    mocks.askForBillingChange.mockResolvedValue(null);
     mocks.resubscribeTeam.mockResolvedValue(undefined);
   });
 
@@ -64,5 +69,21 @@ describe("POST /api/teams/[teamId]/billing/resubscribe", () => {
     await expect(response.json()).resolves.toEqual({
       error: "Subscription is not scheduled for cancellation",
     });
+  });
+  test("an API key gets the owner's approval instead of the change", async () => {
+    const auth = { success: true, userId: "user_123", keyId: "key_1" };
+    mocks.authenticateSessionRequest.mockResolvedValue(auth);
+    mocks.askForBillingChange.mockResolvedValue(Response.json({ approval: {} }, { status: 202 }));
+    const { POST } = await import("./route");
+    const response = await POST(
+      new Request("https://webhooks.cc/api/teams/team_123/billing/resubscribe", { method: "POST" }),
+      params
+    );
+
+    expect(response.status).toBe(202);
+    expect(mocks.askForBillingChange).toHaveBeenCalledWith(expect.any(Request), auth, "team_123", {
+      kind: "resubscribe",
+    });
+    expect(mocks.resubscribeTeam).not.toHaveBeenCalled();
   });
 });
