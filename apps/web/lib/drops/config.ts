@@ -1,3 +1,4 @@
+import { createPrivateKey } from "node:crypto";
 import { utils as sshUtils } from "ssh2";
 import { parseColumns, type SheetsColumn } from "@/lib/integrations/sheets";
 import type { Json } from "@/lib/supabase/database";
@@ -246,38 +247,83 @@ export function parseDropSecret(value: unknown, protocol: DropProtocol): DropSec
   return { password: secret.password };
 }
 
+const NEW_KEY_ADVICE =
+  'Make a new key for the drop (ssh-keygen -t ed25519 -N "" -f drop_key), add drop_key.pub to the server\'s authorized_keys, and send drop_key.';
+
 /**
- * A private key as drops will use it (each line trimmed), or why it cannot
- * be: SFTP connects with ssh2 and no passphrase, so the key is parsed the
- * same way here, when it is saved, rather than failing at the first drop.
- * ssh2 reads OpenSSH keys and PEM RSA, EC and DSA keys without a
- * passphrase; it refuses PKCS#8 (`BEGIN PRIVATE KEY`) and encrypted keys.
+ * A private key as drops will use it, or why it cannot be. SFTP connects
+ * with ssh2 and no passphrase, so the key is checked the same way here, when
+ * it is saved, rather than failing at the first drop. ssh2 reads OpenSSH
+ * keys and PEM RSA and EC keys; an RSA or EC key in PKCS#8 form (`BEGIN
+ * PRIVATE KEY`) is converted to PEM here and stored that way. Each line is
+ * trimmed, and a key whose line breaks became spaces is put back on its lines.
  */
 function usablePrivateKey(value: string): string | { problem: string } {
-  const key =
+  let key =
     value
       .split(/\r?\n|\r/)
       .map((line) => line.trim())
       .join("\n")
       .trim() + "\n";
-  const rewrite =
-    'Rewrite a copy of it as an OpenSSH key without a passphrase (ssh-keygen -p -N "" -f <copy>) and send that.';
-  const encrypted = `dropSecret.privateKey is protected by a passphrase, which drops cannot use. ${rewrite}`;
-  if (/-----BEGIN ENCRYPTED PRIVATE KEY-----|Proc-Type:\s*4,ENCRYPTED/.test(key)) {
-    return { problem: encrypted };
+  // One line only: a key whose line breaks became spaces.
+  const oneLine = /^(-----BEGIN [A-Z0-9 ]+-----) *([^\n]*?) *(-----END [A-Z0-9 ]+-----)\n$/.exec(
+    key
+  );
+  if (oneLine) key = [oneLine[1], ...oneLine[2].split(/\s+/), oneLine[3]].join("\n") + "\n";
+
+  const encrypted = {
+    problem:
+      'dropSecret.privateKey is protected by a passphrase, which drops cannot use. Remove it from a copy of the key (chmod 600 <copy>, then ssh-keygen -p -N "" -f <copy>) and send the copy.',
+  };
+  if (/-----BEGIN ENCRYPTED PRIVATE KEY-----|Proc-Type:\s*4,ENCRYPTED/.test(key)) return encrypted;
+
+  if (key.startsWith("-----BEGIN PRIVATE KEY-----")) {
+    const converted = convertPkcs8(key);
+    if (converted === null) {
+      return {
+        problem: `dropSecret.privateKey is a PKCS#8 key of a kind drops cannot use (only RSA and EC keys are converted). ${NEW_KEY_ADVICE}`,
+      };
+    }
+    key = converted;
   }
+
   const parsed = sshUtils.parseKey(key);
   const first = Array.isArray(parsed) ? parsed[0] : parsed;
   if (first instanceof Error) {
-    if (/passphrase|encrypted/i.test(first.message)) return { problem: encrypted };
+    if (/passphrase|encrypted/i.test(first.message)) return encrypted;
+    if (oneLine) {
+      return {
+        problem:
+          "dropSecret.privateKey arrived on one line: its line breaks were lost. Send the key file as it is, a line break after each line.",
+      };
+    }
     return {
-      problem: `dropSecret.privateKey is not a key drops can use: they take a whole OpenSSH key (-----BEGIN OPENSSH PRIVATE KEY-----) or a PEM RSA, EC or DSA key, not PKCS#8 (-----BEGIN PRIVATE KEY-----). ${rewrite}`,
+      problem: `dropSecret.privateKey is not a key drops can use: they take a whole OpenSSH key (-----BEGIN OPENSSH PRIVATE KEY-----), or an RSA or EC key in PEM or PKCS#8 form, without a passphrase. ${NEW_KEY_ADVICE}`,
     };
   }
   if (!first || !first.isPrivateKey()) {
     return { problem: "dropSecret.privateKey is a public key; send the private one." };
   }
   return key;
+}
+
+/**
+ * A PKCS#8 RSA or EC key as PEM (PKCS#1 or SEC1), which ssh2 reads; null
+ * for any other kind (an Ed25519 key among them) or a key that does not parse.
+ */
+function convertPkcs8(key: string): string | null {
+  try {
+    const parsed = createPrivateKey(key);
+    if (parsed.asymmetricKeyType === "rsa") {
+      return parsed.export({ type: "pkcs1", format: "pem" }).toString();
+    }
+    if (parsed.asymmetricKeyType === "ec") {
+      return parsed.export({ type: "sec1", format: "pem" }).toString();
+    }
+    return null;
+  } catch {
+    return null;
+  }
 }
 
 /** Whether a stored secret suits a protocol (a protocol change needs a new one). */

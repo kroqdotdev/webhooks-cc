@@ -86,13 +86,38 @@ describe("parseDropSecret, SFTP keys", () => {
         .export({ type: "pkcs8", format: "pem", cipher: "aes-128-cbc", passphrase: "made-up" })
         .toString(),
     ]) {
-      expect(sftp(key)).toMatch(/protected by a passphrase.*ssh-keygen -p -N "" -f/);
+      expect(sftp(key)).toMatch(
+        /protected by a passphrase.*chmod 600 <copy>, then ssh-keygen -p -N "" -f <copy>/
+      );
     }
   });
 
-  it("asks for a PKCS#8 key to be rewritten", () => {
-    const pkcs8 = rsa.export({ type: "pkcs8", format: "pem" }).toString();
-    expect(sftp(pkcs8)).toMatch(/not PKCS#8.*ssh-keygen -p -N "" -f/);
+  it("converts PKCS#8 RSA and EC keys to PEM", () => {
+    const fromRsa = keyOf(rsa.export({ type: "pkcs8", format: "pem" }).toString());
+    expect(fromRsa).toBe(rsa.export({ type: "pkcs1", format: "pem" }).toString());
+    const fromEc = keyOf(ec.export({ type: "pkcs8", format: "pem" }).toString());
+    expect(fromEc).toBe(ec.export({ type: "sec1", format: "pem" }).toString());
+    for (const key of [fromRsa, fromEc]) {
+      const parsed = sshUtils.parseKey(key ?? "");
+      expect(parsed instanceof Error).toBe(false);
+    }
+  });
+
+  it("asks for a new key for an Ed25519 PKCS#8 key", () => {
+    const ed25519 = generateKeyPairSync("ed25519")
+      .privateKey.export({ type: "pkcs8", format: "pem" })
+      .toString();
+    expect(sftp(ed25519)).toMatch(/PKCS#8 key of a kind.*ssh-keygen -t ed25519 -N "" -f drop_key/);
+  });
+
+  it("puts a key pasted on one line back on its lines", () => {
+    const flat = (key: string) => key.trim().replace(/\n/g, " ");
+    expect(keyOf(flat(openssh.private))).toBe(openssh.private.trim() + "\n");
+    const pem = rsa.export({ type: "pkcs1", format: "pem" }).toString();
+    expect(keyOf(flat(pem))).toBe(pem);
+    expect(
+      sftp("-----BEGIN OPENSSH PRIVATE KEY----- made up -----END OPENSSH PRIVATE KEY-----")
+    ).toMatch(/line breaks were lost/);
   });
 
   it("refuses a key cut off, made up or public", () => {
