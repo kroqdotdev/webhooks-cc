@@ -15,8 +15,8 @@ a spreadsheet with a destination, instead of writing a relay. Owner only.
 
 ## Add one
 
-`add_destination` with the endpoint `slug`, a `url`, `http` and `email`
-(booleans, both on by default) and:
+`add_destination` with the endpoint `slug`, a `url` (not for Google Sheets,
+below), `http` and `email` (booleans, both on by default) and:
 
 - `format`: `"auto"` (picked from the URL), `"as_received"` (the request
   unchanged), `"json"` (a signed envelope; the default for email),
@@ -63,14 +63,25 @@ A row per email (or per line item a layout found) in a spreadsheet.
 
 1. `list_google_connections`; if none, `connect_google` (an approval: the
    person picks the Google account).
-2. `create_spreadsheet` with a header row, or `pick_spreadsheet` (an
-   approval: the person chooses one in Google's picker). `list_sheet_tabs`
-   lists its tabs.
-3. Add the destination with `format: "sheets"` and `config`
-   (`connectionId`, `spreadsheetId`, `sheet`, `rows`: `"email"` or
-   `"line_items"`, `columns`: `[{ "header", "value" }]` with placeholders)
-   through the SDK (`client.destinations.create`) or
-   `whk api -X POST endpoints/<slug>/destinations -d @destination.json`.
+2. `create_spreadsheet` with a header row (its `id` is the spreadsheet), or
+   `pick_spreadsheet` (an approval: the person chooses one in Google's
+   picker; `create_spreadsheet` with its `spreadsheetId` then writes the
+   header row if the first row is empty). `list_sheet_tabs` lists its tabs.
+3. `add_destination` with `format: "sheets"` and, instead of a `url`,
+   `config`: `connectionId`, `spreadsheetId`, `sheet` (the tab, default
+   `"Sheet1"`), `rows` (`"email"` or `"line_items"`) and `columns`
+   (`[{ "header": "Subject", "value": "{{ subject }}" }]`, in the header
+   row's order). `update_destination` replaces the whole `config`, again with
+   `format: "sheets"`; `rows` left out keeps the current mode, and `sheet`
+   left out keeps the current tab on the same spreadsheet (another
+   spreadsheet starts on `"Sheet1"`). A Sheets destination's URL is its
+   spreadsheet's, so never pass a `url` for one.
+4. To send a Sheets destination somewhere else instead, `update_destination`
+   with the new `format` and a `url`; its spreadsheet settings are cleared.
+
+These tools are in the sheets group, except `add_destination` and
+`update_destination` (core). No Google credential ever passes through the
+agent.
 
 CLI: `whk google` (`list`, `connect`, `pick`, `tabs`, `create-sheet`).
 

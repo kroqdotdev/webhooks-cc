@@ -4,15 +4,24 @@
  * and refresh_token grants (PKCE, replay and rotation), revocation, and the
  * MCP transport in both protocol eras.
  *
- * Needs the local Supabase stack with migration 00066. Tools that call the
- * API are not exercised here (they go over loopback to a running server);
- * the transport, authentication and tool list are. Run with:
- *   cd apps/web && npx vitest run --config vitest.config.ts tests/integration/oauth-mcp.test.ts
+ * Needs the local Supabase stack with migration 00066. Most cases call the
+ * route handlers in this process; the last block connects over HTTP to a
+ * running web server at WEB_URL (start it with EMAIL_FORWARDING_WORKER=false),
+ * because tools that call the API go over that server's loopback. Run with:
+ *   cd apps/web && WEB_URL=http://localhost:3000 npx vitest run --config vitest.config.ts tests/integration/oauth-mcp.test.ts
  */
 import { createHash, randomBytes } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createClient } from "@supabase/supabase-js";
-import { adminClient, APP, bearer, configureAgentEnv, formPost, jsonPost } from "./agent-helpers";
+import {
+  adminClient,
+  APP,
+  bearer,
+  configureAgentEnv,
+  formPost,
+  jsonPost,
+  nextIp,
+} from "./agent-helpers";
 
 configureAgentEnv();
 
@@ -452,5 +461,262 @@ describe("OAuth for remote MCP clients", () => {
       expect(call.status).toBe(401);
       expect((await refresh(tokens.refresh_token)).body.error).toBe("invalid_grant");
     });
+  });
+});
+
+/**
+ * A client given the MCP server's address with tool settings, over HTTP
+ * against a running web server (WEB_URL), as a remote client would connect:
+ * the 401's challenge, both metadata documents, registration, consent and
+ * the token, then tools through each address. Tool calls reach the API over
+ * the server's own loopback, so they need the server.
+ */
+describe("OAuth for an MCP address with tool settings", () => {
+  const WEB = (process.env.WEB_URL ?? "http://localhost:3000").replace(/\/+$/, "");
+  // The server names itself by NEXT_PUBLIC_APP_URL (APP); it listens on WEB.
+  const local = (url: string) => (url.startsWith(APP) ? `${WEB}${url.slice(APP.length)}` : url);
+  const ALL = `${APP}/mcp?tools=all`;
+  const TEAMS_READONLY = `${APP}/mcp?tools=core,teams&readonly=1`;
+
+  let asMetadata: Record<string, unknown>;
+  let settingsClient: string;
+
+  async function post(
+    url: string,
+    body: unknown,
+    headers: Record<string, string> = {}
+  ): Promise<Response> {
+    const form = headers["content-type"] === "application/x-www-form-urlencoded";
+    return fetch(local(url), {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-forwarded-for": nextIp(),
+        ...headers,
+      },
+      body: form
+        ? new URLSearchParams(body as Record<string, string>).toString()
+        : JSON.stringify(body),
+    });
+  }
+
+  /** Consent as the signed-in human for `resource`; the code and its verifier. */
+  async function consent(resource: string) {
+    const pair = verifierPair();
+    const params = {
+      client_id: settingsClient,
+      redirect_uri: "http://127.0.0.1:50124/callback",
+      response_type: "code",
+      state: "s2",
+      code_challenge: pair.challenge,
+      code_challenge_method: "S256",
+      scope: "webhooks:read webhooks:write",
+      resource,
+    };
+    const shown = await fetch(
+      `${WEB}/api/oauth2/authorize?${new URLSearchParams(params).toString()}`,
+      { headers: { authorization: `Bearer ${session}`, "x-forwarded-for": nextIp() } }
+    );
+    expect(shown.status).toBe(200);
+    const res = await post(
+      `${APP}/api/oauth2/authorize`,
+      { ...params, decision: "approve" },
+      { authorization: `Bearer ${session}` }
+    );
+    expect(res.status).toBe(200);
+    const redirect = new URL(((await res.json()) as { redirect: string }).redirect);
+    expect(redirect.searchParams.get("iss")).toBe(APP);
+    return { code: redirect.searchParams.get("code")!, verifier: pair.verifier, params };
+  }
+
+  async function exchange(
+    grant: { code: string; verifier: string; params: { redirect_uri: string } },
+    resource: string
+  ) {
+    const res = await post(
+      asMetadata.token_endpoint as string,
+      {
+        grant_type: "authorization_code",
+        code: grant.code,
+        code_verifier: grant.verifier,
+        redirect_uri: grant.params.redirect_uri,
+        client_id: settingsClient,
+        resource,
+      },
+      { "content-type": "application/x-www-form-urlencoded" }
+    );
+    return { status: res.status, body: (await res.json()) as Record<string, string> };
+  }
+
+  async function call(address: string, accessToken: string, body: Record<string, unknown>) {
+    const res = await post(address, body, {
+      accept: "application/json, text/event-stream",
+      authorization: `Bearer ${accessToken}`,
+      "mcp-protocol-version": "2025-11-25",
+    });
+    expect(res.status).toBe(200);
+    return (await rpc(res)).result;
+  }
+
+  async function toolNames(address: string, accessToken: string): Promise<string[]> {
+    const result = await call(address, accessToken, {
+      jsonrpc: "2.0",
+      id: 1,
+      method: "tools/list",
+    });
+    return result.tools.map((tool) => tool.name);
+  }
+
+  async function callTool(address: string, accessToken: string, name: string) {
+    return call(address, accessToken, {
+      jsonrpc: "2.0",
+      id: 2,
+      method: "tools/call",
+      params: { name, arguments: {} },
+    });
+  }
+
+  beforeAll(async () => {
+    const up = await fetch(`${WEB}/.well-known/oauth-authorization-server`).catch(() => null);
+    if (!up?.ok) {
+      throw new Error(
+        `Start the web server at ${WEB} (EMAIL_FORWARDING_WORKER=false), or set WEB_URL`
+      );
+    }
+  });
+
+  it("discovers the server from a 401 on the address with settings", async () => {
+    const challenged = await post(ALL, { jsonrpc: "2.0", id: 1, method: "tools/list" });
+    expect(challenged.status).toBe(401);
+    const header = challenged.headers.get("www-authenticate") ?? "";
+    const metadataUrl = /resource_metadata="([^"]+)"/.exec(header)?.[1];
+    expect(metadataUrl).toBe(`${APP}/.well-known/oauth-protected-resource/mcp?tools=all`);
+
+    // RFC 9728 3.3: the metadata names the address the client was given.
+    const prm = (await (await fetch(local(metadataUrl!))).json()) as Record<string, unknown>;
+    expect(prm.resource).toBe(ALL);
+    expect(prm.authorization_servers).toEqual([APP]);
+    expect(prm.scopes_supported).toEqual(["webhooks:read", "webhooks:write"]);
+    const plain = (await (
+      await fetch(`${WEB}/.well-known/oauth-protected-resource/mcp`)
+    ).json()) as Record<string, unknown>;
+    expect(plain.resource).toBe(`${APP}/mcp`);
+
+    // An address with a trailing slash never reaches the route: Next.js
+    // sends it to /mcp with its query, so the metadata names /mcp.
+    const slashed = await fetch(`${WEB}/mcp/?tools=all`, { method: "POST", redirect: "manual" });
+    expect(slashed.status).toBe(308);
+    expect(new URL(slashed.headers.get("location") ?? "", WEB).pathname).toBe("/mcp");
+    expect(new URL(slashed.headers.get("location") ?? "", WEB).search).toBe("?tools=all");
+
+    const issuerUrl = (prm.authorization_servers as string[])[0];
+    asMetadata = (await (
+      await fetch(local(`${issuerUrl}/.well-known/oauth-authorization-server`))
+    ).json()) as Record<string, unknown>;
+    expect(asMetadata.issuer).toBe(APP);
+    expect(asMetadata.code_challenge_methods_supported).toContain("S256");
+    expect(asMetadata.token_endpoint_auth_methods_supported).toEqual(["none"]);
+  });
+
+  it("registers a client dynamically", async () => {
+    const res = await post(asMetadata.registration_endpoint as string, {
+      client_name: "Acme settings client",
+      redirect_uris: ["http://127.0.0.1/callback"],
+      grant_types: ["authorization_code", "refresh_token"],
+    });
+    expect(res.status).toBe(201);
+    settingsClient = ((await res.json()) as { client_id: string }).client_id;
+    clients.push(settingsClient);
+  });
+
+  it("grants a token for the address with settings, good on every address", async () => {
+    const grant = await consent(ALL);
+    // The code is for the MCP server, whatever its settings.
+    const { data } = await admin
+      .from("oauth_authorization_codes")
+      .select("resource")
+      .eq("code_hash", createHash("sha256").update(grant.code).digest("hex"))
+      .single();
+    expect(data?.resource).toBe(`${APP}/mcp`);
+
+    // Neither the API with settings nor another path is the MCP server, and a
+    // resource never carries a fragment (RFC 8707 2).
+    for (const resource of [`${APP}/api/?tools=all`, `${APP}/mcpx?tools=all`, `${ALL}#x`]) {
+      expect(await exchange(grant, resource)).toMatchObject({
+        status: 400,
+        body: { error: "invalid_target" },
+      });
+    }
+    const redeemed = await exchange(grant, ALL);
+    expect(redeemed.status).toBe(200);
+    expect(redeemed.body).toMatchObject({ token_type: "Bearer" });
+    expect(redeemed.body.access_token).toMatch(/^whcc_/);
+    const accessToken = redeemed.body.access_token;
+
+    const all = await toolNames(ALL, accessToken);
+    expect(all).toContain("add_destination");
+    expect(all).toContain("create_spreadsheet");
+    expect(all).toContain("list_teams");
+    const teams = await toolNames(`${APP}/mcp?tools=teams`, accessToken);
+    expect(teams).toContain("list_teams");
+    expect(teams).toContain("create_endpoint");
+    expect(teams).not.toContain("create_spreadsheet");
+    expect(teams.length).toBeLessThan(all.length);
+    const readOnly = await toolNames(TEAMS_READONLY, accessToken);
+    expect(readOnly).toContain("list_teams");
+    expect(readOnly).not.toContain("create_team");
+
+    for (const [address, tool] of [
+      [ALL, "list_endpoints"],
+      [`${APP}/mcp?tools=teams`, "list_teams"],
+    ] as const) {
+      const result = await callTool(address, accessToken, tool);
+      expect(result.isError, `${tool} through ${address}`).not.toBe(true);
+    }
+  });
+
+  it("refuses an authorization request for a resource with a fragment", async () => {
+    const pair = verifierPair();
+    for (const resource of [`${ALL}#x`, `${APP}/mcp#x`]) {
+      const params = {
+        client_id: settingsClient,
+        redirect_uri: "http://127.0.0.1:50124/callback",
+        response_type: "code",
+        state: "s3",
+        code_challenge: pair.challenge,
+        code_challenge_method: "S256",
+        resource,
+      };
+      const shown = await fetch(
+        `${WEB}/api/oauth2/authorize?${new URLSearchParams(params).toString()}`,
+        { headers: { authorization: `Bearer ${session}`, "x-forwarded-for": nextIp() } }
+      );
+      expect(shown.status, resource).toBe(400);
+      expect(((await shown.json()) as { error: string }).error).toBe("invalid_target");
+    }
+  });
+
+  it("grants for the read-only teams address, and the token works on the others", async () => {
+    const grant = await consent(TEAMS_READONLY);
+    // The token request may name the address with or without its settings.
+    const redeemed = await exchange(grant, `${APP}/mcp`);
+    expect(redeemed.status).toBe(200);
+    const accessToken = redeemed.body.access_token;
+
+    expect(await toolNames(ALL, accessToken)).toContain("create_spreadsheet");
+    const result = await callTool(`${APP}/mcp?tools=teams`, accessToken, "list_teams");
+    expect(result.isError).not.toBe(true);
+
+    const refreshed = await post(
+      asMetadata.token_endpoint as string,
+      {
+        grant_type: "refresh_token",
+        refresh_token: redeemed.body.refresh_token,
+        client_id: settingsClient,
+        resource: TEAMS_READONLY,
+      },
+      { "content-type": "application/x-www-form-urlencoded" }
+    );
+    expect(refreshed.status).toBe(200);
   });
 });

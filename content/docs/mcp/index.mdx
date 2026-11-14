@@ -136,7 +136,7 @@ To choose:
 
 - **Local server:** set `WHK_MCP_TOOLS` to `all`, or to groups such as `core,teams`. Mid-session, the agent calls `enable_tools` to load a group it needs; its description lists the groups, so an agent that misses a tool knows where to find it.
 - **Remote server:** add them to the address, as in `https://webhooks.cc/mcp?tools=all` or `?tools=core,teams`.
-- **Read-only:** `WHK_MCP_READ_ONLY=1` on the local server, or `?readonly=1` on the remote one, loads only the tools that change nothing.
+- **Read-only:** `WHK_MCP_READ_ONLY=1` on the local server, or `?readonly=1` on the remote one, loads only the tools that change nothing. It only chooses which tools are loaded and is not a permission: the same token can use every tool on another address.
 
 Every tool says what it does in its annotations: whether it only reads, whether a change can be undone, and whether it reaches past webhooks.cc (a URL you name, an inbox, Google, Anthropic). Clients use them to decide what to ask you about first.
 

@@ -18,7 +18,8 @@ const {
   validRedirectUri,
   ClientMetadataError,
 } = await import("./clients");
-const { checkAuthorizationRequest, redirectWith } = await import("./authorize");
+const { acceptedResources, checkAuthorizationRequest, normalizeResource, redirectWith } =
+  await import("./authorize");
 const { s256 } = await import("./tokens");
 
 const APP = "https://webhooks.test";
@@ -201,6 +202,41 @@ describe("checkAuthorizationRequest", () => {
     }
     const other = await checkAuthorizationRequest(request({ resource: `${APP}/mcpx?tools=all` }));
     expect(other.ok).toBe(false);
+  });
+
+  it("refuses a resource with a fragment (RFC 8707 2)", async () => {
+    for (const resource of [`${APP}/mcp?tools=all#x`, `${APP}/mcp#x`, `${APP}/api/#`]) {
+      const check = await checkAuthorizationRequest(request({ resource }));
+      expect(check.ok, resource).toBe(false);
+      expect(check.ok ? null : check.error).toBe("invalid_target");
+    }
+  });
+
+  it("names a resource the same way at the token endpoint: settings only on /mcp", () => {
+    const accepted = (value: string) => acceptedResources().includes(normalizeResource(value));
+    for (const value of [
+      `${APP}/mcp`,
+      `${APP}/mcp/`,
+      `${APP}/mcp?tools=all`,
+      `${APP}/mcp/?tools=core,teams&readonly=1`,
+      `${APP}/api/`,
+      `${APP}/api`,
+    ]) {
+      expect(accepted(value)).toBe(true);
+    }
+    expect(normalizeResource(`${APP}/mcp?tools=teams`)).toBe(`${APP}/mcp`);
+    for (const value of [
+      `${APP}/api/?tools=all`,
+      `${APP}/mcpx?tools=all`,
+      `${APP}/mcp/x?tools=all`,
+      `${APP}/?tools=all`,
+      `https://elsewhere.example/mcp?tools=all`,
+      `${APP}/mcp?tools=all#x`,
+      `${APP}/mcp/#x`,
+      `${APP}/api/#x`,
+    ]) {
+      expect(accepted(value)).toBe(false);
+    }
   });
 });
 

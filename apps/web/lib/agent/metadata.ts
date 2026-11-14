@@ -97,14 +97,42 @@ export interface ProtectedResourceMetadata {
 }
 
 /**
+ * The query an RFC 3986 URI may carry: unreserved characters, percent
+ * escapes, sub-delims, ":", "@", "/" and "?". None of them is a quote, a
+ * backslash, a space or a line break, so it cannot leave the quoted-string
+ * of a WWW-Authenticate parameter. `URL.search` already escapes the quote
+ * and spaces, but keeps a backslash and characters such as "{" or "|", which
+ * this refuses.
+ */
+const SETTINGS_QUERY = /^\?[A-Za-z0-9\-._~%!$&'()*+,;=:@/?]+$/;
+
+/**
+ * The MCP server's settings (`?tools=core,teams&readonly=1`) from an address,
+ * to carry over into its metadata URL and resource exactly as the client
+ * sent them; empty when there are none, when the query is long, or when it
+ * holds anything an RFC 3986 query cannot (it ends up in a WWW-Authenticate
+ * header). The path is not repeated: Next.js answers `/mcp/` with a redirect
+ * to `/mcp` before any route runs, so the metadata names `/mcp`, and clients
+ * compare resource paths with the trailing slash ignored (the MCP SDK's
+ * `checkResourceAllowed`).
+ */
+export function mcpSettingsQuery(url: URL): string {
+  const query = url.search;
+  return query.length > 1 && query.length <= 256 && SETTINGS_QUERY.test(query) ? query : "";
+}
+
+/**
  * Served at `/.well-known/oauth-protected-resource/mcp` (RFC 9728 3.1: the
  * resource's path appended): the remote MCP server, which takes the same
- * tokens as the API. Its 401s point here.
+ * tokens as the API. Its 401s point here. A client given the server's
+ * address with settings (`/mcp?tools=all`) checks that the metadata names
+ * that address (RFC 9728 3.3), so the settings come back in `resource`; the
+ * authorization and token endpoints take them as the same resource.
  */
-export function buildMcpProtectedResourceMetadata(): ProtectedResourceMetadata {
+export function buildMcpProtectedResourceMetadata(settings = ""): ProtectedResourceMetadata {
   const appUrl = publicEnv().NEXT_PUBLIC_APP_URL;
   return {
-    resource: `${appUrl}/mcp`,
+    resource: `${appUrl}/mcp${settings}`,
     resource_name: "webhooks.cc MCP server",
     resource_logo_uri: `${appUrl}/icon-512.png`,
     authorization_servers: [appUrl],

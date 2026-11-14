@@ -24,6 +24,7 @@ import {
   buildAuthorizationServerMetadata,
   buildMcpProtectedResourceMetadata,
   buildProtectedResourceMetadata,
+  mcpSettingsQuery,
 } from "@/lib/agent/metadata";
 
 const APP_URL = "https://webhooks.cc";
@@ -69,6 +70,43 @@ describe("remote MCP protected resource metadata", () => {
       resource_documentation: `${APP_URL}/docs/mcp`,
       scopes_supported: ["webhooks:read", "webhooks:write"],
     });
+  });
+
+  test("repeats the settings of the address the client was given (RFC 9728 3.3)", () => {
+    const settings = mcpSettingsQuery(new URL(`${APP_URL}/mcp?tools=core,teams&readonly=1`));
+    expect(settings).toBe("?tools=core,teams&readonly=1");
+    expect(buildMcpProtectedResourceMetadata(settings).resource).toBe(
+      `${APP_URL}/mcp?tools=core,teams&readonly=1`
+    );
+    expect(mcpSettingsQuery(new URL(`${APP_URL}/mcp`))).toBe("");
+    expect(mcpSettingsQuery(new URL(`${APP_URL}/mcp?`))).toBe("");
+    // Characters an RFC 3986 query allows are kept as they were sent.
+    for (const query of ["?tools=core+teams", "?tools=all&x=a~b", "?tools=all&next=/a:b@c?d"]) {
+      expect(mcpSettingsQuery(new URL(`${APP_URL}/mcp${query}`))).toBe(query);
+    }
+    expect(mcpSettingsQuery(new URL(`${APP_URL}/mcp?tools=${"a".repeat(300)}`))).toBe("");
+  });
+
+  test("names /mcp for /mcp/: Next.js redirects the slash away before the route runs", () => {
+    // Only the query is carried over; the path is always /mcp, which clients
+    // match against /mcp/ (paths compared with the trailing slash ignored).
+    const settings = mcpSettingsQuery(new URL(`${APP_URL}/mcp/?tools=all`));
+    expect(settings).toBe("?tools=all");
+    expect(buildMcpProtectedResourceMetadata(settings).resource).toBe(`${APP_URL}/mcp?tools=all`);
+  });
+
+  test("never lets a query leave the quoted header value it is put in", () => {
+    // URL escapes a quote and a space, so the query arrives escaped: kept,
+    // with nothing in it that ends the quoted-string.
+    const quoted = mcpSettingsQuery(new URL(`${APP_URL}/mcp?tools=all", x="y`));
+    expect(quoted).toBe("?tools=all%22,%20x=%22y");
+    expect(quoted).not.toMatch(/["\\\s]/);
+    // A backslash (which URL keeps) is refused, as are the other characters
+    // RFC 3986 does not allow in a query; URL drops line breaks itself.
+    for (const query of ["?tools=all\\", "?tools={all}", "?tools=a|b", "?tools=a^b", "?a=`b`"]) {
+      expect(mcpSettingsQuery(new URL(`${APP_URL}/mcp${query}`))).toBe("");
+    }
+    expect(mcpSettingsQuery(new URL(`${APP_URL}/mcp?tools=all\r\nx: y`))).not.toMatch(/[\r\n]/);
   });
 });
 

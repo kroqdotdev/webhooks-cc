@@ -12,6 +12,7 @@ import {
   updateDestination,
 } from "@/lib/supabase/destinations";
 import { queueDestinationRedelivery } from "@/lib/supabase/forwarding";
+import { saveGoogleConnection } from "@/lib/supabase/google-connections";
 import { runForwardingBatch } from "@/lib/forwarding/worker";
 
 /**
@@ -362,5 +363,409 @@ describe("destinations", () => {
     });
     expect(cleared?.notificationUrl).toBeNull();
     expect(await listDestinations(e.id)).toEqual([]);
+  });
+});
+
+/**
+ * Changing a destination's format through the API (PATCH, against the web
+ * server at WEB_URL, default :3000): a Sheets destination or a file drop
+ * that moves to another format needs a URL of its own and leaves its
+ * config and drop secret behind, and only those two formats take a config.
+ */
+describe("destinations through the API: formats and their configs", () => {
+  const WEB = (process.env.WEB_URL ?? "http://localhost:3000").replace(/\/+$/, "");
+  const spreadsheetId = "1AbCdEfGhIjKlMnOpQrStUvWxYz0123456789";
+  const sheetsConfig = {
+    connectionId: "4b3a2f1e-0d9c-4b8a-9f7e-6d5c4b3a2f1e",
+    spreadsheetId,
+    sheet: "Orders",
+    rows: "email",
+    columns: [{ header: "Subject", value: "{{ subject }}" }],
+  };
+  let token: string;
+
+  beforeAll(async () => {
+    const up = await fetch(`${WEB}/.well-known/oauth-authorization-server`).catch(() => null);
+    if (!up?.ok) {
+      throw new Error(
+        `Start the web server at ${WEB} (EMAIL_FORWARDING_WORKER=false), or set WEB_URL`
+      );
+    }
+    const { data } = await admin.auth.admin.getUserById(userId);
+    const anon = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL ?? process.env.SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? process.env.SUPABASE_ANON_KEY!,
+      { auth: { autoRefreshToken: false, persistSession: false } }
+    );
+    const { data: session, error } = await anon.auth.signInWithPassword({
+      email: data.user!.email!,
+      password: "TestPassword123!",
+    });
+    if (error) throw error;
+    token = session.session!.access_token;
+  });
+
+  function call(method: "POST" | "PATCH", path: string, body: unknown) {
+    return fetch(`${WEB}/api${path}`, {
+      method,
+      headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+      body: JSON.stringify(body),
+    });
+  }
+
+  async function row(id: string) {
+    const { data, error } = await admin
+      .from("endpoint_destinations")
+      .select("format, url, config, drop_secret_encrypted")
+      .eq("id", id)
+      .single();
+    if (error) throw error;
+    return data;
+  }
+
+  it("moves a Sheets destination to json only with a url, and clears its config", async () => {
+    const e = await endpoint();
+    const sheets = await createDestination(e.id, {
+      url: `https://docs.google.com/spreadsheets/d/${spreadsheetId}/edit`,
+      format: "sheets",
+      email: true,
+      http: false,
+      config: sheetsConfig,
+    });
+    const path = `/endpoints/${e.slug}/destinations/${sheets.id}`;
+
+    const refused = await call("PATCH", path, { format: "json" });
+    expect(refused.status).toBe(400);
+    expect(((await refused.json()) as { error: string }).error).toMatch(
+      /^Enter the URL to send to/
+    );
+    expect(await row(sheets.id)).toMatchObject({ format: "sheets", config: sheetsConfig });
+
+    // A url alone would leave the spreadsheet's URL misleading: refused too.
+    const urlAlone = await call("PATCH", path, { url: `${base}/moved` });
+    expect(urlAlone.status).toBe(400);
+    expect(((await urlAlone.json()) as { error: string }).error).toMatch(
+      /^A Google Sheets destination's URL/
+    );
+
+    // The preview checks a draft by the same rules.
+    const preview = await call("POST", `/endpoints/${e.slug}/destinations/preview`, {
+      destinationId: sheets.id,
+      destination: { format: "json" },
+    });
+    expect(preview.status).toBe(400);
+    expect(((await preview.json()) as { error: string }).error).toMatch(
+      /^Enter the URL to send to/
+    );
+
+    const moved = await call("PATCH", path, { format: "json", url: `${base}/moved` });
+    expect(moved.status).toBe(200);
+    expect(await row(sheets.id)).toMatchObject({
+      format: "json",
+      url: `${base}/moved`,
+      config: null,
+    });
+    // With its config gone, format "sheets" alone cannot bring the old one back.
+    expect((await call("PATCH", path, { format: "sheets" })).status).toBe(400);
+  });
+
+  it("moves a file drop to json, clearing its config and secret without asking for it", async () => {
+    const e = await endpoint();
+    const drop = await createDestination(e.id, {
+      url: "sftp://files.acme.example",
+      format: "file_drop",
+      email: true,
+      http: false,
+      config: {
+        protocol: "sftp",
+        host: "files.acme.example",
+        port: 22,
+        username: "acme",
+        folder: "",
+        file: "json",
+        rows: "email",
+        columns: [],
+        prefix: "",
+        batch: false,
+        hostKey: null,
+      },
+      dropSecret: { password: "x" },
+    });
+    expect((await row(drop.id)).drop_secret_encrypted).not.toBeNull();
+    const path = `/endpoints/${e.slug}/destinations/${drop.id}`;
+
+    expect((await call("PATCH", path, { format: "json" })).status).toBe(400);
+    const moved = await call("PATCH", path, { format: "json", url: `${base}/moved` });
+    expect(moved.status).toBe(200);
+    expect(((await moved.json()) as { hasDropSecret: boolean }).hasDropSecret).toBe(false);
+    expect(await row(drop.id)).toMatchObject({
+      format: "json",
+      url: `${base}/moved`,
+      config: null,
+      drop_secret_encrypted: null,
+    });
+  });
+
+  it("refuses a config on a destination whose format takes none", async () => {
+    const e = await endpoint();
+    const created = await call("POST", `/endpoints/${e.slug}/destinations`, {
+      url: `${base}/json`,
+      format: "json",
+      config: sheetsConfig,
+    });
+    expect(created.status).toBe(400);
+    expect(((await created.json()) as { error: string }).error).toMatch(
+      /^config is for Google Sheets/
+    );
+
+    const json = await createDestination(e.id, { url: `${base}/json`, format: "json" });
+    const changed = await call("PATCH", `/endpoints/${e.slug}/destinations/${json.id}`, {
+      config: sheetsConfig,
+    });
+    expect(changed.status).toBe(400);
+    expect(await row(json.id)).toMatchObject({ format: "json", url: `${base}/json`, config: null });
+  });
+
+  it("moves a file drop to a Sheets destination, clearing the drop's secret", async () => {
+    const e = await endpoint();
+    const connection = await saveGoogleConnection(userId, {
+      sub: `sub-destinations-${Date.now()}`,
+      email: "owner@acme.example",
+      refreshToken: "rt-destinations",
+      scopes: "drive.file",
+    });
+    const drop = await createDestination(e.id, {
+      url: "sftp://files.acme.example",
+      format: "file_drop",
+      email: true,
+      http: false,
+      config: { protocol: "sftp", host: "files.acme.example", port: 22, username: "acme" },
+      dropSecret: { password: "x" },
+    });
+    const config = { ...sheetsConfig, connectionId: connection.id };
+    const moved = await call("PATCH", `/endpoints/${e.slug}/destinations/${drop.id}`, {
+      format: "sheets",
+      config,
+    });
+    expect(moved.status).toBe(200);
+    expect(await row(drop.id)).toMatchObject({
+      format: "sheets",
+      url: `https://docs.google.com/spreadsheets/d/${spreadsheetId}/edit`,
+      config,
+      drop_secret_encrypted: null,
+    });
+  });
+
+  it("moves a Sheets destination to a file drop, its URL from the drop's config", async () => {
+    // File drops are part of Business.
+    await admin
+      .from("users")
+      .update({ plan: "business", subscription_status: "active" })
+      .eq("id", userId);
+    try {
+      const e = await endpoint();
+      const sheets = await createDestination(e.id, {
+        url: `https://docs.google.com/spreadsheets/d/${spreadsheetId}/edit`,
+        format: "sheets",
+        email: true,
+        http: false,
+        config: sheetsConfig,
+      });
+      const path = `/endpoints/${e.slug}/destinations/${sheets.id}`;
+      const dropConfig = {
+        protocol: "sftp",
+        host: "files.acme.example",
+        username: "acme",
+        folder: "in",
+        file: "json",
+        rows: "email",
+        columns: [],
+      };
+      // A new server needs its password, as for any drop.
+      const withoutSecret = await call("PATCH", path, { format: "file_drop", config: dropConfig });
+      expect(withoutSecret.status).toBe(400);
+      expect(await row(sheets.id)).toMatchObject({ format: "sheets", config: sheetsConfig });
+
+      const moved = await call("PATCH", path, {
+        format: "file_drop",
+        config: dropConfig,
+        dropSecret: { password: "x" },
+      });
+      expect(moved.status).toBe(200);
+      const stored = await row(sheets.id);
+      expect(stored).toMatchObject({
+        format: "file_drop",
+        url: "sftp://files.acme.example/in",
+        config: { protocol: "sftp", host: "files.acme.example", folder: "in" },
+      });
+      expect(stored.config).not.toHaveProperty("spreadsheetId");
+      expect(stored.drop_secret_encrypted).not.toBeNull();
+    } finally {
+      await admin.from("users").update({ plan: "free" }).eq("id", userId);
+    }
+  });
+
+  it("needs the config in the change that switches into sheets or file_drop", async () => {
+    const e = await endpoint();
+    // A row left with a config its format does not use (as before the API
+    // cleared them) must not be picked up by a later switch.
+    const stale = await createDestination(e.id, {
+      url: `${base}/json`,
+      format: "json",
+      config: sheetsConfig,
+    });
+    const path = `/endpoints/${e.slug}/destinations/${stale.id}`;
+    for (const format of ["sheets", "file_drop"]) {
+      const res = await call("PATCH", path, { format });
+      expect(res.status, format).toBe(400);
+      expect(((await res.json()) as { error: string }).error).toMatch(
+        new RegExp(`^Send the config with format "${format}"`)
+      );
+    }
+    expect(await row(stale.id)).toMatchObject({ format: "json", url: `${base}/json` });
+  });
+
+  it("keeps the endpoint's old forward fields off Sheets destinations and drops", async () => {
+    const e = await endpoint();
+    // An old forward row turned into a Sheets destination before roles were
+    // given up on the change (written straight to the table).
+    const sheets = await createDestination(
+      e.id,
+      {
+        url: `https://docs.google.com/spreadsheets/d/${spreadsheetId}/edit`,
+        format: "sheets",
+        email: true,
+        http: false,
+        config: sheetsConfig,
+      },
+      "forward"
+    );
+    const before = await updateEndpointBySlugForUser({ userId, slug: e.slug, name: "Legacy" });
+    expect(before).toMatchObject({ forwardEnabled: false, forwardUrl: null });
+
+    const set = await updateEndpointBySlugForUser({
+      userId,
+      slug: e.slug,
+      forwardUrl: `${base}/legacy`,
+      forwardFormat: "json",
+      forwardEnabled: true,
+    });
+    expect(set).toMatchObject({
+      forwardEnabled: true,
+      forwardUrl: `${base}/legacy`,
+      forwardFormat: "json",
+    });
+    expect(await row(sheets.id)).toMatchObject({
+      format: "sheets",
+      url: `https://docs.google.com/spreadsheets/d/${spreadsheetId}/edit`,
+      config: sheetsConfig,
+    });
+    // The new destination took the role; a later change goes to it.
+    await updateEndpointBySlugForUser({ userId, slug: e.slug, forwardUrl: `${base}/legacy2` });
+    const listed = await listDestinations(e.id);
+    expect(listed).toHaveLength(2);
+    expect(listed.find((d) => d.id === sheets.id)?.role).toBeNull();
+    expect(listed.find((d) => d.id !== sheets.id)).toMatchObject({
+      url: `${base}/legacy2`,
+      format: "json",
+      role: "forward",
+    });
+  });
+
+  it("moves the forward role off a destination that becomes a Sheets one, for good", async () => {
+    const e = await endpoint();
+    const connection = await saveGoogleConnection(userId, {
+      sub: `sub-forward-role-${Date.now()}`,
+      email: "owner@acme.example",
+      refreshToken: "rt-forward-role",
+      scopes: "drive.file",
+    });
+    // R1: made by the old fields.
+    await updateEndpointBySlugForUser({ userId, slug: e.slug, forwardUrl: `${base}/r1` });
+    const [r1] = await listDestinations(e.id);
+    expect(r1).toMatchObject({ role: "forward", url: `${base}/r1` });
+
+    // R1 becomes a Sheets destination through the API and gives up the role.
+    const config = { ...sheetsConfig, connectionId: connection.id };
+    const toSheets = await call("PATCH", `/endpoints/${e.slug}/destinations/${r1.id}`, {
+      format: "sheets",
+      config,
+    });
+    expect(toSheets.status).toBe(200);
+    expect((await listDestinations(e.id))[0].role).toBeNull();
+
+    // forwardUrl makes R2, with the role.
+    const r2Record = await updateEndpointBySlugForUser({
+      userId,
+      slug: e.slug,
+      forwardUrl: `${base}/r2`,
+    });
+    expect(r2Record?.forwardUrl).toBe(`${base}/r2`);
+    const r2 = (await listDestinations(e.id)).find((d) => d.id !== r1.id)!;
+    expect(r2).toMatchObject({ role: "forward", url: `${base}/r2` });
+
+    // R1 back to json: R2 stays the primary.
+    const back = await call("PATCH", `/endpoints/${e.slug}/destinations/${r1.id}`, {
+      format: "json",
+      url: `${base}/r1-again`,
+    });
+    expect(back.status).toBe(200);
+    const after = await updateEndpointBySlugForUser({ userId, slug: e.slug, name: "R2 stays" });
+    expect(after?.forwardUrl).toBe(`${base}/r2`);
+    await updateEndpointBySlugForUser({ userId, slug: e.slug, forwardUrl: `${base}/r2b` });
+    expect(await row(r1.id)).toMatchObject({ url: `${base}/r1-again` });
+    expect(await row(r2.id)).toMatchObject({ url: `${base}/r2b` });
+  });
+
+  it("keeps notificationUrl off a Sheets destination", async () => {
+    const e = await endpoint();
+    const sheets = await createDestination(
+      e.id,
+      {
+        url: `https://docs.google.com/spreadsheets/d/${spreadsheetId}/edit`,
+        format: "sheets",
+        email: true,
+        http: false,
+        config: sheetsConfig,
+      },
+      "notify"
+    );
+    const before = await updateEndpointBySlugForUser({ userId, slug: e.slug, name: "Notify" });
+    expect(before?.notificationUrl).toBeNull();
+
+    // Setting it adds a chat destination; clearing it removes only that one.
+    await updateEndpointBySlugForUser({ userId, slug: e.slug, notificationUrl: `${base}/notify` });
+    expect(await row(sheets.id)).toMatchObject({
+      format: "sheets",
+      url: `https://docs.google.com/spreadsheets/d/${spreadsheetId}/edit`,
+    });
+    const listed = await listDestinations(e.id);
+    expect(listed).toHaveLength(2);
+    expect(listed.find((d) => d.id !== sheets.id)).toMatchObject({
+      role: "notify",
+      format: "chat",
+      url: `${base}/notify`,
+    });
+    await updateEndpointBySlugForUser({ userId, slug: e.slug, notificationUrl: null });
+    expect((await listDestinations(e.id)).map((d) => d.id)).toEqual([sheets.id]);
+  });
+
+  it("refuses config: null on a Sheets destination", async () => {
+    const e = await endpoint();
+    const sheets = await createDestination(e.id, {
+      url: `https://docs.google.com/spreadsheets/d/${spreadsheetId}/edit`,
+      format: "sheets",
+      email: true,
+      http: false,
+      config: sheetsConfig,
+    });
+    const res = await call("PATCH", `/endpoints/${e.slug}/destinations/${sheets.id}`, {
+      config: null,
+    });
+    expect(res.status).toBe(400);
+    expect(((await res.json()) as { error: string }).error).toBe(
+      "A Google Sheets destination needs its config."
+    );
+    expect(await row(sheets.id)).toMatchObject({ config: sheetsConfig });
   });
 });

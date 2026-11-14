@@ -1,0 +1,10 @@
+{
+  "title": "Google Sheets from the MCP server",
+  "items": [
+    "add_destination and update_destination take Google Sheets destinations: format sheets with the spreadsheet and its columns, so an agent sets one up from start to finish without the dashboard or the SDK",
+    "create_spreadsheet can write the header row into a spreadsheet chosen with pick_spreadsheet",
+    "Remote MCP clients connected to an address with tool settings, such as /mcp?tools=all, get metadata that names that address and a token request that accepts it",
+    "In the destinations API, moving a Google Sheets destination or a file drop to a format without a config needs a url (and between the two, the new config) and clears its spreadsheet or server settings, a drop's password included; a config is refused on any other format",
+    "An endpoint's forwarding and notification fields describe its primary destination (the one holding the forwarding role, else the first other than Notifications that sends to a URL): Google Sheets destinations and file drops are never it, so changing those fields or turning forwarding off leaves them as they are"
+  ]
+}

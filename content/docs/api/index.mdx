@@ -506,7 +506,7 @@ curl -X POST https://webhooks.cc/api/send-test-email \
 
 [Forwarding](/docs/forwarding) sends what an endpoint captures to up to 10 destinations: relayed as received, as signed JSON, as a JSON body you shape with placeholders, or as a chat message for Slack and Discord, each with its own conditions and timing, and retried until it is accepted. The formats and how to verify them are described in [Forwarding](/docs/forwarding). Only the endpoint's owner can configure forwarding: the owner-only routes below return `404` to anyone else, and the endpoint update returns `403`.
 
-The `forward*` fields of an endpoint stand for its primary destination, and `notificationUrl` for a chat destination named Notifications (at most one message a second, not retried). The [destination routes](#destinations) manage all of them.
+The `forward*` fields of an endpoint stand for its primary destination: the one holding the forwarding role, else the first destination other than Notifications that sends to a URL (never a Google Sheets destination or a file drop: with only those, the fields read as not forwarding, and setting `forwardUrl` adds a destination), and `notificationUrl` for a chat destination named Notifications (at most one message a second, not retried). The [destination routes](#destinations) manage all of them.
 
 ### Turn forwarding on
 
@@ -742,6 +742,8 @@ curl -X POST https://webhooks.cc/api/endpoints/abc123/destinations \
 #### Google Sheets
 
 A [Google Sheets](/docs/forwarding#google-sheets) destination has `"format": "sheets"` and `config`: `{ "connectionId", "spreadsheetId", "sheet", "rows": "email" | "line_items", "columns": [{ "header", "value" }] }`. Connecting a Google account and choosing an existing spreadsheet need the owner in a browser (Google's consent page and Drive picker), so with an API key they are [approvals](#approvals) whose page takes the owner there; a new spreadsheet can be made directly. After that the destination can be read and changed here like any other.
+
+Only `sheets` and `file_drop` take a `config`, and their URL is set from it (the spreadsheet's, or the drop's server and folder); any other format answers `400` to one. Changing a destination's format to `sheets` or `file_drop`, from any format and from one to the other, needs the new `config` in the same request (a file drop's `dropSecret` too, as for any new server); its URL then comes from that config. Changing a Sheets destination or a file drop to any other format needs a `url` in the same request, and clears its `config`. A file drop changed to any other format, `sheets` included, loses its secret. So nothing of the old spreadsheet or server stays behind. A Sheets destination's URL is its spreadsheet's: a `url` without its `config` is refused, and so is `"config": null` while it stays one.
 
 ### Connected Google accounts
 

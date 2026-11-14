@@ -904,14 +904,15 @@ function AuthenticationPane({
 
 function EmailJsonPane({
   json,
-  forwardEnabled,
+  hasDestinations,
   forwardUrl,
   canManageForwarding,
   onOpenForwarding,
   onOpenDeliveries,
 }: {
   json: unknown;
-  forwardEnabled: boolean;
+  /** The endpoint sends to at least one destination (of any kind). */
+  hasDestinations: boolean;
   forwardUrl?: string | null;
   canManageForwarding: boolean;
   onOpenForwarding?: () => void;
@@ -926,7 +927,7 @@ function EmailJsonPane({
     <div className="space-y-3">
       <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-muted-foreground">
         <Send className="h-3.5 w-3.5 shrink-0" />
-        {forwardEnabled ? (
+        {hasDestinations ? (
           <>
             <span>
               Destinations set to signed JSON get this JSON
@@ -1332,7 +1333,6 @@ export function EmailDetail({
 
   const headerCount = Object.keys(request.headers).length;
   const attachments = email.attachments;
-  const forwardEnabled = endpoint.forwardEnabled === true;
   const tabs: { id: EmailTab; label: string; count?: number }[] = [
     // Also without a result while the endpoint has layouts, to say why and offer a fix,
     // and always on mailhooks.cc, where reading mail into values is the point.
@@ -1349,8 +1349,9 @@ export function EmailDetail({
       : []),
     { id: "authentication", label: "Authentication" },
     { id: "raw", label: "Raw" },
-    // Kept after forwarding is turned off, so past deliveries stay readable.
-    ...(forwardEnabled || endpoint.hasForwardSecret
+    // Kept after forwarding is turned off, so past deliveries stay readable;
+    // any destination counts, Sheets and file drops too.
+    ...((endpoint.destinationCount ?? 0) > 0 || endpoint.hasForwardSecret === true
       ? [{ id: "deliveries" as const, label: "Deliveries" }]
       : []),
   ];
@@ -1600,7 +1601,7 @@ export function EmailDetail({
         {activeTab === "json" && json && (
           <EmailJsonPane
             json={json}
-            forwardEnabled={forwardEnabled}
+            hasDestinations={hasDestinations}
             forwardUrl={endpoint.forwardUrl}
             canManageForwarding={canManageForwarding}
             onOpenForwarding={onOpenForwarding}

@@ -1892,10 +1892,12 @@ export default function DashboardPage() {
     },
     [recentRequests, accessToken, currentEndpoint, updateParams]
   );
-  // The HTTP detail's Deliveries tab: once the endpoint has (or had) a forwarding URL.
+  // The HTTP detail's Deliveries tab: once the endpoint has a destination of
+  // any kind (Sheets and file drops too), or had a forwarding URL.
   const deliveriesProps = useMemo(
     () =>
-      currentEndpoint && (currentEndpoint.forwardEnabled || currentEndpoint.hasForwardSecret)
+      currentEndpoint &&
+      ((currentEndpoint.destinationCount ?? 0) > 0 || currentEndpoint.hasForwardSecret === true)
         ? {
             endpoint: currentEndpoint,
             canRedeliver: currentEndpoint.forwardUrl !== undefined,

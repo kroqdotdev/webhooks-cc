@@ -158,6 +158,70 @@ export function parseDestinationInput(
     changes.format = body.format as DestinationFormatSetting;
   }
 
+  // Only Sheets destinations and file drops carry a config, and their URL
+  // comes from it (the spreadsheet's, or the drop's server and folder).
+  // - Moving into either, from any other format or from one to the other,
+  //   needs the new config in the same change (never a stale one left on
+  //   the row); the URL is then set from that config below, so the other
+  //   format's URL never stays.
+  // - Moving out of both to a format without a config needs a URL of its
+  //   own in the same change, and the config is cleared.
+  // - Leaving a file drop, for whatever format, clears its secret.
+  const currentFormat = options.current?.format;
+  const nextFormat = changes.format ?? (options.creating ? "auto" : currentFormat);
+  const configured = (format: DestinationFormatSetting | undefined) =>
+    format === "sheets" || format === "file_drop";
+  const leaving =
+    !options.creating &&
+    configured(currentFormat) &&
+    nextFormat !== undefined &&
+    !configured(nextFormat);
+  // A drop's secret goes with the drop, whatever the destination becomes.
+  const leavingDrop =
+    !options.creating &&
+    currentFormat === "file_drop" &&
+    nextFormat !== undefined &&
+    nextFormat !== "file_drop";
+  if (leavingDrop) changes.dropSecret = null;
+  if (
+    !options.creating &&
+    configured(nextFormat) &&
+    nextFormat !== currentFormat &&
+    (body.config === undefined || body.config === null)
+  ) {
+    return fail(
+      nextFormat === "sheets"
+        ? 'Send the config with format "sheets": the spreadsheet, its tab and its columns.'
+        : 'Send the config with format "file_drop": where the files go and what they hold.'
+    );
+  }
+  if (leaving) {
+    if (body.url === undefined) {
+      return fail(
+        currentFormat === "sheets"
+          ? "Enter the URL to send to: a Google Sheets destination moved to another format no longer writes to its spreadsheet."
+          : "Enter the URL to send to: a file drop moved to another format no longer writes files."
+      );
+    }
+    changes.config = null;
+  }
+  if (body.config !== undefined && body.config !== null && !configured(nextFormat)) {
+    return fail(
+      'config is for Google Sheets destinations and file drops: send format "sheets" or "file_drop" with it.'
+    );
+  }
+  if (
+    !options.creating &&
+    currentFormat === "sheets" &&
+    nextFormat === "sheets" &&
+    body.url !== undefined &&
+    (body.config === undefined || body.config === null)
+  ) {
+    return fail(
+      "A Google Sheets destination's URL is its spreadsheet's: send its config to change the spreadsheet."
+    );
+  }
+
   if (body.filter !== undefined) {
     if (body.filter === null) changes.filter = null;
     else {
@@ -266,9 +330,11 @@ export function parseDestinationInput(
     if (typeof config === "string") return fail(config);
     changes.config = config as unknown as Json;
     changes.url = dropUrl(config);
-  } else if (body.config !== undefined) {
-    if (body.config === null) changes.config = null;
-    else {
+  } else if (body.config !== undefined && !leaving) {
+    if (body.config === null) {
+      if (nextFormat === "sheets") return fail("A Google Sheets destination needs its config.");
+      changes.config = null;
+    } else {
       const config = parseSheetsConfig(body.config, {
         http: changes.http ?? options.current?.http ?? true,
         email: changes.email ?? options.current?.email ?? true,
@@ -280,7 +346,8 @@ export function parseDestinationInput(
     }
   }
 
-  if (body.dropSecret !== undefined) {
+  // Leaving a file drop already clears its secret; null says the same.
+  if (body.dropSecret !== undefined && !(leavingDrop && body.dropSecret === null)) {
     if (!drop) return fail("dropSecret is for file drops only.");
     if (body.dropSecret === null) changes.dropSecret = null;
     else {
