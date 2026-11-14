@@ -1351,7 +1351,8 @@ function toolTarget(
         const result = await inner(args, call);
         if (!result.approval) return result;
         if (call?.urlElicitation) return result;
-        const { approval: _omitted, ...plain } = result;
+        const plain = { ...result };
+        delete plain.approval;
         return plain;
       };
       if (remote && LOCAL_ONLY_TOOLS.has(name)) return { remove() {} };
