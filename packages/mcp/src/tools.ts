@@ -384,12 +384,22 @@ const SHEETS_URL_REFUSED =
  * - a url is refused on a destination that is or stays a Sheets destination;
  * - format "sheets" needs a config unless the destination is one already;
  * - a Sheets destination moved to another format needs a url, and its
- *   config is cleared so its Google target does not stay behind.
+ *   config is cleared so its Google target does not stay behind;
+ * - a file drop's format, url and config are not changed here: they go with
+ *   its server password, which MCP never handles.
  */
 function destinationWriteInput<
   T extends { url?: string; format?: string; config?: SheetsConfigInput },
 >(input: T, creating: boolean, current: Destination | null = null) {
   const { config, ...rest } = input;
+  if (
+    current?.format === "file_drop" &&
+    (input.format !== undefined || input.url !== undefined || config !== undefined)
+  ) {
+    throw new Error(
+      "File drops are changed in the dashboard, the CLI or the API, where the server password can be given: here only a drop's name, enabled, filter, templates and timing change"
+    );
+  }
   const format = input.format ?? current?.format;
   if (input.url !== undefined && format === "sheets") {
     throw new Error(SHEETS_URL_REFUSED);
@@ -3109,7 +3119,7 @@ export function registerTools(
 
   server.tool(
     "update_destination",
-    "Change a destination: any of its fields; only the ones you pass change. A Google Sheets destination's config is replaced as a whole, with format sheets: pass its connectionId, spreadsheetId and columns again; rows left out keeps the current mode, and a sheet left out keeps the current tab on the same spreadsheet (a new spreadsheet starts on Sheet1). A Sheets destination's URL is its spreadsheet's, so a url is refused on one that stays a Sheets destination; to move one to another format, pass that format with a url, and its spreadsheet settings are cleared. Owner only.",
+    "Change a destination: any of its fields; only the ones you pass change. A Google Sheets destination's config is replaced as a whole, with format sheets: pass its connectionId, spreadsheetId and columns again; rows left out keeps the current mode, and a sheet left out keeps the current tab on the same spreadsheet (a new spreadsheet starts on Sheet1). A Sheets destination's URL is its spreadsheet's, so a url is refused on one that stays a Sheets destination; to move one to another format, pass that format with a url, and its spreadsheet settings are cleared. A file drop's format, url and config are refused (they are changed in the dashboard, the CLI or the API, where its server password can be given); its other settings change as usual. Owner only.",
     {
       slug: z.string().describe("The endpoint slug"),
       destinationId: z.string().describe("The destination's id (from list_destinations)"),

@@ -654,6 +654,36 @@ describe("registerTools", () => {
       });
     });
 
+    it("leaves a file drop's target alone and changes its other settings", async () => {
+      const { tools, update } = sheetsTools({
+        id: "d1",
+        format: "file_drop",
+        url: "sftp://files.example.com/in",
+        config: { protocol: "sftp", host: "files.example.com" },
+      });
+      const schema = z.object(tools.update_destination.schema as z.ZodRawShape);
+      for (const change of [
+        { format: "json" },
+        { url: "https://api.example.com/in" },
+        { format: "json", url: "https://api.example.com/in" },
+        { format: "sheets", config: { connectionId, spreadsheetId, columns } },
+      ]) {
+        const result = await tools.update_destination.handler(
+          schema.parse({ slug: "acme", destinationId: "d1", ...change })
+        );
+        expect(result.isError, JSON.stringify(change)).toBe(true);
+        expect(parseJsonResult(result).message).toContain("File drops are changed in");
+      }
+      expect(update).not.toHaveBeenCalled();
+
+      const settings = { name: "Nightly drop", enabled: false, delaySeconds: 60 };
+      const result = await tools.update_destination.handler(
+        schema.parse({ slug: "acme", destinationId: "d1", ...settings })
+      );
+      expect(result.isError).toBeUndefined();
+      expect(update).toHaveBeenCalledWith("acme", "d1", settings);
+    });
+
     it("keeps the tab only on the same spreadsheet", async () => {
       const { tools, update } = sheetsTools();
       const schema = z.object(tools.update_destination.schema as z.ZodRawShape);
