@@ -38,6 +38,14 @@ enum Sink {
 fn sink(output: Option<&str>, json: bool, stdout_is_terminal: bool) -> Result<Sink> {
     match output.map(str::trim) {
         Some("") => Err(CliError::Usage("-o needs a file name".into()).into()),
+        // `-o -` is stdout, as for most tools, under the same rules.
+        Some("-") => sink(None, json, stdout_is_terminal),
+        Some(path) if std::path::Path::new(path).is_dir() => Err(CliError::Usage(format!(
+            "-o names a directory ({}): give the file to write, such as {}/message.eml",
+            sanitize_line(path),
+            sanitize_line(path.trim_end_matches('/'))
+        ))
+        .into()),
         Some(path) => Ok(Sink::File(path.to_string())),
         None if json => Err(CliError::Usage(
             "With --json, stdout carries the JSON: pass -o <file> to say where the download goes."
@@ -110,6 +118,27 @@ fn explain(error: anyhow::Error, request_id: &str, what: Download) -> anyhow::Er
     api.into()
 }
 
+/// Writes the file whole or not at all: to a temporary file beside it, then
+/// renamed over it, so a failed write never leaves a cut-off file or loses
+/// the one that was there.
+fn write_whole(path: &str, bytes: &[u8]) -> std::io::Result<()> {
+    let target = std::path::Path::new(path);
+    let dir = target
+        .parent()
+        .filter(|dir| !dir.as_os_str().is_empty())
+        .unwrap_or_else(|| std::path::Path::new("."));
+    let name = target
+        .file_name()
+        .map(|name| name.to_string_lossy().to_string())
+        .unwrap_or_else(|| "download".into());
+    let temp = dir.join(format!(".{name}.whk-{}.part", std::process::id()));
+    let written = std::fs::write(&temp, bytes).and_then(|()| std::fs::rename(&temp, target));
+    if written.is_err() {
+        let _ = std::fs::remove_file(&temp);
+    }
+    written
+}
+
 pub async fn run(
     client: &ApiClient,
     request_id: &str,
@@ -119,6 +148,13 @@ pub async fn run(
 ) -> Result<()> {
     let sink = sink(output, json, std::io::stdout().is_terminal())?;
     let request_id = request_id.trim();
+    if !crate::util::is_uuid(request_id) {
+        return Err(CliError::Usage(format!(
+            "{} is not a request id: `whk requests list <slug>` shows them",
+            sanitize_line(request_id)
+        ))
+        .into());
+    }
     let answer = match what {
         Download::Raw => client.download_raw(request_id).await,
         Download::Attachment(index) => client.download_attachment(request_id, index).await,
@@ -137,7 +173,7 @@ pub async fn run(
         }
         Sink::File(path) => path,
     };
-    std::fs::write(&path, &answer.body).with_context(|| format!("failed to write {path}"))?;
+    write_whole(&path, &answer.body).with_context(|| format!("failed to write {path}"))?;
     if json {
         println!(
             "{}",
@@ -250,13 +286,44 @@ mod tests {
         ApiClient::with_credentials(Some(base), Some(base), Some("whcc_test".into()), None).unwrap()
     }
 
+    #[test]
+    fn a_dash_is_stdout_and_a_directory_is_refused() {
+        assert_eq!(sink(Some("-"), false, false).unwrap(), Sink::Stdout);
+        assert!(sink(Some("-"), false, true).is_err(), "never to a terminal");
+        assert!(
+            sink(Some("-"), true, false).is_err(),
+            "never mixed with --json"
+        );
+        let dir = std::env::temp_dir();
+        let error = sink(dir.to_str(), false, false).unwrap_err();
+        assert_eq!(classify(&error).code, "usage");
+        assert!(error.to_string().contains("directory"), "{error}");
+    }
+
+    #[tokio::test]
+    async fn a_value_that_is_not_an_id_is_refused_before_any_call() {
+        let error = run(
+            &client("http://127.0.0.1:9"),
+            "acme",
+            Download::Raw,
+            Some("x.eml"),
+            false,
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(classify(&error).code, "usage");
+    }
+
     #[tokio::test]
     async fn writes_only_to_the_path_given() {
         let app = axum::Router::new().route(
             "/api/requests/{id}/attachments/{index}",
             axum::routing::get(
                 |axum::extract::Path((id, index)): axum::extract::Path<(String, u32)>| async move {
-                    assert_eq!((id.as_str(), index), ("r1", 2));
+                    assert_eq!(
+                        (id.as_str(), index),
+                        ("0d9e8f7a-6b5c-4d3e-8f21-a0b1c2d3e4f5", 2)
+                    );
                     (
                         [
                             ("content-type", "application/pdf"),
@@ -275,7 +342,7 @@ mod tests {
         let path = dir.join("out.bin");
         run(
             &client(&base),
-            "r1",
+            "0d9e8f7a-6b5c-4d3e-8f21-a0b1c2d3e4f5",
             Download::Attachment(2),
             Some(path.to_str().unwrap()),
             true,
@@ -333,7 +400,7 @@ mod tests {
         let path = dir.join("m.eml");
         let error = run(
             &client(&base),
-            "r1",
+            "0d9e8f7a-6b5c-4d3e-8f21-a0b1c2d3e4f5",
             Download::Raw,
             Some(path.to_str().unwrap()),
             false,

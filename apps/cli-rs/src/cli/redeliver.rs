@@ -26,7 +26,8 @@ pub async fn one(client: &ApiClient, request_id: &str, yes: bool, json: bool) ->
     let request_id = request_id.trim();
     confirm(
         &format!(
-            "Run request {request_id} through its endpoint again now (layouts, then every destination that takes it)?"
+            "Run request {} through its endpoint again now (layouts, then every destination that takes it)?",
+            sanitize_line(request_id)
         ),
         yes,
     )?;
@@ -48,7 +49,11 @@ pub async fn one(client: &ApiClient, request_id: &str, yes: bool, json: bool) ->
         return print_json(&answer);
     }
     if answer.value.get("queued").and_then(Value::as_bool) == Some(true) {
-        println!("{} Queued {} again", green("✓"), bold(request_id));
+        println!(
+            "{} Queued {} again",
+            green("✓"),
+            bold(&sanitize_line(request_id))
+        );
         println!(
             "  {} whk deliveries ls --request {}",
             dim("See how its deliveries go:"),
@@ -139,8 +144,9 @@ pub async fn range(
     let body = range_body(since, until, kind, chrono::Utc::now().timestamp_millis())?;
     confirm(
         &format!(
-            "Run {} of {slug} through it again now, oldest first, at most 500?",
-            range_words(&body)
+            "Run {} of {} through it again now, oldest first, at most 500?",
+            range_words(&body),
+            sanitize_line(slug)
         ),
         yes,
     )?;
@@ -162,7 +168,8 @@ pub async fn range(
         println!(
             "  {}",
             dim(&format!(
-                "That is the most one call takes ({limit}): run it again from after the last one for the rest."
+                "That is the most one call takes ({limit}). For the rest, find the last one's time with `whk requests list {} --json` (receivedAt, in epoch milliseconds) and run this again with --since that time plus 1.",
+                sanitize_line(slug)
             ))
         );
     }

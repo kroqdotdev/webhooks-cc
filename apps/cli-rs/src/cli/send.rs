@@ -203,8 +203,8 @@ mod test_email_tests {
             json!({ "slug": "acme" })
         );
         assert_eq!(
-            test_email_body(" acme ", Some("run-1"), Some("shopify-order")),
-            json!({ "slug": "acme", "tag": "run-1", "template": "shopify-order" })
+            test_email_body(" acme ", Some("run-1"), Some("shopify-orders")),
+            json!({ "slug": "acme", "tag": "run-1", "template": "shopify-orders" })
         );
     }
 
