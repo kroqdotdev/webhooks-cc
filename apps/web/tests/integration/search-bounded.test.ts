@@ -330,7 +330,7 @@ describe("bounded request search", () => {
     expect(refs).toEqual(NEEDLE_AT.slice(2).map((i) => `${NEEDLE}-${i}`));
   });
 
-  it("takes only cursors it issued, to the account it issued them to", async () => {
+  it("takes only cursors it issued", async () => {
     // A made-up position, even a well-formed one, is refused: the database
     // clamps positions to the range too (lab-tested), but a forged cursor
     // must not reach it at all.
@@ -350,9 +350,15 @@ describe("bounded request search", () => {
 
     const page = await searchRequestPage({ userId: ownerId, slug: bigSlug, q: "filler", limit: 1 });
     expect(page.cursor).toBeTruthy();
-    await expect(
-      searchRequestPage({ userId: otherId, slug: bigSlug, q: "filler", cursor: page.cursor! })
-    ).rejects.toBeInstanceOf(InvalidSearchCursorError);
+    // A cursor is a position only: another account using it still sees
+    // nothing of this endpoint.
+    const stranger = await searchRequestPage({
+      userId: otherId,
+      slug: bigSlug,
+      q: "filler",
+      cursor: page.cursor!,
+    });
+    expect(stranger.requests).toHaveLength(0);
     // Tampering with the position breaks the signature.
     const [position, mac] = page.cursor!.split(".");
     const tampered = `${Buffer.from(
