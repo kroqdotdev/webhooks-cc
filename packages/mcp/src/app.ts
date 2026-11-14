@@ -61,9 +61,19 @@ export interface DashboardOrigins {
   mailhooks?: string | null;
 }
 
+/** A URL's origin (scheme, host and port), or null when it is not a URL. */
+function originOf(url: string | undefined): string | null {
+  if (!url) return null;
+  try {
+    return new URL(url).origin;
+  } catch {
+    return null;
+  }
+}
+
 /** The public origins the local server links to, from the API base URL it talks to. */
 export function localDashboardOrigins(baseUrl: string | undefined): DashboardOrigins {
-  const webhooks = (baseUrl ?? "https://webhooks.cc").replace(/\/+$/, "");
+  const webhooks = originOf(baseUrl) ?? "https://webhooks.cc";
   // Production serves mailhooks.cc too; another base URL (a dev server) is one site.
   return webhooks === "https://webhooks.cc"
     ? { webhooks, mailhooks: "https://mailhooks.cc" }
