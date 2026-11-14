@@ -160,8 +160,18 @@ async fn run(statoss: bool) {
     // Public routes: webhook capture + health
     let app = Router::new()
         .route("/health", get(handlers::health::health))
-        .route("/w/{slug}/{*path}", any(handlers::webhook::handle_webhook))
-        .route("/w/{slug}", any(handlers::webhook::handle_webhook_no_path))
+        .route(
+            handlers::webhook::CAPTURE_WITH_PATH,
+            any(handlers::webhook::handle_webhook),
+        )
+        .route(
+            handlers::webhook::CAPTURE_TRAILING_SLASH,
+            any(handlers::webhook::handle_webhook_no_path),
+        )
+        .route(
+            handlers::webhook::CAPTURE_NO_PATH,
+            any(handlers::webhook::handle_webhook_no_path),
+        )
         .layer(public_cors)
         .layer(RequestBodyLimitLayer::new(config.max_body_size))
         // A 5xx is a warning here: the handler logs its cause as the

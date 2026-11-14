@@ -1,0 +1,6 @@
+{
+  "title": "Capture URLs with a trailing slash",
+  "items": [
+    "A webhook sent to https://go.webhooks.cc/w/<slug>/ is captured like one sent without the slash; it used to get a 404 and nothing was kept"
+  ]
+}

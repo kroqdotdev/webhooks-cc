@@ -19,6 +19,14 @@ use super::values::LazyBody;
 use crate::AppState; // ResponseRule needed for deserialization
 use crate::metrics;
 
+/// The capture routes, as `main.rs` mounts them. `{*path}` matches only a
+/// non-empty rest, so `/w/{slug}/` needs a route of its own: without it a
+/// sender configured with a trailing slash got a 404 and nothing was kept.
+/// It is the same capture as `/w/{slug}`, path "/".
+pub const CAPTURE_WITH_PATH: &str = "/w/{slug}/{*path}";
+pub const CAPTURE_TRAILING_SLASH: &str = "/w/{slug}/";
+pub const CAPTURE_NO_PATH: &str = "/w/{slug}";
+
 const MAX_HEADER_KEY_LEN: usize = 256;
 const MAX_HEADER_VALUE_LEN: usize = 8192;
 
@@ -1090,6 +1098,39 @@ async fn handle_webhook_inner(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn every_capture_url_reaches_a_handler() {
+        use axum::Router;
+        use axum::body::Body;
+        use axum::http::Request;
+        use axum::routing::any;
+        use tower::ServiceExt;
+
+        // The same patterns main.rs mounts, each answering with its own name.
+        let app = Router::new()
+            .route(CAPTURE_WITH_PATH, any(|| async { "with_path" }))
+            .route(CAPTURE_TRAILING_SLASH, any(|| async { "no_path" }))
+            .route(CAPTURE_NO_PATH, any(|| async { "no_path" }));
+        for (uri, expected) in [
+            ("/w/acme", "no_path"),
+            ("/w/acme/", "no_path"),
+            ("/w/acme/?a=1", "no_path"),
+            ("/w/acme/hooks/stripe", "with_path"),
+            ("/w/acme/hooks/", "with_path"),
+        ] {
+            let response = app
+                .clone()
+                .oneshot(Request::post(uri).body(Body::empty()).unwrap())
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::OK, "{uri}");
+            let body = axum::body::to_bytes(response.into_body(), 64)
+                .await
+                .unwrap();
+            assert_eq!(body, expected, "{uri}");
+        }
+    }
 
     #[test]
     fn a_mock_whose_response_cannot_be_built_goes_out_as_a_plain_200() {
