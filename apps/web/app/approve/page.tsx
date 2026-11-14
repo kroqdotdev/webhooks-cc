@@ -70,6 +70,10 @@ const GOOGLE_PROBLEMS: Record<string, string> = {
   failed: "Google could not be connected. Approve again in a moment.",
 };
 
+/** Connected at Google after the request had ended. */
+const GOOGLE_LATE =
+  "The Google account was connected, but this request had already ended, so whoever asked did not get it. They can find it among the connected accounts.";
+
 /** What the approve button says while the action runs. */
 const WORKING: Record<string, string> = {
   "ai.assist": "Running AI setup, this can take up to a minute...",
@@ -130,6 +134,8 @@ function ApproveContent() {
           kind: "done",
           summary: "A Google account was connected for Google Sheets destinations.",
         });
+      } else if (googleBack === "late") {
+        setPhase({ kind: "gone", message: GOOGLE_LATE });
       } else {
         void load(code, GOOGLE_PROBLEMS[googleBack] ?? GOOGLE_PROBLEMS.failed);
       }
@@ -430,9 +436,10 @@ function ReviewPanel(props: {
         </p>
       </div>
 
-      <p className="font-medium mb-4">{review.summary}</p>
+      {/* What it is about can be captured content (email subjects, senders): never recorded. */}
+      <p className="font-medium mb-4 ph-no-capture">{review.summary}</p>
 
-      <Card className="p-4 mb-4 space-y-2 text-sm" render={<dl />}>
+      <Card className="p-4 mb-4 space-y-2 text-sm ph-no-capture" render={<dl />}>
         {review.details.map((detail) => (
           <div key={detail.label} className="flex justify-between gap-4">
             <dt className="text-muted-foreground">{detail.label}</dt>

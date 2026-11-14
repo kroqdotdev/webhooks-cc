@@ -443,7 +443,9 @@ const pickSpreadsheet: ActionSpec<PickParams> = {
             : error.message
         );
       }
-      throw error;
+      // Reading the tabs changes nothing, so any failure gives the approval
+      // back to try again rather than ending it without a result.
+      throw new ActionError(503, "Google could not be reached. Try again in a moment.");
     }
     const result = { connectionId, spreadsheetId: file, url: spreadsheetUrl(file), tabs };
     return { result, stored: result };

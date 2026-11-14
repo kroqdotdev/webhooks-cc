@@ -414,6 +414,12 @@ describe("connecting a Google account", () => {
       "approved"
     );
 
+    // The browser never came back (closed, or Back from Google): the page
+    // answers it again rather than leaving it stuck as approved.
+    expect(await decideApproval(asked.approval.code, userId, true)).toMatchObject({
+      browser: true,
+    });
+
     const back = `/approve?code=${asked.approval.code}`;
     const config = googleConfig()!;
     const cancelled = authorizationUrl(

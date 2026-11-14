@@ -54,7 +54,7 @@ export async function GET(request: Request) {
     console.info(`[google] connect ${outcome}`);
     // An approval an agent asked for waits again when it did not finish,
     // so the person can try once more from its page.
-    if (state?.approval && outcome !== "connected") {
+    if (state?.approval && outcome !== "connected" && outcome !== "late") {
       await reopenBrowserApproval(state.approval, state.userId).catch((error) =>
         reportError("Reopening a Google approval failed", error)
       );
@@ -102,10 +102,13 @@ export async function GET(request: Request) {
     });
     // Asked for by an agent: it reads the connection from the approval.
     if (state.approval) {
-      await completeBrowserApproval(state.approval, state.userId, {
+      const completed = await completeBrowserApproval(state.approval, state.userId, {
         connectionId: connection.id,
         email: connection.email,
       });
+      // Connected, but the approval ended meanwhile (refused or expired):
+      // the asker never gets it, so the page says so.
+      if (!completed) return await back(state.returnTo, "late");
     }
     return await back(state.returnTo, "connected");
   } catch (error) {

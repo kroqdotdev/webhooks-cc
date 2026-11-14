@@ -191,8 +191,12 @@ async function pendingByCode(code: string): Promise<Row | null> {
     .maybeSingle();
   if (error) throw error;
   const row = data as Row | null;
-  if (!row || statusOf(row) !== "pending") return null;
-  return row;
+  if (!row) return null;
+  const status = statusOf(row);
+  // Approved but still in the person's browser (Google): the page answers it
+  // again when the browser never came back (closed, or Back from Google).
+  if (status === "approved" && actionSpec(row.action).runAt === "browser") return row;
+  return status === "pending" ? row : null;
 }
 
 const OTHER_ACCOUNT =
@@ -311,7 +315,7 @@ export async function decideApproval(
           : { status: "approved", decided_at: now.toISOString(), expires_at: expiresAt }
     )
     .eq("id", row.id)
-    .eq("status", "pending")
+    .eq("status", row.status)
     .select("id")
     .maybeSingle();
   if (error) throw error;
