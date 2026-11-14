@@ -28,6 +28,10 @@ import type {
   InboundDomain,
   InboundDomainRoute,
   RemovedDomain,
+  DeletedTeam,
+  EmailFieldsPreview,
+  LayoutTemplateInfo,
+  PreviewEmailFieldsOptions,
   ShareLink,
   GoogleConnections,
   ConnectedGoogleAccount,
@@ -1396,6 +1400,24 @@ export class WebhooksCC {
             requestId: "string?: a captured email (default: the newest)",
           },
         },
+        previewEmailFields: {
+          description:
+            "Dry run: what named email fields find in a captured email. Nothing is saved.",
+          params: {
+            slug: "string",
+            emailFields: "EmailField[]?: try unsaved fields",
+            requestId: "string?: a captured email (default: the newest)",
+          },
+        },
+        layoutTemplates: {
+          description:
+            "The ready-made email layouts (Shopify, WooCommerce, Etsy orders and more), with the fields each reads",
+          params: { slug: "string" },
+        },
+        addLayoutTemplate: {
+          description: "Add a ready-made layout to the end of an endpoint's layouts (owner only)",
+          params: { slug: "string", template: "string: an id from layoutTemplates" },
+        },
         delete: {
           description: "Delete endpoint and its requests",
           params: { slug: "string" },
@@ -1866,6 +1888,32 @@ export class WebhooksCC {
           description: "List a team's members and pending invites",
           params: { teamId: "string" },
         },
+        create: {
+          description:
+            "Create a team you own (it needs a subscription before endpoints can be shared)",
+          params: { name: "string" },
+        },
+        rename: {
+          description: "Rename a team you own",
+          params: { teamId: "string", name: "string" },
+        },
+        delete: {
+          description:
+            "Delete a team you own: ends its subscription. With an API key the owner approves first (PendingApproval)",
+          params: { teamId: "string" },
+        },
+        removeMember: {
+          description: "Remove a member from a team you own (their endpoints stop being shared)",
+          params: { teamId: "string", userId: "string" },
+        },
+        leave: {
+          description: "Leave a team you belong to (owners delete the team instead)",
+          params: { teamId: "string" },
+        },
+        withdrawInvite: {
+          description: "Withdraw an invite to a team you own before it is answered",
+          params: { teamId: "string", inviteId: "string" },
+        },
         share: {
           description:
             "Share an endpoint you own with a subscribed team (its requests then bill the team pool)",
@@ -2103,6 +2151,47 @@ export class WebhooksCC {
     },
 
     /**
+     * What named email fields find in a captured email (the endpoint's newest
+     * unless `requestId` is given), with the saved fields unless `emailFields`
+     * are given. Nothing is saved. Owner only.
+     */
+    previewEmailFields: async (
+      slug: string,
+      options: PreviewEmailFieldsOptions = {}
+    ): Promise<EmailFieldsPreview> => {
+      validatePathSegment(slug, "slug");
+      return this.request<EmailFieldsPreview>(
+        "POST",
+        `/endpoints/${slug}/email-fields/preview`,
+        options
+      );
+    },
+
+    /** The ready-made email layouts there are to add, with the fields each reads. */
+    layoutTemplates: async (slug: string): Promise<LayoutTemplateInfo[]> => {
+      validatePathSegment(slug, "slug");
+      const answer = await this.request<{ templates: LayoutTemplateInfo[] }>(
+        "GET",
+        `/endpoints/${slug}/layouts/template`
+      );
+      return answer.templates;
+    },
+
+    /**
+     * Add a ready-made layout (an id from `layoutTemplates()`) to the end of
+     * the endpoint's layouts. Owner only.
+     */
+    addLayoutTemplate: async (slug: string, template: string): Promise<{ layoutId: string }> => {
+      validatePathSegment(slug, "slug");
+      if (!template || typeof template !== "string") {
+        throw new Error("addLayoutTemplate requires a template id");
+      }
+      return this.request<{ layoutId: string }>("POST", `/endpoints/${slug}/layouts/template`, {
+        template,
+      });
+    },
+
+    /**
      * What a sender would get back for a captured request, without sending
      * anything: which rule matches and the response with its placeholders
      * filled in. Uses the newest HTTP request unless `requestId` is given,
@@ -2197,6 +2286,62 @@ export class WebhooksCC {
     members: async (teamId: string): Promise<TeamMembers> => {
       validatePathSegment(teamId, "teamId");
       return this.request<TeamMembers>("GET", `/teams/${teamId}/members`);
+    },
+
+    /** Create a team you own. It needs a subscription before endpoints can be shared with it. */
+    create: async (name: string): Promise<Team> => {
+      if (!name || typeof name !== "string" || !name.trim()) {
+        throw new Error("create requires a team name");
+      }
+      return this.request<Team>("POST", "/teams", { name });
+    },
+
+    /** Rename a team you own. */
+    rename: async (teamId: string, name: string): Promise<void> => {
+      validatePathSegment(teamId, "teamId");
+      if (!name || typeof name !== "string" || !name.trim()) {
+        throw new Error("rename requires a team name");
+      }
+      await this.request("PATCH", `/teams/${teamId}`, { name });
+    },
+
+    /**
+     * Delete a team you own. Its subscription ends at once and every member
+     * loses its endpoints, so with an API key the owner approves it first:
+     * show them `url`, then `wait()`.
+     */
+    delete: async (teamId: string): Promise<PendingApproval<DeletedTeam>> => {
+      validatePathSegment(teamId, "teamId");
+      const answer = await this.request<{ approval?: Approval } | undefined>(
+        "DELETE",
+        `/teams/${teamId}`,
+        undefined,
+        { repeatable: false }
+      );
+      return this.pendingOr(answer, "teams.delete", "Deleted the team.", () => ({
+        deleted: "",
+        teamId,
+      }));
+    },
+
+    /** Remove a member from a team you own. Endpoints they shared with it stop being shared. */
+    removeMember: async (teamId: string, userId: string): Promise<void> => {
+      validatePathSegment(teamId, "teamId");
+      validatePathSegment(userId, "userId");
+      await this.request("DELETE", `/teams/${teamId}/members/${userId}`);
+    },
+
+    /** Leave a team you belong to. An owner deletes the team instead. */
+    leave: async (teamId: string): Promise<void> => {
+      validatePathSegment(teamId, "teamId");
+      await this.request("POST", `/teams/${teamId}/leave`);
+    },
+
+    /** Withdraw an invite to a team you own before it is answered. */
+    withdrawInvite: async (teamId: string, inviteId: string): Promise<void> => {
+      validatePathSegment(teamId, "teamId");
+      validatePathSegment(inviteId, "inviteId");
+      await this.request("DELETE", `/teams/${teamId}/invites/${inviteId}`);
     },
 
     /**

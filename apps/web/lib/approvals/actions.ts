@@ -18,6 +18,7 @@ import { getRequestByIdForUser } from "@/lib/supabase/requests";
 import { createRequestShare } from "@/lib/supabase/request-shares";
 import { SHARE_EXPIRY_DAYS, type ShareExpiryDays } from "@/lib/request-share";
 import { TeamBillingError } from "@/lib/supabase/team-billing";
+import { deleteTeam, listTeamsForUser } from "@/lib/supabase/teams";
 import { isUuid } from "@/lib/uuid";
 import {
   AssistRefusal,
@@ -60,7 +61,8 @@ export type ApprovalAction =
   | "account.rename"
   | "google.connect"
   | "google.pick"
-  | "ai.assist";
+  | "ai.assist"
+  | "teams.delete";
 
 export interface ActionDetail {
   label: string;
@@ -360,6 +362,64 @@ const renameAccount: ActionSpec<RenameParams> = {
 };
 
 // ---------------------------------------------------------------------------
+// Deleting a team
+// ---------------------------------------------------------------------------
+
+interface TeamDeleteParams {
+  teamId: string;
+  name: string;
+}
+
+/** The team, when `userId` owns it. */
+async function ownedTeam(userId: string, teamId: string) {
+  const team = (await listTeamsForUser(userId)).find((t) => t.id === teamId);
+  return team && team.role === "owner" ? team : null;
+}
+
+const deleteTeamAction: ActionSpec<TeamDeleteParams> = {
+  runAt: "approve",
+  async parse(input, userId) {
+    const body = (input ?? {}) as Record<string, unknown>;
+    const teamId = body.teamId;
+    if (typeof teamId !== "string" || !isUuid(teamId)) {
+      return { ok: false, error: "Team not found or not owner", status: 404 };
+    }
+    const team = await ownedTeam(userId, teamId);
+    if (!team) return { ok: false, error: "Team not found or not owner", status: 404 };
+    return { ok: true, params: { teamId, name: team.name } };
+  },
+  summary: ({ name }) =>
+    `Delete the team "${name}": its members lose the endpoints shared with it, and this cannot be undone.`,
+  async details({ teamId, name }, userId) {
+    const team = await ownedTeam(userId, teamId);
+    const others = team ? Math.max(team.memberCount - 1, 0) : 0;
+    const subscribed = team !== null && team.subscriptionStatus !== null;
+    return [
+      { label: "Team", value: name },
+      {
+        label: "Members",
+        value:
+          others === 0
+            ? "Only you"
+            : `${others} ${others === 1 ? "other person loses" : "others lose"} access to it`,
+      },
+      { label: "Shared endpoints", value: "Stop being shared; they stay with their owners" },
+      {
+        label: "Subscription",
+        value: subscribed ? "Ends now, with the rest of its period" : "None",
+      },
+    ];
+  },
+  async run(userId, { teamId, name }) {
+    if (!(await deleteTeam(userId, teamId))) {
+      throw new ActionError(404, "Team not found or not owner");
+    }
+    const result = { deleted: name, teamId };
+    return { result, stored: result };
+  },
+};
+
+// ---------------------------------------------------------------------------
 // Connecting a Google account (for Sheets destinations)
 // ---------------------------------------------------------------------------
 
@@ -542,6 +602,7 @@ const ACTIONS: Record<ApprovalAction, ActionSpec<unknown>> = {
   "google.connect": connectGoogle as ActionSpec<unknown>,
   "google.pick": pickSpreadsheet as ActionSpec<unknown>,
   "ai.assist": aiAssist as ActionSpec<unknown>,
+  "teams.delete": deleteTeamAction as ActionSpec<unknown>,
 };
 
 export function actionSpec(action: ApprovalAction): ActionSpec<unknown> {

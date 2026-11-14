@@ -255,6 +255,12 @@ fn print_result(result: &Value, approval: Option<&Value>, json: bool) {
                 format_timestamp_str(text("expiresAt"))
             ))
         );
+    } else if result.get("deleted").is_some() && result.get("teamId").is_some() {
+        println!(
+            "\n  {} Deleted team {}.",
+            green("Approved."),
+            bold(&sanitize(text("deleted")))
+        );
     } else if result.get("removed").is_some() {
         println!(
             "\n  {} Removed the domain {}; mail to it is refused now.",

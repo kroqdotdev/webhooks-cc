@@ -1,3 +1,4 @@
+import { requestApproval } from "@/lib/approvals/request";
 import { auditUserAction } from "@/lib/audit";
 import { authenticateRequestRequireUser } from "@/lib/api-auth";
 import { updateTeam, deleteTeam } from "@/lib/supabase/teams";
@@ -50,6 +51,21 @@ export async function DELETE(
   if (!auth.success) return auth.response;
 
   const { teamId } = await params;
+
+  // An API key or agent token: deleting ends the team's subscription and
+  // cannot be undone, so the owner approves it first.
+  if (auth.keyId) {
+    return requestApproval(
+      request,
+      {
+        userId: auth.userId,
+        keyId: auth.keyId,
+        agentRegistrationId: auth.agentRegistrationId ?? null,
+      },
+      "teams.delete",
+      { teamId }
+    );
+  }
 
   try {
     const deleted = await deleteTeam(auth.userId, teamId);

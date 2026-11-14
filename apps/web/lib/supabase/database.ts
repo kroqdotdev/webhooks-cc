@@ -420,7 +420,8 @@ export interface Database {
             | "account.rename"
             | "google.connect"
             | "google.pick"
-            | "ai.assist";
+            | "ai.assist"
+            | "teams.delete";
           params: Json;
           summary: string;
           user_code: string;
@@ -447,7 +448,8 @@ export interface Database {
             | "account.rename"
             | "google.connect"
             | "google.pick"
-            | "ai.assist";
+            | "ai.assist"
+            | "teams.delete";
           params?: Json;
           summary: string;
           user_code: string;
@@ -474,7 +476,8 @@ export interface Database {
             | "account.rename"
             | "google.connect"
             | "google.pick"
-            | "ai.assist";
+            | "ai.assist"
+            | "teams.delete";
           params?: Json;
           summary?: string;
           user_code?: string;

@@ -1067,6 +1067,46 @@ paths:
   /api/endpoints/{slug}/layouts/template:
     parameters:
       - $ref: "#/components/parameters/slug"
+    get:
+      operationId: listLayoutTemplates
+      tags: [Endpoints]
+      summary: List the ready-made layouts
+      description: The ready-made layouts there are to add, the same for every endpoint, with the fields each reads.
+      responses:
+        "200":
+          description: The templates
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [templates]
+                properties:
+                  templates:
+                    type: array
+                    items:
+                      type: object
+                      required: [id, sender, kind, description, fields, lineItems]
+                      properties:
+                        id:
+                          type: string
+                          description: What POST takes as `template`
+                        sender:
+                          type: string
+                        kind:
+                          type: string
+                          description: What kind of email it reads, such as "order notifications"
+                        description:
+                          type: string
+                        fields:
+                          type: array
+                          items:
+                            type: string
+                          description: The names of the fields it picks out
+                        lineItems:
+                          type: boolean
+                          description: Whether it also reads line items
+        "401":
+          $ref: "#/components/responses/Unauthorized"
     post:
       operationId: addLayoutTemplate
       tags: [Endpoints]
@@ -3024,10 +3064,16 @@ paths:
       operationId: deleteTeam
       tags: [Teams]
       summary: Delete team
-      description: Delete a team. Only the owner can delete. All shares are removed.
+      description: >-
+        Delete a team. Only the owner can delete. All shares are removed and the team's
+        subscription ends at once. Asked with an API key or agent token, it answers 202 with
+        an approval; the team is deleted once the owner approves, and the poll carries
+        `{ deleted, teamId }`.
       responses:
         "204":
           description: Team deleted
+        "202":
+          $ref: "#/components/responses/ApprovalAsked"
         "401":
           $ref: "#/components/responses/Unauthorized"
         "404":

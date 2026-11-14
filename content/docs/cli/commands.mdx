@@ -325,20 +325,30 @@ whk send-to http://localhost:3000/webhooks -d @payload.json
 
 ## teams
 
-Manage teams: sharing, members, and invites. Wherever a command takes `<team>`, pass a team id or a team name (case-insensitive). A name that matches several teams is rejected; pass the id instead.
+Manage teams: creating, sharing, members, invites, and price quotes. Wherever a command takes `<team>`, pass a team id or a team name (case-insensitive). A name that matches several teams is rejected; pass the id instead.
 
 ```bash
 whk teams list                              # your teams: role, seats, members, pooled usage, status
 whk teams members <team>                    # members and pending invites
+whk teams create "Payments"                 # a team you own; it needs a subscription before sharing
+whk teams rename <team> "Payments EU"
+whk teams delete <team>                     # asks, waits for the approval
 whk teams share <slug> --team <team>        # share an endpoint you own (needs an active team)
 whk teams unshare <slug> --team <team>
 whk teams invite <team> <email>             # sends an invite email; accepting claims a seat
+whk teams withdraw <team> <invite> --yes    # an invite id or the invited email
+whk teams remove <team> <member> --yes      # a user id or email; frees their seat
+whk teams leave <team> --yes
 whk teams invites                           # invites waiting for you
 whk teams accept <invite-id>
 whk teams decline <invite-id>
+whk teams quote <team> --seats 5            # what a seat change would cost
+whk teams quote <team> --plan team_business --interval year
 ```
 
-Sharing moves the endpoint's requests onto the team's pooled quota. Only the endpoint owner can share or unshare, and only the team owner can invite. Every subcommand supports `--json`.
+Sharing moves the endpoint's requests onto the team's pooled quota. Only the endpoint owner can share or unshare, and only the team owner can rename, invite, withdraw an invite, remove a member, or ask for a quote. Removing a member, or leaving, unshares the endpoints that member shared with the team; an owner deletes the team instead of leaving it. `remove`, `leave` and `withdraw` ask first, and need `--yes` without a terminal.
+
+Deleting a team ends its subscription at once and takes its shared endpoints from every member, so it needs the team's owner to approve it, as a new API key does; `delete` takes the same `--remote`, `--no-browser`, `--no-wait` and `--timeout` as `keys create`. `quote` only prices a change (`--interval` is `month` unless you say `year`); seat and plan changes are made in the browser. Every subcommand supports `--json`.
 
 ## billing
 
@@ -434,6 +444,26 @@ whk ai setup <slug> --request <id> --request <id> --field order --description "t
 whk ai setup <slug> --request <id> --layout --description "Acme order confirmations"
 whk ai setup <slug> --request <id> --repair '{"name":"order","from":"subject","pattern":"#(\\d+)"}'
 ```
+
+## layouts
+
+Ready-made [layouts](/docs/layouts) for emails from common senders (Shopify, WooCommerce, Etsy orders and more). `templates` lists them with the fields each reads; `add-template` adds one to the end of an endpoint's layouts (the endpoint's owner only), and emails it matches are parsed from the next one on.
+
+```bash
+whk layouts templates <slug>
+whk layouts add-template <slug> <template-id>
+```
+
+## fields
+
+A dry run of an endpoint's [named email fields](/docs/email-capture#fields-you-pick-out): what they find in a captured email, the endpoint's newest unless `--request` names one. `--fields` tries fields you have not saved, as a JSON list or `@file`; a field with a problem is reported and left out. Nothing is saved.
+
+```bash
+whk fields preview <slug>
+whk fields preview <slug> --request <id>
+whk fields preview <slug> --fields '[{"name":"order","from":"subject","pattern":"#(\\d+)"}]'
+```
+
 ## usage
 
 Show your plan's request usage, then parsed pages, preview data and AI assists with when each resets, and below them the pooled quota of every subscribed team you belong to. With `--json` you get the whole `/api/usage` answer (`parsedPages`, `previewData`, `aiAssists`), and the team pools in a `teams` array.

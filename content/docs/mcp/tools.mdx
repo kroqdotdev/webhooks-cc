@@ -1,6 +1,6 @@
 ---
 title: "Tool Reference"
-description: "Complete reference for all 57 MCP tools available to AI coding agents, plus the sandbox tools for agents without an account. Parameters, return types, and usage examples for endpoint, request, email, forwarding, and webhook operations."
+description: "Complete reference for all 91 MCP tools available to AI coding agents, plus the sandbox tools for agents without an account. Parameters, return types, and usage examples for endpoint, request, email, forwarding, and webhook operations."
 section: mcp
 order: 2
 lastUpdated: 2026-11-10
@@ -8,7 +8,7 @@ schema: none
 keywords: ["MCP tools", "webhook MCP reference", "AI agent webhook tools"]
 seo:
   ogTitle: "MCP Tool Reference"
-  ogDescription: "Complete reference for all 57 MCP tools available to AI coding agents, plus the sandbox tools for agents without an account. Parameters, return types, and usage examples for endpoint, request, email, forwarding, and webhook operations."
+  ogDescription: "Complete reference for all 91 MCP tools available to AI coding agents, plus the sandbox tools for agents without an account. Parameters, return types, and usage examples for endpoint, request, email, forwarding, and webhook operations."
 ---
 
 ## Endpoint management
@@ -105,6 +105,35 @@ A dry run of the endpoint's layouts on a captured email: which layout matches, t
 | `layouts`   | `array`  | no       | Layouts to try instead of the saved ones               |
 
 Returns any `problems` with the layouts tried, the plan's `layoutsCap`, the `request` it ran on and `parsed`: the `status` (`matched` or `no_layout`), the `layout`, `fields`, `lineItems` with `lineItemColumns`, `attachments` and `pages`. Long results keep the first 20 line items and leave out sheet rows and attachment text.
+
+### list_layout_templates
+
+The [ready-made layouts](/docs/layouts#ready-made-layouts) for common senders (order emails from Shopify, WooCommerce, Etsy and more, payments, bookings, attachments), each with its `id`, `sender`, `kind`, `description`, the `fields` it reads and whether it reads `lineItems`.
+
+| Parameter | Type     | Required | Description   |
+| --------- | -------- | -------- | ------------- |
+| `slug`    | `string` | yes      | Endpoint slug |
+
+### add_layout_template
+
+Add a ready-made layout to the end of the endpoint's layouts (owner only). Emails it matches are parsed from the next one on; check it with `preview_layouts`. Returns the new layout's `layoutId`.
+
+| Parameter  | Type     | Required | Description                                  |
+| ---------- | -------- | -------- | -------------------------------------------- |
+| `slug`     | `string` | yes      | Endpoint slug                                |
+| `template` | `string` | yes      | The template's id, from `list_layout_templates` |
+
+### preview_email_fields
+
+A dry run of the endpoint's [named email fields](/docs/email-capture#fields-you-pick-out) on a captured email (owner only). Nothing is saved. Pass `emailFields` to try them before saving them with `update_endpoint`.
+
+| Parameter     | Type     | Required | Description                                                        |
+| ------------- | -------- | -------- | ------------------------------------------------------------------ |
+| `slug`        | `string` | yes      | Endpoint slug                                                      |
+| `requestId`   | `string` | no       | A captured email on the endpoint (default: the newest)             |
+| `emailFields` | `array`  | no       | Fields to try instead of the saved ones, `{ name, from, header?, pattern }` |
+
+Returns `problems` with the fields tried (a field with a problem is left out), the `request` it ran on, and `values`: each field's value, `null` where it found nothing (`values` is `null` when the endpoint has no email).
 
 ### preview_response
 
@@ -562,7 +591,7 @@ Verify the webhook signature on a captured request. Supports two modes:
 
 ## Teams
 
-An API key carries the team access of the account it belongs to. Shared endpoints already appear in `list_endpoints` and work with every request tool by slug except `clear_requests`, which only the owner may call; these tools manage the teams. Invites are not exposed: accepting one claims a paid seat and inviting sends email, so those stay with people (dashboard, `whk teams`, or the SDK).
+An API key carries the team access of the account it belongs to. Shared endpoints already appear in `list_endpoints` and work with every request tool by slug except `clear_requests`, which only the owner may call; these tools manage the teams. Sending and answering invites are not exposed: accepting one claims a paid seat and inviting sends email, so those stay with people (dashboard, `whk teams`, or the SDK). Withdrawing an invite is, since it only takes one back.
 
 ### list_teams
 
@@ -588,6 +617,58 @@ Share an endpoint you own with a team. The team needs an active subscription; th
 ### unshare_endpoint
 
 Stop sharing an endpoint you own with a team. Same parameters as `share_endpoint`.
+
+### create_team
+
+Create a team you own (`name`, 1 to 100 characters). It is suspended until the person subscribes it in the browser. Returns the team.
+
+### rename_team
+
+Rename a team you own.
+
+| Parameter | Type     | Required | Description               |
+| --------- | -------- | -------- | ------------------------- |
+| `teamId`  | `string` | yes      | Team id from `list_teams` |
+| `name`    | `string` | yes      | The new name              |
+
+### delete_team
+
+Ask to delete a team you own (`teamId`). Its subscription ends at once and every member loses the endpoints shared with it, so the team's owner approves it first: returns an approval to show them, then call `wait_for_approval`.
+
+### remove_team_member
+
+Remove a member from a team you own. The endpoints they shared with the team stop being shared, and their seat is free again.
+
+| Parameter | Type     | Required | Description                               |
+| --------- | -------- | -------- | ----------------------------------------- |
+| `teamId`  | `string` | yes      | Team id from `list_teams`                 |
+| `userId`  | `string` | yes      | The member's `userId`, from `list_team_members` |
+
+### leave_team
+
+Leave a team you belong to (`teamId`). The endpoints you shared with it stop being shared. An owner deletes the team instead.
+
+### withdraw_invite
+
+Withdraw an invite to a team you own before it is answered.
+
+| Parameter  | Type     | Required | Description                                              |
+| ---------- | -------- | -------- | -------------------------------------------------------- |
+| `teamId`   | `string` | yes      | Team id from `list_teams`                                |
+| `inviteId` | `string` | yes      | The invite's id, from `pendingInvites` in `list_team_members` |
+
+### quote_team_change
+
+What changing a team's seats or plan would cost (owner only), read only: give `seats`, or `plan` with an optional `interval`. The change itself is made in the browser.
+
+| Parameter  | Type     | Required | Description                                                  |
+| ---------- | -------- | -------- | ------------------------------------------------------------ |
+| `teamId`   | `string` | yes      | Team id from `list_teams`                                    |
+| `seats`    | `number` | no       | The seat count to price                                      |
+| `plan`     | `string` | no       | `team` (Teams) or `team_business` (Team Business)            |
+| `interval` | `string` | no       | With `plan`: `month` (the default) or `year`                 |
+
+A seat quote returns `currentSeats`, `newSeats`, `appliesAtRenewal`, `pricePerSeatCents`, `prorationCents`, `dueNowCents` and `renewalCents`; a plan quote returns `applies` (`now` or `renewal`), `creditCents`, `chargeCents`, `dueNowCents`, `renewalCents` and `periodEnd`.
 
 ## Sharing localhost
 
@@ -684,7 +765,7 @@ Ask for a new key. Returns the approval's link and code to show the person (the 
 
 ### wait_for_approval
 
-Wait for the person to answer and collect what the approval grants or did: the new key (shown once), the share link, the removed domain or the new name. If they have not answered when the wait ends, it says so; call it again. It also says when the approval was refused or expired.
+Wait for the person to answer and collect what the approval grants or did: the new key (shown once), the share link, the removed domain, the deleted team or the new name. If they have not answered when the wait ends, it says so; call it again. It also says when the approval was refused or expired.
 
 | Parameter | Type     | Required | Description                                         |
 | --------- | -------- | -------- | --------------------------------------------------- |

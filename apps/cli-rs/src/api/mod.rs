@@ -5,6 +5,7 @@ pub mod device_auth;
 pub mod endpoints;
 pub mod google;
 pub mod keys;
+pub mod layouts;
 pub mod requests;
 pub mod send;
 pub mod shares;

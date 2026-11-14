@@ -25,6 +25,9 @@ const EXPECTED_TOOLS = [
   "favorite_endpoint",
   "update_endpoint",
   "preview_layouts",
+  "list_layout_templates",
+  "add_layout_template",
+  "preview_email_fields",
   "preview_response",
   "list_destinations",
   "add_destination",
@@ -57,6 +60,13 @@ const EXPECTED_TOOLS = [
   "list_team_members",
   "share_endpoint",
   "unshare_endpoint",
+  "create_team",
+  "rename_team",
+  "delete_team",
+  "remove_team_member",
+  "leave_team",
+  "withdraw_invite",
+  "quote_team_change",
   "list_emails",
   "get_email",
   "wait_for_email",
@@ -286,7 +296,7 @@ describe("registerTools", () => {
     const waitFor = vi.fn().mockResolvedValue({ id: "req1", method: "POST", headers: {} });
     const client = createMockClient({ requests: { waitFor } as unknown as WebhooksCC["requests"] });
     const tools = getRegisteredTools(client, { remote: true });
-    expect(Object.keys(tools)).toHaveLength(78);
+    expect(Object.keys(tools)).toHaveLength(88);
     expect(tools).not.toHaveProperty("send_to");
     expect(tools).not.toHaveProperty("replay_request");
     expect(tools).not.toHaveProperty("share_port");
@@ -341,7 +351,7 @@ describe("registerTools", () => {
   it("registers all wrapper and legacy tools", () => {
     const tools = getRegisteredTools(createMockClient());
 
-    expect(Object.keys(tools)).toHaveLength(81);
+    expect(Object.keys(tools)).toHaveLength(91);
     for (const name of EXPECTED_TOOLS) {
       expect(tools).toHaveProperty(name);
     }
@@ -1611,6 +1621,137 @@ describe("registerTools", () => {
     );
     expect(unshared).toEqual({ shared: false, slug: "abc", teamId: "t1" });
     expect(unshare).toHaveBeenCalledWith("t1", "abc");
+  });
+
+  it("asks the owner to approve a team deletion and reports it once approved", async () => {
+    const pending = {
+      id: "ap1",
+      summary: 'Delete the team "Payments".',
+      url: "https://webhooks.cc/approve?code=ABCD-EFGH",
+      code: "ABCD-EFGH",
+      expiresAt: "2026-11-14T12:15:00.000Z",
+      wait: vi.fn(),
+    };
+    const remove = vi.fn(async () => pending);
+    const wait = vi.fn(async () => ({ deleted: "Payments", teamId: "t1" }));
+    const tools = getRegisteredTools(
+      createMockClient({
+        teams: { delete: remove } as unknown as WebhooksCC["teams"],
+        approvals: { wait } as unknown as WebhooksCC["approvals"],
+      })
+    );
+
+    const asked = await tools.delete_team.handler({ teamId: "t1" });
+    expect(remove).toHaveBeenCalledWith("t1");
+    expect(asked.content[0].text).toContain(pending.url);
+    expect(asked.content[0].text).toContain("wait_for_approval with id ap1");
+
+    const done = await tools.wait_for_approval.handler({ id: "ap1", timeout: "1s" });
+    expect(done.content[0].text).toContain('The team "Payments" was deleted');
+  });
+
+  it("manages members and invites of a team by id", async () => {
+    const create = vi.fn(async () => ({ id: "t2", name: "Ops" }));
+    const rename = vi.fn(async () => undefined);
+    const removeMember = vi.fn(async () => undefined);
+    const leave = vi.fn(async () => undefined);
+    const withdrawInvite = vi.fn(async () => undefined);
+    const tools = getRegisteredTools(
+      createMockClient({
+        teams: {
+          create,
+          rename,
+          removeMember,
+          leave,
+          withdrawInvite,
+        } as unknown as WebhooksCC["teams"],
+      })
+    );
+
+    expect(parseJsonResult(await tools.create_team.handler({ name: "Ops" }))).toEqual({
+      id: "t2",
+      name: "Ops",
+    });
+    expect(create).toHaveBeenCalledWith("Ops");
+    await tools.rename_team.handler({ teamId: "t2", name: "Ops EU" });
+    expect(rename).toHaveBeenCalledWith("t2", "Ops EU");
+    await tools.remove_team_member.handler({ teamId: "t2", userId: "u2" });
+    expect(removeMember).toHaveBeenCalledWith("t2", "u2");
+    await tools.leave_team.handler({ teamId: "t3" });
+    expect(leave).toHaveBeenCalledWith("t3");
+    expect(
+      parseJsonResult(await tools.withdraw_invite.handler({ teamId: "t2", inviteId: "i1" }))
+    ).toEqual({ withdrawn: true, teamId: "t2", inviteId: "i1" });
+    expect(withdrawInvite).toHaveBeenCalledWith("t2", "i1");
+  });
+
+  it("quotes a seat or plan change, one at a time", async () => {
+    const quoteTeamSeats = vi.fn(async () => ({ newSeats: 5, dueNowCents: 1500 }));
+    const quoteTeamPlan = vi.fn(async () => ({ plan: "team_business", applies: "now" }));
+    const tools = getRegisteredTools(
+      createMockClient({
+        billing: { quoteTeamSeats, quoteTeamPlan } as unknown as WebhooksCC["billing"],
+      })
+    );
+
+    const seats = parseJsonResult(
+      await tools.quote_team_change.handler({ teamId: "t1", seats: 5 })
+    );
+    expect(seats.dueNowCents).toBe(1500);
+    expect(quoteTeamSeats).toHaveBeenCalledWith("t1", 5);
+    await tools.quote_team_change.handler({
+      teamId: "t1",
+      plan: "team_business",
+      interval: "year",
+    });
+    expect(quoteTeamPlan).toHaveBeenCalledWith("t1", "team_business", "year");
+
+    expect((await tools.quote_team_change.handler({ teamId: "t1" })).isError).toBe(true);
+    expect(
+      (await tools.quote_team_change.handler({ teamId: "t1", seats: 2, plan: "team" })).isError
+    ).toBe(true);
+    expect(
+      (await tools.quote_team_change.handler({ teamId: "t1", seats: 2, interval: "year" })).isError
+    ).toBe(true);
+  });
+
+  it("lists and adds layout templates, and previews email fields", async () => {
+    const layoutTemplates = vi.fn(async () => [
+      { id: "shopify-order", sender: "Shopify", fields: ["order"], lineItems: true },
+    ]);
+    const addLayoutTemplate = vi.fn(async () => ({ layoutId: "shopify-order" }));
+    const previewEmailFields = vi.fn(async () => ({
+      problems: [],
+      request: { id: "r1", subject: "Order #1001", receivedAt: 0 },
+      values: { order: "1001" },
+    }));
+    const tools = getRegisteredTools(
+      createMockClient({
+        endpoints: {
+          layoutTemplates,
+          addLayoutTemplate,
+          previewEmailFields,
+        } as unknown as WebhooksCC["endpoints"],
+      })
+    );
+
+    const listed = parseJsonResult(await tools.list_layout_templates.handler({ slug: "orders" }));
+    expect(listed[0].id).toBe("shopify-order");
+    const added = parseJsonResult(
+      await tools.add_layout_template.handler({ slug: "orders", template: "shopify-order" })
+    );
+    expect(added).toEqual({ layoutId: "shopify-order" });
+    expect(addLayoutTemplate).toHaveBeenCalledWith("orders", "shopify-order");
+
+    const fields = [{ name: "order", from: "subject", pattern: "#(\\d+)" }];
+    const preview = parseJsonResult(
+      await tools.preview_email_fields.handler({ slug: "orders", emailFields: fields })
+    );
+    expect(preview.values).toEqual({ order: "1001" });
+    expect(previewEmailFields).toHaveBeenCalledWith("orders", {
+      requestId: undefined,
+      emailFields: fields,
+    });
   });
 
   it("marks and unmarks a favourite endpoint, marking by default", async () => {

@@ -103,6 +103,13 @@ async function auditDone(
       teamId: typeof params.teamId === "string" ? params.teamId : null,
       metadata: { ...via, id: result.domainId },
     });
+  } else if (decided.action === "teams.delete") {
+    await auditUserAction(request, userId, {
+      action: "team.deleted",
+      status: 204,
+      teamId: typeof params.teamId === "string" ? params.teamId : null,
+      metadata: via,
+    });
   } else if (decided.action === "ai.assist") {
     const ask = params.ask as { kind?: string } | undefined;
     await auditUserAction(request, userId, {
