@@ -570,13 +570,23 @@ sandbox until the agent connects your account.
 
 Agents: claude-code and codex (through `claude mcp add` and `codex mcp add`),
 claude-desktop, cursor, vscode and devin (Devin Desktop, formerly Windsurf;
-`windsurf` works too). Claude Desktop and Devin get the local server, the
-only kind their config files run.
+`windsurf` works too). Claude Desktop gets the local server, the only kind
+its config file runs, and so does Windsurf from before the rename; Devin
+signs in with `devin mcp login webhooks-cc`. With the webhooks.cc Claude
+Code plugin installed, Claude Code is left out: the plugin brings both.
+Claude Code or Codex found without its program on PATH is skipped, with the
+command to run once it is; named with --agent, it fails.
 
 A re-run changes nothing that is already in place. A config file is backed
-up to <file>.bak the first time it is changed, and left alone when it is not
-valid JSON. --remove takes out what this command installed and nothing
-else. Without a terminal it changes nothing unless --yes is given.
+up to <file>.bak the first time it is changed, keeps its indentation, line
+endings and key order, and is left alone when it is read-only, is not valid
+JSON, or holds a number too large to write back exactly (VS Code's mcp.json
+with comments is skipped unless --agent vscode is given, then it fails).
+Cursor and VS Code get no copy of the skill when ~/.agents/skills or
+~/.claude/skills has one, since they read those too, and a copy the skills
+CLI (`npx skills`) manages is never updated or removed. --remove takes out
+what this command installed and nothing else, for agents uninstalled since
+too. Without a terminal it changes nothing unless --yes is given.
 
 Codex signs in to the remote server while `codex mcp add` adds it, in the
 browser. Without a terminal no one can, so whk does not add it: Codex is

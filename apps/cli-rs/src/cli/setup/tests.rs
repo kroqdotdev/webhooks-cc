@@ -21,6 +21,9 @@ struct Fake {
     codex: Option<Value>,
     /// What `codex mcp get` fails with, as for a broken config.toml.
     codex_broken: Option<String>,
+    /// What `codex mcp add --url` fails with after writing the entry, as
+    /// when the sign-in in the browser does not finish.
+    codex_sign_in_fails: Option<String>,
     calls: Vec<String>,
     /// The runs whose output goes to the person (Codex's sign-in).
     shown: Vec<String>,
@@ -137,7 +140,10 @@ impl Runner for Fake {
                     },
                     "enabled_tools": null, "startup_timeout_sec": null
                 }));
-                ok(String::new())
+                match &self.codex_sign_in_fails {
+                    Some(error) => fail(error),
+                    None => ok(String::new()),
+                }
             }
             ("codex", ["mcp", "add", name, "--", ..]) => {
                 let command = after_dashes(&args);
@@ -198,6 +204,7 @@ fn home(name: &str) -> Home {
         claude_json: env.claude_json(),
         codex: None,
         codex_broken: None,
+        codex_sign_in_fails: None,
         calls: Vec::new(),
         shown: Vec::new(),
     };
@@ -279,6 +286,7 @@ fn expected_entry(agent: Agent, server: Server) -> Value {
                 local_entry()
             }
         }
+        Agent::Devin if remote => devin_remote_entry(),
         _ => {
             if remote {
                 json!({ "url": REMOTE_URL })
@@ -825,23 +833,46 @@ fn an_older_skill_whk_wrote_is_brought_up_to_date() {
 }
 
 #[test]
-fn the_claude_code_plugin_brings_the_skill_itself() {
+fn the_claude_code_plugin_brings_the_server_and_the_skill_itself() {
     let mut h = home("plugin");
+    // whk set Claude Code up before the plugin was installed.
+    run(&mut h, &yes(opts(Agent::ClaudeCode))).unwrap();
     let plugins = h.dir.join(".claude/plugins");
     fs::create_dir_all(&plugins).unwrap();
     fs::write(
         plugins.join("installed_plugins.json"),
-        json!({ "version": 2, "plugins": { "webhooks-cc@webhooks-cc": [{ "scope": "user" }] } })
-            .to_string(),
+        // With a byte order mark, which is still JSON to read.
+        format!(
+            "\u{feff}{}",
+            json!({ "version": 2, "plugins": { "webhooks-cc@webhooks-cc": [{ "scope": "user" }] } })
+        ),
     )
     .unwrap();
-    let report = run(&mut h, &yes(opts(Agent::ClaudeCode))).unwrap();
-    assert_eq!(steps(&report)[0], Step::Install);
-    let Step::Skip(message) = &steps(&report)[1] else {
-        panic!("{:?}", steps(&report));
+
+    let mut h2 = home("plugin-fresh");
+    fs::create_dir_all(h2.dir.join(".claude/plugins")).unwrap();
+    fs::copy(
+        plugins.join("installed_plugins.json"),
+        h2.dir.join(".claude/plugins/installed_plugins.json"),
+    )
+    .unwrap();
+    let report = run(&mut h2, &yes(opts(Agent::ClaudeCode))).unwrap();
+    let both = steps(&report);
+    let [Step::Skip(server), Step::Skip(skill)] = both.as_slice() else {
+        panic!("{both:?}");
     };
-    assert!(message.contains("plugin"));
-    assert!(!skill_path(&h, Agent::ClaudeCode).unwrap().exists());
+    // The same reason for both: the plugin's own server would double every tool.
+    assert_eq!(server, skill);
+    assert_eq!(server, PLUGIN_REASON);
+    assert!(h2.fake.calls.is_empty(), "{:?}", h2.fake.calls);
+    assert_eq!(mcp_entry(&h2, Agent::ClaudeCode), None);
+    assert!(!skill_path(&h2, Agent::ClaudeCode).unwrap().exists());
+    assert_eq!(report.to_json()["agents"][0]["status"], "skipped");
+
+    // What whk added before the plugin is still its to remove.
+    let report = run(&mut h, &yes(opts(Agent::ClaudeCode)).clone_with_remove()).unwrap();
+    assert_eq!(steps(&report), [Step::Remove, Step::Remove]);
+    assert_eq!(mcp_entry(&h, Agent::ClaudeCode), None);
 }
 
 #[test]
@@ -1027,4 +1058,542 @@ fn paths_follow_each_platform() {
         linux.claude_desktop_config(),
         Path::new("/home/a/.config/Claude/claude_desktop_config.json")
     );
+}
+
+fn write_file(path: &Path, text: &str) {
+    fs::create_dir_all(path.parent().unwrap()).unwrap();
+    fs::write(path, text).unwrap();
+}
+
+fn message_of(step: &Step) -> String {
+    step.message()
+        .unwrap_or_else(|| panic!("no message: {step:?}"))
+        .to_string()
+}
+
+fn lock_listing_the_skill() -> String {
+    json!({
+        "version": 3,
+        "skills": { "webhooks-cc": {
+            "source": "kroqdotdev/webhooks-cc", "sourceType": "github",
+            "sourceUrl": "https://github.com/kroqdotdev/webhooks-cc.git",
+            "skillFolderHash": "abc", "installedAt": "2026-11-15T00:00:00Z",
+            "updatedAt": "2026-11-15T00:00:00Z"
+        } }
+    })
+    .to_string()
+}
+
+#[test]
+fn a_skill_the_skills_cli_lists_in_its_lock_is_never_updated_or_removed() {
+    for state_home in [false, true] {
+        let mut h = home(&format!("skills-lock-{state_home}"));
+        run(&mut h, &yes(opts(Agent::Cursor))).unwrap();
+        let dir = skill_path(&h, Agent::Cursor).unwrap();
+        let lock = if state_home {
+            let state = h.dir.join("state");
+            h.env
+                .vars
+                .insert("XDG_STATE_HOME".into(), state.display().to_string());
+            state.join("skills/.skill-lock.json")
+        } else {
+            h.dir.join(".agents/.skill-lock.json")
+        };
+        write_file(&lock, &lock_listing_the_skill());
+
+        // An update (an older whk's copy) is left to the skills CLI.
+        let path = h.env.manifest_path();
+        let mut manifest: Value =
+            serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
+        fs::write(dir.join("SKILL.md"), "old\n").unwrap();
+        manifest["skills"][dir.display().to_string()]["SKILL.md"] = json!(sha256(b"old\n"));
+        fs::write(&path, manifest.to_string()).unwrap();
+        let report = run(&mut h, &yes(opts(Agent::Cursor))).unwrap();
+        let message = message_of(&steps(&report)[1]);
+        assert!(matches!(steps(&report)[1], Step::Skip(_)));
+        assert!(message.contains("skills CLI"), "{message}");
+        assert!(
+            message.contains("npx skills remove --global webhooks-cc"),
+            "{message}"
+        );
+        assert_eq!(fs::read_to_string(dir.join("SKILL.md")).unwrap(), "old\n");
+
+        // So is --remove, and whk lets go of its record.
+        let report = run(&mut h, &yes(opts(Agent::Cursor)).clone_with_remove()).unwrap();
+        assert_eq!(steps(&report)[0], Step::Remove);
+        assert!(
+            matches!(steps(&report)[1], Step::Skip(_)),
+            "{:?}",
+            steps(&report)
+        );
+        assert!(dir.join("SKILL.md").exists());
+        assert!(!h.env.manifest_path().exists());
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn a_copy_another_agents_skills_directory_links_to_is_left_alone() {
+    let mut h = home("skills-linked-to");
+    run(
+        &mut h,
+        &yes(Options {
+            local: true,
+            ..opts(Agent::Codex)
+        }),
+    )
+    .unwrap();
+    let canonical = skill_path(&h, Agent::Codex).unwrap();
+    // `npx skills add` links Claude Code's directory to the copy it found.
+    let link = h.dir.join(".claude/skills/webhooks-cc");
+    fs::create_dir_all(link.parent().unwrap()).unwrap();
+    std::os::unix::fs::symlink(&canonical, &link).unwrap();
+
+    let report = run(&mut h, &yes(opts(Agent::Codex)).clone_with_remove()).unwrap();
+    assert_eq!(steps(&report)[0], Step::Remove);
+    let message = message_of(&steps(&report)[1]);
+    assert!(
+        message.contains("~/.claude/skills/webhooks-cc links to"),
+        "{message}"
+    );
+    skill_is_embedded(&canonical);
+    skill_is_embedded(&link);
+}
+
+#[test]
+fn devin_gets_the_remote_server_and_windsurf_keeps_the_local_one() {
+    let mut h = home("devin-remote");
+    fs::create_dir_all(h.dir.join(".codeium/windsurf")).unwrap();
+    let report = run(&mut h, &yes(opts(Agent::Devin))).unwrap();
+    assert!(steps(&report).iter().all(|s| *s == Step::Install));
+    let devin: Value =
+        serde_json::from_str(&fs::read_to_string(h.env.devin_config()).unwrap()).unwrap();
+    assert_eq!(
+        devin["mcpServers"]["webhooks-cc"],
+        json!({ "url": "https://webhooks.cc/mcp", "transport": "http" })
+    );
+    let legacy: Value = serde_json::from_str(
+        &fs::read_to_string(h.dir.join(".codeium/windsurf/mcp_config.json")).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(
+        legacy["mcpServers"]["webhooks-cc"],
+        json!({ "command": "npx", "args": ["-y", "@webhooks-cc/mcp"] })
+    );
+    let json = report.to_json();
+    assert_eq!(json["agents"][0]["server"]["kind"], "remote");
+    let next = json["agents"][0]["next"].as_str().unwrap();
+    assert!(next.contains("devin mcp login webhooks-cc"), "{next}");
+    // The legacy file runs npx, which this PATH lacks.
+    assert!(next.contains("`npx` is not on PATH"), "{next}");
+
+    // --local keeps npx for Devin's own file too, and replaces whk's entry.
+    let report = run(
+        &mut h,
+        &yes(Options {
+            local: true,
+            ..opts(Agent::Devin)
+        }),
+    )
+    .unwrap();
+    assert_eq!(steps(&report)[0], Step::Update);
+    assert_eq!(
+        mcp_entry(&h, Agent::Devin).unwrap(),
+        json!({ "command": "npx", "args": ["-y", "@webhooks-cc/mcp"] })
+    );
+}
+
+#[test]
+fn the_next_step_says_when_npx_is_missing_for_the_local_server() {
+    let mut h = home("npx");
+    let local = Options {
+        local: true,
+        ..yes(opts(Agent::Cursor))
+    };
+    let report = run(&mut h, &local).unwrap();
+    let next = report.to_json()["agents"][0]["next"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    assert!(
+        next.contains("`npx` is not on PATH") && next.contains("Node.js"),
+        "{next}"
+    );
+
+    fs::write(h.dir.join("bin/npx"), "").unwrap();
+    let report = run(&mut h, &local).unwrap();
+    let next = report.to_json()["agents"][0]["next"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    assert!(!next.contains("npx"), "{next}");
+
+    // The remote server needs no npx.
+    let mut h = home("npx-remote");
+    let report = run(&mut h, &yes(opts(Agent::Cursor))).unwrap();
+    let next = report.to_json()["agents"][0]["next"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    assert!(!next.contains("npx"), "{next}");
+}
+
+#[test]
+fn removing_keeps_the_other_servers_in_their_order() {
+    let mut h = home("remove-order");
+    let path = h.env.cursor_config();
+    write_file(&path, r#"{"mcpServers": {"a": {"command": "a"}}}"#);
+    run(&mut h, &yes(opts(Agent::Cursor))).unwrap();
+    // The person adds servers after it, and moves whk's between them.
+    let mut root: Value = serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
+    let ours = root["mcpServers"]["webhooks-cc"].clone();
+    root["mcpServers"] = json!({
+        "a": { "command": "a" }, "webhooks-cc": ours, "b": { "command": "b" }, "c": { "command": "c" }
+    });
+    fs::write(&path, serde_json::to_string_pretty(&root).unwrap()).unwrap();
+
+    run(&mut h, &yes(opts(Agent::Cursor)).clone_with_remove()).unwrap();
+    let root: Value = serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
+    let names: Vec<&String> = root["mcpServers"].as_object().unwrap().keys().collect();
+    assert_eq!(names, ["a", "b", "c"]);
+}
+
+#[cfg(unix)]
+#[test]
+fn a_read_only_config_is_reported_and_its_agent_skipped() {
+    use std::os::unix::fs::PermissionsExt;
+    let mut h = home("read-only");
+    let path = h.env.cursor_config();
+    write_file(&path, "{}\n");
+    fs::set_permissions(&path, fs::Permissions::from_mode(0o444)).unwrap();
+    if writable(&path) {
+        // Running as root, which may write anything.
+        return;
+    }
+    let report = run(&mut h, &yes(opts(Agent::Cursor))).unwrap();
+    assert!(!report.failed());
+    let Step::Blocked(message) = &steps(&report)[0] else {
+        panic!("{:?}", steps(&report));
+    };
+    assert!(message.contains(&path.display().to_string()) && message.contains("read-only"));
+    assert!(matches!(steps(&report)[1], Step::Skip(_)));
+    let json = report.to_json();
+    assert_eq!(json["agents"][0]["status"], "skipped");
+    assert_eq!(json["agents"][0]["items"][0]["status"], "skipped");
+    assert_eq!(fs::read_to_string(&path).unwrap(), "{}\n");
+    assert!(!skill_path(&h, Agent::Cursor).unwrap().exists());
+    assert!(!backup_path(&path).exists());
+    // And write_atomic refuses it too.
+    assert_eq!(
+        write_atomic(&path, b"{}").unwrap_err().kind(),
+        io::ErrorKind::PermissionDenied
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn files_keep_their_mode_and_new_ones_are_private() {
+    use std::os::unix::fs::PermissionsExt;
+    let mode = |p: &Path| fs::metadata(p).unwrap().permissions().mode() & 0o777;
+    let mut h = home("modes");
+    let path = h.env.cursor_config();
+    write_file(&path, "{}\n");
+    fs::set_permissions(&path, fs::Permissions::from_mode(0o640)).unwrap();
+    run(&mut h, &yes(opts(Agent::Cursor))).unwrap();
+    assert_eq!(mode(&path), 0o640);
+    assert_eq!(mode(&backup_path(&path)), 0o640);
+    assert_eq!(mode(&h.env.manifest_path()), 0o600);
+    let skill = skill_path(&h, Agent::Cursor).unwrap();
+    assert_eq!(mode(&skill.join("SKILL.md")), 0o600);
+    // No temporary file is left behind.
+    let names: Vec<String> = fs::read_dir(path.parent().unwrap())
+        .unwrap()
+        .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+        .collect();
+    assert!(names.iter().all(|n| !n.contains("whk-tmp")), "{names:?}");
+
+    // A link planted where the backup goes is never written through.
+    let mut h = home("planted-backup");
+    let path = h.env.cursor_config();
+    write_file(&path, "{}\n");
+    let elsewhere = h.dir.join("elsewhere");
+    std::os::unix::fs::symlink(&elsewhere, backup_path(&path)).unwrap();
+    run(&mut h, &yes(opts(Agent::Cursor))).unwrap();
+    assert!(!elsewhere.exists());
+}
+
+#[test]
+fn claude_code_and_codex_found_without_their_programs_are_skipped() {
+    let mut h = home("found-no-program");
+    h.env.vars.insert("PATH".into(), String::new());
+    fs::create_dir_all(h.dir.join(".claude")).unwrap();
+    fs::create_dir_all(h.dir.join(".codex")).unwrap();
+    let report = run(&mut h, &yes(Options::default())).unwrap();
+    assert!(!report.failed(), "{report:?}");
+    let found: Vec<Agent> = report.agents.iter().map(|a| a.agent).collect();
+    assert_eq!(found, [Agent::ClaudeCode, Agent::Codex]);
+    for (a, program) in report.agents.iter().zip(["claude", "codex"]) {
+        let Step::Skip(message) = &a.items[0].step else {
+            panic!("{:?}", a.items);
+        };
+        assert!(
+            message.contains(&format!("`{program}` is not on PATH"))
+                && message.contains(&format!("{program} mcp add")),
+            "{message}"
+        );
+        assert_eq!(a.items[1].step, Step::Install);
+    }
+    skill_is_embedded(&skill_path(&h, Agent::ClaudeCode).unwrap());
+    skill_is_embedded(&skill_path(&h, Agent::Codex).unwrap());
+    assert!(h.fake.calls.is_empty());
+
+    // Named, Codex fails with the command to run.
+    let report = run(&mut h, &yes(opts(Agent::Codex))).unwrap();
+    assert!(report.failed());
+    let message = message_of(&steps(&report)[0]);
+    assert!(
+        message.contains("codex mcp add webhooks-cc --url"),
+        "{message}"
+    );
+}
+
+#[test]
+fn cursor_and_vs_code_get_no_second_copy_of_a_skill_they_read_elsewhere() {
+    // Codex's copy in ~/.agents/skills, made in the same run, serves Cursor
+    // and VS Code too.
+    let mut h = home("shared-skill");
+    let report = run(
+        &mut h,
+        &Options {
+            agents: vec![Agent::Cursor, Agent::Vscode, Agent::Codex],
+            local: true,
+            yes: true,
+            ..Options::default()
+        },
+    )
+    .unwrap();
+    assert!(!report.failed());
+    for a in &report.agents[..2] {
+        let Step::Skip(message) = &a.items[1].step else {
+            panic!("{:?}", a.items);
+        };
+        assert!(
+            message.contains("~/.agents/skills/webhooks-cc"),
+            "{message}"
+        );
+    }
+    assert_eq!(report.agents[2].items[1].step, Step::Install);
+    assert!(!skill_path(&h, Agent::Cursor).unwrap().exists());
+    assert!(!skill_path(&h, Agent::Vscode).unwrap().exists());
+
+    // A copy already in ~/.claude/skills counts too, whoever made it.
+    let mut h = home("shared-claude-skill");
+    write_file(
+        &h.dir.join(".claude/skills/webhooks-cc/SKILL.md"),
+        "theirs\n",
+    );
+    let report = run(&mut h, &yes(opts(Agent::Vscode))).unwrap();
+    let message = message_of(&steps(&report)[1]);
+    assert!(
+        message.contains("~/.claude/skills/webhooks-cc"),
+        "{message}"
+    );
+    assert!(!skill_path(&h, Agent::Vscode).unwrap().exists());
+}
+
+#[test]
+fn a_codex_entry_added_by_a_failed_sign_in_is_recorded_and_removable() {
+    let mut h = home("codex-sign-in-fails");
+    h.fake.codex_sign_in_fails = Some("Error: OAuth login was cancelled".into());
+    let report = run(&mut h, &yes(tty(opts(Agent::Codex)))).unwrap();
+    assert!(report.failed());
+    let message = message_of(&steps(&report)[0]);
+    assert!(
+        message.contains("cancelled") && message.contains("--remove"),
+        "{message}"
+    );
+    assert_eq!(prune(&mcp_entry(&h, Agent::Codex).unwrap()), remote_entry());
+
+    h.fake.codex_sign_in_fails = None;
+    let report = run(&mut h, &yes(opts(Agent::Codex)).clone_with_remove()).unwrap();
+    assert_eq!(steps(&report)[0], Step::Remove);
+    assert_eq!(h.fake.codex, None);
+}
+
+#[test]
+fn an_unrecorded_entry_of_the_other_kind_is_replaced_only_for_a_named_agent() {
+    let mut h = home("other-kind");
+    let local = json!({
+        "name": "webhooks-cc", "enabled": true,
+        "transport": { "type": "stdio", "command": "npx", "args": ["-y", "@webhooks-cc/mcp"] }
+    });
+    h.fake.codex = Some(local.clone());
+    fs::create_dir_all(h.dir.join(".codex")).unwrap();
+
+    // Found, not named: left as it is.
+    let report = run(
+        &mut h,
+        &yes(tty(Options {
+            agents: vec![],
+            ..Options::default()
+        })),
+    )
+    .unwrap();
+    let codex = report
+        .agents
+        .iter()
+        .find(|a| a.agent == Agent::Codex)
+        .unwrap();
+    let Step::Skip(message) = &codex.items[0].step else {
+        panic!("{:?}", codex.items);
+    };
+    assert!(
+        message.contains("local") && message.contains("--agent"),
+        "{message}"
+    );
+    assert_eq!(h.fake.codex, Some(local.clone()));
+
+    // Named (and confirmed with --yes): replaced.
+    let report = run(&mut h, &yes(tty(opts(Agent::Codex)))).unwrap();
+    assert_eq!(steps(&report)[0], Step::Update);
+    assert_eq!(prune(&mcp_entry(&h, Agent::Codex).unwrap()), remote_entry());
+}
+
+#[test]
+fn an_entry_changed_since_whk_wrote_it_says_so() {
+    let mut h = home("changed-since");
+    run(&mut h, &yes(opts(Agent::Cursor))).unwrap();
+    let path = h.env.cursor_config();
+    write_file(
+        &path,
+        &json!({ "mcpServers": { "webhooks-cc": { "url": REMOTE_URL, "headers": { "X": "1" } } } })
+            .to_string(),
+    );
+    let report = run(&mut h, &yes(opts(Agent::Cursor))).unwrap();
+    let message = message_of(&steps(&report)[0]);
+    assert!(message.contains("changed since whk wrote it"), "{message}");
+    assert!(!message.contains("did not write"), "{message}");
+}
+
+#[test]
+fn a_rewrite_keeps_the_byte_order_mark_line_endings_and_indentation() {
+    for (indent, crlf, bom) in [
+        ("    ", true, true),
+        ("\t", false, false),
+        ("  ", true, false),
+    ] {
+        let mut h = home("fidelity");
+        let path = h.env.cursor_config();
+        let nl = if crlf { "\r\n" } else { "\n" };
+        let original = format!(
+            "{}{{{nl}{indent}\"mcpServers\": {{{nl}{indent}{indent}\"other\": {{ \"command\": \"x\" }}{nl}{indent}}},{nl}{indent}\"big\": 12345678901234567890{nl}}}{nl}",
+            if bom { "\u{feff}" } else { "" }
+        );
+        write_file(&path, &original);
+        let report = run(&mut h, &yes(opts(Agent::Cursor))).unwrap();
+        assert_eq!(steps(&report)[0], Step::Install, "{:?}", steps(&report));
+        let text = fs::read_to_string(&path).unwrap();
+        assert_eq!(text.starts_with('\u{feff}'), bom, "{text:?}");
+        assert_eq!(text.contains("\r\n"), crlf, "{text:?}");
+        if !crlf {
+            assert!(!text.contains('\r'));
+        } else {
+            assert_eq!(text.matches('\n').count(), text.matches("\r\n").count());
+        }
+        assert!(
+            text.contains(&format!("{nl}{indent}\"mcpServers\"")),
+            "{text:?}"
+        );
+        assert!(
+            text.contains(&format!("{nl}{indent}{indent}\"webhooks-cc\"")),
+            "{text:?}"
+        );
+        // A u64 is kept as it was.
+        assert!(text.contains("12345678901234567890"), "{text:?}");
+        assert_eq!(fs::read_to_string(backup_path(&path)).unwrap(), original);
+
+        run(&mut h, &yes(opts(Agent::Cursor)).clone_with_remove()).unwrap();
+        let text = fs::read_to_string(&path).unwrap();
+        assert_eq!(text.starts_with('\u{feff}'), bom);
+        assert_eq!(text.contains("\r\n"), crlf);
+    }
+}
+
+#[test]
+fn a_number_whk_cannot_write_back_exactly_leaves_the_file_alone() {
+    let mut h = home("big-number");
+    let path = h.env.cursor_config();
+    let original = "{\"id\": 123456789012345678901234567890, \"mcpServers\": {}}\n";
+    write_file(&path, original);
+    let report = run(&mut h, &yes(opts(Agent::Cursor))).unwrap();
+    assert!(report.failed());
+    let message = message_of(&steps(&report)[0]);
+    assert!(
+        message.contains("123456789012345678901234567890"),
+        "{message}"
+    );
+    assert!(message.contains("exactly"), "{message}");
+    assert_eq!(fs::read_to_string(&path).unwrap(), original);
+    // Inside a string it is only text.
+    let mut h = home("big-number-string");
+    let path = h.env.cursor_config();
+    write_file(&path, "{\"id\": \"123456789012345678901234567890\"}");
+    let report = run(&mut h, &yes(opts(Agent::Cursor))).unwrap();
+    assert_eq!(steps(&report)[0], Step::Install);
+}
+
+#[test]
+fn a_vs_code_mcp_json_with_comments_is_skipped_unless_vs_code_is_named() {
+    let mut h = home("jsonc");
+    let path = h.env.vscode_config();
+    let original = "{\n  // my servers\n  \"servers\": {\n    \"other\": { \"url\": \"https://x\" },\n  },\n}\n";
+    write_file(&path, original);
+    let report = run(&mut h, &yes(Options::default())).unwrap();
+    assert!(!report.failed(), "{report:?}");
+    let vscode = report
+        .agents
+        .iter()
+        .find(|a| a.agent == Agent::Vscode)
+        .unwrap();
+    let Step::Skip(message) = &vscode.items[0].step else {
+        panic!("{:?}", vscode.items);
+    };
+    assert!(message.contains("comments or trailing commas"), "{message}");
+    let json = report.to_json();
+    let item = json["agents"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|a| a["agent"] == "vscode")
+        .unwrap()["items"][0]
+        .clone();
+    assert_eq!(item["status"], "skipped");
+    assert_eq!(fs::read_to_string(&path).unwrap(), original);
+
+    let report = run(&mut h, &yes(opts(Agent::Vscode))).unwrap();
+    assert!(report.failed());
+    assert_eq!(fs::read_to_string(&path).unwrap(), original);
+}
+
+#[test]
+fn remove_without_agent_also_takes_out_copies_for_an_agent_gone_since() {
+    let mut h = home("gone-since");
+    run(&mut h, &yes(opts(Agent::Vscode))).unwrap();
+    let skill = skill_path(&h, Agent::Vscode).unwrap();
+    assert!(skill.exists());
+    // VS Code is uninstalled, its profile with it; the skill copy stays.
+    fs::remove_dir_all(h.dir.join("xdg/Code")).unwrap();
+    assert!(!h.env.detect(Agent::Vscode));
+
+    let report = run(&mut h, &yes(Options::default()).clone_with_remove()).unwrap();
+    let vscode = report
+        .agents
+        .iter()
+        .find(|a| a.agent == Agent::Vscode)
+        .unwrap();
+    assert!(!vscode.detected);
+    assert_eq!(vscode.items[0].step, Step::Absent);
+    assert_eq!(vscode.items[1].step, Step::Remove);
+    assert!(!skill.exists());
+    assert!(!h.env.manifest_path().exists());
 }

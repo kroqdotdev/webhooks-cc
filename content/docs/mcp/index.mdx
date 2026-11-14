@@ -3,7 +3,7 @@ title: "Webhook MCP Server (@webhooks-cc/mcp)"
 description: "Test webhooks and inbound email from Claude Code, Cursor, Codex, claude.ai and ChatGPT. 94 MCP tools, a remote server at webhooks.cc/mcp with one-click OAuth, a zero-key sandbox, and a Claude Code plugin."
 section: mcp
 order: 1
-lastUpdated: 2026-11-14
+lastUpdated: 2026-11-15
 schema: faq
 keywords:
   [
@@ -66,6 +66,14 @@ Codex opens your browser to sign in. If it does not, run `codex mcp login webhoo
 { "servers": { "webhooks-cc": { "type": "http", "url": "https://webhooks.cc/mcp" } } }
 ```
 
+**Devin Desktop and the Devin CLI** (`~/.config/devin/mcp_config.json`, `%APPDATA%\devin\mcp_config.json` on Windows):
+
+```json
+{ "mcpServers": { "webhooks-cc": { "url": "https://webhooks.cc/mcp", "transport": "http" } } }
+```
+
+Then run `devin mcp login webhooks-cc` to sign in.
+
 **claude.ai and Claude Desktop:** in Settings, Connectors, add a custom connector with the URL `https://webhooks.cc/mcp`.
 
 **ChatGPT:** add `https://webhooks.cc/mcp` as a custom connector (in developer mode).
@@ -117,7 +125,7 @@ The sandbox and the connection are saved in the [agent credential file](/docs/ag
 - **Official MCP Registry**: `io.github.kroqdotdev/webhooks-cc`, published with each release from [`server.json`](https://github.com/kroqdotdev/webhooks-cc/blob/main/packages/mcp/server.json)
 - **Claude Code plugin**: the server bundled with the [webhooks.cc skill](/docs/mcp/skills), installed with `/plugin install webhooks-cc --marketplace kroqdotdev/webhooks-cc`
 - **Glama**: ships with [`glama.json`](https://glama.ai/mcp/servers) metadata
-- **Supported MCP clients**: Claude Code, Cursor, VS Code (GitHub Copilot), OpenAI Codex, claude.ai, Claude Desktop, ChatGPT, and any client that takes remote MCP servers connect to the remote one; Claude Code (`claude mcp add webhooks-cc -- npx -y @webhooks-cc/mcp`), Cursor, VS Code, OpenAI Codex, Devin Desktop (formerly Windsurf), and Claude Desktop also run the local server
+- **Supported MCP clients**: Claude Code, Cursor, VS Code (GitHub Copilot), OpenAI Codex, Devin Desktop and the Devin CLI, claude.ai, Claude Desktop, ChatGPT, and any client that takes remote MCP servers connect to the remote one; Claude Code (`claude mcp add webhooks-cc -- npx -y @webhooks-cc/mcp`), Cursor, VS Code, OpenAI Codex, Devin Desktop (formerly Windsurf), and Claude Desktop also run the local server
 
 ## Available tools
 
@@ -336,7 +344,7 @@ Agent: Replayed to http://localhost:3000/webhooks - got 200 OK
 <FAQ>
 <FAQItem question="Which AI coding agents support @webhooks-cc/mcp?">
 
-Claude Code, Cursor, VS Code (GitHub Copilot) and OpenAI Codex all connect to the remote server at `https://webhooks.cc/mcp`, which is the easiest way in: you approve it once in your browser, with no key to paste. The local `@webhooks-cc/mcp` server works with those and with Devin Desktop (formerly Windsurf) and Claude Desktop, and any client that supports the Model Context Protocol over stdio can run it with `npx -y @webhooks-cc/mcp`.
+Claude Code, Cursor, VS Code (GitHub Copilot), OpenAI Codex and Devin Desktop all connect to the remote server at `https://webhooks.cc/mcp`, which is the easiest way in: you approve it once in your browser, with no key to paste. The local `@webhooks-cc/mcp` server works with those and with Windsurf from before the rename and Claude Desktop, and any client that supports the Model Context Protocol over stdio can run it with `npx -y @webhooks-cc/mcp`.
 
 </FAQItem>
 <FAQItem question="Can I use webhooks.cc from claude.ai or ChatGPT?">

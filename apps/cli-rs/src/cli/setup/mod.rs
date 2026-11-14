@@ -18,8 +18,10 @@
 //! `--remove` deletes exactly that and nothing a person or another tool put
 //! there, and a re-run can replace its own older entry. A file is backed up
 //! to `<file>.bak` the first time it is changed (never over an existing
-//! backup), written through a temporary file and a rename, and left alone
-//! when it is not valid JSON.
+//! backup), written through a temporary file and a rename with the file's
+//! own mode, and left alone when it is not valid JSON, is read-only, or
+//! holds a number whk could not write back exactly. A rewrite keeps the
+//! file's key order, indentation, line endings and byte order mark.
 
 mod skill;
 #[cfg(test)]
@@ -299,6 +301,47 @@ impl Env {
         self.windsurf_dir().join("skills")
     }
 
+    /// `~/.claude/skills` as written, whatever `CLAUDE_CONFIG_DIR` says:
+    /// Cursor and VS Code read skills from there too.
+    fn home_claude_skills(&self) -> PathBuf {
+        self.home.join(".claude").join("skills")
+    }
+
+    /// Every skills directory whk knows, for finding links between them.
+    fn known_skill_dirs(&self) -> Vec<PathBuf> {
+        vec![
+            self.claude_skills(),
+            self.home_claude_skills(),
+            self.cursor_skills(),
+            self.copilot_skills(),
+            self.codex_skills(),
+            self.devin_skills(),
+            self.windsurf_skills(),
+        ]
+    }
+
+    /// The `skills` CLI's global lock file, as `getSkillLockPath()` in its
+    /// src/skill-lock.ts (same commit): `$XDG_STATE_HOME/skills/.skill-lock.json`
+    /// when that is set, else `~/.agents/.skill-lock.json`.
+    fn skills_lock_path(&self) -> PathBuf {
+        match self.var("XDG_STATE_HOME") {
+            Some(state) => Path::new(state).join("skills").join(".skill-lock.json"),
+            None => self.home.join(".agents").join(".skill-lock.json"),
+        }
+    }
+
+    /// Whether the `skills` CLI's lock lists the webhooks-cc skill: its
+    /// `skills` object is keyed by the name the skill is installed under.
+    fn skills_cli_lists_skill(&self) -> bool {
+        let Ok(text) = fs::read_to_string(self.skills_lock_path()) else {
+            return false;
+        };
+        serde_json::from_str::<Value>(strip_bom(&text))
+            .ok()
+            .and_then(|lock| lock.get("skills")?.as_object().cloned())
+            .is_some_and(|skills| skills.contains_key(skill::NAME))
+    }
+
     /// A program on `PATH`, with Windows' executable extensions.
     pub fn which(&self, name: &str) -> Option<PathBuf> {
         let path = self.vars.get("PATH").or_else(|| self.vars.get("Path"))?;
@@ -334,7 +377,7 @@ impl Env {
         let Ok(text) = fs::read_to_string(path) else {
             return false;
         };
-        let Ok(value) = serde_json::from_str::<Value>(&text) else {
+        let Ok(value) = serde_json::from_str::<Value>(strip_bom(&text)) else {
             return false;
         };
         value["plugins"].as_object().is_some_and(|plugins| {
@@ -442,14 +485,26 @@ fn local_entry() -> Value {
     json!({ "type": "stdio", "command": LOCAL_COMMAND, "args": LOCAL_ARGS })
 }
 
+/// A remote server in Devin's `mcp_config.json`, as docs.devin.ai's MCP
+/// configuration page writes one: `url`, and `transport` `http` for
+/// Streamable HTTP. `devin mcp login webhooks-cc` then signs in.
+fn devin_remote_entry() -> Value {
+    json!({ "url": REMOTE_URL, "transport": "http" })
+}
+
 /// Without the `type` field, which Cursor, Claude Desktop and Devin do not
 /// use (setup.ts writes them this way).
 fn untyped(entry: Value) -> Value {
     let mut entry = entry;
     if let Some(map) = entry.as_object_mut() {
-        map.remove("type");
+        map.shift_remove("type");
     }
     entry
+}
+
+/// Whether an entry starts the local server through `npx`.
+fn runs_npx(entry: &Value) -> bool {
+    entry["command"] == json!(LOCAL_COMMAND)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -518,6 +573,9 @@ enum Kind {
         entry: Value,
         /// Every entry whk writes there, which a re-run may replace.
         ours: Vec<Value>,
+        /// The agent reads the file as JSON with comments (VS Code), so a
+        /// file with comments is the person's to edit, not a broken one.
+        jsonc: bool,
     },
     /// The server through the agent's own `mcp add`.
     Command {
@@ -525,6 +583,8 @@ enum Kind {
         server: Server,
         entry: Value,
         ours: Vec<Value>,
+        /// Why it is left out.
+        skip: Option<String>,
     },
     /// The agent skill, in `<dir>/webhooks-cc`.
     Skill {
@@ -555,16 +615,36 @@ impl Target {
             _ => "mcp",
         }
     }
+
+    /// The entry this target installs, for an MCP server.
+    fn entry(&self) -> Option<&Value> {
+        match &self.kind {
+            Kind::JsonFile { entry, .. } | Kind::Command { entry, .. } => Some(entry),
+            Kind::Skill { .. } => None,
+        }
+    }
+
+    /// Whether `setup-agent.json` records something whk wrote here.
+    fn recorded(&self, manifest: &Manifest) -> bool {
+        match &self.kind {
+            Kind::JsonFile { path, .. } => manifest.mcp_files.contains_key(&key(path)),
+            Kind::Command { tool, .. } => manifest.mcp_commands.contains_key(tool.id()),
+            Kind::Skill { dir, .. } => manifest.skills.contains_key(&key(&dir.join(skill::NAME))),
+        }
+    }
 }
 
-/// The server an agent gets: Claude Desktop and Devin take local servers
-/// only in their config files (the docs list them for the local server).
+/// The server an agent gets: Claude Desktop takes local servers only in its
+/// config file (its remote servers are connectors, added in the app).
 fn server_for(agent: Agent, asked: Server) -> Server {
     match agent {
-        Agent::ClaudeDesktop | Agent::Devin => Server::Local,
+        Agent::ClaudeDesktop => Server::Local,
         _ => asked,
     }
 }
+
+/// Why Claude Code is left out while the plugin is installed.
+const PLUGIN_REASON: &str = "the webhooks-cc Claude Code plugin is installed and brings its own MCP server and the skill, so whk adds neither (a second server would list every tool twice)";
 
 fn targets(agent: Agent, asked: Server, env: &Env) -> Vec<Target> {
     let server = server_for(agent, asked);
@@ -575,15 +655,16 @@ fn targets(agent: Agent, asked: Server, env: &Env) -> Vec<Target> {
     let skill = |dir: PathBuf| Target::new(Kind::Skill { dir, skip: None });
     match agent {
         Agent::ClaudeCode => {
-            let skip = env.claude_plugin_installed().then(|| {
-                "the webhooks-cc Claude Code plugin is installed and brings the skill".to_string()
-            });
+            let skip = env
+                .claude_plugin_installed()
+                .then(|| PLUGIN_REASON.to_string());
             vec![
                 Target::new(Kind::Command {
                     tool: Tool::Claude,
                     server,
                     entry: pick(remote_entry(), local_entry()),
                     ours: vec![remote_entry(), local_entry()],
+                    skip: skip.clone(),
                 }),
                 Target::new(Kind::Skill {
                     dir: env.claude_skills(),
@@ -596,6 +677,7 @@ fn targets(agent: Agent, asked: Server, env: &Env) -> Vec<Target> {
             key: "mcpServers",
             entry: untyped(local_entry()),
             ours: vec![untyped(local_entry())],
+            jsonc: false,
         })],
         Agent::Cursor => vec![
             Target::new(Kind::JsonFile {
@@ -603,6 +685,7 @@ fn targets(agent: Agent, asked: Server, env: &Env) -> Vec<Target> {
                 key: "mcpServers",
                 entry: pick(untyped(remote_entry()), untyped(local_entry())),
                 ours: vec![untyped(remote_entry()), untyped(local_entry())],
+                jsonc: false,
             }),
             skill(env.cursor_skills()),
         ],
@@ -612,6 +695,7 @@ fn targets(agent: Agent, asked: Server, env: &Env) -> Vec<Target> {
                 key: "servers",
                 entry: pick(remote_entry(), local_entry()),
                 ours: vec![remote_entry(), local_entry()],
+                jsonc: true,
             }),
             skill(env.copilot_skills()),
         ],
@@ -621,6 +705,7 @@ fn targets(agent: Agent, asked: Server, env: &Env) -> Vec<Target> {
                 server,
                 entry: pick(remote_entry(), local_entry()),
                 ours: vec![remote_entry(), local_entry()],
+                skip: None,
             }),
             skill(env.codex_skills()),
         ],
@@ -630,15 +715,19 @@ fn targets(agent: Agent, asked: Server, env: &Env) -> Vec<Target> {
                 Target::new(Kind::JsonFile {
                     path: env.devin_config(),
                     key: "mcpServers",
-                    entry: untyped(local_entry()),
-                    ours: vec![untyped(local_entry())],
+                    entry: pick(devin_remote_entry(), untyped(local_entry())),
+                    ours: vec![devin_remote_entry(), untyped(local_entry())],
+                    jsonc: false,
                 }),
+                // Windsurf from before the rename runs local servers from
+                // its file, so it keeps the local server.
                 Target {
                     kind: Kind::JsonFile {
                         path: legacy.join("mcp_config.json"),
                         key: "mcpServers",
                         entry: untyped(local_entry()),
                         ours: vec![untyped(local_entry())],
+                        jsonc: false,
                     },
                     only_if: Some(legacy.clone()),
                 },
@@ -727,8 +816,56 @@ fn key(path: &Path) -> String {
 // ---------------------------------------------------------------------------
 // Files
 
+/// The file's permissions, or `0600` for a new one, so a private config is
+/// never readable by others, not even for a moment.
+fn mode_for(target: &Path) -> io::Result<Option<fs::Permissions>> {
+    match fs::metadata(target) {
+        Ok(meta) => Ok(Some(meta.permissions())),
+        Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(None),
+        Err(e) => Err(e),
+    }
+}
+
+/// Creates `path`, which must not exist yet (so a file or link planted
+/// there is never written through), with `permissions` or `0600`.
+fn create_new(path: &Path, permissions: Option<&fs::Permissions>) -> io::Result<fs::File> {
+    let mut options = fs::OpenOptions::new();
+    options.write(true).create_new(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
+        options.mode(permissions.map_or(0o600, |p| p.mode() & 0o7777));
+    }
+    let file = options.open(path)?;
+    // The umask may have taken bits away; the copy gets the file's own.
+    if let Some(permissions) = permissions {
+        file.set_permissions(permissions.clone())?;
+    }
+    Ok(file)
+}
+
+/// Whether this process may write `path` (false when it is read-only).
+fn writable(path: &Path) -> bool {
+    #[cfg(unix)]
+    {
+        use std::os::unix::ffi::OsStrExt;
+        let Ok(c_path) = std::ffi::CString::new(path.as_os_str().as_bytes()) else {
+            return false;
+        };
+        // SAFETY: `c_path` is a valid NUL-terminated string for the call.
+        unsafe { libc::access(c_path.as_ptr(), libc::W_OK) == 0 }
+    }
+    #[cfg(not(unix))]
+    {
+        fs::metadata(path).is_ok_and(|m| !m.permissions().readonly())
+    }
+}
+
 /// Writes through a temporary file in the same directory and a rename, so a
-/// crash never leaves half a file. A symlinked file is written at its target.
+/// crash never leaves half a file. A symlinked file is written at its
+/// target. The temporary file has a random name, is created only if nothing
+/// is there, and has the file's mode from the start. A read-only file is
+/// refused: the rename would replace it whatever its mode says.
 fn write_atomic(path: &Path, bytes: &[u8]) -> io::Result<()> {
     let target = match fs::symlink_metadata(path) {
         Ok(meta) if meta.file_type().is_symlink() => fs::canonicalize(path)?,
@@ -743,15 +880,19 @@ fn write_atomic(path: &Path, bytes: &[u8]) -> io::Result<()> {
         .ok_or_else(|| io::Error::other("the path has no file name"))?
         .to_string_lossy()
         .into_owned();
-    let tmp = dir.join(format!(".{name}.{}.whk-tmp", std::process::id()));
+    let permissions = mode_for(&target)?;
+    if permissions.is_some() && !writable(&target) {
+        return Err(io::Error::new(
+            io::ErrorKind::PermissionDenied,
+            "the file is read-only",
+        ));
+    }
+    let tmp = dir.join(format!(".{name}.{:016x}.whk-tmp", rand::random::<u64>()));
+    let mut file = create_new(&tmp, permissions.as_ref())?;
     let result = (|| {
-        let mut file = fs::File::create(&tmp)?;
         file.write_all(bytes)?;
         file.sync_all()?;
         drop(file);
-        if let Ok(meta) = fs::metadata(&target) {
-            fs::set_permissions(&tmp, meta.permissions())?;
-        }
         fs::rename(&tmp, &target)
     })();
     if result.is_err() {
@@ -766,13 +907,17 @@ fn backup_path(path: &Path) -> PathBuf {
     path.with_file_name(name)
 }
 
-/// Copies an existing file to `<file>.bak`, unless a backup is there already.
+/// Copies an existing file to `<file>.bak`, with its mode, unless anything
+/// is there already (a backup, or a link, which is never written through).
 fn backup_once(path: &Path) -> io::Result<()> {
     let backup = backup_path(path);
-    if path.exists() && !backup.exists() {
-        fs::copy(path, &backup)?;
+    if !path.exists() || fs::symlink_metadata(&backup).is_ok() {
+        return Ok(());
     }
-    Ok(())
+    let bytes = fs::read(path)?;
+    let mut file = create_new(&backup, mode_for(path)?.as_ref())?;
+    file.write_all(&bytes)?;
+    file.sync_all()
 }
 
 /// Null, `{}` and `[]` members say nothing, so `{"env": {}}` equals `{}`.
@@ -797,27 +942,231 @@ fn same(a: &Value, b: &Value) -> bool {
     prune(a) == prune(b)
 }
 
+const BOM: char = '\u{feff}';
+
+fn strip_bom(text: &str) -> &str {
+    text.strip_prefix(BOM).unwrap_or(text)
+}
+
+/// A config file read as a JSON object, with what a rewrite keeps of how
+/// it was written.
+#[derive(Debug, Clone)]
+struct JsonDoc {
+    root: Map<String, Value>,
+    bom: bool,
+    crlf: bool,
+    indent: String,
+    newline_at_end: bool,
+    /// A number serde_json would not write back as it was: an integer past
+    /// 64 bits, which it reads as a float.
+    inexact: Option<String>,
+}
+
+impl JsonDoc {
+    fn new() -> Self {
+        JsonDoc {
+            root: Map::new(),
+            bom: false,
+            crlf: false,
+            indent: "  ".into(),
+            newline_at_end: true,
+            inexact: None,
+        }
+    }
+
+    fn render(&self) -> Result<Vec<u8>, String> {
+        let mut out = Vec::new();
+        let formatter = serde_json::ser::PrettyFormatter::with_indent(self.indent.as_bytes());
+        let mut serializer = serde_json::Serializer::with_formatter(&mut out, formatter);
+        Value::Object(self.root.clone())
+            .serialize(&mut serializer)
+            .map_err(|e| e.to_string())?;
+        let mut text = String::from_utf8(out).map_err(|e| e.to_string())?;
+        if self.newline_at_end {
+            text.push('\n');
+        }
+        // Serialized JSON has newlines only between tokens (a string's are
+        // escaped), so this changes line endings and nothing else.
+        if self.crlf {
+            text = text.replace('\n', "\r\n");
+        }
+        if self.bom {
+            text.insert(0, BOM);
+        }
+        Ok(text.into_bytes())
+    }
+}
+
+/// The indentation of the first indented line: a tab, or that many spaces.
+fn detect_indent(text: &str) -> String {
+    for line in text.lines().skip(1) {
+        let rest = line.trim_start_matches([' ', '\t']);
+        if rest.is_empty() || rest.len() == line.len() {
+            continue;
+        }
+        let lead = &line[..line.len() - rest.len()];
+        return if lead.starts_with('\t') {
+            "\t".into()
+        } else {
+            " ".repeat(lead.len().min(8))
+        };
+    }
+    "  ".into()
+}
+
+/// The number literals outside strings, as written.
+fn number_literals(text: &str) -> Vec<&str> {
+    let bytes = text.as_bytes();
+    let mut out = Vec::new();
+    let mut i = 0;
+    while i < bytes.len() {
+        match bytes[i] {
+            b'"' => {
+                i += 1;
+                while i < bytes.len() && bytes[i] != b'"' {
+                    i += if bytes[i] == b'\\' { 2 } else { 1 };
+                }
+                i += 1;
+            }
+            b'-' | b'0'..=b'9' => {
+                let start = i;
+                while i < bytes.len()
+                    && matches!(bytes[i], b'-' | b'+' | b'.' | b'e' | b'E' | b'0'..=b'9')
+                {
+                    i += 1;
+                }
+                out.push(&text[start..i]);
+            }
+            _ => i += 1,
+        }
+    }
+    out
+}
+
+/// An integer literal that does not fit in 64 bits, if there is one.
+fn inexact_number(text: &str) -> Option<String> {
+    number_literals(text)
+        .into_iter()
+        .find(|n| {
+            !n.contains(['.', 'e', 'E']) && n.parse::<i64>().is_err() && n.parse::<u64>().is_err()
+        })
+        .map(str::to_string)
+}
+
+/// JSON with comments and trailing commas taken out, for telling a JSONC
+/// file from a broken one.
+fn strip_jsonc(text: &str) -> String {
+    let chars: Vec<char> = text.chars().collect();
+    let mut out = String::with_capacity(text.len());
+    let mut i = 0;
+    while i < chars.len() {
+        let c = chars[i];
+        if c == '"' {
+            out.push(c);
+            i += 1;
+            while i < chars.len() && chars[i] != '"' {
+                if chars[i] == '\\' && i + 1 < chars.len() {
+                    out.push(chars[i]);
+                    i += 1;
+                }
+                out.push(chars[i]);
+                i += 1;
+            }
+            if i < chars.len() {
+                out.push('"');
+            }
+            i += 1;
+        } else if c == '/' && chars.get(i + 1) == Some(&'/') {
+            while i < chars.len() && chars[i] != '\n' {
+                i += 1;
+            }
+        } else if c == '/' && chars.get(i + 1) == Some(&'*') {
+            i += 2;
+            while i < chars.len() && !(chars[i] == '*' && chars.get(i + 1) == Some(&'/')) {
+                i += 1;
+            }
+            i += 2;
+        } else if c == ',' {
+            let next = chars[i + 1..]
+                .iter()
+                .position(|c| !c.is_whitespace())
+                .map(|at| chars[i + 1 + at]);
+            if !matches!(next, Some('}') | Some(']')) {
+                out.push(c);
+            }
+            i += 1;
+        } else {
+            out.push(c);
+            i += 1;
+        }
+    }
+    out
+}
+
+/// Why a config file could not be read as JSON.
+#[derive(Debug)]
+struct Unreadable {
+    message: String,
+    /// Valid JSON with comments or trailing commas.
+    jsonc: bool,
+}
+
+impl From<String> for Unreadable {
+    fn from(message: String) -> Self {
+        Unreadable {
+            message,
+            jsonc: false,
+        }
+    }
+}
+
 /// A config file read as a JSON object; `Ok(None)` when there is none.
-fn read_json_object(path: &Path) -> Result<Option<Map<String, Value>>, String> {
-    let text = match fs::read_to_string(path) {
+fn read_json_doc(path: &Path) -> Result<Option<JsonDoc>, Unreadable> {
+    let raw = match fs::read_to_string(path) {
         Ok(text) => text,
         Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(None),
-        Err(e) => return Err(format!("could not read {}: {e}", path.display())),
+        Err(e) => return Err(format!("could not read {}: {e}", path.display()).into()),
     };
+    let mut doc = JsonDoc::new();
+    doc.bom = raw.starts_with(BOM);
+    let text = strip_bom(&raw);
+    doc.crlf = text.contains("\r\n");
     if text.trim().is_empty() {
-        return Ok(Some(Map::new()));
+        return Ok(Some(doc));
     }
-    match serde_json::from_str::<Value>(&text) {
-        Ok(Value::Object(map)) => Ok(Some(map)),
+    doc.newline_at_end = text.ends_with('\n');
+    doc.indent = detect_indent(text);
+    match serde_json::from_str::<Value>(text) {
+        Ok(Value::Object(map)) => {
+            doc.root = map;
+            doc.inexact = inexact_number(text);
+            Ok(Some(doc))
+        }
         Ok(_) => Err(format!(
             "{} is not a JSON object, so it was left as it is",
             path.display()
-        )),
+        )
+        .into()),
+        Err(_) if serde_json::from_str::<Value>(&strip_jsonc(&strip_jsonc(text))).is_ok() => Err(Unreadable {
+            message: format!(
+                "{} is not valid JSON: it has comments or trailing commas, which a rewrite would lose, so it was left as it is; add the {SERVER_NAME} server there yourself, or take them out and run this again",
+                path.display()
+            ),
+            jsonc: true,
+        }),
         Err(e) => Err(format!(
             "{} is not valid JSON ({e}), so it was left as it is; fix it (comments are not JSON) and run this again",
             path.display()
-        )),
+        )
+        .into()),
     }
+}
+
+/// The object only, for reading a file whk never writes.
+fn read_json_object(path: &Path) -> Result<Option<Map<String, Value>>, String> {
+    read_json_doc(path)
+        .map(|doc| doc.map(|d| d.root))
+        .map_err(|e| e.message)
 }
 
 // ---------------------------------------------------------------------------
@@ -833,6 +1182,9 @@ pub enum Step {
     /// Nothing to remove.
     Absent,
     Skip(String),
+    /// Skipped, and the agent's other changes with it: a config file it
+    /// needs is read-only.
+    Blocked(String),
     Fail(String),
     /// Left to the person, because adding it signs in and no one is at a
     /// terminal to do that (Codex with the remote server).
@@ -843,16 +1195,39 @@ impl Step {
     fn is_change(&self) -> bool {
         matches!(self, Step::Install | Step::Update | Step::Remove)
     }
+
+    /// Whether it stops the agent's other changes.
+    fn stops(&self) -> bool {
+        matches!(self, Step::Fail(_) | Step::Blocked(_))
+    }
+
+    fn message(&self) -> Option<&str> {
+        match self {
+            Step::Skip(m) | Step::Blocked(m) | Step::Fail(m) | Step::NeedsSignIn(m) => Some(m),
+            _ => None,
+        }
+    }
+}
+
+/// The other server's name, for the message about an unrecorded entry.
+fn kind_of(entry: &Value) -> &'static str {
+    if entry.get("url").is_some() {
+        "remote"
+    } else {
+        "local"
+    }
 }
 
 /// What to do with an entry that is there now (`current`), given the one
-/// to install and the one whk wrote before.
+/// to install and the one whk wrote before. `named` is whether the person
+/// picked this agent with `--agent`.
 fn decide_entry(
     current: Option<&Value>,
     entry: &Value,
     ours: &[Value],
     recorded: Option<&Value>,
     remove: bool,
+    named: bool,
     place: &str,
 ) -> Step {
     if remove {
@@ -868,11 +1243,21 @@ fn decide_entry(
     match current {
         None => Step::Install,
         Some(current) if same(current, entry) => Step::Unchanged,
-        Some(current)
-            if recorded.is_some_and(|r| same(current, r))
-                || ours.iter().any(|o| same(current, o)) =>
-        {
-            Step::Update
+        Some(current) if recorded.is_some_and(|r| same(current, r)) => Step::Update,
+        Some(_) if recorded.is_some() => Step::Skip(format!(
+            "the {SERVER_NAME} entry in {place} changed since whk wrote it, so it was left as it is; remove it first to use this one"
+        )),
+        // The other kind of server, as whk writes it, but not recorded: the
+        // person may have added it. Replaced only when they name the agent.
+        Some(current) if ours.iter().any(|o| same(current, o)) => {
+            if named {
+                Step::Update
+            } else {
+                Step::Skip(format!(
+                    "{place} already has the {} {SERVER_NAME} server, which whk has no record of adding, so it was left as it is; name the agent with --agent to replace it",
+                    kind_of(current)
+                ))
+            }
         }
         Some(_) => Step::Skip(format!(
             "{place} already has a {SERVER_NAME} entry that whk did not write (it may hold an API key), so it was left as it is; remove it first to use this one"
@@ -886,6 +1271,8 @@ struct Cx<'a> {
     manifest: &'a mut Manifest,
     remove: bool,
     terminal: bool,
+    /// Whether the agent being processed was named with `--agent`.
+    named: bool,
 }
 
 /// Decides what happens to `target` and, with `execute`, does it. Planning
@@ -897,13 +1284,22 @@ fn process(target: &Target, cx: &mut Cx, execute: bool) -> Step {
             key: servers_key,
             entry,
             ours,
-        } => json_file(path, servers_key, entry, ours, cx, execute),
+            jsonc,
+        } => json_file(path, servers_key, entry, ours, *jsonc, cx, execute),
         Kind::Command {
             tool,
             server,
             entry,
             ours,
-        } => command(*tool, *server, entry, ours, cx, execute),
+            skip,
+        } => {
+            if let Some(reason) = skip
+                && !cx.remove
+            {
+                return Step::Skip(reason.clone());
+            }
+            command(*tool, *server, entry, ours, cx, execute)
+        }
         Kind::Skill { dir, skip } => {
             skill_dir(&dir.join(skill::NAME), skip.as_deref(), cx, execute)
         }
@@ -915,15 +1311,19 @@ fn json_file(
     servers_key: &str,
     entry: &Value,
     ours: &[Value],
+    jsonc: bool,
     cx: &mut Cx,
     execute: bool,
 ) -> Step {
-    let (existed, mut root) = match read_json_object(path) {
-        Ok(Some(root)) => (true, root),
-        Ok(None) => (false, Map::new()),
-        Err(message) => return Step::Fail(message),
+    let (existed, mut doc) = match read_json_doc(path) {
+        Ok(Some(doc)) => (true, doc),
+        Ok(None) => (false, JsonDoc::new()),
+        // The agent reads comments, so the file is fine, only not whk's to
+        // rewrite: a skip, unless the person asked for this agent.
+        Err(e) if e.jsonc && jsonc && !cx.named => return Step::Skip(e.message),
+        Err(e) => return Step::Fail(e.message),
     };
-    let current = match root.get(servers_key) {
+    let current = match doc.root.get(servers_key) {
         None => None,
         Some(Value::Object(servers)) => servers.get(SERVER_NAME).cloned(),
         Some(_) => {
@@ -941,22 +1341,40 @@ fn json_file(
         ours,
         recorded.as_ref().map(|r| &r.entry),
         cx.remove,
+        cx.named,
         &path.display().to_string(),
     );
     if cx.remove && step == Step::Absent && current.is_none() {
         cx.manifest.mcp_files.remove(&record);
     }
-    if !execute || !step.is_change() {
+    if !step.is_change() {
+        return step;
+    }
+    if existed && !writable(path) {
+        return Step::Blocked(format!(
+            "{} is read-only, so it was left as it is, and nothing else was changed for this agent",
+            path.display()
+        ));
+    }
+    if let Some(number) = &doc.inexact {
+        return Step::Fail(format!(
+            "{} holds the number {number}, which whk could not write back exactly, so the file was left as it is; add the {SERVER_NAME} server there yourself",
+            path.display()
+        ));
+    }
+    if !execute {
         return step;
     }
     let created = recorded.as_ref().map_or(!existed, |r| r.created);
+    let root = &mut doc.root;
     let servers = root
         .entry(servers_key.to_string())
         .or_insert_with(|| Value::Object(Map::new()))
         .as_object_mut()
         .expect("checked above");
     if step == Step::Remove {
-        servers.remove(SERVER_NAME);
+        // shift_remove keeps the other servers in their order.
+        servers.shift_remove(SERVER_NAME);
     } else {
         servers.insert(SERVER_NAME.to_string(), entry.clone());
     }
@@ -971,9 +1389,9 @@ fn json_file(
         cx.manifest.mcp_files.remove(&record);
         return step;
     }
-    let text = match serde_json::to_string_pretty(&Value::Object(root)) {
-        Ok(text) => text + "\n",
-        Err(e) => return Step::Fail(e.to_string()),
+    let bytes = match doc.render() {
+        Ok(bytes) => bytes,
+        Err(e) => return Step::Fail(e),
     };
     if existed
         && !created
@@ -981,7 +1399,7 @@ fn json_file(
     {
         return Step::Fail(format!("could not back up {}: {e}", path.display()));
     }
-    if let Err(e) = write_atomic(path, text.as_bytes()) {
+    if let Err(e) = write_atomic(path, &bytes) {
         return Step::Fail(format!("could not write {}: {e}", path.display()));
     }
     if step == Step::Remove {
@@ -1081,6 +1499,23 @@ fn not_on_path(tool: Tool, server: Option<Server>) -> String {
     }
 }
 
+/// An agent found by its config directory whose program is not on PATH:
+/// nothing to run, so its server is left for later, and its skill is still
+/// copied.
+fn missing_program(tool: Tool, server: Server, remove: bool) -> String {
+    let program = tool.program();
+    if remove {
+        format!(
+            "`{program}` is not on PATH, so its {SERVER_NAME} server was left as it is; run this again once it is"
+        )
+    } else {
+        format!(
+            "`{program}` is not on PATH, so the server was not added; once it is, run this again or run `{}`",
+            command_line(program, &tool.add_args(server))
+        )
+    }
+}
+
 fn command(
     tool: Tool,
     server: Server,
@@ -1090,6 +1525,18 @@ fn command(
     execute: bool,
 ) -> Step {
     let program = cx.env.which(tool.program());
+    // Without the program, an agent the person named fails with the command
+    // to run; one only found on this machine is skipped.
+    let no_program = |cx: &Cx| {
+        if cx.named {
+            Step::Fail(not_on_path(tool, (!cx.remove).then_some(server)))
+        } else {
+            Step::Skip(missing_program(tool, server, cx.remove))
+        }
+    };
+    if program.is_none() && tool == Tool::Codex {
+        return no_program(cx);
+    }
     let current = match command_state(tool, program.as_deref(), cx) {
         Ok(current) => current,
         Err(message) => return Step::Fail(message),
@@ -1105,6 +1552,7 @@ fn command(
         ours,
         recorded.as_ref(),
         cx.remove,
+        cx.named,
         &place,
     );
     if cx.remove && step == Step::Absent && current.is_none() {
@@ -1114,7 +1562,7 @@ fn command(
         return step;
     }
     let Some(program) = program else {
-        return Step::Fail(not_on_path(tool, (!cx.remove).then_some(server)));
+        return no_program(cx);
     };
     // `codex mcp add --url` writes the entry and then waits for a sign-in in
     // the browser, with no flag to skip it; without a terminal it would wait
@@ -1141,18 +1589,33 @@ fn command(
     }
     for (args, show) in runs {
         let line = command_line(tool.program(), &args);
-        match cx.runner.run(&program, &args, show) {
-            Ok(output) if output.success => {}
+        let failure = match cx.runner.run(&program, &args, show) {
+            Ok(output) if output.success => continue,
             Ok(output) => {
                 let detail = output.stderr.trim();
-                return Step::Fail(if detail.is_empty() {
+                if detail.is_empty() {
                     format!("`{line}` failed")
                 } else {
                     format!("`{line}` failed: {detail}")
-                });
+                }
             }
-            Err(e) => return Step::Fail(format!("could not run `{line}`: {e}")),
+            Err(e) => format!("could not run `{line}`: {e}"),
+        };
+        // A failed add may still have written the entry (Codex writes it,
+        // then signs in): when it is the one whk asked for, record it, so
+        // a re-run or --remove knows it is whk's.
+        if step != Step::Remove
+            && let Ok(Some(now)) = command_state(tool, Some(&program), cx)
+            && same(&now, entry)
+        {
+            cx.manifest
+                .mcp_commands
+                .insert(tool.id().to_string(), prune(entry));
+            return Step::Fail(format!(
+                "{failure}; the entry it added is in place, and --remove takes it out"
+            ));
         }
+        return Step::Fail(failure);
     }
     if step == Step::Remove {
         cx.manifest.mcp_commands.remove(tool.id());
@@ -1216,6 +1679,39 @@ fn remove_empty_dirs(dir: &Path) {
     let _ = fs::remove_dir(dir);
 }
 
+/// Why a copy of the skill belongs to the `skills` CLI, if it does: its
+/// lock lists the skill (so it may have written or adopted this copy), or
+/// another agent's skills directory links here, as its default install
+/// does. whk never updates or removes such a copy.
+fn skills_cli_owner(dir: &Path, env: &Env) -> Option<String> {
+    if env.skills_cli_lists_skill() {
+        return Some(format!(
+            "the skills CLI lists {} in {}, so it may manage {}; whk left it as it is (`npx skills remove --global {}` removes it)",
+            skill::NAME,
+            env.show(&env.skills_lock_path()),
+            env.show(dir),
+            skill::NAME
+        ));
+    }
+    let here = fs::canonicalize(dir).ok()?;
+    let parent = dir.parent()?;
+    env.known_skill_dirs()
+        .into_iter()
+        .filter(|other| other != parent)
+        .map(|other| other.join(skill::NAME))
+        .find(|other| {
+            fs::symlink_metadata(other).is_ok_and(|m| m.file_type().is_symlink())
+                && fs::canonicalize(other).is_ok_and(|target| target == here)
+        })
+        .map(|other| {
+            format!(
+                "{} links to {}, so another tool (`npx skills add`) uses it; whk left it as it is",
+                env.show(&other),
+                env.show(dir)
+            )
+        })
+}
+
 fn skill_dir(dir: &Path, skip: Option<&str>, cx: &mut Cx, execute: bool) -> Step {
     let record = key(dir);
     let recorded = cx.manifest.skills.get(&record).cloned();
@@ -1264,11 +1760,29 @@ fn skill_dir(dir: &Path, skip: Option<&str>, cx: &mut Cx, execute: bool) -> Step
                 dir.display()
             )),
             Some(current) if recorded.as_ref() == Some(current) => Step::Update,
+            Some(_) if recorded.is_some() => Step::Skip(format!(
+                "{} changed since whk wrote it, so it was left as it is",
+                dir.display()
+            )),
             Some(_) => Step::Skip(format!(
-                "{} holds a skill that whk did not write, or one changed since, so it was left as it is",
+                "{} holds a skill that whk did not write, so it was left as it is",
                 dir.display()
             )),
         }
+    };
+    // A copy whk wrote that the skills CLI has taken on since.
+    let step = match step {
+        Step::Remove | Step::Update => match skills_cli_owner(dir, cx.env) {
+            Some(reason) => {
+                if cx.remove {
+                    // No longer whk's to remove, so no longer whk's record.
+                    cx.manifest.skills.remove(&record);
+                }
+                Step::Skip(reason)
+            }
+            None => step,
+        },
+        step => step,
     };
     if cx.remove && current.is_none() {
         cx.manifest.skills.remove(&record);
@@ -1336,6 +1850,8 @@ pub struct AgentReport {
     pub detected: bool,
     pub server: Server,
     pub items: Vec<ItemReport>,
+    /// It runs the local server through `npx`, which is not on PATH.
+    pub npx_missing: bool,
 }
 
 impl AgentReport {
@@ -1381,7 +1897,7 @@ impl Report {
             (Step::Remove, false) => "would_remove",
             (Step::Unchanged, _) => "unchanged",
             (Step::Absent, _) => "absent",
-            (Step::Skip(_), _) => "skipped",
+            (Step::Skip(_) | Step::Blocked(_), _) => "skipped",
             (Step::Fail(_), _) => "failed",
             (Step::NeedsSignIn(_), _) => "needs_sign_in",
         }
@@ -1399,7 +1915,10 @@ impl Report {
                 "would_change"
             }
         } else if !agent.items.is_empty()
-            && agent.items.iter().all(|i| matches!(i.step, Step::Skip(_)))
+            && agent
+                .items
+                .iter()
+                .all(|i| matches!(i.step, Step::Skip(_) | Step::Blocked(_)))
         {
             "skipped"
         } else if self.remove {
@@ -1425,7 +1944,7 @@ impl Report {
                         if let Some(command) = &i.command {
                             item["command"] = json!(command);
                         }
-                        if let Step::Skip(m) | Step::Fail(m) | Step::NeedsSignIn(m) = &i.step {
+                        if let Some(m) = i.step.message() {
                             item["message"] = json!(m);
                         }
                         item
@@ -1454,7 +1973,18 @@ impl Report {
     }
 
     /// What the person does next, once the server is in place.
-    fn next_step(&self, a: &AgentReport) -> Option<&'static str> {
+    fn next_step(&self, a: &AgentReport) -> Option<String> {
+        let next = self.next_words(a)?;
+        Some(if a.npx_missing {
+            format!(
+                "{next} `npx` is not on PATH, so the agent cannot start the local server yet: install Node.js, which brings npx."
+            )
+        } else {
+            next.to_string()
+        })
+    }
+
+    fn next_words(&self, a: &AgentReport) -> Option<&'static str> {
         if self.remove {
             return None;
         }
@@ -1486,7 +2016,10 @@ impl Report {
             (Agent::ClaudeDesktop, _) => {
                 "Restart Claude Desktop. Its config file runs local servers only; for the remote server, add a custom connector with https://webhooks.cc/mcp under Settings, Connectors."
             }
-            (Agent::Devin, _) => {
+            (Agent::Devin, Server::Remote) => {
+                "Run `devin mcp login webhooks-cc` to sign in to webhooks.cc, then restart Devin Desktop."
+            }
+            (Agent::Devin, Server::Local) => {
                 "Restart Devin Desktop (or Windsurf). It runs the local server, which starts in the agent sandbox until the agent connects your account (connect_account)."
             }
             (_, Server::Local) => {
@@ -1552,7 +2085,7 @@ impl Report {
                     "  {what:<11} {:<14}{place}",
                     self.status_words(&i.step)
                 )?;
-                if let Step::Skip(m) | Step::Fail(m) | Step::NeedsSignIn(m) = &i.step {
+                if let Some(m) = i.step.message() {
                     writeln!(out, "              {m}")?;
                 }
             }
@@ -1599,8 +2132,54 @@ fn item_report(target: &Target, server: Server, env: &Env, remove: bool, step: S
     }
 }
 
-/// An agent, whether it was found, and what happens to each of its targets.
-type Plan = (Agent, bool, Vec<(Target, Step)>);
+/// An agent, whether it was found, whether it was named with `--agent`, and
+/// what happens to each of its targets.
+type Plan = (Agent, bool, bool, Vec<(Target, Step)>);
+
+fn stopped_because(agent: Agent, step: &Step) -> String {
+    match step {
+        Step::Blocked(_) => format!(
+            "not changed, because a config file of {} is read-only",
+            agent.label()
+        ),
+        _ => format!("not changed, because of the failure for {}", agent.label()),
+    }
+}
+
+/// Cursor reads skills from `~/.agents/skills` and `~/.claude/skills` as well
+/// as its own directory, and VS Code (Copilot) from both as well as
+/// `~/.copilot/skills` (cursor.com/docs/context/skills,
+/// code.visualstudio.com/docs/copilot/customization/agent-skills; the
+/// skills CLI installs both into `~/.agents/skills` for the same reason). A
+/// second copy would load the skill twice, so theirs is not installed when
+/// one of those has it or gets it in this run.
+fn skip_skills_read_elsewhere(plans: &mut [Plan], env: &Env) {
+    let shared = [env.codex_skills(), env.home_claude_skills()];
+    let has = |dir: &PathBuf, plans: &[Plan]| {
+        fs::symlink_metadata(dir.join(skill::NAME)).is_ok()
+            || plans.iter().flat_map(|p| &p.3).any(|(t, step)| {
+                matches!(&t.kind, Kind::Skill { dir: d, .. } if d == dir)
+                    && matches!(step, Step::Install | Step::Update | Step::Unchanged)
+            })
+    };
+    let Some(covering) = shared.iter().find(|dir| has(dir, plans)).cloned() else {
+        return;
+    };
+    for (agent, _, _, items) in plans.iter_mut() {
+        if !matches!(agent, Agent::Cursor | Agent::Vscode) {
+            continue;
+        }
+        for (target, step) in items.iter_mut() {
+            if matches!(target.kind, Kind::Skill { .. }) && *step == Step::Install {
+                *step = Step::Skip(format!(
+                    "{} reads the skill from {} too, so it was not copied here as well",
+                    agent.label(),
+                    env.show(&covering.join(skill::NAME))
+                ));
+            }
+        }
+    }
+}
 
 /// Plans, asks through `gate` when something would change (unless `--yes`
 /// or a dry run), then makes the changes. `gate` gets the plan and the
@@ -1620,23 +2199,31 @@ pub fn execute(
         Server::Remote
     };
 
-    let mut chosen: Vec<(Agent, bool)> = Vec::new();
+    // (agent, found on this machine, named with --agent)
+    let mut chosen: Vec<(Agent, bool, bool)> = Vec::new();
     if opts.agents.is_empty() {
         for agent in Agent::ALL {
-            if env.detect(agent) {
-                chosen.push((agent, true));
+            let detected = env.detect(agent);
+            // --remove also goes through what whk recorded, so copies for an
+            // agent uninstalled since are taken out too.
+            let recorded = opts.remove
+                && [Server::Remote, Server::Local]
+                    .into_iter()
+                    .any(|s| targets(agent, s, env).iter().any(|t| t.recorded(&manifest)));
+            if detected || recorded {
+                chosen.push((agent, detected, false));
             }
         }
     } else {
         for agent in &opts.agents {
-            if !chosen.iter().any(|(a, _)| a == agent) {
-                chosen.push((*agent, env.detect(*agent)));
+            if !chosen.iter().any(|(a, _, _)| a == agent) {
+                chosen.push((*agent, env.detect(*agent), true));
             }
         }
     }
 
     // Plan: decide every target without changing anything. A target that
-    // fails stops its agent.
+    // fails (or finds a read-only file) stops its agent.
     let mut plans: Vec<Plan> = Vec::new();
     {
         let mut cx = Cx {
@@ -1645,36 +2232,39 @@ pub fn execute(
             manifest: &mut manifest,
             remove: opts.remove,
             terminal: opts.terminal,
+            named: false,
         };
-        for (agent, detected) in &chosen {
+        for (agent, detected, named) in &chosen {
+            cx.named = *named;
             let mut items = Vec::new();
-            let mut failure: Option<String> = None;
+            let mut stop: Option<String> = None;
             for target in targets(*agent, server, env) {
-                if target.only_if.as_ref().is_some_and(|dir| !dir.exists()) {
+                if target.only_if.as_ref().is_some_and(|dir| !dir.exists())
+                    && !(opts.remove && target.recorded(cx.manifest))
+                {
                     continue;
                 }
                 let step = process(&target, &mut cx, false);
-                if let Step::Fail(m) = &step
-                    && failure.is_none()
-                {
-                    failure = Some(m.clone());
+                if step.stops() && stop.is_none() {
+                    stop = Some(stopped_because(*agent, &step));
                 }
                 items.push((target, step));
             }
-            if failure.is_some() {
+            if let Some(reason) = stop {
                 for (_, step) in items.iter_mut() {
                     if step.is_change() {
-                        *step = Step::Skip(format!(
-                            "not changed, because of the failure for {}",
-                            agent.label()
-                        ));
+                        *step = Step::Skip(reason.clone());
                     }
                 }
             }
-            plans.push((*agent, *detected, items));
+            plans.push((*agent, *detected, *named, items));
         }
     }
+    if !opts.remove {
+        skip_skills_read_elsewhere(&mut plans, env);
+    }
 
+    let npx_missing = env.which(LOCAL_COMMAND).is_none();
     let report_of = |plans: &[Plan], applied: bool| Report {
         server,
         remove: opts.remove,
@@ -1682,8 +2272,13 @@ pub fn execute(
         applied,
         agents: plans
             .iter()
-            .map(|(agent, detected, items)| {
+            .map(|(agent, detected, _, items)| {
                 let agent_server = server_for(*agent, server);
+                let npx_missing = npx_missing
+                    && items.iter().any(|(t, s)| {
+                        t.entry().is_some_and(runs_npx)
+                            && matches!(s, Step::Install | Step::Update | Step::Unchanged)
+                    });
                 AgentReport {
                     agent: *agent,
                     detected: *detected,
@@ -1692,6 +2287,7 @@ pub fn execute(
                         .iter()
                         .map(|(t, s)| item_report(t, agent_server, env, opts.remove, s.clone()))
                         .collect(),
+                    npx_missing,
                 }
             })
             .collect(),
@@ -1699,7 +2295,7 @@ pub fn execute(
 
     let changes = plans
         .iter()
-        .flat_map(|(_, _, items)| items)
+        .flat_map(|(_, _, _, items)| items)
         .any(|(_, step)| step.is_change());
     if opts.dry_run {
         return Ok(report_of(&plans, false));
@@ -1707,8 +2303,8 @@ pub fn execute(
     if changes && !opts.yes {
         let names: Vec<&str> = plans
             .iter()
-            .filter(|(_, _, items)| items.iter().any(|(_, s)| s.is_change()))
-            .map(|(agent, _, _)| agent.label())
+            .filter(|(_, _, _, items)| items.iter().any(|(_, s)| s.is_change()))
+            .map(|(agent, _, _, _)| agent.label())
             .collect();
         let verb = if opts.remove {
             "Remove webhooks.cc from"
@@ -1727,23 +2323,22 @@ pub fn execute(
             manifest: &mut manifest,
             remove: opts.remove,
             terminal: opts.terminal,
+            named: false,
         };
-        for (agent, _, items) in plans.iter_mut() {
-            let mut stopped = false;
+        for (agent, _, named, items) in plans.iter_mut() {
+            cx.named = *named;
+            let mut stopped: Option<String> = None;
             for (target, step) in items.iter_mut() {
                 if !step.is_change() {
                     continue;
                 }
-                if stopped {
-                    *step = Step::Skip(format!(
-                        "not changed, because of the failure for {}",
-                        agent.label()
-                    ));
+                if let Some(reason) = &stopped {
+                    *step = Step::Skip(reason.clone());
                     continue;
                 }
                 *step = process(target, &mut cx, true);
-                if matches!(step, Step::Fail(_)) {
-                    stopped = true;
+                if step.stops() {
+                    stopped = Some(stopped_because(*agent, step));
                 }
             }
         }

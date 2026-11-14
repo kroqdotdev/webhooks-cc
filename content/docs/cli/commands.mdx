@@ -3,7 +3,7 @@ title: "Command Reference"
 description: "Complete command reference for the webhooks.cc CLI, including authentication, endpoint management, tunneling, replay, the agent sandbox, and updates."
 section: cli
 order: 2
-lastUpdated: 2026-11-14
+lastUpdated: 2026-11-15
 schema: none
 keywords: ["whk commands", "CLI reference", "webhook CLI commands"]
 seo:
@@ -684,13 +684,13 @@ An agent counts as found when its program is on `PATH` or its config directory e
 | Cursor         | `~/.cursor/mcp.json`                                | `~/.cursor/skills/webhooks-cc`         |
 | VS Code        | `mcp.json` in your VS Code user profile             | `~/.copilot/skills/webhooks-cc`        |
 | Claude Desktop | `claude_desktop_config.json` (local server)         | none                                   |
-| Devin Desktop  | `~/.config/devin/mcp_config.json` (local server)    | `~/.config/devin/skills/webhooks-cc`   |
+| Devin Desktop  | `~/.config/devin/mcp_config.json`                   | `~/.config/devin/skills/webhooks-cc`   |
 
-The skill goes where `npx skills add` puts it for each agent. Claude Code's is left out when the [webhooks.cc plugin](/docs/mcp/skills#install-in-claude-code) is installed, since the plugin brings it.
+The skill goes where `npx skills add` puts it for each agent. Cursor and VS Code also read skills from `~/.agents/skills` and `~/.claude/skills`, so they get no copy of their own when one of those has the skill or gets it in the same run. A copy that the skills CLI manages (its lock file lists `webhooks-cc`, or another agent's skills directory links to it) is never updated or removed. With the [webhooks.cc plugin](/docs/mcp/skills#install-in-claude-code) installed, Claude Code gets neither the server nor the skill: the plugin brings both, and a second server would list every tool twice. When Claude Code or Codex is found by its config directory but its program is not on `PATH`, its server is skipped with the command to run once it is, and its skill is still copied; named with `--agent`, it fails instead.
 
-What it installs is the remote server, `https://webhooks.cc/mcp`, and no key is written anywhere: the agent signs in with OAuth in your browser the first time it connects (in Claude Code, run `/mcp` and pick `webhooks-cc`; Codex signs in while the server is added, see below). `--local` installs `npx -y @webhooks-cc/mcp` instead, which starts in the [agent sandbox](/docs/mcp#without-an-api-key-the-agent-sandbox) until the agent connects your account. Claude Desktop and Devin Desktop always get the local server, the only kind their config files run; for the remote server in Claude Desktop, add a custom connector under Settings, Connectors.
+What it installs is the remote server, `https://webhooks.cc/mcp`, and no key is written anywhere: the agent signs in with OAuth in your browser the first time it connects (in Claude Code, run `/mcp` and pick `webhooks-cc`; in Devin, run `devin mcp login webhooks-cc`; Codex signs in while the server is added, see below). `--local` installs `npx -y @webhooks-cc/mcp` instead, which starts in the [agent sandbox](/docs/mcp#without-an-api-key-the-agent-sandbox) until the agent connects your account; when `npx` is not on `PATH`, `next` says so. Claude Desktop always gets the local server, the only kind its config file runs (for the remote server, add a custom connector under Settings, Connectors), and so does Windsurf from before the rename, in `~/.codeium/windsurf/mcp_config.json`.
 
-Running it again changes nothing that is already in place and says `unchanged`. A config file is backed up to `<file>.bak` the first time it is changed and written through a temporary file, so it is never left half written. A file that is not valid JSON (comments included) is left alone and named in the error, and that agent is skipped. An entry called `webhooks-cc` that `whk` did not write, such as one holding an API key, is never replaced. `--remove` takes out only what `whk setup agent` installed, as recorded in `setup-agent.json` beside the login file, and leaves anything changed since. Without a terminal it changes nothing unless `--yes` is given, and `--json` prints one document with each agent's outcome:
+Running it again changes nothing that is already in place and says `unchanged`. A config file is backed up to `<file>.bak` the first time it is changed and written through a temporary file with the file's own permissions, so it is never left half written and never readable by others in between; a rewrite keeps its key order, indentation, line endings and byte order mark. A file that is read-only is left alone and that agent is skipped. A file that is not valid JSON, or holds a number too large to write back exactly, is left alone and named in the error, and that agent fails. VS Code reads `mcp.json` with comments, so a VS Code file with comments or trailing commas is skipped rather than failed, unless you name it with `--agent vscode`. An entry called `webhooks-cc` that `whk` did not write, such as one holding an API key, is never replaced, and neither is one like `whk`'s own that it has no record of writing, unless you name the agent with `--agent`. `--remove` takes out only what `whk setup agent` installed, as recorded in `setup-agent.json` beside the login file, including what it installed for an agent removed from the machine since, and leaves anything changed since. Without a terminal it changes nothing unless `--yes` is given, and `--json` prints one document with each agent's outcome:
 
 ```json
 {
@@ -702,6 +702,7 @@ Running it again changes nothing that is already in place and says `unchanged`. 
       "agent": "cursor",
       "name": "Cursor",
       "detected": true,
+      "server": { "kind": "remote", "url": "https://webhooks.cc/mcp" },
       "status": "changed",
       "items": [
         { "what": "mcp", "status": "installed", "path": "/home/you/.cursor/mcp.json" },
@@ -713,9 +714,9 @@ Running it again changes nothing that is already in place and says `unchanged`. 
 }
 ```
 
-Each item's `status` is `installed`, `updated`, `unchanged`, `removed`, `absent`, `skipped`, `failed` or `needs_sign_in` (a dry run says `would_install`, `would_update` or `would_remove`), with a `message` when it was skipped, failed or needs a sign-in. When an agent fails, the command exits with status 1 after printing the rest.
+Each agent's `server` is the one it gets, which for Claude Desktop is always the local server. Each item's `status` is `installed`, `updated`, `unchanged`, `removed`, `absent`, `skipped`, `failed` or `needs_sign_in` (a dry run says `would_install`, `would_update` or `would_remove`), with a `message` when it was skipped, failed or needs a sign-in. When an agent fails, the command exits with status 1 after printing the rest; a skipped one leaves it at 0.
 
-Codex signs in to the remote server as part of `codex mcp add`, in your browser, and has no way to add it now and sign in later. At a terminal, `whk setup agent` runs that command and you sign in when the browser opens. Without one, as when a coding agent runs `whk setup agent --yes`, nobody could finish the sign-in, so Codex's server is not added: its item and the agent say `needs_sign_in`, the command still exits 0 and copies the skill, and `next` gives the command to run yourself in a terminal:
+Codex signs in to the remote server as part of `codex mcp add`, in your browser, and has no way to add it now and sign in later. At a terminal, `whk setup agent` runs that command and you sign in when the browser opens; if the sign-in does not finish, the entry Codex added is still recorded, so `--remove` takes it out. Without one, as when a coding agent runs `whk setup agent --yes`, nobody could finish the sign-in, so Codex's server is not added: its item and the agent say `needs_sign_in`, the command still exits 0 and copies the skill, and `next` gives the command to run yourself in a terminal:
 
 ```bash
 codex mcp add webhooks-cc --url https://webhooks.cc/mcp
