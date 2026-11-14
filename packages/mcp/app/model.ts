@@ -68,7 +68,14 @@ export interface EmailView {
   fields: [string, string | null][];
   text: string | null;
   textTruncated: boolean;
+  /** The email has no text part: `text` is what the receiver made from its HTML part. */
+  textFromHtml: boolean;
   htmlSize: number;
+  /**
+   * The email's page in the dashboard, which renders the HTML part in its
+   * sandboxed frame: from the result's _meta, which the server fills in.
+   */
+  dashboardUrl: string | null;
   attachments: Attachment[];
   attachmentsTotal: number | null;
   auth: { spf: string | null; dkim: string | null; dmarc: string | null } | null;
@@ -259,7 +266,7 @@ function spam(value: unknown): EmailView["spam"] {
 }
 
 /** get_email's answer: the email.received JSON's data, trimmed to the output. */
-function emailDetailView(data: Rec): EmailView {
+function emailDetailView(data: Rec, dashboardUrl: string | null): EmailView {
   const auth = isRec(data.auth) ? data.auth : null;
   const codes = Array.isArray(data.codes)
     ? data.codes.filter((c): c is string => typeof c === "string")
@@ -294,7 +301,9 @@ function emailDetailView(data: Rec): EmailView {
     fields: fields(data.fields),
     text: str(data.text),
     textTruncated: data.textTruncated === true,
+    textFromHtml: data.textFromHtml === true,
     htmlSize: num(data.htmlSize) ?? 0,
+    dashboardUrl,
     attachments: attachments(data.attachments),
     attachmentsTotal: num(data.attachmentsTotal),
     auth: auth ? { spf: str(auth.spf), dkim: str(auth.dkim), dmarc: str(auth.dmarc) } : null,
@@ -315,7 +324,7 @@ function checkResult(value: unknown): string | null {
 }
 
 /** get_request's answer for an email: the request with its parsed message. */
-function emailRequestView(data: Rec): EmailView {
+function emailRequestView(data: Rec, dashboardUrl: string | null): EmailView {
   const email = isRec(data.email) ? data.email : {};
   const auth = isRec(email.auth) ? email.auth : null;
   const from = addresses(email.from);
@@ -339,7 +348,9 @@ function emailRequestView(data: Rec): EmailView {
     fields: [],
     text: str(email.text),
     textTruncated: email.textTruncated === true,
+    textFromHtml: email.textFromHtml === true,
     htmlSize: num(email.htmlSize) ?? 0,
+    dashboardUrl,
     attachments: attachments(email.attachments),
     attachmentsTotal: num(email.attachmentsTotal),
     auth: auth
@@ -352,13 +363,31 @@ function emailRequestView(data: Rec): EmailView {
   };
 }
 
-/** The view for a tool's JSON, or null when it is neither a request nor an email. */
-export function viewOf(data: unknown): View | null {
+/** Where a tool result's _meta carries an email's dashboard link (DASHBOARD_URL_META in src/app.ts). */
+export const DASHBOARD_URL_META = "cc.webhooks/dashboardUrl";
+
+/** The dashboard link in a tool result's _meta: an http(s) URL, or null. */
+export function dashboardUrlOf(meta: unknown): string | null {
+  const value = isRec(meta) ? str(meta[DASHBOARD_URL_META]) : null;
+  if (!value) return null;
+  try {
+    const url = new URL(value);
+    return url.protocol === "https:" || url.protocol === "http:" ? url.toString() : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The view for a tool's JSON (and the result's _meta), or null when it is
+ * neither a request nor an email.
+ */
+export function viewOf(data: unknown, meta?: unknown): View | null {
   if (!isRec(data)) return null;
   if (isRec(data.endpoint) && typeof data.address === "string" && data.method === undefined) {
-    return emailDetailView(data);
+    return emailDetailView(data, dashboardUrlOf(meta));
   }
-  if (data.kind === "email") return emailRequestView(data);
+  if (data.kind === "email") return emailRequestView(data, dashboardUrlOf(meta));
   if (typeof data.method === "string" || typeof data.path === "string") return httpView(data);
   return null;
 }

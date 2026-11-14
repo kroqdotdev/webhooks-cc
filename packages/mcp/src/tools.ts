@@ -60,7 +60,7 @@ import {
   TEXT_FLOOR,
 } from "./compact";
 import { TOOL_CATALOG, toolAnnotations, type ToolGroup } from "./catalog";
-import { appToolMeta } from "./app";
+import { appToolMeta, DASHBOARD_URL_META, dashboardRequestUrl, type DashboardOrigins } from "./app";
 
 const MAX_BODY_SIZE = MAX_OUTPUT;
 const HTTP_METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"] as const;
@@ -710,6 +710,8 @@ export type ToolResult = {
    * an input request or drop it.
    */
   approval?: PendingApprovalAsk;
+  /** For MCP Apps views only (app.ts): hosts keep a result's _meta out of the model's context. */
+  _meta?: Record<string, unknown>;
 };
 
 /** What a tool asked the account's owner to approve. */
@@ -1287,6 +1289,8 @@ async function summarizeResponse(response: Response): Promise<{
 
 interface EmailEndpointView {
   endpoint: { slug: string; name: string | null };
+  /** Which site's dashboard lists it (for the inspector's link). */
+  site: Endpoint["site"] | null;
   /** Whether codes and links may be shown for the endpoint's emails (its owner can turn that off). */
   includeExtracts: boolean;
 }
@@ -1296,10 +1300,11 @@ async function emailEndpointView(client: WebhooksCC, slug: string): Promise<Emai
 }
 
 function endpointViewOf(
-  endpoint: Pick<Endpoint, "slug" | "name" | "showEmailExtracts">
+  endpoint: Pick<Endpoint, "slug" | "name" | "showEmailExtracts" | "site">
 ): EmailEndpointView {
   return {
     endpoint: { slug: endpoint.slug, name: endpoint.name ?? null },
+    site: endpoint.site ?? null,
     includeExtracts: endpoint.showEmailExtracts !== false,
   };
 }
@@ -1383,6 +1388,7 @@ const ESSENTIAL_DETAIL_FIELDS = [
   "spam",
   "text",
   "textTruncated",
+  "textFromHtml",
   "htmlSize",
   "html",
   "htmlTruncated",
@@ -1428,6 +1434,8 @@ function emailDetail(
     ...rest,
     text,
     ...(cut ? { textTruncated: true } : {}),
+    // HTML-only mail: the receiver made the text from the HTML part.
+    ...(email.email.textFromHtml ? { textFromHtml: true } : {}),
     htmlSize: html?.length ?? 0,
     ...(includeHtml && html !== null ? { html } : {}),
   };
@@ -1496,6 +1504,12 @@ export interface RegisterToolsOptions {
   groups?: ReadonlySet<ToolGroup>;
   /** Register only the tools that change nothing (readOnlyHint). */
   readOnly?: boolean;
+  /**
+   * The public origins of the dashboards. Given, an email's result carries
+   * the link to its page there in _meta, for the request inspector, which
+   * never renders an email's HTML part itself.
+   */
+  dashboard?: DashboardOrigins;
 }
 
 /**
@@ -1741,6 +1755,15 @@ export function registerTools(
   // How the tool descriptions say to start a preview: the hosted server has
   // no share_port (it cannot run whk on the person's computer).
   const shareWith = remote ? REMOTE_SHARE : "share_port";
+  /** An email's result with its page in the dashboard in _meta, for the request inspector. */
+  const withDashboardLink = (
+    result: ToolResult,
+    email: { id: string; slug: string | null | undefined; site?: string | null }
+  ): ToolResult => {
+    if (!options.dashboard || !email.slug || result.isError) return result;
+    const url = dashboardRequestUrl(options.dashboard, email.slug, email.id, email.site);
+    return url ? { ...result, _meta: { ...result._meta, [DASHBOARD_URL_META]: url } } : result;
+  };
 
   server.tool(
     "create_endpoint",
@@ -2486,7 +2509,10 @@ export function registerTools(
     getRequestShape,
     withErrorHandling(async ({ requestId }) => {
       const request = await client.requests.get(requestId);
-      return requestContent(request);
+      const result = requestContent(request);
+      return request.kind === "email"
+        ? withDashboardLink(result, { id: request.id, slug: request.endpointSlug })
+        : result;
     })
   );
 
@@ -2496,7 +2522,10 @@ export function registerTools(
     waitForRequestShape,
     withErrorHandling(async ({ endpointSlug, timeout, pollInterval }) => {
       const request = await client.requests.waitFor(endpointSlug, { timeout, pollInterval });
-      return requestContent(request);
+      const result = requestContent(request);
+      return request.kind === "email"
+        ? withDashboardLink(result, { id: request.id, slug: endpointSlug })
+        : result;
     })
   );
 
@@ -3062,7 +3091,11 @@ export function registerTools(
       const view = endpointSlug
         ? await emailEndpointView(client, endpointSlug)
         : await emailEndpointViewFor(client, email);
-      return jsonContent(emailDetail(client, email, view, includeHtml));
+      return withDashboardLink(jsonContent(emailDetail(client, email, view, includeHtml)), {
+        id: email.id,
+        slug: view.endpoint.slug,
+        site: view.site,
+      });
     })
   );
 
@@ -3095,7 +3128,11 @@ export function registerTools(
         timeout,
         since,
       });
-      return jsonContent(emailDetail(client, email, view, includeHtml));
+      return withDashboardLink(jsonContent(emailDetail(client, email, view, includeHtml)), {
+        id: email.id,
+        slug: view.endpoint.slug,
+        site: view.site,
+      });
     })
   );
 

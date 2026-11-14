@@ -44,6 +44,66 @@ export function appToolMeta(name: string): Record<string, unknown> | undefined {
   return { ui: { resourceUri: INSPECTOR_URI }, "ui/resourceUri": INSPECTOR_URI };
 }
 
+/**
+ * Where an email's dashboard link rides in a tool result's _meta: MCP Apps
+ * hosts hand a result's _meta to the view and keep it out of the model's
+ * context, so the link costs the model nothing. The inspector never renders
+ * an email's HTML part (that happens only in the dashboard's sandboxed
+ * frame); it offers this link to it instead.
+ */
+export const DASHBOARD_URL_META = "cc.webhooks/dashboardUrl";
+
+/** The origins of the dashboards a server links to (RegisterToolsOptions.dashboard). */
+export interface DashboardOrigins {
+  /** The webhooks.cc origin, which opens every endpoint. */
+  webhooks: string;
+  /** The mailhooks.cc origin, for endpoints listed only there; null when there is one site. */
+  mailhooks?: string | null;
+}
+
+/** A URL's origin (scheme, host and port), or null when it is not a URL. */
+function originOf(url: string | undefined): string | null {
+  if (!url) return null;
+  try {
+    return new URL(url).origin;
+  } catch {
+    return null;
+  }
+}
+
+/** The public origins the local server links to, from the API base URL it talks to. */
+export function localDashboardOrigins(baseUrl: string | undefined): DashboardOrigins {
+  const webhooks = originOf(baseUrl) ?? "https://webhooks.cc";
+  // Production serves mailhooks.cc too; another base URL (a dev server) is one site.
+  return webhooks === "https://webhooks.cc"
+    ? { webhooks, mailhooks: "https://mailhooks.cc" }
+    : { webhooks };
+}
+
+/**
+ * The dashboard's page for one request (/dashboard?endpoint=&request=), on
+ * the site that lists its endpoint: mailhooks.cc for an endpoint listed only
+ * there, else webhooks.cc, whose dashboard opens any endpoint by its slug.
+ */
+export function dashboardRequestUrl(
+  origins: DashboardOrigins,
+  slug: string,
+  requestId: string,
+  site?: string | null
+): string | null {
+  const origin = site === "mailhooks" && origins.mailhooks ? origins.mailhooks : origins.webhooks;
+  let url: URL;
+  try {
+    url = new URL("/dashboard", origin);
+  } catch {
+    return null;
+  }
+  if (url.protocol !== "https:" && url.protocol !== "http:") return null;
+  url.searchParams.set("endpoint", slug);
+  url.searchParams.set("request", requestId);
+  return url.toString();
+}
+
 const INSPECTOR_METADATA = {
   title: "Request inspector",
   description:

@@ -95,11 +95,19 @@ function errorText(result: ToolResultParams): string | null {
   return text ? text.slice(0, 2_000) : null;
 }
 
-/** Calls one of the server's tools through the host. */
+/** Calls one of the server's tools through the host: its JSON. */
 async function callTool(name: string, args: Record<string, unknown>): Promise<unknown> {
+  return resultData(await callToolResult(name, args));
+}
+
+/** Calls one of the server's tools through the host: the whole result, _meta included. */
+async function callToolResult(
+  name: string,
+  args: Record<string, unknown>
+): Promise<ToolResultParams> {
   const result = await bridge.request<ToolResultParams>("tools/call", { name, arguments: args });
   if (result.isError) throw new Error(errorText(result) ?? `${name} failed.`);
-  return resultData(result);
+  return result;
 }
 
 function renderView(): void {
@@ -158,7 +166,7 @@ function show(result: ToolResultParams): void {
     renderRecent();
     return;
   }
-  const next = viewOf(resultData(result));
+  const next = viewOf(resultData(result), result._meta);
   if (!next) {
     view = null;
     main.replaceChildren(problem("This result is not a captured request or email.", null));
@@ -197,9 +205,9 @@ async function loadFull(id: string): Promise<void> {
   fullFailed = null;
   renderView();
   try {
-    const data = await callTool("get_email", { requestId: id });
+    const result = await callToolResult("get_email", { requestId: id });
     if (view !== shown) return;
-    const full = viewOf(data);
+    const full = viewOf(resultData(result), result._meta);
     if (full && full.kind === "email") view = full;
     else fullFailed = "The answer was not an email.";
   } catch (error) {
@@ -306,9 +314,11 @@ async function pick(item: RecentItem): Promise<void> {
   renderRecent();
   const asked = ++generation;
   try {
-    const data = await callTool(item.email ? "get_email" : "get_request", { requestId: item.id });
+    const result = await callToolResult(item.email ? "get_email" : "get_request", {
+      requestId: item.id,
+    });
     if (asked !== generation) return;
-    const next = viewOf(data);
+    const next = viewOf(resultData(result), result._meta);
     if (!next) throw new Error("The answer was not a request.");
     showBanner(null);
     present(next, slug);

@@ -3,7 +3,7 @@ import { WebhooksCC } from "@webhooks-cc/sdk";
 import { localToolGroups, toolSelection, type ToolSelectionOptions } from "./local-tools";
 import { registerPrompts } from "./prompts";
 import { attachSkill } from "./skills";
-import { attachInspector } from "./app";
+import { attachInspector, localDashboardOrigins } from "./app";
 import { registerResources } from "./resources";
 import { registerSandboxTools } from "./sandbox-tools";
 import { MCP_USER_AGENT, VERSION } from "./version";
@@ -64,7 +64,7 @@ export function createServer(options: CreateServerOptions = {}): McpServer {
   attachSkill(server);
   // The request inspector, which get_request and get_email name for clients with MCP Apps.
   attachInspector(server);
-  const groups = localToolGroups(server, toolSelection(options));
+  const groups = localToolGroups(server, toolSelection(options), localDashboardOrigins(baseUrl));
 
   // No API key: the account a human connected this agent to before (saved in
   // the agent credential file), else the agent sandbox (auth.md v0.6). The
