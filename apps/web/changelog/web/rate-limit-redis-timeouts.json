@@ -1,0 +1,6 @@
+{
+  "title": "Steadier rate limiting",
+  "items": [
+    "A rate limit check no longer gives up on a Redis answer that arrived while the server was busy, and a single slow answer is no longer reported as an error"
+  ]
+}

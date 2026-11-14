@@ -135,6 +135,80 @@ if earliest[2] then score = tonumber(earliest[2]) else score = now end
 return {count, score}
 `;
 
+/** How long a Redis call may take before the in-memory limit answers instead. */
+const REDIS_EVAL_TIMEOUT_MS = 100;
+/** Timeouts in a row after which Redis is reported as a problem, not a blip. */
+const REDIS_TIMEOUTS_BEFORE_REPORT = 5;
+let consecutiveRedisTimeouts = 0;
+let lastTimeoutWarnAt = 0;
+
+class RedisEvalTimeout extends Error {
+  constructor() {
+    super("Redis eval timeout");
+    this.name = "RedisEvalTimeout";
+  }
+}
+
+/**
+ * Settles with `promise`, or rejects with {@link RedisEvalTimeout} once `ms`
+ * have passed without an answer. The timer is cleared as soon as the promise
+ * settles, so a fast answer leaves nothing behind.
+ *
+ * When the timer fires, the rejection waits for `setImmediate`: Node runs
+ * expired timers before it reads sockets, so after the event loop was busy
+ * for longer than `ms` (a long synchronous render, a GC pause) the timer
+ * would otherwise win against a reply that already sits in the socket. The
+ * poll phase runs between the timer and the immediate and reads that reply
+ * first.
+ */
+function withRedisTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    let settled = false;
+    const timer = setTimeout(() => {
+      setImmediate(() => {
+        if (settled) return;
+        settled = true;
+        reject(new RedisEvalTimeout());
+      });
+    }, ms);
+    promise.then(
+      (value) => {
+        clearTimeout(timer);
+        if (settled) return;
+        settled = true;
+        resolve(value);
+      },
+      (err: unknown) => {
+        clearTimeout(timer);
+        if (settled) return;
+        settled = true;
+        reject(err);
+      }
+    );
+  });
+}
+
+/**
+ * A single slow answer is not a fault: the in-memory limit covers that one
+ * request. Only timeouts that keep coming in a row go to StatOSS.
+ */
+function noteRedisTimeout(err: RedisEvalTimeout): void {
+  consecutiveRedisTimeouts += 1;
+  if (consecutiveRedisTimeouts >= REDIS_TIMEOUTS_BEFORE_REPORT) {
+    reportError("[rate-limit] Redis eval keeps timing out", err, {
+      consecutive: consecutiveRedisTimeouts,
+    });
+    return;
+  }
+  const now = Date.now();
+  if (now - lastTimeoutWarnAt > 30_000) {
+    lastTimeoutWarnAt = now;
+    console.warn(
+      `[rate-limit] Redis eval took over ${REDIS_EVAL_TIMEOUT_MS}ms, using the in-memory limit`
+    );
+  }
+}
+
 /**
  * Try Redis-backed sliding window. Returns RateLimitInfo on success, null on failure.
  */
@@ -151,7 +225,7 @@ async function tryRedisRateLimit(
     const now = Date.now();
     const member = `${now}:${Math.random().toString(36).slice(2, 8)}`;
     // ioredis .eval() executes a Redis EVAL command (Lua script), not JS eval.
-    // 100ms timeout — if Redis doesn't respond on localhost, fall back fast.
+    // Short timeout: if Redis on the private network does not answer, fall back fast.
     const evalPromise = redis["eval"](
       SLIDING_WINDOW_SCRIPT,
       1,
@@ -160,11 +234,9 @@ async function tryRedisRateLimit(
       String(maxRequests),
       String(now),
       member
-    );
-    const timeoutPromise = new Promise((_, reject) =>
-      setTimeout(() => reject(new Error("Redis eval timeout")), 100)
-    );
-    const result = (await Promise.race([evalPromise, timeoutPromise])) as [number, number];
+    ) as Promise<[number, number]>;
+    const result = await withRedisTimeout(evalPromise, REDIS_EVAL_TIMEOUT_MS);
+    consecutiveRedisTimeouts = 0;
 
     const count = result[0];
     const earliest = result[1];
@@ -199,7 +271,11 @@ async function tryRedisRateLimit(
       reset,
     };
   } catch (err) {
-    reportError("[rate-limit] Redis eval failed", err);
+    if (err instanceof RedisEvalTimeout) {
+      noteRedisTimeout(err);
+    } else {
+      reportError("[rate-limit] Redis eval failed", err);
+    }
     return null;
   }
 }
