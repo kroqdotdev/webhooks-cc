@@ -262,7 +262,7 @@ Search captured requests and emails for text. Supports time ranges, method filte
 | `method`  | `string` | no       | Filter by HTTP method                                                              |
 | `kind`    | `string` | no       | `http` for HTTP requests only, `email` for emails only                             |
 | `q`       | `string` | no       | Text to find in the path, headers, body or email fields (1,000 characters at most) |
-| `from`    | `string` | no       | Start time: a duration back like `"1h"`, or a timestamp                            |
+| `from`    | `string` | no       | Start time: a duration back like `"1h"`, or a timestamp (use a timestamp with a cursor; a duration is counted from each call) |
 | `to`      | `string` | no       | End time: a duration back, or a timestamp                                          |
 | `limit`   | `number` | no       | Max results                                                                        |
 | `offset`  | `number` | no       | Matches to skip (first call only; a cursor carries what is left of it)             |
@@ -289,7 +289,7 @@ Count requests matching the given filters. Takes the filters of `search_requests
 | `method`  | `string` | no       | Filter by HTTP method                                        |
 | `kind`    | `string` | no       | `http` or `email`                                            |
 | `q`       | `string` | no       | Text to find                                                 |
-| `from`    | `string` | no       | Start time                                                   |
+| `from`    | `string` | no       | Start time (use a timestamp with a cursor)                   |
 | `to`      | `string` | no       | End time                                                     |
 | `cursor`  | `string` | no       | The `cursor` of a previous result, to count the next stretch |
 

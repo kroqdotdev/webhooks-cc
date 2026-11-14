@@ -170,6 +170,12 @@ func busySearchServer(t *testing.T, retryAfter string, answers ...string) (*Clie
 		cursors = append(cursors, r.URL.Query().Get("cursor"))
 		w.Header().Set("Content-Type", "application/json")
 		switch answer {
+		case "broken":
+			w.WriteHeader(http.StatusInternalServerError)
+			fmt.Fprint(w, `{"error":"Internal server error"}`)
+		case "invalid":
+			w.WriteHeader(http.StatusBadRequest)
+			fmt.Fprint(w, `{"error":"invalid_cursor"}`)
 		case "busy", "limited":
 			if retryAfter != "" {
 				w.Header().Set("Retry-After", retryAfter)
@@ -303,5 +309,186 @@ func TestSearchCollectsMoreThanAPageHolds(t *testing.T) {
 	}
 	if got := strings.Join(limits, ","); got != "450,250,50" {
 		t.Errorf("limits = %s", got)
+	}
+}
+
+// An error on a later page is the call's error, never a short result.
+func TestAnErrorOnALaterPageIsReturned(t *testing.T) {
+	ctx := context.Background()
+	started := time.Now()
+	cases := []struct {
+		answer string
+		is     func(error) bool
+	}{
+		{"broken", func(err error) bool {
+			var apiErr *Error
+			return errors.As(err, &apiErr) && apiErr.StatusCode == http.StatusInternalServerError
+		}},
+		{"limited", func(err error) bool { return errors.Is(err, ErrRateLimited) }},
+		{"invalid", func(err error) bool { return errors.Is(err, ErrInvalidCursor) }},
+	}
+	for _, c := range cases {
+		client, cursors := busySearchServer(t, "1", `[{"id":"r1"}]`, c.answer)
+		if found, err := client.Requests.Search(ctx, SearchOptions{Query: "x"}); found != nil || !c.is(err) {
+			t.Errorf("%s: search = %+v, %v", c.answer, found, err)
+		}
+		if got := strings.Join(*cursors, ","); got != ",c1" {
+			t.Errorf("%s: search cursors = %q", c.answer, got)
+		}
+		client, _ = busySearchServer(t, "1", `{"count":2,"exact":false,"cursor":"c1"}`, c.answer)
+		if count, err := client.Requests.Count(ctx, SearchOptions{Query: "x"}); count != 0 || !c.is(err) {
+			t.Errorf("%s: count = %d, %v", c.answer, count, err)
+		}
+	}
+	if time.Since(started) > 900*time.Millisecond {
+		t.Error("an ordinary rate limit was waited out")
+	}
+}
+
+// A context that ends in the middle of a search ends it with the context's
+// error: on a later page, and during a busy wait.
+func TestAContextCancelledMidSearchEndsIt(t *testing.T) {
+	for _, later := range []string{`[{"id":"r2"}]`, "busy"} {
+		ctx, cancel := context.WithCancel(context.Background())
+		calls := 0
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			calls++
+			w.Header().Set("Content-Type", "application/json")
+			if calls > 1 {
+				cancel()
+				if later == "busy" {
+					w.WriteHeader(http.StatusTooManyRequests)
+					fmt.Fprint(w, `{"error":"search_busy"}`)
+					return
+				}
+				// The answer never comes: the caller gave up.
+				<-r.Context().Done()
+				return
+			}
+			w.Header().Set("X-Search-Complete", "false")
+			w.Header().Set("X-Search-Cursor", "c1")
+			if strings.HasSuffix(r.URL.Path, "/count") {
+				fmt.Fprint(w, `{"count":2,"exact":false,"cursor":"c1"}`)
+				return
+			}
+			fmt.Fprint(w, `[{"id":"r1"}]`)
+		}))
+		client, err := New(WithAPIKey("whcc_test"), WithBaseURL(server.URL))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if found, err := client.Requests.Search(ctx, SearchOptions{Query: "x"}); found != nil || !errors.Is(err, context.Canceled) {
+			t.Errorf("%s: search = %+v, %v", later, found, err)
+		}
+		ctx, cancel = context.WithCancel(context.Background())
+		calls = 0
+		if count, err := client.Requests.Count(ctx, SearchOptions{Query: "x"}); count != 0 || !errors.Is(err, context.Canceled) {
+			t.Errorf("%s: count = %d, %v", later, count, err)
+		}
+		cancel()
+		server.Close()
+	}
+}
+
+// A page of Search or Count started near the deadline times out soon after
+// it; the page calls keep the client's timeout.
+func TestAPageNearTheDeadlineGetsAShorterTimeout(t *testing.T) {
+	deadline := time.Now().Add(time.Hour)
+	if got, _ := pageContext(context.Background(), deadline).Value(callTimeoutKey{}).(time.Duration); got < time.Hour {
+		t.Errorf("far from the deadline: %s", got)
+	}
+	if got, _ := pageContext(context.Background(), time.Now().Add(-time.Minute)).Value(callTimeoutKey{}).(time.Duration); got != searchDeadlineGrace {
+		t.Errorf("past the deadline: %s", got)
+	}
+
+	previous, previousGrace := searchDeadline, searchDeadlineGrace
+	searchDeadline, searchDeadlineGrace = 0, 100*time.Millisecond
+	defer func() { searchDeadline, searchDeadlineGrace = previous, previousGrace }()
+	release := make(chan struct{})
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		select {
+		case <-release:
+		case <-r.Context().Done():
+		}
+	}))
+	defer server.Close()
+	defer close(release)
+	client, err := New(WithAPIKey("whcc_test"), WithBaseURL(server.URL), WithTimeout(700*time.Millisecond))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	var timeout *TimeoutError
+	started := time.Now()
+	if _, err := client.Requests.Search(ctx, SearchOptions{Query: "x"}); !errors.As(err, &timeout) || timeout.After > 150*time.Millisecond {
+		t.Errorf("search: %v", err)
+	}
+	if _, err := client.Requests.Count(ctx, SearchOptions{Query: "x"}); !errors.As(err, &timeout) || timeout.After > 150*time.Millisecond {
+		t.Errorf("count: %v", err)
+	}
+	if took := time.Since(started); took > 600*time.Millisecond {
+		t.Errorf("two pages past the deadline took %s", took)
+	}
+	started = time.Now()
+	if _, err := client.Requests.SearchPage(ctx, SearchOptions{Query: "x"}, ""); !errors.As(err, &timeout) || timeout.After != 700*time.Millisecond {
+		t.Errorf("search page: %v", err)
+	}
+	if took := time.Since(started); took < 650*time.Millisecond {
+		t.Errorf("the page call timed out after %s", took)
+	}
+}
+
+// A later page that timed out because the deadline cut it short ends the
+// search with what it has; the client's own timeout is an error.
+func TestALaterPageCutShortByTheDeadlineEndsTheSearch(t *testing.T) {
+	previous, previousGrace := searchDeadline, searchDeadlineGrace
+	searchDeadline, searchDeadlineGrace = 0, 100*time.Millisecond
+	defer func() { searchDeadline, searchDeadlineGrace = previous, previousGrace }()
+	release := make(chan struct{})
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Get("cursor") != "" {
+			select {
+			case <-release:
+			case <-r.Context().Done():
+			}
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		if strings.HasSuffix(r.URL.Path, "/count") {
+			fmt.Fprint(w, `{"count":2,"exact":false,"cursor":"c1"}`)
+			return
+		}
+		w.Header().Set("X-Search-Complete", "false")
+		w.Header().Set("X-Search-Cursor", "c1")
+		fmt.Fprint(w, `[{"id":"r1"}]`)
+	}))
+	defer server.Close()
+	defer close(release)
+	ctx := context.Background()
+
+	// 300 ms to the deadline and 100 ms of grace: less than the client's 5 s.
+	searchDeadline = 300 * time.Millisecond
+	client, err := New(WithAPIKey("whcc_test"), WithBaseURL(server.URL), WithTimeout(5*time.Second))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if found, err := client.Requests.Search(ctx, SearchOptions{Query: "x"}); err != nil || len(found) != 1 || found[0].ID != "r1" {
+		t.Errorf("search = %+v, %v", found, err)
+	}
+	if count, err := client.Requests.Count(ctx, SearchOptions{Query: "x"}); err != nil || count != 2 {
+		t.Errorf("count = %d, %v", count, err)
+	}
+
+	// The client's own 100 ms ran out first: the error.
+	searchDeadline = time.Hour
+	own, err := New(WithAPIKey("whcc_test"), WithBaseURL(server.URL), WithTimeout(100*time.Millisecond))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if found, err := own.Requests.Search(ctx, SearchOptions{Query: "x"}); found != nil || !errors.Is(err, ErrTimeout) {
+		t.Errorf("own timeout: search = %+v, %v", found, err)
+	}
+	if count, err := own.Requests.Count(ctx, SearchOptions{Query: "x"}); count != 0 || !errors.Is(err, ErrTimeout) {
+		t.Errorf("own timeout: count = %d, %v", count, err)
 	}
 }

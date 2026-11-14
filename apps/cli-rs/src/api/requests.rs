@@ -16,6 +16,12 @@ use crate::types::{
 /// How long `whk requests search` and `count` keep following the cursor.
 pub const SEARCH_DEADLINE: Duration = Duration::from_secs(25);
 
+/// The most matches one page holds.
+const PAGE_MAX: u32 = 200;
+
+/// What a page may run past the deadline.
+const PAGE_GRACE: Duration = Duration::from_secs(5);
+
 /// What a search or a count looks for. Every page of one search sends the
 /// same filters.
 #[derive(Debug, Clone, Copy, Default)]
@@ -105,6 +111,21 @@ fn explain_search_error(error: anyhow::Error) -> anyhow::Error {
         message: message.to_string(),
         retry_after: e.retry_after,
     })
+}
+
+/// A request that ran into its timeout.
+fn is_timeout(error: &anyhow::Error) -> bool {
+    error.chain().any(|c| {
+        c.downcast_ref::<reqwest::Error>()
+            .is_some_and(|e| e.is_timeout())
+    })
+}
+
+/// How long a page may take: what is left until `stop_at` plus a little, so
+/// a page started just before the deadline cannot run a full request timeout
+/// past it. The client's own timeout still caps it.
+fn page_timeout(stop_at: Instant) -> Duration {
+    stop_at.saturating_duration_since(Instant::now()) + PAGE_GRACE
 }
 
 /// Runs `call` again after `Retry-After` while the answer is `search_busy`
@@ -228,7 +249,8 @@ impl ApiClient {
 
     /// One page of a search (`paged=true`: the server reads for about two
     /// seconds and says where it stopped). `offset` is for a first page only;
-    /// a cursor carries what is left of it.
+    /// a cursor carries what is left of it. `timeout` shortens the request
+    /// timeout.
     pub async fn search_requests_page(
         &self,
         filters: &SearchFilters<'_>,
@@ -236,6 +258,7 @@ impl ApiClient {
         offset: Option<u32>,
         order: Option<&str>,
         cursor: Option<&str>,
+        timeout: Option<Duration>,
     ) -> Result<SearchPage> {
         self.require_auth()?;
         let mut params = filters.params();
@@ -254,7 +277,10 @@ impl ApiClient {
             }
         }
         let resp = self
-            .get(&format!("/api/search/requests?{}", params.join("&")))
+            .get_within(
+                &format!("/api/search/requests?{}", params.join("&")),
+                timeout,
+            )
             .await
             .map_err(explain_search_error)?;
         let list = resp.parse::<SearchResult>("search results")?;
@@ -302,7 +328,10 @@ impl ApiClient {
         };
         let mut first = true;
         loop {
-            let left = limit.saturating_sub(out.requests.len() as u32).max(1);
+            // A page holds at most 200; a larger limit takes several.
+            let left = limit
+                .saturating_sub(out.requests.len() as u32)
+                .clamp(1, PAGE_MAX);
             let cursor = out.cursor.clone();
             let page = retry_while_busy(stop_at, || {
                 self.search_requests_page(
@@ -311,6 +340,7 @@ impl ApiClient {
                     first.then_some(offset),
                     Some(order),
                     cursor.as_deref(),
+                    Some(page_timeout(stop_at)),
                 )
             })
             .await;
@@ -318,7 +348,7 @@ impl ApiClient {
                 Ok(page) => page,
                 // Busy for the rest of the time: what was found so far is
                 // still worth having, with the cursor to go on from.
-                Err(e) if !first && is_search_busy(&e) => break,
+                Err(e) if !first && (is_search_busy(&e) || is_timeout(&e)) => break,
                 Err(e) => return Err(e),
             };
             first = false;
@@ -349,6 +379,7 @@ impl ApiClient {
         &self,
         filters: &SearchFilters<'_>,
         cursor: Option<&str>,
+        timeout: Option<Duration>,
     ) -> Result<CountResult> {
         self.require_auth()?;
         let mut params = filters.params();
@@ -356,7 +387,10 @@ impl ApiClient {
             params.push(format!("cursor={}", encode(c)));
         }
         let resp = self
-            .get(&format!("/api/search/requests/count?{}", params.join("&")))
+            .get_within(
+                &format!("/api/search/requests/count?{}", params.join("&")),
+                timeout,
+            )
             .await
             .map_err(explain_search_error)?;
         let mut result: CountResult =
@@ -384,12 +418,12 @@ impl ApiClient {
         loop {
             let cursor = out.cursor.clone();
             let page = retry_while_busy(stop_at, || {
-                self.count_requests_page(filters, cursor.as_deref())
+                self.count_requests_page(filters, cursor.as_deref(), Some(page_timeout(stop_at)))
             })
             .await;
             let page = match page {
                 Ok(page) => page,
-                Err(e) if !first && is_search_busy(&e) => break,
+                Err(e) if !first && (is_search_busy(&e) || is_timeout(&e)) => break,
                 Err(e) => return Err(e),
             };
             first = false;
@@ -545,7 +579,7 @@ mod search_tests {
         let (client, asked) =
             server(vec![partial("c1", "1700000000000", &["r1"]), done(&[])]).await;
         let page = client
-            .search_requests_page(&filters(), Some(20), Some(5), Some("desc"), None)
+            .search_requests_page(&filters(), Some(20), Some(5), Some("desc"), None, None)
             .await
             .unwrap();
         assert_eq!(page.requests.len(), 1);
@@ -556,7 +590,7 @@ mod search_tests {
         assert_eq!(page.raw[0]["new"], true);
 
         let page = client
-            .search_requests_page(&filters(), None, Some(5), None, Some("c1"))
+            .search_requests_page(&filters(), None, Some(5), None, Some("c1"), None)
             .await
             .unwrap();
         assert!(page.complete);
@@ -613,6 +647,30 @@ mod search_tests {
                 "paged=true&limit=3&order=desc&offset=7",
                 "paged=true&limit=1&order=desc&cursor=c1",
                 "paged=true&limit=1&order=desc&cursor=c2",
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn a_limit_past_one_page_takes_several() {
+        let ids: Vec<String> = (0..200).map(|i| format!("r{i}")).collect();
+        let ids: Vec<&str> = ids.iter().map(String::as_str).collect();
+        let (client, asked) = server(vec![
+            partial("c1", "300", &ids),
+            partial("c2", "200", &ids[..50]),
+        ])
+        .await;
+        let found = client
+            .search_requests(&SearchFilters::default(), 250, 0, "desc", None, LONG)
+            .await
+            .unwrap();
+        assert_eq!(found.requests.len(), 250);
+        assert_eq!(found.cursor.as_deref(), Some("c2"));
+        assert_eq!(
+            *asked.lock().unwrap(),
+            [
+                "paged=true&limit=200&order=desc",
+                "paged=true&limit=50&order=desc&cursor=c1",
             ]
         );
     }
@@ -797,5 +855,52 @@ mod search_tests {
             (old.count, old.cursor, old.searched_until),
             (42, None, None)
         );
+    }
+}
+
+#[cfg(test)]
+mod deadline_tests {
+    use super::*;
+
+    #[test]
+    fn a_page_gets_what_is_left_of_the_deadline_and_a_little() {
+        let now = Instant::now();
+        let left = page_timeout(now + Duration::from_secs(10));
+        assert!(left <= Duration::from_secs(15) && left > Duration::from_secs(14));
+        // Past the deadline only the grace is left.
+        assert_eq!(page_timeout(now), PAGE_GRACE);
+    }
+
+    /// A server that never answers: the page ends at its own timeout, not
+    /// the client's 30 seconds.
+    #[tokio::test]
+    async fn a_page_past_the_deadline_times_out_early() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let base = format!("http://127.0.0.1:{}", listener.local_addr().unwrap().port());
+        tokio::spawn(async move {
+            let mut held = Vec::new();
+            while let Ok((socket, _)) = listener.accept().await {
+                held.push(socket);
+            }
+        });
+        let client =
+            ApiClient::with_credentials(Some(&base), Some(&base), Some("whcc_test".into()), None)
+                .unwrap();
+        let started = Instant::now();
+        let error = client
+            .search_requests_page(
+                &SearchFilters::default(),
+                None,
+                None,
+                None,
+                None,
+                Some(Duration::from_millis(200)),
+            )
+            .await
+            .unwrap_err();
+        assert!(is_timeout(&error));
+        assert!(started.elapsed() < Duration::from_secs(5));
+        let c = crate::error::classify(&error);
+        assert_eq!((c.code, c.exit), ("network_error", 7));
     }
 }

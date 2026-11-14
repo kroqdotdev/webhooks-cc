@@ -195,7 +195,7 @@ It runs against the endpoint's newest HTTP request unless you pass `request_id`,
 found = client.requests.search(slug=endpoint.slug, q="invoice.paid", limit=20)
 
 page = client.requests.search_page(q="invoice.paid")
-while not page.complete:
+while not page.complete and page.cursor:
     page = client.requests.search_page(q="invoice.paid", cursor=page.cursor)
 ```
 

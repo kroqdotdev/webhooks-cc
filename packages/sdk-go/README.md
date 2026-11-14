@@ -136,7 +136,7 @@ Filters take the conditions of response rules, plus `kind`, `email` (with `Name`
 found, err := client.Requests.Search(ctx, webhookscc.SearchOptions{Slug: endpoint.Slug, Query: "invoice.paid", Limit: 20})
 
 page, err := client.Requests.SearchPage(ctx, webhookscc.SearchOptions{Query: "invoice.paid"}, "")
-for err == nil && !page.Complete {
+for err == nil && !page.Complete && page.Cursor != "" {
 	page, err = client.Requests.SearchPage(ctx, webhookscc.SearchOptions{Query: "invoice.paid"}, page.Cursor)
 }
 ```

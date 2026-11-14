@@ -2253,3 +2253,107 @@ def test_search_collects_more_than_a_page_holds() -> None:
     found = make_client(handler).requests.search(q="x", limit=450)
     assert len(found) == 450 and len({r.id for r in found}) == 450
     assert [p["limit"] for p in seen] == ["450", "250", "50"]
+
+
+@pytest.mark.parametrize("status", [429, 500])
+def test_an_error_on_a_later_page_is_raised_not_returned_as_a_result(
+    status: int, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    slept: list[float] = []
+    monkeypatch.setattr("webhooks_cc.client._sleep_ms", slept.append)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if "cursor" in request.url.params:
+            return httpx.Response(
+                status, json={"error": "Too many requests"}, headers={"retry-after": "1"}
+            )
+        if request.url.path.endswith("/count"):
+            return httpx.Response(200, json={"count": 2, "exact": False, "cursor": "c1"})
+        return search_response(["r1"], complete=False, cursor="c1")
+
+    client = make_client(handler)
+    expected = errors.RateLimitError if status == 429 else errors.WebhooksCCError
+    with pytest.raises(expected) as caught:
+        client.requests.search(q="x")
+    assert caught.value.status_code == status
+    with pytest.raises(expected):
+        client.requests.count(q="x")
+    assert slept == []
+
+
+def test_an_invalid_cursor_on_a_later_page_is_raised() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if "cursor" in request.url.params:
+            return httpx.Response(400, json={"error": "invalid_cursor"})
+        return search_response(["r1"], complete=False, cursor="c1")
+
+    with pytest.raises(errors.InvalidCursorError):
+        make_client(handler).requests.search(q="x")
+
+
+def test_a_page_near_the_deadline_gets_a_shorter_timeout(monkeypatch: pytest.MonkeyPatch) -> None:
+    timeouts: list[float] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        timeouts.append(request.extensions["timeout"]["read"])
+        if request.url.path.endswith("/count"):
+            return httpx.Response(200, json={"count": 1, "exact": True})
+        return search_response([], complete=True)
+
+    client = make_client(handler, timeout="30s")
+    # Far from the deadline: the client's own timeout, when that is the shorter.
+    make_client(handler, timeout="2s").requests.search(q="x")
+    assert timeouts == [2.0]
+    timeouts.clear()
+    # 25 s to the deadline and 5 s of grace is no more than the client's 30 s.
+    client.requests.search(q="x")
+    client.requests.count(q="x")
+    assert all(29.0 < timeout <= 30.0 for timeout in timeouts) and len(timeouts) == 2
+    timeouts.clear()
+    # With the deadline reached, a page gets the grace only.
+    monkeypatch.setattr("webhooks_cc.client._SEARCH_DEADLINE_MS", 0)
+    client.requests.search(q="x")
+    client.requests.count(q="x")
+    assert timeouts == [5.0, 5.0]
+    timeouts.clear()
+    # The page calls keep the client's timeout.
+    client.requests.search_page(q="x")
+    client.requests.count_page(q="x")
+    assert timeouts == [30.0, 30.0]
+
+
+def test_a_page_that_times_out_says_how_long_it_had(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("webhooks_cc.client._SEARCH_DEADLINE_MS", 0)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise httpx.ReadTimeout("slow", request=request)
+
+    with pytest.raises(errors.TimeoutError) as caught:
+        make_client(handler, timeout="30s").requests.search(q="x")
+    assert caught.value.timeout_ms == 5000
+
+
+def test_a_later_page_cut_short_by_the_deadline_ends_the_search(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("webhooks_cc.client._SEARCH_DEADLINE_MS", 1000)
+    monkeypatch.setattr("webhooks_cc.client._SEARCH_DEADLINE_GRACE_MS", 0)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if "cursor" in request.url.params:
+            raise httpx.ReadTimeout("slow", request=request)
+        if request.url.path.endswith("/count"):
+            return httpx.Response(200, json={"count": 2, "exact": False, "cursor": "c1"})
+        return search_response(["r1"], complete=False, cursor="c1")
+
+    # The page had less than the client's 30 s: what was found so far.
+    client = make_client(handler, timeout="30s")
+    assert [r.id for r in client.requests.search(q="x")] == ["r1"]
+    assert client.requests.count(q="x") == 2
+    # The client's own timeout ran out: the error.
+    own = make_client(handler, timeout="500ms")
+    with pytest.raises(errors.TimeoutError) as caught:
+        own.requests.search(q="x")
+    assert caught.value.timeout_ms == 500
+    with pytest.raises(errors.TimeoutError):
+        own.requests.count(q="x")

@@ -371,12 +371,38 @@ var searchDeadline = 25 * time.Second
 
 const defaultSearchLimit = 50
 
+// searchDeadlineGrace is what a page of Search or Count may run past their
+// deadline before it times out.
+var searchDeadlineGrace = 5 * time.Second
+
+// pageContext gives one page of Search or Count the client's timeout, or
+// less when the deadline is near, so a page started just before it cannot
+// run long past it.
+func pageContext(ctx context.Context, deadline time.Time) context.Context {
+	return withCallTimeout(ctx, max(0, time.Until(deadline))+searchDeadlineGrace)
+}
+
+// cutShortByDeadline reports whether err is the timeout of a page that had
+// less than the client's own timeout (see pageContext), while the caller's
+// context still runs.
+func (c *Client) cutShortByDeadline(ctx context.Context, err error) bool {
+	var timeout *TimeoutError
+	return ctx.Err() == nil && errors.As(err, &timeout) && timeout.After < c.timeout
+}
+
+// isBusySearch reports whether err is the 429 of a busy search server: the
+// account already runs two searches, or the server is at its limit.
+func isBusySearch(err error) bool {
+	var apiErr *Error
+	return errors.As(err, &apiErr) && apiErr.StatusCode == http.StatusTooManyRequests && apiErr.code == "search_busy"
+}
+
 // waitOutBusySearch sleeps as long as a busy search server asked (a second at
-// least) when err is its 429 and the wait still fits before the deadline. It
-// reports whether it slept; the error is the context's, when it ended first.
+// least) when the wait still fits before the deadline. It reports whether it
+// slept; the error is the context's, when it ended first.
 func waitOutBusySearch(ctx context.Context, err error, deadline time.Time) (bool, error) {
 	var apiErr *Error
-	if !errors.As(err, &apiErr) || apiErr.StatusCode != http.StatusTooManyRequests || apiErr.code != "search_busy" {
+	if !errors.As(err, &apiErr) {
 		return false, nil
 	}
 	wait := max(apiErr.RetryAfter, time.Second)
@@ -463,8 +489,18 @@ func (s *RequestsService) Search(ctx context.Context, opts SearchOptions) ([]Req
 		} else {
 			query.Del("offset")
 		}
-		page, err := s.searchPage(ctx, query, cursor)
+		page, err := s.searchPage(pageContext(ctx, deadline), query, cursor)
 		if err != nil {
+			// Cut short by the deadline, not by the client's own timeout:
+			// the search ends with what it has.
+			if cursor != "" && s.c.cutShortByDeadline(ctx, err) {
+				break
+			}
+			// Only a busy search server is waited out, and only a wait that
+			// no longer fits ends the search with what it has.
+			if !isBusySearch(err) {
+				return nil, err
+			}
 			waited, waitErr := waitOutBusySearch(ctx, err, deadline)
 			if waitErr != nil {
 				return nil, waitErr
@@ -556,8 +592,18 @@ func (s *RequestsService) Count(ctx context.Context, opts SearchOptions) (int, e
 	total := 0
 	cursor := ""
 	for {
-		page, err := s.countPage(ctx, query, cursor)
+		page, err := s.countPage(pageContext(ctx, deadline), query, cursor)
 		if err != nil {
+			// Cut short by the deadline, not by the client's own timeout:
+			// the search ends with what it has.
+			if cursor != "" && s.c.cutShortByDeadline(ctx, err) {
+				return total, nil
+			}
+			// Only a busy search server is waited out, and only a wait that
+			// no longer fits ends the search with what it has.
+			if !isBusySearch(err) {
+				return 0, err
+			}
 			waited, waitErr := waitOutBusySearch(ctx, err, deadline)
 			if waitErr != nil {
 				return 0, waitErr

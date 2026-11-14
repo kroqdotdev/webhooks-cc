@@ -345,6 +345,16 @@ func (c *Client) call(ctx context.Context, method, path string, query url.Values
 	}
 }
 
+// callTimeoutKey carries a timeout for each try of an API call that is
+// shorter than the client's (see withCallTimeout).
+type callTimeoutKey struct{}
+
+// withCallTimeout makes API calls on the context time out after timeout,
+// when that is less than the client's own.
+func withCallTimeout(ctx context.Context, timeout time.Duration) context.Context {
+	return context.WithValue(ctx, callTimeoutKey{}, timeout)
+}
+
 type apiResponse struct {
 	status int
 	header http.Header
@@ -352,7 +362,11 @@ type apiResponse struct {
 }
 
 func (c *Client) apiOnce(ctx context.Context, method, endpoint string, payload []byte, bearer string) (*apiResponse, error) {
-	callCtx, cancel := context.WithTimeout(ctx, c.timeout)
+	timeout := c.timeout
+	if shorter, ok := ctx.Value(callTimeoutKey{}).(time.Duration); ok && shorter < timeout {
+		timeout = shorter
+	}
+	callCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	var reader io.Reader
 	if payload != nil {
@@ -367,20 +381,20 @@ func (c *Client) apiOnce(ctx context.Context, method, endpoint string, payload [
 	request.Header.Set("User-Agent", userAgent)
 	response, err := c.http.Do(request)
 	if err != nil {
-		return nil, c.timeoutOr(ctx, callCtx, err)
+		return nil, timeoutOr(ctx, callCtx, timeout, err)
 	}
 	defer response.Body.Close()
 	data, err := io.ReadAll(response.Body)
 	if err != nil {
-		return nil, c.timeoutOr(ctx, callCtx, err)
+		return nil, timeoutOr(ctx, callCtx, timeout, err)
 	}
 	return &apiResponse{status: response.StatusCode, header: response.Header, body: data}, nil
 }
 
 // timeoutOr turns an error caused by the per-call timeout into a TimeoutError.
-func (c *Client) timeoutOr(parent, call context.Context, err error) error {
+func timeoutOr(parent, call context.Context, timeout time.Duration, err error) error {
 	if parent.Err() == nil && errors.Is(call.Err(), context.DeadlineExceeded) {
-		return &TimeoutError{After: c.timeout}
+		return &TimeoutError{After: timeout}
 	}
 	return err
 }
@@ -643,12 +657,12 @@ func (c *Client) send(ctx context.Context, method, target string, headers map[st
 	}
 	response, err := c.http.Do(request)
 	if err != nil {
-		return nil, c.timeoutOr(ctx, callCtx, err)
+		return nil, timeoutOr(ctx, callCtx, c.timeout, err)
 	}
 	defer response.Body.Close()
 	data, err := io.ReadAll(io.LimitReader(response.Body, maxResponseBody))
 	if err != nil {
-		return nil, c.timeoutOr(ctx, callCtx, err)
+		return nil, timeoutOr(ctx, callCtx, c.timeout, err)
 	}
 	return &Response{StatusCode: response.StatusCode, Header: response.Header, Body: data}, nil
 }

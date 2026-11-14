@@ -271,15 +271,15 @@ Captured [emails](/docs/email-capture) are listed with an `EMAIL` method, the ad
 2026-10-08 16:47:20 EMAIL acme+run-7@mailhooks.cc Confirm your email 1.2 KB
 ```
 
-`whk requests search` finds `-q` as a case-insensitive substring of the path, the headers or the body, and in an email's subject, text and addresses. `--from` and `--to` take a duration back from now (`90s`, `15m`, `1h`, `7d`) or a timestamp in milliseconds, so `--from 1h` searches the last hour; `--kind http` or `--kind email` keeps one kind, and `--limit` is 200 at most.
+`whk requests search` finds `-q` as a case-insensitive substring of the path, the headers or the body, and in an email's subject, text and addresses. `--from` and `--to` take a duration back from now (`90s`, `15m`, `1h`, `7d`) or a timestamp in milliseconds, so `--from 1h` searches the last hour (a duration is turned into a time once, when the command starts, so every page covers the same window); `--kind http` or `--kind email` keeps one kind, and `--limit` above 200 takes several pages. `--order` is `desc` (newest first, the default) or `asc`.
 
 A search reads the newest requests first and keeps reading until it has `--limit` matches, reached the end, or 25 seconds have passed. When it stops before the end it says so on stderr, with the command that continues it:
 
 ```
-Searched back to 2026-10-08 16:47:20; older requests were not searched. Continue with: whk requests search --slug abc123 -q invoice --cursor <cursor>
+Searched back to 2026-10-08 16:47:20; older requests were not searched. Continue with: whk requests search --slug abc123 -q invoice --from 1759934840000 --cursor <cursor>
 ```
 
-`--cursor` continues a search with the same filters and order (it cannot be combined with `--offset`). `--json` prints the matches as one JSON array, as before; when the search stopped early, stderr carries one JSON line instead: `{"search":{"complete":false,"searchedUntil":...,"cursor":"...","continue":"whk requests search ..."}}`.
+`--cursor` continues a search with the same filters and order (it cannot be combined with `--offset`); the printed command carries `--from` and `--to` as the times the first run used. `--json` prints the matches as one JSON array, as before; when the search stopped early, stderr carries one JSON line instead: `{"search":{"complete":false,"searchedUntil":...,"cursor":"...","continue":"whk requests search ..."}}`.
 
 `whk requests count` is exact without `-q` and `--method`. With either it counts for up to 25 seconds and prints `Count: 42` when it counted everything, or `Count: at least 42 (searched back to <time>)` with the command that counts the rest, whose result you add to this one. `--json` prints `{ "count", "exact", "searchedUntil", "cursor" }`.
 

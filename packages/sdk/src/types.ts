@@ -446,8 +446,8 @@ export interface EmailRequest extends Request {
 }
 
 /**
- * A retained request returned from ClickHouse-backed search.
- * The id is synthetic and is not compatible with requests.get()/replay().
+ * A retained request found by `requests.search()` or `requests.searchPage()`.
+ * Its id is the request's own, so `requests.get()` and `requests.replay()` take it.
  */
 export interface SearchResult {
   /** The request's id, usable with `requests.get()` and the other request routes */

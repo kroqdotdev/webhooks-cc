@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { WebhooksCC } from "../client";
-import { RateLimitError, WebhooksCCError } from "../errors";
+import { RateLimitError, TimeoutError, WebhooksCCError } from "../errors";
 
 const BASE_URL = "https://test.webhooks.cc";
 
@@ -336,6 +336,106 @@ describe("search with a cursor", () => {
         statusCode: 400,
         code: "invalid_cursor",
       });
+    });
+  });
+
+  describe("a page begun near the deadline", () => {
+    /** Answers the first call after `firstTakesMs`; later calls hang until aborted. */
+    function mockThenHang(first: Answer) {
+      let call = 0;
+      return vi.fn().mockImplementation((_url: string, init: { signal: AbortSignal }) => {
+        if (call++ === 0) return Promise.resolve(answer(first));
+        return new Promise((_, reject) => {
+          init.signal.addEventListener("abort", () => {
+            reject(Object.assign(new Error("aborted"), { name: "AbortError" }));
+          });
+        });
+      });
+    }
+
+    async function settledAfter(pending: Promise<unknown>, ms: number): Promise<unknown> {
+      let outcome: unknown = "pending";
+      void pending.then(
+        (value) => (outcome = value),
+        (error: unknown) => (outcome = error)
+      );
+      await vi.advanceTimersByTimeAsync(ms);
+      return outcome;
+    }
+
+    it("search() gives it the time left plus 5 seconds, then returns what it found", async () => {
+      // The first page ends 1 s before the deadline, so the second gets 6 s.
+      const fetchMock = mockThenHang({ body: [hit("r1")], headers: more("c1"), takesMs: 24_000 });
+      globalThis.fetch = fetchMock;
+
+      const pending = createClient().requests.search({ q: "needle" });
+      expect(await settledAfter(pending, 5_900)).toBe("pending");
+      const outcome = await settledAfter(pending, 200);
+
+      expect((outcome as Array<{ id: string }>).map((r) => r.id)).toEqual(["r1"]);
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+    });
+
+    it("count() gives it the time left plus 5 seconds, then returns the sum so far", async () => {
+      globalThis.fetch = mockThenHang({
+        body: { count: 2, exact: false, searchedUntil: 3, cursor: "c1" },
+        takesMs: 24_000,
+      });
+
+      const pending = createClient().requests.count({ q: "needle" });
+      expect(await settledAfter(pending, 5_900)).toBe("pending");
+      expect(await settledAfter(pending, 200)).toBe(2);
+    });
+
+    it("fails when the first page times out", async () => {
+      // No page came back: there is nothing to return, even with a short limit.
+      globalThis.fetch = vi
+        .fn()
+        .mockImplementation((_url: string, init: { signal: AbortSignal }) => {
+          return new Promise((_, reject) => {
+            init.signal.addEventListener("abort", () => {
+              reject(Object.assign(new Error("aborted"), { name: "AbortError" }));
+            });
+          });
+        });
+      const client = new WebhooksCC({
+        apiKey: "whcc_testkey123",
+        baseUrl: BASE_URL,
+        timeout: 60_000,
+      });
+
+      const search = client.requests.search({ q: "needle" });
+      const count = client.requests.count({ q: "needle" }).catch((e: unknown) => e);
+      expect(await settledAfter(search, 29_900)).toBe("pending");
+      expect(await settledAfter(search, 200)).toBeInstanceOf(TimeoutError);
+      expect(await count).toBeInstanceOf(TimeoutError);
+    });
+
+    it("fails on a later page that used up the client's own timeout", async () => {
+      globalThis.fetch = mockThenHang({ body: [hit("r1")], headers: more("c1") });
+
+      const client = new WebhooksCC({
+        apiKey: "whcc_testkey123",
+        baseUrl: BASE_URL,
+        timeout: 3_000,
+      });
+      const pending = client.requests.search({ q: "needle" });
+      expect(await settledAfter(pending, 2_900)).toBe("pending");
+      expect(await settledAfter(pending, 200)).toBeInstanceOf(TimeoutError);
+    });
+
+    it("searchPage() and countPage() keep the client's timeout", async () => {
+      const fetchMock = mockThenHang({ body: [hit("r1")], headers: more("c1"), takesMs: 24_000 });
+      globalThis.fetch = fetchMock;
+      const client = createClient();
+      await client.requests.searchPage({ q: "needle" });
+
+      const page = client.requests.searchPage({ q: "needle" }, { cursor: "c1" });
+      const count = client.requests.countPage({ q: "needle" });
+      expect(await settledAfter(page, 29_900)).toBe("pending");
+      expect(await settledAfter(count, 0)).toBe("pending");
+      expect(await settledAfter(page, 200)).toBeInstanceOf(TimeoutError);
+      expect(await settledAfter(count, 0)).toBeInstanceOf(TimeoutError);
     });
   });
 

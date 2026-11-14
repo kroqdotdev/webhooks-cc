@@ -3,6 +3,7 @@ use reqwest::header::{HeaderMap, RETRY_AFTER};
 use reqwest::{Method, Response, StatusCode};
 use serde::de::DeserializeOwned;
 use serde_json::Value;
+use std::time::Duration;
 
 use super::{ApiClient, api_error_message};
 use crate::error::ApiError;
@@ -99,6 +100,20 @@ impl ApiClient {
         self.send(Method::GET, path, None).await
     }
 
+    /// A GET that gives up after `timeout` when that is shorter than the
+    /// client's own request timeout.
+    pub async fn get_within(&self, path: &str, timeout: Option<Duration>) -> Result<ApiResponse> {
+        let mut resp = self
+            .send_once_with(&Method::GET, path, &None, false, &HeaderMap::new(), timeout)
+            .await?;
+        if resp.status() == StatusCode::UNAUTHORIZED && self.can_refresh() {
+            resp = self
+                .send_once_with(&Method::GET, path, &None, true, &HeaderMap::new(), timeout)
+                .await?;
+        }
+        read_response(resp).await
+    }
+
     /// Perform a POST request with a JSON body.
     pub async fn post(&self, path: &str, body: &impl serde::Serialize) -> Result<ApiResponse> {
         let body = serde_json::to_vec(body).context("failed to encode request body")?;
@@ -180,11 +195,11 @@ impl ApiClient {
         extra_headers: &HeaderMap,
     ) -> Result<RawResponse> {
         let mut resp = self
-            .send_once_with(&method, path, &body, false, extra_headers)
+            .send_once_with(&method, path, &body, false, extra_headers, None)
             .await?;
         if resp.status() == StatusCode::UNAUTHORIZED && self.can_refresh() {
             resp = self
-                .send_once_with(&method, path, &body, true, extra_headers)
+                .send_once_with(&method, path, &body, true, extra_headers, None)
                 .await?;
         }
         let status = resp.status();
@@ -208,7 +223,7 @@ impl ApiClient {
         body: &Option<Vec<u8>>,
         refresh: bool,
     ) -> Result<Response> {
-        self.send_once_with(method, path, body, refresh, &HeaderMap::new())
+        self.send_once_with(method, path, body, refresh, &HeaderMap::new(), None)
             .await
     }
 
@@ -219,6 +234,7 @@ impl ApiClient {
         body: &Option<Vec<u8>>,
         refresh: bool,
         extra: &HeaderMap,
+        timeout: Option<Duration>,
     ) -> Result<Response> {
         let mut headers = self.headers_with(refresh).await?;
         for (name, value) in extra {
@@ -230,6 +246,9 @@ impl ApiClient {
             .headers(headers);
         if let Some(body) = body {
             request = request.body(body.clone());
+        }
+        if let Some(timeout) = timeout {
+            request = request.timeout(timeout.min(super::REQUEST_TIMEOUT));
         }
         request.send().await.context("request failed")
     }

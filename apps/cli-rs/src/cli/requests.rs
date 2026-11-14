@@ -82,9 +82,13 @@ pub async fn search(
     cursor: Option<&str>,
     json: bool,
 ) -> Result<()> {
-    // The route clamps limit to 1..=200; mirror it so the search stops at the
-    // number of matches it was asked for.
-    let limit = limit.clamp(1, 200);
+    let limit = limit.max(1);
+    let (from, to) = resolve_times(filters, now_ms());
+    let filters = &SearchFilters {
+        from: from.as_deref(),
+        to: to.as_deref(),
+        ..*filters
+    };
     let result = client
         .search_requests(filters, limit, offset, order, cursor, SEARCH_DEADLINE)
         .await?;
@@ -121,6 +125,53 @@ pub async fn search(
     }
 
     Ok(())
+}
+
+fn now_ms() -> i64 {
+    chrono::Utc::now().timestamp_millis()
+}
+
+/// `--from` and `--to` with durations ("1h": an hour ago) turned into epoch
+/// ms once, so every page of a search, and the command that continues it,
+/// reads the same range. The server would count a duration back from each
+/// request's own time.
+fn resolve_times(filters: &SearchFilters<'_>, now: i64) -> (Option<String>, Option<String>) {
+    (
+        filters.from.map(|v| resolve_time(v, now)),
+        filters.to.map(|v| resolve_time(v, now)),
+    )
+}
+
+/// A duration (the server's grammar: a number, an optional fraction, then
+/// ms, s, m, h or d) as the time that long before `now`; anything else as it
+/// is, for the server to read or refuse.
+fn resolve_time(value: &str, now: i64) -> String {
+    let trimmed = value.trim();
+    let split = trimmed
+        .find(|c: char| !(c.is_ascii_digit() || c == '.'))
+        .unwrap_or(trimmed.len());
+    let (number, unit) = trimmed.split_at(split);
+    let unit_ms = match unit.trim_start() {
+        "ms" => 1.0,
+        "s" => 1_000.0,
+        "m" => 60_000.0,
+        "h" => 3_600_000.0,
+        "d" => 86_400_000.0,
+        _ => return value.to_string(),
+    };
+    // Digits, or digits with one fraction: "1.5", never ".5" or "1.".
+    let well_formed = match number.split_once('.') {
+        Some((whole, fraction)) => {
+            !whole.is_empty() && !fraction.is_empty() && !fraction.contains('.')
+        }
+        None => !number.is_empty(),
+    };
+    match number.parse::<f64>() {
+        Ok(n) if well_formed && (n * unit_ms).is_finite() => {
+            ((now as f64 - n * unit_ms).floor().max(0.0) as i64).to_string()
+        }
+        _ => value.to_string(),
+    }
 }
 
 /// What `--json` writes to stderr when a search stopped before the end.
@@ -205,6 +256,12 @@ pub async fn count(
     cursor: Option<&str>,
     json: bool,
 ) -> Result<()> {
+    let (from, to) = resolve_times(filters, now_ms());
+    let filters = &SearchFilters {
+        from: from.as_deref(),
+        to: to.as_deref(),
+        ..*filters
+    };
     let result = client
         .count_requests(filters, cursor, SEARCH_DEADLINE)
         .await?;
@@ -428,6 +485,48 @@ mod search_output_tests {
         assert_eq!(
             continue_command("count", &filters(), None, "c"),
             r"whk requests count --slug abc -q 'it'\''s paid' --from 7d --cursor c"
+        );
+    }
+
+    #[test]
+    fn durations_become_times_once() {
+        let now = 1_700_000_000_000;
+        assert_eq!(resolve_time("1h", now), "1699996400000");
+        assert_eq!(resolve_time("1.5h", now), "1699994600000");
+        assert_eq!(resolve_time(" 90 s ", now), "1699999910000");
+        assert_eq!(resolve_time("500ms", now), "1699999999500");
+        assert_eq!(resolve_time("7d", now), "1699395200000");
+        assert_eq!(resolve_time("15m", now), "1699999100000");
+        // Longer ago than the epoch is the epoch.
+        assert_eq!(resolve_time("99999999d", now), "0");
+        // Timestamps and what the server will refuse go as they are.
+        for raw in [
+            "1699996400000",
+            "nonsense",
+            "1.h",
+            ".5h",
+            "1.2.3h",
+            "1w",
+            "-1h",
+            "",
+        ] {
+            assert_eq!(resolve_time(raw, now), raw);
+        }
+
+        let filters = SearchFilters {
+            from: Some("7d"),
+            to: Some("1700000000000"),
+            ..SearchFilters::default()
+        };
+        let (from, to) = resolve_times(&filters, now);
+        let resolved = SearchFilters {
+            from: from.as_deref(),
+            to: to.as_deref(),
+            ..filters
+        };
+        assert_eq!(
+            continue_command("search", &resolved, Some((500, "desc")), "c"),
+            "whk requests search --from 1699395200000 --to 1700000000000 --limit 500 --cursor c"
         );
     }
 

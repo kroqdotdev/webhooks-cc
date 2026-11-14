@@ -388,6 +388,7 @@ function resolveTimestampFilter(value: number | string, now: number): number {
 
 // How long requests.search() and requests.count() keep following the cursor.
 const SEARCH_DEADLINE_MS = 25_000;
+const SEARCH_PAGE_GRACE_MS = 5_000;
 const DEFAULT_SEARCH_LIMIT = 50;
 
 /**
@@ -447,6 +448,15 @@ function parseSearchedUntil(value: string | null): number | null {
   if (value === null || value.trim() === "") return null;
   const ms = Number(value);
   return Number.isFinite(ms) ? ms : null;
+}
+
+/**
+ * The longest a page of a search following its cursor may take: what is left
+ * until the search's deadline plus a grace period, so a page begun just
+ * before the deadline cannot run for the client's whole timeout.
+ */
+function searchPageTimeout(deadline: number): number {
+  return Math.max(0, deadline - Date.now()) + SEARCH_PAGE_GRACE_MS;
 }
 
 function isSearchBusy(error: unknown): error is RateLimitError {
@@ -1026,9 +1036,12 @@ export class WebhooksCC {
       repeatable = IDEMPOTENT_METHODS.has(method),
       timeoutMs,
       onHeaders,
+      attemptTimeoutMs,
     }: {
       repeatable?: boolean;
       timeoutMs?: number;
+      /** A lower limit on each attempt than the client's timeout; retries stay as they are. */
+      attemptTimeoutMs?: number;
       /** Given the headers of the successful response, before its body is read. */
       onHeaders?: (headers: Headers) => void;
     } = {}
@@ -1043,11 +1056,15 @@ export class WebhooksCC {
     while (true) {
       attempt++;
       const controller = new AbortController();
+      const attemptTimeout =
+        attemptTimeoutMs === undefined
+          ? this.timeout
+          : Math.min(this.timeout, Math.max(0, attemptTimeoutMs));
       const timeoutId = setTimeout(
         () => controller.abort(),
         deadline === undefined
-          ? this.timeout
-          : Math.min(this.timeout, Math.max(0, deadline - Date.now()))
+          ? attemptTimeout
+          : Math.min(attemptTimeout, Math.max(0, deadline - Date.now()))
       );
       const start = Date.now();
 
@@ -1141,7 +1158,7 @@ export class WebhooksCC {
         }
 
         if (error instanceof Error && error.name === "AbortError") {
-          const timeoutError = new TimeoutError(this.timeout);
+          const timeoutError = new TimeoutError(attemptTimeout);
           try {
             this.hooks.onError?.({
               method,
@@ -1187,8 +1204,16 @@ export class WebhooksCC {
     }
   }
 
-  /** One page of a search: the matches, and how far the server read. */
-  private async fetchSearchPage(base: URLSearchParams, cursor?: string): Promise<SearchPage> {
+  /**
+   * One page of a search: the matches, and how far the server read. A search
+   * following its cursor passes `attemptTimeoutMs`, the longest the page may
+   * run (see searchPageTimeout).
+   */
+  private async fetchSearchPage(
+    base: URLSearchParams,
+    cursor?: string,
+    attemptTimeoutMs?: number
+  ): Promise<SearchPage> {
     let headers: Headers | undefined;
     const requests = await this.request<SearchResult[]>(
       "GET",
@@ -1198,6 +1223,7 @@ export class WebhooksCC {
         onHeaders: (received) => {
           headers = received;
         },
+        attemptTimeoutMs,
       }
     );
     const complete = headers?.get("x-search-complete") ?? null;
@@ -1212,10 +1238,16 @@ export class WebhooksCC {
   }
 
   /** One page of a count: the matches counted, and how far the server read. */
-  private async fetchCountPage(base: URLSearchParams, cursor?: string): Promise<SearchCountPage> {
+  private async fetchCountPage(
+    base: URLSearchParams,
+    cursor?: string,
+    attemptTimeoutMs?: number
+  ): Promise<SearchCountPage> {
     const body = await this.request<Partial<SearchCountPage> & { count: number }>(
       "GET",
-      `/search/requests/count${searchPageQuery(base, cursor)}`
+      `/search/requests/count${searchPageQuery(base, cursor)}`,
+      undefined,
+      { attemptTimeoutMs }
     );
     return {
       count: body.count,
@@ -1241,6 +1273,16 @@ export class WebhooksCC {
         await sleep(waitMs);
       }
     }
+  }
+
+  /**
+   * Whether a page of a search following its cursor failed only because the
+   * search ran out of time: the server was still busy when the deadline came,
+   * or the page timed out at the deadline's limit, shorter than the client's
+   * own timeout (a timeout of the client's own is a failure like any other).
+   */
+  private endedByDeadline(error: unknown, pageTimeoutMs: number): boolean {
+    return isSearchBusy(error) || (error instanceof TimeoutError && pageTimeoutMs < this.timeout);
   }
 
   /** Returns a static description of all SDK operations (no API call). */
@@ -3536,14 +3578,19 @@ export class WebhooksCC {
       const deadline = Date.now() + SEARCH_DEADLINE_MS;
       const found: SearchResult[] = [];
       let cursor: string | undefined;
+      let pageTimeout = this.timeout;
 
       while (true) {
         let page: SearchPage;
         try {
-          page = await this.searchStep(() => this.fetchSearchPage(base, cursor), deadline);
+          page = await this.searchStep(() => {
+            pageTimeout = searchPageTimeout(deadline);
+            return this.fetchSearchPage(base, cursor, pageTimeout);
+          }, deadline);
         } catch (error) {
-          // Still busy at the deadline: what was found so far is the answer.
-          if (cursor !== undefined && isSearchBusy(error)) break;
+          // Still busy at the deadline, or a later page cut short by it: what
+          // was found so far is the answer.
+          if (cursor !== undefined && this.endedByDeadline(error, pageTimeout)) break;
           throw error;
         }
         found.push(...page.requests);
@@ -3582,13 +3629,18 @@ export class WebhooksCC {
       const deadline = Date.now() + SEARCH_DEADLINE_MS;
       let total = 0;
       let cursor: string | undefined;
+      let pageTimeout = this.timeout;
 
       while (true) {
         let page: SearchCountPage;
         try {
-          page = await this.searchStep(() => this.fetchCountPage(base, cursor), deadline);
+          page = await this.searchStep(() => {
+            pageTimeout = searchPageTimeout(deadline);
+            return this.fetchCountPage(base, cursor, pageTimeout);
+          }, deadline);
         } catch (error) {
-          if (cursor !== undefined && isSearchBusy(error)) break;
+          // As in search(): the sum so far is the answer.
+          if (cursor !== undefined && this.endedByDeadline(error, pageTimeout)) break;
           throw error;
         }
         total += page.count;

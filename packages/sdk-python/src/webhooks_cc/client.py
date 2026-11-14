@@ -118,6 +118,8 @@ _MAX_WAIT_ITERATIONS = 10_000
 # page reads for about two seconds on the server.
 _SEARCH_DEADLINE_MS = 25_000
 _SEARCH_DEFAULT_LIMIT = 50
+# What a page of theirs may run past that deadline before it times out.
+_SEARCH_DEADLINE_GRACE_MS = 5_000
 _STREAM_CONNECT_TIMEOUT_S = 30.0
 _STREAM_DEDUP_WINDOW = 1000
 _STREAM_RAPID_ROTATION_MS = 5000
@@ -627,10 +629,14 @@ class WebhooksCC:
         body: Any = None,
         params: Mapping[str, str] | None = None,
         repeatable: bool | None = None,
+        timeout_ms: float | None = None,
     ) -> Any:
         """Call the API and return its JSON. ``repeatable`` overrides whether a network
-        error, a timeout or a 5xx is retried, for a call whose method says otherwise."""
-        response = self._call(method, path, body=body, params=params, repeatable=repeatable)
+        error, a timeout or a 5xx is retried, for a call whose method says otherwise;
+        ``timeout_ms`` replaces the client's timeout for each try."""
+        response = self._call(
+            method, path, body=body, params=params, repeatable=repeatable, timeout_ms=timeout_ms
+        )
         if response.status_code == 204 or response.headers.get("content-length") == "0":
             return None
         content_type = response.headers.get("content-type")
@@ -667,8 +673,11 @@ class WebhooksCC:
         body: Any = None,
         params: Mapping[str, str] | None = None,
         repeatable: bool | None = None,
+        timeout_ms: float | None = None,
     ) -> httpx.Response:
         """Call the API with retries; the response, once it is a success."""
+        if timeout_ms is None:
+            timeout_ms = self._timeout_ms
         url = f"{self._base_url}/api{path}"
         attempts = max(1, int(self._retry.max_attempts))
         if repeatable is None:
@@ -688,14 +697,14 @@ class WebhooksCC:
                     params=params,
                     content=json.dumps(body) if body is not None else None,
                     headers={**self._auth(), "Content-Type": "application/json"},
-                    timeout=self._timeout_s,
+                    timeout=timeout_ms / 1000,
                     follow_redirects=False,
                 )
             except httpx.TimeoutException:
                 if attempt < attempts and repeatable:
                     _sleep_ms(backoff)
                     continue
-                raise TimeoutError(self._timeout_ms) from None
+                raise TimeoutError(timeout_ms) from None
             except httpx.TransportError:
                 if attempt < attempts and repeatable:
                     _sleep_ms(backoff)
@@ -1316,9 +1325,20 @@ class Requests:
             # The cursor carries what is left of the offset.
             if offset is not None and cursor is None:
                 page_params["offset"] = str(int(offset))
+            page_timeout = self._page_timeout_ms(deadline)
             try:
-                page = self._search_page(page_params, cursor)
+                page = self._search_page(page_params, cursor, page_timeout)
+            except TimeoutError:
+                # Cut short by the deadline, not by the client's own timeout: the
+                # search ends with what it has.
+                if cursor is None or page_timeout >= self._client._timeout_ms:
+                    raise
+                break
             except RateLimitError as error:
+                # Only a busy search server is waited out, and only a wait that no
+                # longer fits ends the search with what it has.
+                if error.code != "search_busy":
+                    raise
                 if _wait_out_busy_search(error, deadline):
                     continue
                 if cursor is None:
@@ -1372,11 +1392,21 @@ class Requests:
             params["order"] = order
         return self._search_page(params, cursor)
 
-    def _search_page(self, params: dict[str, str], cursor: str | None) -> SearchPage:
+    def _page_timeout_ms(self, deadline_ms: float) -> float:
+        """The timeout of one page of search() or count(): the client's, or less when
+        the deadline is near, so a page started just before it cannot run long past it."""
+        left = max(0.0, deadline_ms - time.monotonic() * 1000)
+        return min(self._client._timeout_ms, left + _SEARCH_DEADLINE_GRACE_MS)
+
+    def _search_page(
+        self, params: dict[str, str], cursor: str | None, timeout_ms: float | None = None
+    ) -> SearchPage:
         params = {**params, "paged": "true"}
         if cursor is not None:
             params["cursor"] = cursor
-        response = self._client._call("GET", "/search/requests", params=params)
+        response = self._client._call(
+            "GET", "/search/requests", params=params, timeout_ms=timeout_ms
+        )
         items = response.json() if response.content else []
         next_cursor = response.headers.get("x-search-cursor") or None
         complete = response.headers.get("x-search-complete")
@@ -1413,9 +1443,16 @@ class Requests:
         total = 0
         cursor: str | None = None
         while True:
+            page_timeout = self._page_timeout_ms(deadline)
             try:
-                page = self._count_page(params, cursor)
+                page = self._count_page(params, cursor, page_timeout)
+            except TimeoutError:
+                if cursor is None or page_timeout >= self._client._timeout_ms:
+                    raise
+                return total
             except RateLimitError as error:
+                if error.code != "search_busy":
+                    raise
                 if _wait_out_busy_search(error, deadline):
                     continue
                 if cursor is None:
@@ -1449,11 +1486,15 @@ class Requests:
         """
         return self._count_page(_search_params(slug, method, kind, q, from_, to), cursor)
 
-    def _count_page(self, params: dict[str, str], cursor: str | None) -> CountPage:
+    def _count_page(
+        self, params: dict[str, str], cursor: str | None, timeout_ms: float | None = None
+    ) -> CountPage:
         params = {**params, "paged": "true"}
         if cursor is not None:
             params["cursor"] = cursor
-        data = self._client._api("GET", "/search/requests/count", params=params)
+        data = self._client._api(
+            "GET", "/search/requests/count", params=params, timeout_ms=timeout_ms
+        )
         if not isinstance(data, Mapping):
             data = {}
         until = data.get("searchedUntil")
@@ -2341,9 +2382,7 @@ def _resolve_time(value: float | str) -> float:
 
 def _wait_out_busy_search(error: RateLimitError, deadline_ms: float) -> bool:
     """Sleep as long as a busy search server asked (a second at least), when that
-    still fits before the deadline. ``False`` for any other 429, and when it does not."""
-    if error.code != "search_busy":
-        return False
+    still fits before the deadline; ``False`` when it does not."""
     wait_ms = max(error.retry_after or 0, 1) * 1000
     if time.monotonic() * 1000 + wait_ms >= deadline_ms:
         return False

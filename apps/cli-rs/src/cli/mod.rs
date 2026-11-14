@@ -1058,15 +1058,15 @@ pub enum RequestsAction {
         #[arg(short, long)]
         q: Option<String>,
 
-        /// Start time (timestamp or duration like "1h")
+        /// Start time (timestamp in ms, or a duration back from now like "1h")
         #[arg(long)]
         from: Option<String>,
 
-        /// End time (timestamp or duration like "7d")
+        /// End time (timestamp in ms, or a duration back from now like "7d")
         #[arg(long)]
         to: Option<String>,
 
-        /// Max results (at most 200)
+        /// Max results (more than 200 takes several pages)
         #[arg(long, default_value = "50")]
         limit: u32,
 
@@ -1074,8 +1074,8 @@ pub enum RequestsAction {
         #[arg(long, default_value = "0", conflicts_with = "cursor")]
         offset: u32,
 
-        /// Sort order
-        #[arg(long, default_value = "desc", value_parser = ["desc", "asc"])]
+        /// Sort order: desc (newest first) or asc
+        #[arg(long, default_value = "desc", value_parser = parse_order)]
         order: String,
 
         /// Continue a search from where it stopped, with the same filters and order
@@ -1152,6 +1152,14 @@ pub enum RequestsAction {
 pub enum ExportFormat {
     Har,
     Curl,
+}
+
+/// `--order`: `asc` or `desc`, in any case.
+fn parse_order(value: &str) -> Result<String, String> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        order @ ("asc" | "desc") => Ok(order.to_string()),
+        _ => Err("expected asc or desc".to_string()),
+    }
 }
 
 #[cfg(test)]

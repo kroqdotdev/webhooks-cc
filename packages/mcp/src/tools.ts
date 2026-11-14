@@ -1744,10 +1744,14 @@ export function registerTools(
         ),
       from: durationOrTimestampSchema
         .optional()
-        .describe('Start time as a timestamp or duration like "1h" or "7d"'),
+        .describe(
+          'Start time as a timestamp (Unix ms) or a duration back from now like "1h" or "7d". A duration is counted from each call, so when you continue with a cursor pass a timestamp to keep the same range.'
+        ),
       to: durationOrTimestampSchema
         .optional()
-        .describe('End time as a timestamp or duration like "1h" or "7d"'),
+        .describe(
+          'End time as a timestamp (Unix ms) or a duration back from now like "1h" or "7d". A duration is counted from each call, so when you continue with a cursor pass a timestamp to keep the same range.'
+        ),
       limit: z.number().int().min(1).max(200).default(50).describe("Max results to return"),
       offset: z
         .number()
@@ -1813,10 +1817,14 @@ export function registerTools(
         ),
       from: durationOrTimestampSchema
         .optional()
-        .describe('Start time as a timestamp or duration like "1h" or "7d"'),
+        .describe(
+          'Start time as a timestamp (Unix ms) or a duration back from now like "1h" or "7d". A duration is counted from each call, so when you continue with a cursor pass a timestamp to keep the same range.'
+        ),
       to: durationOrTimestampSchema
         .optional()
-        .describe('End time as a timestamp or duration like "1h" or "7d"'),
+        .describe(
+          'End time as a timestamp (Unix ms) or a duration back from now like "1h" or "7d". A duration is counted from each call, so when you continue with a cursor pass a timestamp to keep the same range.'
+        ),
       cursor: z
         .string()
         .optional()
