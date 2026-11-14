@@ -72,12 +72,16 @@ A row per email (or per line item a layout found) in a spreadsheet.
    `"Sheet1"`), `rows` (`"email"` or `"line_items"`) and `columns`
    (`[{ "header": "Subject", "value": "{{ subject }}" }]`, in the header
    row's order). `update_destination` replaces the whole `config`, again with
-   `format: "sheets"`; a `sheet` or `rows` left out keeps the current one. A
-   Sheets destination's URL is its spreadsheet's, so never pass a `url` for
-   one.
+   `format: "sheets"`; `rows` left out keeps the current mode, and `sheet`
+   left out keeps the current tab on the same spreadsheet (another
+   spreadsheet starts on `"Sheet1"`). A Sheets destination's URL is its
+   spreadsheet's, so never pass a `url` for one.
+4. To send a Sheets destination somewhere else instead, `update_destination`
+   with the new `format` and a `url`; its spreadsheet settings are cleared.
 
-These tools are in the sheets group, except `add_destination` (core). No
-Google credential ever passes through the agent.
+These tools are in the sheets group, except `add_destination` and
+`update_destination` (core). No Google credential ever passes through the
+agent.
 
 CLI: `whk google` (`list`, `connect`, `pick`, `tabs`, `create-sheet`).
 

@@ -599,7 +599,7 @@ describe("registerTools", () => {
     });
 
     it("refuses a url for a destination that is or stays a Sheets one", async () => {
-      const { tools, update, get } = sheetsTools();
+      const { tools, update } = sheetsTools();
       const schema = z.object(tools.update_destination.schema as z.ZodRawShape);
       const url = "https://api.example.com/in";
       for (const args of [
@@ -611,15 +611,72 @@ describe("registerTools", () => {
         expect(parseJsonResult(result).message).toContain("leave url out");
       }
       expect(update).not.toHaveBeenCalled();
-      // Only the one without a format had to read the destination.
-      expect(get).toHaveBeenCalledTimes(1);
+    });
 
-      // Moving it to another format with a url of its own is a plain change.
+    it("moves a Sheets destination to another format only with a url, clearing its config", async () => {
+      const { tools, update, get } = sheetsTools();
+      const schema = z.object(tools.update_destination.schema as z.ZodRawShape);
+      const url = "https://api.example.com/in";
+
+      const withoutUrl = await tools.update_destination.handler(
+        schema.parse({ slug: "acme", destinationId: "d1", format: "json" })
+      );
+      expect(withoutUrl.isError).toBe(true);
+      expect(parseJsonResult(withoutUrl).message).toContain("pass the url to send to");
+      expect(update).not.toHaveBeenCalled();
+
       await tools.update_destination.handler(
         schema.parse({ slug: "acme", destinationId: "d1", url, format: "json" })
       );
-      expect(update).toHaveBeenCalledWith("acme", "d1", { url, format: "json" });
-      expect(get).toHaveBeenCalledTimes(1);
+      expect(get).toHaveBeenCalledWith("acme", "d1");
+      expect(update).toHaveBeenCalledWith("acme", "d1", { url, format: "json", config: null });
+    });
+
+    it("needs config for format sheets unless the destination is a Sheets one", async () => {
+      const json = sheetsTools({ id: "d1", format: "json", config: null });
+      const jsonSchema = z.object(json.tools.update_destination.schema as z.ZodRawShape);
+      const refused = await json.tools.update_destination.handler(
+        jsonSchema.parse({ slug: "acme", destinationId: "d1", format: "sheets" })
+      );
+      expect(refused.isError).toBe(true);
+      expect(parseJsonResult(refused).message).toContain('format "sheets" needs config');
+      expect(json.update).not.toHaveBeenCalled();
+
+      // Already a Sheets destination: format "sheets" alone changes nothing.
+      const sheets = sheetsTools();
+      const sheetsSchema = z.object(sheets.tools.update_destination.schema as z.ZodRawShape);
+      await sheets.tools.update_destination.handler(
+        sheetsSchema.parse({ slug: "acme", destinationId: "d1", format: "sheets", name: "Orders" })
+      );
+      expect(sheets.update).toHaveBeenCalledWith("acme", "d1", {
+        format: "sheets",
+        name: "Orders",
+      });
+    });
+
+    it("keeps the tab only on the same spreadsheet", async () => {
+      const { tools, update } = sheetsTools();
+      const schema = z.object(tools.update_destination.schema as z.ZodRawShape);
+      const otherSpreadsheet = "1ZyXwVuTsRqPoNmLkJiHgFeDcBa9876543210";
+      await tools.update_destination.handler(
+        schema.parse({
+          slug: "acme",
+          destinationId: "d1",
+          format: "sheets",
+          config: { connectionId, spreadsheetId: otherSpreadsheet, columns },
+        })
+      );
+      expect(update).toHaveBeenCalledWith("acme", "d1", {
+        format: "sheets",
+        config: {
+          connectionId,
+          spreadsheetId: otherSpreadsheet,
+          sheet: "Sheet1",
+          rows: "line_items",
+          columns,
+        },
+        url: `https://docs.google.com/spreadsheets/d/${otherSpreadsheet}/edit`,
+      });
     });
 
     it("lets a url change on a destination that is not a Sheets one", async () => {

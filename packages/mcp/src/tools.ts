@@ -315,7 +315,7 @@ const sheetsConfigSchema = z
       .max(100)
       .optional()
       .describe(
-        'The tab rows go to (list_sheet_tabs lists them). Left out: "Sheet1" for a new destination, the current tab on a change'
+        'The tab rows go to (list_sheet_tabs lists them). Left out: the current tab when a change keeps the spreadsheet, else "Sheet1"'
       ),
     rows: z
       .enum(["email", "line_items"])
@@ -377,9 +377,14 @@ const SHEETS_URL_REFUSED =
  * Checks a Sheets destination's arguments and gives it its spreadsheet's URL,
  * which the API sets on the row whatever is sent (and needs to create one).
  * `current` is the destination being changed (null when creating, or when
- * the change touches neither its url nor its config): a Sheets config left
- * without its tab or row mode keeps the current one, and a url is refused on
- * a destination that stays a Sheets destination.
+ * the change touches neither its url, its format nor its config):
+ * - a Sheets config left without its row mode keeps the current one, and
+ *   without its tab keeps the current tab only on the same spreadsheet (a
+ *   new spreadsheet starts on Sheet1);
+ * - a url is refused on a destination that is or stays a Sheets destination;
+ * - format "sheets" needs a config unless the destination is one already;
+ * - a Sheets destination moved to another format needs a url, and its
+ *   config is cleared so its Google target does not stay behind.
  */
 function destinationWriteInput<
   T extends { url?: string; format?: string; config?: SheetsConfigInput },
@@ -395,9 +400,10 @@ function destinationWriteInput<
     }
     const kept =
       current?.format === "sheets" && current.config ? (current.config as SheetsConfig) : null;
+    const sameSpreadsheet = kept?.spreadsheetId === config.spreadsheetId;
     const full: SheetsConfig = {
       ...config,
-      sheet: config.sheet ?? kept?.sheet ?? "Sheet1",
+      sheet: config.sheet ?? (sameSpreadsheet ? kept?.sheet : undefined) ?? "Sheet1",
       rows: config.rows ?? kept?.rows ?? "email",
     };
     return {
@@ -406,13 +412,23 @@ function destinationWriteInput<
       url: `https://docs.google.com/spreadsheets/d/${config.spreadsheetId}/edit`,
     };
   }
-  if (creating && input.format === "sheets") {
+  if (input.format === "sheets" && current?.format !== "sheets") {
     throw new Error(
       'format "sheets" needs config: a connectionId (list_google_connections or connect_google), a spreadsheetId (create_spreadsheet or pick_spreadsheet), the sheet and the columns'
     );
   }
   if (creating && input.url === undefined) {
     throw new Error("Pass the url to send to (a Google Sheets destination takes config instead)");
+  }
+  if (input.format !== undefined && input.format !== "sheets" && current?.format === "sheets") {
+    if (input.url === undefined) {
+      throw new Error(
+        `A Google Sheets destination's URL is its spreadsheet's: pass the url to send to with format "${input.format}"`
+      );
+    }
+    // The spreadsheet goes with the format, so a later format "sheets"
+    // cannot pick up a stale config.
+    return { ...rest, config: null };
   }
   return rest;
 }
@@ -3093,7 +3109,7 @@ export function registerTools(
 
   server.tool(
     "update_destination",
-    "Change a destination: any of its fields; only the ones you pass change. A Google Sheets destination's config is replaced as a whole, with format sheets: pass its connectionId, spreadsheetId and columns again; a sheet or rows left out keeps the current one. A Sheets destination's URL is its spreadsheet's, so a url is refused on one that stays a Sheets destination. Owner only.",
+    "Change a destination: any of its fields; only the ones you pass change. A Google Sheets destination's config is replaced as a whole, with format sheets: pass its connectionId, spreadsheetId and columns again; rows left out keeps the current mode, and a sheet left out keeps the current tab on the same spreadsheet (a new spreadsheet starts on Sheet1). A Sheets destination's URL is its spreadsheet's, so a url is refused on one that stays a Sheets destination; to move one to another format, pass that format with a url, and its spreadsheet settings are cleared. Owner only.",
     {
       slug: z.string().describe("The endpoint slug"),
       destinationId: z.string().describe("The destination's id (from list_destinations)"),
@@ -3103,10 +3119,12 @@ export function registerTools(
       ...destinationWriteFields,
     },
     withErrorHandling(async ({ slug, destinationId, ...input }) => {
-      // The current destination, when the change depends on it: a config
-      // keeps its tab and row mode, and a url is refused on a Sheets one.
+      // The current destination, when the change depends on it: whether it
+      // is a Sheets destination, and the tab and row mode a config keeps.
+      // Read, then written without a version check, as the dashboard's
+      // editor does; it only matters when sheet or rows are left out.
       const needsCurrent =
-        input.config !== undefined || (input.url !== undefined && input.format === undefined);
+        input.config !== undefined || input.url !== undefined || input.format !== undefined;
       const current = needsCurrent ? await client.destinations.get(slug, destinationId) : null;
       return jsonContent(
         await client.destinations.update(
