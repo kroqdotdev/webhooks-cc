@@ -30,11 +30,11 @@ export const TRACK_LABELS: Record<ChangelogTrack, string> = {
 const RELEASE = release as { version: string | null; entries: ChangelogEntry[] };
 
 export const APP_VERSION: string = RELEASE.version ?? "dev";
-export const CLI_VERSION = "1.16.0";
-export const SDK_VERSION = "1.26.0";
+export const CLI_VERSION = "1.17.0";
+export const SDK_VERSION = "1.27.0";
 export const PYTHON_SDK_VERSION = "0.7.0";
 export const GO_SDK_VERSION = "0.7.0";
-export const MCP_VERSION = "1.22.0";
+export const MCP_VERSION = "1.23.0";
 
 export const CHANGELOG: ChangelogEntry[] = [
   ...RELEASE.entries,
@@ -2145,6 +2145,19 @@ export const CHANGELOG: ChangelogEntry[] = [
 
   // ─── CLI ────────────────────────────────────────────────────────────
   {
+    version: "1.17.0",
+    date: "2026-11-14",
+    title: "Google Sheets And AI Setup",
+    track: "cli",
+    items: [
+      "`whk google list`, `tabs`, `create-sheet` and `disconnect` manage the Google accounts behind Sheets destinations",
+      "`whk google connect` asks the owner to connect a Google account: approving takes them to Google, and whk prints the account once they are back",
+      "`whk google pick <connection>` asks the owner to choose an existing spreadsheet: the approval page opens Google's Drive picker, and whk prints the spreadsheet and its tabs",
+      "`whk ai status <slug>` and `whk ai setup <slug>`: the owner sees which emails would be sent to the model, approves, and whk prints the proposed fields",
+      'With `--no-wait`, an approval no longer prints "Waiting for approval..." before it exits',
+    ],
+  },
+  {
     version: "1.16.0",
     date: "2026-11-14",
     title: "Without The Dashboard",
@@ -2476,6 +2489,17 @@ export const CHANGELOG: ChangelogEntry[] = [
   },
 
   // ─── SDK ────────────────────────────────────────────────────────────
+  {
+    version: "1.27.0",
+    date: "2026-11-14",
+    title: "Google Sheets And AI Setup",
+    track: "sdk",
+    items: [
+      "`client.google.connections()`, `tabs()`, `createSpreadsheet()` and `disconnect()` for the Google accounts behind Sheets destinations",
+      "`client.google.connect()` and `pick(connectionId)` return pending approvals: the owner connects an account at Google, or chooses a spreadsheet in Drive's picker, and `wait()` resolves with it",
+      "`client.ai.status(slug)` and `setup(slug, ...)`: AI setup returns a pending approval whose `wait()` resolves with the proposed fields",
+    ],
+  },
   {
     version: "1.26.0",
     date: "2026-11-14",
@@ -3102,6 +3126,17 @@ export const CHANGELOG: ChangelogEntry[] = [
   },
 
   // ─── MCP ────────────────────────────────────────────────────────────
+  {
+    version: "1.23.0",
+    date: "2026-11-14",
+    title: "Google Sheets And AI Setup",
+    track: "mcp",
+    items: [
+      "`list_google_connections`, `list_sheet_tabs`, `create_spreadsheet` and `disconnect_google` for the Google accounts behind Sheets destinations",
+      "`connect_google` and `pick_spreadsheet` wait for the owner to connect an account at Google, or to choose a spreadsheet in Drive's picker",
+      "`ai_setup_status` and `ai_setup`: the owner sees which emails would be sent to the model and approves; the tool returns the proposed fields",
+    ],
+  },
   {
     version: "1.22.0",
     date: "2026-11-14",

@@ -64,6 +64,9 @@ pub(crate) async fn ask(
         }
         return Ok(());
     }
+    if !json {
+        println!("\n  Waiting for approval...");
+    }
     collect(client, &approval.id, deadline, json).await
 }
 

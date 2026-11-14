@@ -95,6 +95,9 @@ pub async fn create(client: &ApiClient, name: &str, opts: CreateOptions, json: b
         }
         return Ok(());
     }
+    if !json {
+        println!("\n  Waiting for approval...");
+    }
     collect(client, &approval.id, deadline, json).await
 }
 
@@ -152,7 +155,6 @@ pub(crate) fn show_approval(
     } else if !no_browser && approval.url.starts_with("https://") {
         let _ = open::that(&approval.url);
     }
-    println!("\n  Waiting for approval...");
 }
 
 /// Polls the approval until the person answers, then prints what it granted.
