@@ -1,0 +1,7 @@
+{
+  "title": "The rest of the API in the CLI",
+  "items": [
+    "The CLI docs describe `whk alerts get` and `set`, `whk mock preview`, `whk layouts preview`, `whk send-email`, `whk requests download` (an email's exact message or one attachment, to the file `-o` names) and `whk requests replay` and `replay-range` (through the endpoint's layouts and destinations again)",
+    "The agent skill points agents at those commands instead of `whk api`"
+  ]
+}

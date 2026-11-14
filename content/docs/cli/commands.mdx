@@ -3,7 +3,7 @@ title: "Command Reference"
 description: "Complete command reference for the webhooks.cc CLI, including authentication, endpoint management, tunneling, replay, the agent sandbox, and updates."
 section: cli
 order: 2
-lastUpdated: 2026-11-13
+lastUpdated: 2026-11-14
 schema: none
 keywords: ["whk commands", "CLI reference", "webhook CLI commands"]
 seo:
@@ -263,6 +263,10 @@ whk requests search -q invoice --slug <slug> --from 1h   # across retained reque
 whk requests count --slug <slug> --method POST           # same filters as search, and --cursor
 whk requests clear <slug>         # --before <time or duration>, --yes to skip the prompt
 whk requests export <slug> --format har -o requests.har  # or --format curl; --limit (default 100), --since
+whk requests download <request-id> -o message.eml         # an email's exact message
+whk requests download <request-id> --attachment 0 -o invoice.pdf
+whk requests replay <request-id> --yes                    # through the endpoint's layouts and destinations again
+whk requests replay-range <slug> --since 2h --kind email --yes
 ```
 
 Captured [emails](/docs/email-capture) are listed with an `EMAIL` method, the address they arrived at, and their subject:
@@ -288,6 +292,10 @@ Searched back to 2026-10-08 16:47:20; older requests were not searched. Continue
 `whk requests get` on an email shows the sender, recipient, subject, tag, attachments, and text part instead of the raw message. Add `--json` for the headers and the raw message; the HTML and the sender checks are in the dashboard.
 
 On an endpoint with [layouts](/docs/layouts), it also shows what they found under **Parsed**: the layout, each field as `name: value`, the line items as a table in their columns' order (the first 50), and one line per parsed attachment. `--json` returns the request's `parsed` as stored: a very large result is cut to fit the email's JSON (attachment rows and text first, then line items from the end), and `parsed.truncated` says so.
+
+`whk requests download` saves a captured email's exact message as received (`--raw`, the default) or one of its decoded attachments (`--attachment <n>`, from 0, in the order `whk requests get` lists them) to the file `-o` names, replacing a file already there. The file name is only ever the one you give: an attachment's own name was chosen by its sender, so whk shows it and never writes to it. Without `-o` the bytes go to stdout, which must be a pipe or a file (`whk requests download <id> | ripmime -i -`); on a terminal the command refuses with `usage` and asks for `-o`, since a sender's bytes could act on the terminal. With `--json`, `-o` is required, and stdout carries `{ "path", "bytes", "contentType", "filename" }`, where `filename` is the sender's name for display. A message is kept in full when the endpoint's mail is in object storage, and otherwise up to 1 MiB; attachments' contents only in object storage. What was not kept answers `not_found` (exit 4) with the reason.
+
+`whk requests replay` runs a captured request through its endpoint again on the server, with the endpoint's current settings: an email on an endpoint with [layouts](/docs/layouts) is parsed again first (each attachment's stored parse is reused, so no pages are used twice), then every destination that takes its kind gets it as a redelivery. It is for after a pattern was fixed or a destination came back. `replay-range` does the same for an endpoint's requests in a range, oldest first and at most 500 a call: `--since` and `--until` take epoch milliseconds or a duration back from now (`2h`, `7d`), and `--kind` keeps `http` or `email`. Both are for the endpoint's owner, ask first, and need `--yes` without a terminal; `--json` prints `{ "queued" }` and `{ "requests", "queued", "limit" }`. To send a request to one destination whatever its filter says, use [`whk deliveries redeliver`](#deliveries); to send it from your machine to a URL of your own, use `whk replay`.
 
 ## replay
 
@@ -322,6 +330,18 @@ Send a webhook from your machine to any URL, with the same flags as `send`.
 ```bash
 whk send-to http://localhost:3000/webhooks -d @payload.json
 ```
+
+## send-email
+
+Have webhooks.cc deliver a sample [email](/docs/email-capture#send-a-test-email) to an endpoint: a message with a 6-digit code and a link, or with `--template` the sample email of a [ready-made layout](/docs/layouts#ready-made-layouts) (an id from `whk layouts templates`), so a layout added from it has something to read. `--tag` sends it to `{slug}+{tag}@mailhooks.cc`, so a test can wait for its own email. It counts as one request, and it does not travel over SMTP, so the sender checks do not run on it.
+
+```bash
+whk send-email <slug>
+whk send-email <slug> --tag run-7 && whk wait <slug> --kind email --since now
+whk send-email <slug> --template shopify-order
+```
+
+`--json` prints `{ "status": "captured", "requestId" }`.
 
 ## teams
 
@@ -452,7 +472,11 @@ Ready-made [layouts](/docs/layouts) for emails from common senders (Shopify, Woo
 ```bash
 whk layouts templates <slug>
 whk layouts add-template <slug> <template-id>
+whk layouts preview <slug>                       # the saved layouts on the newest email
+whk layouts preview <slug> --request <id> --layouts @layouts.json
 ```
+
+`preview` is a dry run: which layout a captured email matches (the endpoint's newest unless `--request` names one) and the fields, line items and attachments it reads, shown as `whk requests get` shows a parsed email. `--layouts` tries layouts you have not saved, as a JSON list or `@file`; problems with them are listed and nothing runs. Attachments show what an earlier parse stored: a preview never parses a file again, saves nothing and uses no pages. For the endpoint's owner.
 
 ## fields
 
@@ -463,6 +487,42 @@ whk fields preview <slug>
 whk fields preview <slug> --request <id>
 whk fields preview <slug> --fields '[{"name":"order","from":"subject","pattern":"#(\\d+)"}]'
 ```
+
+## mock
+
+A dry run of an endpoint's [mock response and response rules](/docs/mock-responses): which rule answers a captured request (the endpoint's newest HTTP request, or a sample when there is none, unless `--request` names one) and the response with its placeholders filled in, exactly as the receiver would send it. Nothing is sent. `--mock-response` and `--response-rules` try settings you have not saved, as JSON, `@file`, or `null` for none; the saved ones apply where you leave them out. Placeholders the request has nothing for are listed: they are sent as written.
+
+```bash
+whk mock preview <slug>
+whk mock preview <slug> --request <id> --response-rules @rules.json
+whk mock preview <slug> --mock-response '{"status":201,"body":"{\"id\":\"{{ json.id }}\"}","headers":{}}'
+```
+
+Save them with `whk update-endpoint`, or `whk api -X PATCH endpoints/<slug> -d @settings.json` for rules. `--json` prints the API's answer: `rule`, `response`, `unknownPlaceholders`, `email` and `request`.
+
+## alerts
+
+An endpoint's [alerts](/docs/forwarding#alerts): when one opens and who hears of it. `get` shows the settings and the recent alerts, open ones first; `set` changes the settings you pass and keeps the rest. Only the endpoint's owner can see and change them.
+
+```bash
+whk alerts get <slug>
+whk alerts set <slug> --enabled true --field-failures 3 --required-field order --required-field total
+whk alerts set <slug> --silence-hours 24 --notify-destination <destination-id>
+whk alerts set <slug> --silence-hours off --all-fields
+```
+
+| Flag                                           | Description                                                                                                 |
+| ---------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| `--enabled`                                    | `true` or `false`: the endpoint's alerts on or off                                                          |
+| `--field-failures`                             | Open an alert when this many emails in a row miss a required field, 1 to 100, or `off`                      |
+| `--field-failure-share`                        | Open an alert when this percent of the last 20 emails missed one, 1 to 100, or `off`                        |
+| `--required-field`, `--all-fields`             | The fields that must be found (repeatable; replaces the list), or every email field (the default)          |
+| `--silence-hours`                              | Open an alert after this many hours without an email, 1 to 720, or `off`                                    |
+| `--destination-failures`                       | `true` or `false`: open an alert when a delivery fails after every retry                                    |
+| `--notify-email`                               | `true` or `false`: email the endpoint's owner when an alert opens and resolves                              |
+| `--notify-destination`, `--no-notify-destinations` | A destination that also gets alerts (repeatable; replaces the list), or none; not spreadsheets or file drops |
+
+Checks start within a minute. `--json` prints the API's answer: `{ "settings", "events" }` for `get`, `{ "settings" }` for `set`.
 
 ## destinations
 
@@ -602,9 +662,8 @@ Call any [API route](/docs/api) with your credentials and print the answer as it
 
 ```bash
 whk api /api/endpoints
-whk api endpoints/<slug>/alerts
 whk api -X PATCH endpoints/<slug> -d '{"retentionDays":7}'
-whk api -X PUT endpoints/<slug>/alerts -d @alerts.json
+whk api -X PATCH endpoints/<slug> -d @rules.json
 ```
 
 The path is relative to `/api` when it does not start with it, and only paths are accepted, so your credentials never go to another host. `-d` sends JSON text, `@file` or `@-` (stdin), with `POST` unless `-X` says otherwise. `-H Key:Value` adds a header and `-i` prints the status and headers to stderr. A failing status prints the body, then exits with the matching status (404 is `not_found`, exit 4). Routes that need a browser session, such as billing and account deletion, refuse API keys.

@@ -30,15 +30,29 @@ pub async fn one(client: &ApiClient, request_id: &str, yes: bool, json: bool) ->
         ),
         yes,
     )?;
-    let answer = client.replay_request(request_id).await?;
+    let answer = client.replay_request(request_id).await.map_err(|error| {
+        // The route answers a bare code for a request it will not replay.
+        match error.downcast::<crate::error::ApiError>() {
+            Ok(mut api) if api.message == "not_found" => {
+                api.message = format!(
+                    "No captured request {} on an endpoint you own (or it is past retention).",
+                    sanitize_line(request_id)
+                );
+                api.into()
+            }
+            Ok(api) => api.into(),
+            Err(error) => error,
+        }
+    })?;
     if json {
         return print_json(&answer);
     }
     if answer.value.get("queued").and_then(Value::as_bool) == Some(true) {
         println!("{} Queued {} again", green("✓"), bold(request_id));
         println!(
-            "  {}",
-            dim("`whk deliveries ls --request <id>` shows how its deliveries go.")
+            "  {} whk deliveries ls --request {}",
+            dim("See how its deliveries go:"),
+            sanitize_line(request_id)
         );
     } else {
         println!(
