@@ -331,9 +331,26 @@ fn read_secret(env: &str, prompt: &str) -> Result<String> {
     }
     let opens_key = first.trim_start().starts_with("-----BEGIN ")
         || first.trim_start().starts_with(PUTTY_PREFIX);
-    if !opens_key && pending() {
-        // A line, then more of a paste: most likely a comment or a file name
-        // above a key, which would otherwise be saved as the password.
+    // A line, then more of a paste: most likely a comment or a file name
+    // above a key, which would otherwise be saved as the password. Blank
+    // lines after it (a pasted \r\n) are not more of a paste.
+    let mut more = false;
+    if !opens_key {
+        for _ in 0..MAX_PEM_LINES {
+            if !pending() {
+                break;
+            }
+            if !rpassword::read_password()
+                .map_err(read_error)?
+                .trim()
+                .is_empty()
+            {
+                more = true;
+                break;
+            }
+        }
+    }
+    if more {
         return Err(CliError::Usage(format!(
             "That was more than one line. Paste the key alone, from its -----BEGIN line, or pass it from its file: {env}=\"$(cat ~/.ssh/<key>)\" whk ..."
         ))
@@ -395,15 +412,32 @@ impl HiddenInput {
     }
 
     /// Whether more input is already waiting, as the rest of a paste is.
+    /// `select`, not `poll`: macOS's poll does not support `/dev/tty`.
     fn has_pending(&self) -> bool {
         use std::os::fd::AsRawFd;
-        let mut poll = libc::pollfd {
-            fd: self.tty.as_raw_fd(),
-            events: libc::POLLIN,
-            revents: 0,
-        };
-        // SAFETY: one valid pollfd on an open descriptor, 100 ms at most.
-        unsafe { libc::poll(&mut poll, 1, 100) > 0 && poll.revents & libc::POLLIN != 0 }
+        let fd = self.tty.as_raw_fd();
+        if fd >= libc::FD_SETSIZE as i32 {
+            return false;
+        }
+        // SAFETY: an fd_set zeroed and filled for one open descriptor below
+        // FD_SETSIZE, and a timeout of 100 ms.
+        unsafe {
+            let mut read = std::mem::zeroed::<libc::fd_set>();
+            libc::FD_ZERO(&mut read);
+            libc::FD_SET(fd, &mut read);
+            let mut timeout = libc::timeval {
+                tv_sec: 0,
+                tv_usec: 100_000,
+            };
+            libc::select(
+                fd + 1,
+                &mut read,
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+                &mut timeout,
+            ) > 0
+                && libc::FD_ISSET(fd, &read)
+        }
     }
 }
 
@@ -421,7 +455,9 @@ impl Drop for HiddenInput {
     }
 }
 
-/// Windows prompts are left as rpassword makes them.
+/// Windows prompts are left as rpassword makes them; unread console input
+/// (the rest of a paste) is dropped when the prompt ends, so it never reaches
+/// the shell. Whether more is waiting is not looked at here.
 #[cfg(not(unix))]
 struct HiddenInput;
 
@@ -433,6 +469,23 @@ impl HiddenInput {
 
     fn has_pending(&self) -> bool {
         false
+    }
+}
+
+#[cfg(windows)]
+impl Drop for HiddenInput {
+    fn drop(&mut self) {
+        use windows_sys::Win32::System::Console::{
+            FlushConsoleInputBuffer, GetStdHandle, STD_INPUT_HANDLE,
+        };
+        // SAFETY: the process's own console input handle; a failure (no
+        // console) is ignored.
+        unsafe {
+            let input = GetStdHandle(STD_INPUT_HANDLE);
+            if !input.is_null() {
+                FlushConsoleInputBuffer(input);
+            }
+        }
     }
 }
 
@@ -474,13 +527,21 @@ fn pem_or_line(
     if opening.contains("-----END") {
         return Ok(first);
     }
-    let end = format!("-----END {label}-----");
+    // A block before the key (the curve `openssl ecparam -genkey` writes
+    // first, a certificate) is read on to the private key's own END line,
+    // and the server takes the key out of the paste.
     let too_long = || -> anyhow::Error {
         CliError::Usage(format!(
-            "That key did not end with {end} within {MAX_PEM_LINES} lines and 16 KB. Pass the key from its file instead: {env}=\"$(cat ~/.ssh/<key>)\" whk ..."
+            "That key did not end with its -----END line within {MAX_PEM_LINES} lines and 16 KB. Pass the key from its file instead: {env}=\"$(cat ~/.ssh/<key>)\" whk ..."
         ))
         .into()
     };
+    // The END line of the block being read, and whether it is a private
+    // key's; None between blocks.
+    let mut open: Option<(String, bool)> = Some((
+        format!("-----END {label}-----"),
+        label.ends_with("PRIVATE KEY"),
+    ));
     let mut key = String::from(opening);
     key.push('\n');
     for _ in 0..MAX_PEM_LINES {
@@ -496,8 +557,27 @@ fn pem_or_line(
         if key.len() > MAX_PEM_BYTES {
             return Err(too_long());
         }
-        if line == end {
-            return Ok(key);
+        match &open {
+            Some((end, private)) if line == end => {
+                if *private {
+                    return Ok(key);
+                }
+                open = None;
+            }
+            Some(_) => {}
+            None => {
+                // Text between blocks is kept; the server judges it.
+                if let Some(next) = line
+                    .strip_prefix("-----BEGIN ")
+                    .and_then(|rest| rest.strip_suffix("-----"))
+                    .filter(|next| !next.is_empty())
+                {
+                    open = Some((
+                        format!("-----END {next}-----"),
+                        next.ends_with("PRIVATE KEY"),
+                    ));
+                }
+            }
         }
     }
     Err(too_long())
@@ -540,7 +620,7 @@ pub fn drop_secret_value(protocol: &str, secret: &str) -> Result<Value> {
         "ftp" | "ftps" => json!({ "password": secret }),
         // A key in PEM or OpenSSH form, or a PuTTY key file, which the server reads too.
         "sftp"
-            if secret.contains("PRIVATE KEY-----")
+            if secret.contains("-----BEGIN ")
                 || secret.trim_start().starts_with("PuTTY-User-Key-File-") =>
         {
             json!({ "privateKey": secret })
@@ -1418,6 +1498,39 @@ mod tests {
         .unwrap();
         assert_eq!(secret, "hunter2");
         assert!(!called, "a password reads no further lines");
+    }
+
+    #[test]
+    fn a_block_before_the_key_is_read_on_to_the_key() {
+        // What `openssl ecparam -genkey` writes: the curve, then the key.
+        let key = pem_or_line(
+            "-----BEGIN EC PARAMETERS-----".into(),
+            "WHK_DROP_SECRET",
+            lines(&[
+                "BggqhkjOPQMBBw==",
+                "-----END EC PARAMETERS-----",
+                "-----BEGIN EC PRIVATE KEY-----",
+                "made-up",
+                "-----END EC PRIVATE KEY-----",
+                "echo this stays unread",
+            ]),
+        )
+        .unwrap();
+        assert!(key.ends_with("-----END EC PRIVATE KEY-----\n"));
+        assert!(key.contains("-----BEGIN EC PRIVATE KEY-----\nmade-up\n"));
+        assert!(!key.contains("echo"));
+        assert_eq!(
+            drop_secret_value("sftp", &key).unwrap()["privateKey"],
+            json!(key)
+        );
+        // A certificate alone never ends as a key: refused at the bound.
+        let error = pem_or_line(
+            "-----BEGIN CERTIFICATE-----".into(),
+            "WHK_DROP_SECRET",
+            lines(&["AAAA", "-----END CERTIFICATE-----", "echo next"]),
+        )
+        .unwrap_err();
+        assert_eq!(classify(&error).code, "usage");
     }
 
     #[test]

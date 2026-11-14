@@ -83,7 +83,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       if (typeof parsed.destinationId !== "string" || !isUuid(parsed.destinationId)) {
         return reply({ error: "destinationId must be a destination id." }, 400);
       }
-      destinationId = parsed.destinationId;
+      destinationId = parsed.destinationId.toLowerCase();
     }
   } catch {
     return reply({ error: "Send JSON, or no body." }, 400);

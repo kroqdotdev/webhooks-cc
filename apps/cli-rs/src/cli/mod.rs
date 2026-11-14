@@ -729,7 +729,8 @@ fn parse_destination_id(value: &str) -> Result<String, String> {
             _ => c.is_ascii_hexdigit(),
         });
     if uuid {
-        Ok(value.to_string())
+        // The server lists ids in lowercase and compares them as text.
+        Ok(value.to_ascii_lowercase())
     } else {
         Err("a destination id, as `whk destinations ls <slug>` lists them".into())
     }
@@ -1267,7 +1268,7 @@ or typed at the terminal without being shown; it is never taken from a flag.")]
         /// The endpoint's slug
         slug: String,
 
-        /// A saved destination to start from; the setting flags change it for the preview only
+        /// A saved destination to start from (its id); the setting flags change it for the preview only
         #[arg(long, value_parser = parse_destination_id)]
         destination: Option<String>,
 
@@ -1374,7 +1375,7 @@ pub enum DeliveriesAction {
         slug: String,
 
         /// Only this destination's failed deliveries (its id)
-        #[arg(long)]
+        #[arg(long, value_parser = parse_destination_id)]
         destination: Option<String>,
 
         /// Send without asking (needed without a terminal)
