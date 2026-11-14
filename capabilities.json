@@ -1021,6 +1021,7 @@
       "api": "any API route, for whatever has no command yet",
       "update": "updates whk itself",
       "completions": "shell completions",
+      "setup agent": "connects the coding agents on this machine (their MCP config and the agent skill), with no API call",
       "sandbox status": "shows the saved agent connection",
       "sandbox connect": "connects an agent to an account (/auth.md)",
       "sandbox forget": "removes the saved agent connection"

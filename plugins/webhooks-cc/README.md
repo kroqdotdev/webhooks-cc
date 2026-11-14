@@ -34,6 +34,10 @@ npx @webhooks-cc/mcp setup cursor --api-key whcc_...
 `setup` also takes `claude-code`, `claude-desktop`, `vscode`, `codex` and
 `devin` (Devin Desktop, formerly Windsurf; `windsurf` works too).
 
+With the `whk` CLI installed, `whk setup agent` does both for every coding
+agent on the machine: it writes the skill and adds the remote server, with no
+key (`--local` for the local server, `--dry-run` to see what it would change).
+
 ### Claude Code
 
 ```text

@@ -1,0 +1,7 @@
+{
+  "title": "Docs for whk setup agent",
+  "items": [
+    "The CLI command reference describes whk setup agent, which adds the MCP server and the agent skill to every coding agent on your machine in one step, with no key written anywhere",
+    "The MCP server, agent skill and AI agents pages point to it as the quickest way to connect Claude Code, Codex, Cursor, VS Code, Claude Desktop and Devin Desktop"
+  ]
+}

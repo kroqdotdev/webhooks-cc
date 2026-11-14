@@ -3,7 +3,7 @@ title: "Command Reference"
 description: "Complete command reference for the webhooks.cc CLI, including authentication, endpoint management, tunneling, replay, the agent sandbox, and updates."
 section: cli
 order: 2
-lastUpdated: 2026-11-13
+lastUpdated: 2026-11-14
 schema: none
 keywords: ["whk commands", "CLI reference", "webhook CLI commands"]
 seo:
@@ -519,6 +519,58 @@ Registrations are saved in a file the CLI shares with the [MCP server](/docs/mcp
 | Windows  | `%APPDATA%\whk\agent.json`                                              |
 
 Set `WHK_AGENT_FILE` to use another path, for example one per CI job. The file is written with mode `0600` and holds identity assertions and short-lived access tokens, so treat it like `token.json`. Entries are kept per API URL (`--api-url`, `WHK_API_URL`), so a local stack never touches production's. `whk sandbox status` shows what is saved without printing any secret.
+
+## setup agent
+
+Connect the coding agents on this machine to webhooks.cc in one step: each gets the [MCP server](/docs/mcp) in its user-level config and the [agent skill](/docs/mcp/skills).
+
+```bash
+whk setup agent                      # every agent found on this machine
+whk setup agent --agent cursor --agent codex
+whk setup agent --dry-run            # say what would change, change nothing
+whk setup agent --local              # the local server instead of the remote one
+whk setup agent --remove --yes       # take out what it installed
+```
+
+An agent counts as found when its program is on `PATH` or its config directory exists; `--agent` (repeatable) picks agents instead: `claude-code`, `claude-desktop`, `cursor`, `vscode`, `codex` and `devin` (Devin Desktop, formerly Windsurf; `windsurf` works too).
+
+| Agent          | MCP server                                          | Skill                                  |
+| -------------- | --------------------------------------------------- | -------------------------------------- |
+| Claude Code    | `claude mcp add -s user ...`                        | `~/.claude/skills/webhooks-cc`         |
+| Codex          | `codex mcp add ...`                                 | `~/.agents/skills/webhooks-cc`         |
+| Cursor         | `~/.cursor/mcp.json`                                | `~/.cursor/skills/webhooks-cc`         |
+| VS Code        | `mcp.json` in your VS Code user profile             | `~/.copilot/skills/webhooks-cc`        |
+| Claude Desktop | `claude_desktop_config.json` (local server)         | none                                   |
+| Devin Desktop  | `~/.config/devin/mcp_config.json` (local server)    | `~/.config/devin/skills/webhooks-cc`   |
+
+The skill goes where `npx skills add` puts it for each agent. Claude Code's is left out when the [webhooks.cc plugin](/docs/mcp/skills#install-in-claude-code) is installed, since the plugin brings it.
+
+What it installs is the remote server, `https://webhooks.cc/mcp`, and no key is written anywhere: the agent signs in with OAuth in your browser the first time it connects (in Claude Code, run `/mcp` and pick `webhooks-cc`; Codex signs in while the server is added). `--local` installs `npx -y @webhooks-cc/mcp` instead, which starts in the [agent sandbox](/docs/mcp#without-an-api-key-the-agent-sandbox) until the agent connects your account. Claude Desktop and Devin Desktop always get the local server, the only kind their config files run; for the remote server in Claude Desktop, add a custom connector under Settings, Connectors.
+
+Running it again changes nothing that is already in place and says `unchanged`. A config file is backed up to `<file>.bak` the first time it is changed and written through a temporary file, so it is never left half written. A file that is not valid JSON (comments included) is left alone and named in the error, and that agent is skipped. An entry called `webhooks-cc` that `whk` did not write, such as one holding an API key, is never replaced. `--remove` takes out only what `whk setup agent` installed, as recorded in `setup-agent.json` beside the login file, and leaves anything changed since. Without a terminal it changes nothing unless `--yes` is given, and `--json` prints one document with each agent's outcome:
+
+```json
+{
+  "server": { "kind": "remote", "url": "https://webhooks.cc/mcp" },
+  "dryRun": false,
+  "remove": false,
+  "agents": [
+    {
+      "agent": "cursor",
+      "name": "Cursor",
+      "detected": true,
+      "status": "changed",
+      "items": [
+        { "what": "mcp", "status": "installed", "path": "/home/you/.cursor/mcp.json" },
+        { "what": "skill", "status": "installed", "path": "/home/you/.cursor/skills/webhooks-cc" }
+      ],
+      "next": "Restart Cursor or reload its window; it asks you to sign in to webhooks.cc when it connects."
+    }
+  ]
+}
+```
+
+Each item's `status` is `installed`, `updated`, `unchanged`, `removed`, `absent`, `skipped` or `failed` (a dry run says `would_install`, `would_update` or `would_remove`), with a `message` when it was skipped or failed. When an agent fails, the command exits with status 1 after printing the rest.
 
 ## update
 

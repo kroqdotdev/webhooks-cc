@@ -51,6 +51,8 @@ Cursor, Codex, GitHub Copilot, Gemini CLI, OpenCode and most other coding agents
 npx skills add kroqdotdev/webhooks-cc
 ```
 
+Or let the [CLI](/docs/cli) do both: `whk setup agent` writes the skill and adds the [remote server](/docs/mcp#remote-server) for every coding agent it finds on your machine ([details](/docs/cli/commands#setup-agent)).
+
 Then add the MCP server. The [remote server](/docs/mcp#remote-server) is the easiest: add `https://webhooks.cc/mcp` to your agent's MCP settings and approve it once in your browser, with no key to paste. Or run the local server, for example:
 
 ```bash

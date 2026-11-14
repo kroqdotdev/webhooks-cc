@@ -27,6 +27,7 @@
 | Local app                          | `whk tunnel <port> [--live]`, `whk share <port>`, `whk shares`, `whk names`                                       |
 | Email setup                        | `whk fields preview`, `whk layouts`, `whk ai setup`, `whk domains`                                                |
 | Account                            | `whk usage`, `whk billing`, `whk keys`, `whk agents`, `whk account`, `whk share-links`, `whk teams`, `whk google` |
+| Connect this machine's agents      | `whk setup agent [--agent cursor] [--local] [--dry-run]`                                                          |
 | Anything else                      | `whk api <path> [-X METHOD] [-d JSON]`                                                                            |
 
 `whk wait` exits at the first match: start it in the background, trigger
@@ -41,6 +42,11 @@ Commands that need the person's approval (`whk keys create`,
 `whk share-links create`, `whk teams invite`, `whk domains remove`, ...)
 print the link and wait; with `--no-wait` they print the approval and exit,
 and `whk approvals wait <id>` collects it later.
+
+`whk setup agent` adds the MCP server and this skill to every coding agent
+on the machine (Claude Code, Codex, Cursor, VS Code, Claude Desktop, Devin);
+without a terminal it needs `--yes`, and `--dry-run --json` says what it
+would change first.
 
 Signed provider templates are sent from the MCP tools or the SDKs, not the
 CLI: `whk send` and `whk send-to` send the body and headers you give them.

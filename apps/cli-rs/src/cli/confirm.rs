@@ -26,7 +26,7 @@ pub fn confirm(question: &str, yes: bool) -> Result<()> {
     })
 }
 
-fn decide(
+pub(crate) fn decide(
     question: &str,
     interactive: bool,
     ask: impl FnOnce() -> io::Result<String>,

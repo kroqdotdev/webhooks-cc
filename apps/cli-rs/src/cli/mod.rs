@@ -15,6 +15,7 @@ pub mod replay;
 pub mod requests;
 pub mod sandbox;
 pub mod send;
+pub mod setup;
 pub mod share;
 pub mod teams;
 pub mod tunnel;
@@ -470,6 +471,12 @@ deletion) refuse API keys.")]
         action: SandboxAction,
     },
 
+    /// Set things up on this machine: `whk setup agent` connects your coding agents to webhooks.cc
+    Setup {
+        #[command(subcommand)]
+        action: SetupAction,
+    },
+
     /// Show usage and quota info, including team pools
     Usage,
 
@@ -481,6 +488,68 @@ deletion) refuse API keys.")]
         /// Shell type
         shell: clap_complete::Shell,
     },
+}
+
+#[derive(Subcommand, Debug)]
+pub enum SetupAction {
+    /// Connect the coding agents on this machine to webhooks.cc: the MCP server and the agent skill
+    #[command(long_about = SETUP_AGENT_ABOUT)]
+    Agent(SetupAgentArgs),
+}
+
+const SETUP_AGENT_ABOUT: &str = "\
+Connect the coding agents on this machine to webhooks.cc.
+
+Each agent found (its program on PATH, or its config directory) gets the
+remote MCP server, https://webhooks.cc/mcp, in its user-level config, and
+the webhooks.cc agent skill. No key is written anywhere: the agent signs in
+with OAuth in your browser the first time it connects. --local installs the
+local server (npx -y @webhooks-cc/mcp) instead, which starts in the agent
+sandbox until the agent connects your account.
+
+Agents: claude-code and codex (through `claude mcp add` and `codex mcp add`),
+claude-desktop, cursor, vscode and devin (Devin Desktop, formerly Windsurf;
+`windsurf` works too). Claude Desktop and Devin get the local server, the
+only kind their config files run.
+
+A re-run changes nothing that is already in place. A config file is backed
+up to <file>.bak the first time it is changed, and left alone when it is not
+valid JSON. --remove takes out what this command installed and nothing
+else. Without a terminal it changes nothing unless --yes is given.";
+
+#[derive(clap::Args, Debug)]
+pub struct SetupAgentArgs {
+    /// Only this agent (repeatable): claude-code, claude-desktop, cursor, vscode, codex, devin (or windsurf). Default: every agent found on this machine
+    #[arg(long = "agent", value_name = "NAME", value_enum)]
+    pub agents: Vec<setup::Agent>,
+
+    /// Install the local server (npx -y @webhooks-cc/mcp) instead of the remote one
+    #[arg(long)]
+    pub local: bool,
+
+    /// Say what would change, and change nothing
+    #[arg(long)]
+    pub dry_run: bool,
+
+    /// Remove what this command installed, and nothing else
+    #[arg(long)]
+    pub remove: bool,
+
+    /// Go ahead without asking (needed without a terminal)
+    #[arg(short = 'y', long = "yes")]
+    pub yes: bool,
+}
+
+impl From<SetupAgentArgs> for setup::Options {
+    fn from(args: SetupAgentArgs) -> Self {
+        setup::Options {
+            agents: args.agents,
+            local: args.local,
+            dry_run: args.dry_run,
+            remove: args.remove,
+            yes: args.yes,
+        }
+    }
 }
 
 #[derive(Subcommand, Debug)]

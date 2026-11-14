@@ -7,7 +7,7 @@ use whk::api::ApiClient;
 use whk::cli::{
     self, AccountAction, AgentsAction, AiAction, ApprovalsAction, AuthAction, Cli, Command,
     DomainsAction, FieldsAction, GoogleAction, KeysAction, LayoutsAction, NamesAction,
-    RequestsAction, SandboxAction, ShareLinksAction, SharesAction, TeamsAction,
+    RequestsAction, SandboxAction, SetupAction, ShareLinksAction, SharesAction, TeamsAction,
 };
 use whk::error::{classify, error_json};
 
@@ -92,6 +92,15 @@ async fn run(args: Cli) -> Result<()> {
         return Ok(());
     }
 
+    // Setting up agents reads no credentials and calls no API.
+    let mut args = args;
+    if let Some(Command::Setup {
+        action: SetupAction::Agent(setup),
+    }) = args.command.take_if(|c| matches!(c, Command::Setup { .. }))
+    {
+        return cli::setup::run(setup.into(), args.json);
+    }
+
     let mut client = ApiClient::new(args.api_url.as_deref(), args.webhook_url.as_deref())?;
     // A command printed for a later run (a search's continue command) names
     // the server this run used, default included: the later run may have
@@ -99,7 +108,7 @@ async fn run(args: Cli) -> Result<()> {
     let api_url_flag = Some(client.base_url().to_string());
 
     match args.command {
-        None => unreachable!("handled above"),
+        None | Some(Command::Setup { .. }) => unreachable!("handled above"),
 
         Some(Command::Wait {
             slug,
