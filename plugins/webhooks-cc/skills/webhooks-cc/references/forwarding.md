@@ -30,7 +30,9 @@ below), `http` and `email` (booleans, both on by default) and:
   (`verified`, `failed` or `missing`).
 - `throttleSeconds` (at most one delivery every N seconds; the rest are not
   sent, so 1 makes a heads-up channel), `delaySeconds` (up to 3600, for callbacks), `retrySeconds`,
-  `keepOrder`, `headers`.
+  `keepOrder`, `headers`. With the CLI, give a header's token as a
+  variable, `--header "Authorization: Bearer $HOOK_TOKEN"`: the shell stores
+  the variable's name in its history, not the token.
 
 Template placeholders: HTTP requests read `json.<path>`, `headers.<name>`,
 `query.<name>`, `method`, `path`, `body`; emails read `subject`,

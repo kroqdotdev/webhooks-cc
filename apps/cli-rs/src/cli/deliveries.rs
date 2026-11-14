@@ -77,17 +77,30 @@ fn truncate(text: &str, width: usize) -> String {
     out
 }
 
+/// The destination's id, which `redeliver --destination` takes.
+fn destination_id(delivery: &Value) -> String {
+    delivery
+        .get("destination")
+        .map(|d| text(d, "id"))
+        .filter(|id| !id.is_empty())
+        .map_or_else(|| "-".into(), sanitize)
+}
+
 fn log_lines(list: &[Value]) -> Vec<String> {
+    // The two ids end the row, so a failed one leads straight to
+    // `whk deliveries redeliver <request-id> --destination <destination-id>`.
     let mut out = vec![format!(
         "  {}",
         dim(&format!(
-            "{:<9} {:<5} {:<5} {:<19} {:<22} {:<30} {}",
-            "STATUS", "TRIES", "LAST", "QUEUED", "DESTINATION", "WHAT", "REQUEST"
+            "{:<9} {:<5} {:<5} {:<19} {:<18} {:<26} {:<36} {}",
+            "STATUS", "TRIES", "LAST", "QUEUED", "TO", "WHAT", "REQUEST", "DESTINATION"
         ))
     )];
+    let mut failed = false;
     for delivery in list {
+        let request = sanitize(text(delivery, "requestId"));
         out.push(format!(
-            "  {} {:<5} {:<5} {:<19} {:<22} {:<30} {}",
+            "  {} {:<5} {:<5} {:<19} {:<18} {:<26} {} {}",
             status_label(text(delivery, "status")),
             delivery
                 .get("attempts")
@@ -95,15 +108,24 @@ fn log_lines(list: &[Value]) -> Vec<String> {
                 .unwrap_or(0),
             last_status(delivery),
             when(delivery, "createdAt"),
-            truncate(&destination_label(delivery), 22),
-            truncate(&what(delivery), 30),
-            dim(text(delivery, "requestId")),
+            truncate(&destination_label(delivery), 18),
+            truncate(&what(delivery), 26),
+            dim(&format!("{request:<36}")),
+            dim(&destination_id(delivery)),
         ));
         if let Some(error) = delivery.get("lastError").and_then(Value::as_str)
             && text(delivery, "status") != "succeeded"
         {
             out.push(format!("    {}", dim(&sanitize_line(error))));
         }
+        failed |= text(delivery, "status") == "failed";
+    }
+    if failed {
+        out.push(String::new());
+        out.push(format!(
+            "  {} whk deliveries redeliver <request> --destination <destination>",
+            dim("Send one again:")
+        ));
     }
     out
 }
@@ -368,6 +390,15 @@ mod tests {
         assert!(lines.contains("Bad gateway"), "{lines}");
         assert!(lines.contains("Zapier"), "{lines}");
         assert!(lines.contains("email \"Order #1001\""), "{lines}");
+        let failed_row = lines.lines().nth(1).unwrap();
+        assert!(
+            failed_row.contains("r1") && failed_row.contains("d1"),
+            "the row carries both ids: {failed_row}"
+        );
+        assert!(
+            lines.contains("whk deliveries redeliver <request> --destination <destination>"),
+            "{lines}"
+        );
     }
 
     #[test]

@@ -30,7 +30,13 @@ const sandboxTools = toolNames((server) => registerSandboxTools(server, {}));
 const knownTools = new Set([...fullTools, ...sandboxTools, ENABLE_TOOLS]);
 
 // Backticked snake_case words in the skill that are SDK identifiers, not tools.
-const NOT_TOOLS = new Set(["webhooks_cc", "webhooks_cc_endpoint", "build_template_request"]);
+const NOT_TOOLS = new Set([
+  "webhooks_cc",
+  "webhooks_cc_endpoint",
+  "build_template_request",
+  // A `whk` error code.
+  "delivery_failed",
+]);
 
 function frontmatter(markdown: string): Record<string, string> {
   const match = /^---\n([\s\S]*?)\n---\n/.exec(markdown);
@@ -45,7 +51,7 @@ function frontmatter(markdown: string): Record<string, string> {
 
 /**
  * Backticked snake_case words, which in the skill are tool names unless they
- * are condition fields, condition operators or SDK identifiers.
+ * are condition fields, condition operators, SDK identifiers or CLI error codes.
  */
 function mentionedTools(markdown: string): string[] {
   const ops: readonly string[] = CONDITION_OPS;
