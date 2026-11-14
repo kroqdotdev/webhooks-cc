@@ -217,7 +217,7 @@ const results = await client.requests.search({
   slug?: string,
   method?: string,
   kind?: "http" | "email",
-  q?: string,               // Free-text search
+  q?: string,               // Text to find (substring)
   from?: number | string,   // Start time
   to?: number | string,     // End time
   limit?: number,           // Default: 50
@@ -866,8 +866,8 @@ All endpoints require `Authorization: Bearer whcc_...` unless noted. "Bearer" is
 | GET | `/api/requests/[id]/raw` | Bearer | A captured email's exact message as `message/rfc822` |
 | GET | `/api/requests/[id]/attachments/[index]` | Bearer | One attachment of a stored email, as a download |
 | POST | `/api/requests/[id]/render` | Bearer | A captured email as an inbound mail provider posts it; body `{ "format": "postmark" \| "sendgrid" \| "mailgun" \| "cloudmailin" \| "json" }`; returns `{ "format", "method", "headers", "body" }` |
-| GET | `/api/search/requests` | Bearer | Search requests (`slug`, `method`, `kind`, `q`, `from`, `to`, `limit`, `offset`, `order`) |
-| GET | `/api/search/requests/count` | Bearer | Count matching requests: `{ "count": 42 }` |
+| GET | `/api/search/requests` | Bearer | Search requests (`slug`, `method`, `kind`, `q`, `from`, `to`, `limit`, `cursor`, `offset`, `order`). `q` is a case-insensitive substring of path, headers or body (emails: also decoded subject, text, addresses); `from`/`to` are ms timestamps or durations back (`1h`). Reads newest first for about 2 s per call: while the `X-Search-Complete` header is `false`, repeat with `cursor` set to `X-Search-Cursor` |
+| GET | `/api/search/requests/count` | Bearer | Count matching requests: `{ "count": 42, "exact": true, "searchedUntil": null, "cursor": null }`; `exact: false` means a lower bound, count on with `cursor` and add up |
 
 ### Webhooks
 
@@ -1536,6 +1536,7 @@ curl -X POST https://webhooks.cc/api/endpoints/<slug>/destinations \
 - Replay one request: 60 per minute; replay a time range: 10 per minute
 - Search: 60 per 10 minutes
 - Search count: 120 per 10 minutes
+- Running searches: 2 at once per account (more get 429 `search_busy` with `Retry-After`); each call reads for about 2 seconds
 - Guest endpoint creation: 20 per 10 minutes per IP
 - Device auth: 10 per minute per IP
 

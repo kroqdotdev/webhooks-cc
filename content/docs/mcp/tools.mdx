@@ -252,23 +252,25 @@ Poll until a specified number of requests arrive at an endpoint.
 
 ### search_requests
 
-Full-text search across captured requests. Supports time ranges, method filters, and pagination.
+Search captured requests for text. Supports time ranges, method filters, and pagination.
+
+`q` matches as a case-insensitive substring of the path, the headers or the body, and an email also matches on its decoded subject, text and sender and recipient addresses; a request id finds that request first. A search reads the most recent requests first and answers within a couple of seconds, so a rare term on a long history can come back with fewer results than exist: narrow `from` and `to` to search one stretch of time at a time.
 
 | Parameter | Type     | Required | Description                                                  |
 | --------- | -------- | -------- | ------------------------------------------------------------ |
 | `slug`    | `string` | no       | Filter by endpoint slug                                      |
 | `method`  | `string` | no       | Filter by HTTP method                                        |
 | `kind`    | `string` | no       | `http` for HTTP requests only, `email` for emails only       |
-| `q`       | `string` | no       | Search query (searches headers and body)                     |
-| `from`    | `string` | no       | Start time -- relative duration like `"1h"` or ISO timestamp |
-| `to`      | `string` | no       | End time -- relative duration or ISO timestamp               |
+| `q`       | `string` | no       | Text to find in the path, headers or body                    |
+| `from`    | `string` | no       | Start time: a duration back like `"1h"`, or a timestamp      |
+| `to`      | `string` | no       | End time: a duration back, or a timestamp                    |
 | `limit`   | `number` | no       | Max results                                                  |
 | `offset`  | `number` | no       | Pagination offset                                            |
 | `order`   | `string` | no       | `"asc"` or `"desc"`                                          |
 
 ### count_requests
 
-Count requests matching the given filters. Takes the filters of `search_requests`, without its paging and order.
+Count requests matching the given filters. Takes the filters of `search_requests`, without its paging and order. With `q`, the count covers what a couple of seconds of reading reached, so on a long history it can be lower than the real number.
 
 | Parameter | Type     | Required | Description             |
 | --------- | -------- | -------- | ----------------------- |

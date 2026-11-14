@@ -463,7 +463,9 @@ replay(requestId: string, targetUrl: string): Promise<Response>
 
 <ApiMethod method="GET" path="/requests/search" title="client.requests.search">
 
-Search captured webhook requests across endpoints with full-text search.
+Search captured requests across endpoints for text.
+
+`q` matches as a case-insensitive substring of the path, the headers or the body (`%` and `_` are literal), and an email also matches on its decoded subject, text and sender and recipient addresses; a request id finds that request first. A search reads the most recent requests first and answers within about 2 seconds, so a rare term on a long history can return fewer results than exist: narrow `from` and `to` to search one stretch of time at a time.
 
 ```ts
 search(filters?: SearchFilters): Promise<SearchResult[]>
@@ -476,7 +478,7 @@ search(filters?: SearchFilters): Promise<SearchResult[]>
 | `slug`   | `string`            | no       | Filter by endpoint slug            |
 | `method` | `string`            | no       | Filter by HTTP method              |
 | `kind`   | `"http" \| "email"` | no       | Only HTTP requests, or only emails |
-| `q`      | `string`            | no       | Free-text search                   |
+| `q`      | `string`            | no       | Text to find (substring)           |
 | `from`   | `string \| number`  | no       | Start time (duration or timestamp) |
 | `to`     | `string \| number`  | no       | End time (duration or timestamp)   |
 | `limit`  | `number`            | no       | Max results (default: 50)          |
@@ -488,7 +490,7 @@ search(filters?: SearchFilters): Promise<SearchResult[]>
 
 <ApiMethod method="GET" path="/requests/count" title="client.requests.count">
 
-Count captured webhook requests matching the given filters.
+Count captured requests matching the given filters. With `q`, the count covers what about 2 seconds of reading reached, so on a long history it can be lower than the real number.
 
 ```ts
 count(filters?: SearchFilters): Promise<number>

@@ -5,7 +5,13 @@ import {
   applyRateLimitHeaders,
   type RateLimitInfo,
 } from "@/lib/rate-limit";
-import { isRequestKind, searchRequestsForUser } from "@/lib/supabase/search";
+import { InvalidSearchCursorError, isRequestKind, searchRequestPage } from "@/lib/supabase/search";
+import { SearchBusyError, withSearchSlot } from "@/lib/search-gate";
+import {
+  applySearchProgressHeaders,
+  parseSearchTime,
+  reportSearch,
+} from "@/lib/search-request-params";
 import { reportError } from "@/lib/observability";
 
 function parseOptionalInteger(
@@ -60,13 +66,20 @@ export async function GET(request: Request) {
     }
 
     const url = new URL(request.url);
-    const parsedFrom = parseOptionalInteger(url.searchParams, "from");
-    if (parsedFrom.error) {
-      return applyRateLimitHeaders(parsedFrom.error, rateLimit);
+    // Epoch ms, or a duration back from now ("1h").
+    const from = parseSearchTime(url.searchParams.get("from"));
+    if (from === null) {
+      return applyRateLimitHeaders(
+        Response.json({ error: "invalid_from" }, { status: 400 }),
+        rateLimit
+      );
     }
-    const parsedTo = parseOptionalInteger(url.searchParams, "to");
-    if (parsedTo.error) {
-      return applyRateLimitHeaders(parsedTo.error, rateLimit);
+    const to = parseSearchTime(url.searchParams.get("to"));
+    if (to === null) {
+      return applyRateLimitHeaders(
+        Response.json({ error: "invalid_to" }, { status: 400 }),
+        rateLimit
+      );
     }
     const kind = url.searchParams.get("kind");
     if (kind !== null && !isRequestKind(kind)) {
@@ -85,22 +98,61 @@ export async function GET(request: Request) {
     }
 
     const order = url.searchParams.get("order");
-    const data = await searchRequestsForUser({
+    const slug = url.searchParams.get("slug") ?? undefined;
+    const q = url.searchParams.get("q") ?? undefined;
+    const cursor = url.searchParams.get("cursor") ?? undefined;
+    const started = performance.now();
+    // A search answers within its time budget with what it found and where it
+    // stopped; the body stays the array older clients read, and the rest
+    // travels in X-Search-* headers.
+    const page = await withSearchSlot(userId, () =>
+      searchRequestPage({
+        userId,
+        plan,
+        slug,
+        method: url.searchParams.get("method") ?? undefined,
+        kind: kind ?? undefined,
+        q,
+        from,
+        to,
+        limit: parsedLimit.value,
+        offset: parsedOffset.value,
+        order: order === "asc" ? "asc" : "desc",
+        cursor,
+      })
+    );
+    reportSearch({
       userId,
-      plan,
-      slug: url.searchParams.get("slug") ?? undefined,
-      method: url.searchParams.get("method") ?? undefined,
-      kind: kind ?? undefined,
-      q: url.searchParams.get("q") ?? undefined,
-      from: parsedFrom.value,
-      to: parsedTo.value,
-      limit: parsedLimit.value,
-      offset: parsedOffset.value,
-      order: order === "asc" ? "asc" : "desc",
+      kind: "list",
+      scoped: Boolean(slug?.trim()),
+      hasTerm: Boolean(q?.trim()),
+      continued: Boolean(cursor?.trim()),
+      complete: page.complete,
+      slices: page.slices,
+      results: page.requests.length,
+      durationMs: performance.now() - started,
     });
 
-    return applyRateLimitHeaders(Response.json(data), rateLimit);
+    return applyRateLimitHeaders(
+      applySearchProgressHeaders(Response.json(page.requests), page),
+      rateLimit
+    );
   } catch (err) {
+    if (err instanceof InvalidSearchCursorError) {
+      const response = Response.json({ error: "invalid_cursor" }, { status: 400 });
+      return rateLimit ? applyRateLimitHeaders(response, rateLimit) : response;
+    }
+    if (err instanceof SearchBusyError) {
+      const response = Response.json(
+        { error: "search_busy", message: err.message },
+        { status: 429, headers: { "Retry-After": String(err.retryAfterSeconds) } }
+      );
+      return rateLimit ? applyRateLimitHeaders(response, rateLimit) : response;
+    }
+    if (request.signal.aborted) {
+      // The client went away; nobody reads this answer.
+      return new Response(null, { status: 499 });
+    }
     reportError("Search API route error", err);
     const response = Response.json({ error: "Internal server error" }, { status: 500 });
     return rateLimit ? applyRateLimitHeaders(response, rateLimit) : response;

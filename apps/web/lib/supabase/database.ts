@@ -3077,6 +3077,25 @@ export interface Database {
         };
         Returns: number;
       };
+      search_requests_page: {
+        Args: {
+          p_user_id: string;
+          p_plan?: "free" | "pro" | "business" | null;
+          p_slug?: string | null;
+          p_method?: string | null;
+          p_q?: string | null;
+          p_from_ms?: number | null;
+          p_to_ms?: number | null;
+          p_limit?: number;
+          p_offset?: number;
+          p_order?: string;
+          p_kind?: string | null;
+          p_cursor?: string | null;
+          p_budget_ms?: number;
+          p_count?: boolean;
+        };
+        Returns: Json;
+      };
       claim_quota_exhausted_users: {
         Args: { p_limit?: number };
         Returns: Array<{

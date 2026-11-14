@@ -4,6 +4,7 @@ import {
   buildRetainedCountParams,
   computeShowHasMore,
   countLoadedAfter,
+  formatListCount,
   incrementRetainedCount,
   retainedCountCutoff,
 } from "./dashboard-count";
@@ -162,5 +163,18 @@ describe("computeShowHasMore", () => {
         initialCanLoadMore: true,
       })
     ).toBe(false);
+  });
+});
+
+describe("formatListCount", () => {
+  test("shows an exact count as it is", () => {
+    expect(formatListCount(0, false)).toBe("0");
+    expect(formatListCount(50, false)).toBe("50");
+  });
+
+  test("marks a lower bound with a plus", () => {
+    expect(formatListCount(50, true)).toBe("50+");
+    // A search that found nothing yet has still not read everything.
+    expect(formatListCount(0, true)).toBe("0+");
   });
 });

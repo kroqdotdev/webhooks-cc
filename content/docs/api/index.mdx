@@ -745,26 +745,65 @@ Returns `{ "available": true, "connections": [{ "id": "...", "email": "ops@acme.
 
 ## Search
 
-Search captured requests across endpoints with optional filters.
+Search the requests you still have, across your endpoints and the endpoints a team shares with you, newest first.
 
 ```bash
-curl "https://webhooks.cc/api/search/requests?slug=abc123&method=POST&q=stripe&limit=20" \
+curl -i "https://webhooks.cc/api/search/requests?slug=abc123&method=POST&q=invoice&from=7d&limit=20" \
   -H "Authorization: Bearer whcc_..."
 ```
 
 **Query parameters:**
 
-| Param    | Type     | Description                                |
-| -------- | -------- | ------------------------------------------ |
-| `slug`   | `string` | Filter by endpoint slug                    |
-| `method` | `string` | Filter by HTTP method (`EMAIL` for emails) |
-| `kind`   | `string` | `http` or `email`                          |
-| `q`      | `string` | Free-text search                           |
-| `from`   | `number` | Start time (Unix timestamp in ms)          |
-| `to`     | `number` | End time (Unix timestamp in ms)            |
-| `limit`  | `number` | Max results (default: 50)                  |
-| `offset` | `number` | Pagination offset                          |
-| `order`  | `string` | `"asc"` or `"desc"` (default)              |
+| Param    | Type               | Description                                                                               |
+| -------- | ------------------ | ----------------------------------------------------------------------------------------- |
+| `slug`   | `string`           | Only this endpoint                                                                        |
+| `method` | `string`           | Only this HTTP method (`EMAIL` for emails)                                                |
+| `kind`   | `string`           | `http` or `email`                                                                         |
+| `q`      | `string`           | Text to find (see [What a search matches](#what-a-search-matches))                        |
+| `from`   | `number \| string` | Start time: a Unix timestamp in ms, or a duration back from now such as `15m`, `1h`, `7d` |
+| `to`     | `number \| string` | End time, in the same forms                                                               |
+| `limit`  | `number`           | Max results per page (default: 50, at most 200)                                           |
+| `cursor` | `string`           | Continue a search from where the last page stopped (the `X-Search-Cursor` it returned)    |
+| `offset` | `number`           | Skip this many matches (at most 10,000). Prefer `cursor` to page                          |
+| `order`  | `string`           | `"desc"` (newest first, the default) or `"asc"`                                           |
+
+A duration is a number and a unit: `500ms`, `90s`, `15m`, `1h`, `1.5h`, `7d`. `from=1h` means everything since an hour ago.
+
+The response body is a JSON array of requests, as before.
+
+### What a search matches
+
+`q` is found as a substring, not as words: `q=voice` matches `invoice`. It is case-insensitive, and every character is literal, `%`, `_` and `\` included (there are no wildcards). A request matches when the text appears in its path, its headers or its body. An email also matches on its decoded subject, its text and its from, to and cc addresses, so a message sent as base64 or quoted-printable is found by what it says. When `q` is a request id, that request comes first.
+
+### Partial pages and the cursor
+
+There is no text index behind search, so a search reads requests one stretch of time after another, starting at the newest (the oldest with `order=asc`). Each call reads for about 2 seconds at most and then answers with what it found. It stops at whichever comes first: a full page, the end of the range, or the time limit. A common term on a busy endpoint answers in milliseconds; a rare term on a long history can return a short or empty page that is not the end.
+
+Three response headers say how far the call got:
+
+| Header                    | Description                                                                                                                                                                                 |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `X-Search-Complete`       | `true` when there is nothing more to read in the range, `false` when there may be more matches                                                                                              |
+| `X-Search-Searched-Until` | How far the search has read, as a Unix timestamp in ms: everything from the near end of the range to this time has been searched. Left out when a complete search had no bound on that side |
+| `X-Search-Cursor`         | Send as `cursor` to continue from there. Left out when the search is complete                                                                                                               |
+
+So an empty array with `X-Search-Complete: false` means "nothing yet, keep going", not "no matches". To read everything, repeat the call with the cursor until the search is complete:
+
+```bash
+cursor=""
+while :; do
+  curl -s -D headers.txt -o page.json -G "https://webhooks.cc/api/search/requests" \
+    -H "Authorization: Bearer whcc_..." \
+    --data-urlencode "slug=abc123" \
+    --data-urlencode "q=invoice" \
+    ${cursor:+--data-urlencode "cursor=$cursor"}
+  cat page.json
+  grep -qi '^x-search-complete: true' headers.txt && break
+  cursor=$(grep -i '^x-search-cursor:' headers.txt | cut -d' ' -f2 | tr -d '\r')
+done
+```
+
+Keep the other parameters the same from page to page. A cursor is opaque and belongs to the order it was made for.
 
 ### Search count
 
@@ -775,7 +814,31 @@ curl "https://webhooks.cc/api/search/requests/count?slug=abc123&method=POST" \
   -H "Authorization: Bearer whcc_..."
 ```
 
-Returns `{ "count": 42 }`. Accepts the same query parameters as search (except `limit`, `offset`, `order`).
+```json
+{ "count": 42, "exact": true, "searchedUntil": null, "cursor": null }
+```
+
+Accepts the same query parameters as search, except `limit`, `offset` and `order`, and returns the same `X-Search-*` headers.
+
+| Field           | Description                                                                                        |
+| --------------- | -------------------------------------------------------------------------------------------------- |
+| `count`         | Matches found in the part that was read                                                            |
+| `exact`         | `true` when the whole range was read. `false` means the time ran out, and `count` is a lower bound |
+| `searchedUntil` | How far the count read, as a Unix timestamp in ms, or `null`                                       |
+| `cursor`        | Send as `cursor` to count on from there, or `null` when the count is exact                         |
+
+A count of one endpoint (`slug`) without `q` or `method` is always exact. A count with `q` reads requests like a search does, within the same 2 seconds. When `exact` is `false`, call again with `cursor`: each call counts the next stretch only, so add the counts up until `exact` is `true`.
+
+### Search errors
+
+| Status | `error`                           | Meaning                                                                                                 |
+| ------ | --------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| 400    | `invalid_from`, `invalid_to`      | Not a timestamp in ms or a duration                                                                     |
+| 400    | `invalid_kind`                    | Not `http` or `email`                                                                                   |
+| 400    | `invalid_limit`, `invalid_offset` | Not a number, or below zero (search only)                                                               |
+| 400    | `invalid_cursor`                  | Not a cursor this API returned, or one made for the other `order`                                       |
+| 429    | `search_busy`                     | Too many searches are running. An account runs 2 at once; wait for `Retry-After` seconds and try again  |
+| 429    | `Too many requests`               | The [rate limit](/docs/plans-limits#rate-limits): 60 searches and 120 counts per 10 minutes per account |
 
 ## Real-time streaming (SSE)
 

@@ -50,6 +50,8 @@ import type { AnyRequestSummary, KindFilter } from "@/types/request";
 import type { ParsedEmail } from "@webhooks-cc/sdk/email";
 import { ResponseAnswerCompact } from "./response-answer";
 import { Button } from "@/components/ui/button";
+import { formatListCount } from "@/lib/dashboard-count";
+import type { SearchFailure } from "@/lib/dashboard-search";
 
 const TS_PREF_KEY = "request_list_relative_time";
 
@@ -69,6 +71,8 @@ interface RequestListProps {
   newCount?: number;
   onJumpToNew?: () => void;
   totalCount?: number;
+  /** The count is what was found so far, not all there is: it reads "50+". */
+  totalCountLowerBound?: boolean;
   methodFilter: string;
   onMethodFilterChange: (method: string) => void;
   searchQuery: string;
@@ -77,7 +81,19 @@ interface RequestListProps {
   hasMore?: boolean;
   loadingMore?: boolean;
   searchLoading?: boolean;
-  searchError?: boolean;
+  searchError?: SearchFailure | null;
+  /** Runs the search again after it failed. */
+  onRetrySearch?: () => void;
+  /**
+   * Set while a search has not read the whole range: how far back it got, and
+   * how to go on from there.
+   */
+  searchOlder?: {
+    searchedUntil: number | null;
+    loading: boolean;
+    error: SearchFailure | null;
+    onSearchOlder: () => void;
+  } | null;
   searchInputRef?: React.RefObject<HTMLInputElement | null>;
   pinnedIds?: Set<string>;
   onTogglePin?: (id: string) => void;
@@ -118,6 +134,21 @@ const KINDS: { id: KindFilter; label: string }[] = [
 /** mailhooks.cc leads with email, like its endpoint bar. */
 const MAIL_KINDS: { id: KindFilter; label: string }[] = [KINDS[0], KINDS[2], KINDS[1]];
 
+const SEARCH_BUSY_MESSAGE = "Another search is still running on this account.";
+
+/** How far back a search read: the day and the minute, in the viewer's locale. */
+function formatSearchedUntil(timestamp: number): string {
+  const date = new Date(timestamp);
+  return date.toLocaleString(undefined, {
+    month: "short",
+    day: "numeric",
+    ...(date.getFullYear() !== new Date().getFullYear() && { year: "numeric" }),
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
+}
+
 const METHODS = ["ALL", "GET", "POST", "PUT", "PATCH", "DELETE"] as const;
 const METHOD_LABELS: Record<(typeof METHODS)[number], string> = {
   ALL: "All methods",
@@ -139,6 +170,7 @@ export function RequestList({
   newCount,
   onJumpToNew,
   totalCount,
+  totalCountLowerBound = false,
   methodFilter,
   onMethodFilterChange,
   searchQuery,
@@ -148,6 +180,8 @@ export function RequestList({
   loadingMore,
   searchLoading,
   searchError,
+  onRetrySearch,
+  searchOlder,
   searchInputRef,
   pinnedIds,
   onTogglePin,
@@ -175,6 +209,7 @@ export function RequestList({
   const onlyEmail =
     kindFilter === "email" || (site.key === "mailhooks" && requests.every(isEmailItem));
   const displayCount = totalCount ?? requests.length;
+  const countLabel = formatListCount(displayCount, totalCountLowerBound);
   const kinds = site.key === "mailhooks" ? MAIL_KINDS : KINDS;
   const internalSearchRef = useRef<HTMLInputElement>(null);
   const inputRef = searchInputRef ?? internalSearchRef;
@@ -347,6 +382,63 @@ export function RequestList({
     </div>
   ) : null;
 
+  // A search answers within a time budget: this row says how far back it
+  // read and goes on from there.
+  const searchOlderRow = searchOlder ? (
+    <div className="px-3 py-3 border-t border-foreground/10">
+      <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
+        <p className="text-xs text-muted-foreground">
+          {searchOlder.searchedUntil != null ? (
+            <>
+              Searched back to{" "}
+              <time
+                dateTime={new Date(searchOlder.searchedUntil).toISOString()}
+                className="font-mono text-foreground"
+              >
+                {formatSearchedUntil(searchOlder.searchedUntil)}
+              </time>
+            </>
+          ) : (
+            `Older ${itemNoun} not searched yet`
+          )}
+        </p>
+        <Button
+          variant="surface"
+          className={cn(
+            "py-1.5! px-4! text-xs flex items-center gap-2",
+            searchOlder.loading && "opacity-60 cursor-not-allowed"
+          )}
+          onClick={searchOlder.onSearchOlder}
+          disabled={searchOlder.loading}
+        >
+          {searchOlder.loading ? (
+            <>
+              <Loader2 className="h-3 w-3 animate-spin" />
+              Searching...
+            </>
+          ) : (
+            "Search older"
+          )}
+        </Button>
+      </div>
+      {/* Announced when a try fails; the button stays for the next one. */}
+      <p
+        role="status"
+        className={cn(
+          "text-xs",
+          searchOlder.error && "mt-2",
+          searchOlder.error === "failed" ? "text-destructive-ink" : "text-muted-foreground"
+        )}
+      >
+        {searchOlder.error === "busy"
+          ? `${SEARCH_BUSY_MESSAGE} Try again in a moment.`
+          : searchOlder.error === "failed"
+            ? "That search did not finish. Try again."
+            : null}
+      </p>
+    </div>
+  ) : null;
+
   return (
     <ContextMenu open={ctxOpen} onOpenChange={handleCtxOpenChange}>
       <div className="ph-no-capture flex flex-col h-full">
@@ -365,7 +457,7 @@ export function RequestList({
                   value={kind.id}
                   // The count is read as part of the name, not run into it ("Email1").
                   aria-label={
-                    kindFilter === kind.id ? `${kind.label}, ${displayCount} shown` : kind.label
+                    kindFilter === kind.id ? `${kind.label}, ${countLabel} shown` : kind.label
                   }
                   className={cn(
                     "flex items-center gap-1.5 px-2.5 py-1 max-md:py-2 text-xs font-bold cursor-pointer transition-colors whitespace-nowrap",
@@ -382,7 +474,7 @@ export function RequestList({
                       aria-hidden
                       className="hidden @[300px]:inline font-mono font-normal opacity-90"
                     >
-                      {displayCount}
+                      {countLabel}
                     </span>
                   )}
                 </Radio>
@@ -390,7 +482,7 @@ export function RequestList({
             </RadioGroup>
           ) : (
             <span className="text-sm font-bold">
-              {displayCount} request{displayCount !== 1 ? "s" : ""}
+              {countLabel} request{displayCount !== 1 ? "s" : ""}
             </span>
           )}
           <div className="flex items-center gap-2 shrink-0">
@@ -490,7 +582,9 @@ export function RequestList({
         {/* New requests banner */}
         {/* Screen readers hear the count change as requests arrive. */}
         <p role="status" aria-live="polite" className="sr-only">
-          {displayCount} {displayCount === 1 ? itemNoun.slice(0, -1) : itemNoun}
+          {totalCountLowerBound
+            ? `${displayCount} or more ${itemNoun}`
+            : `${displayCount} ${displayCount === 1 ? itemNoun.slice(0, -1) : itemNoun}`}
         </p>
         {!liveMode && (newCount ?? 0) > 0 && onJumpToNew && (
           <button
@@ -515,6 +609,7 @@ export function RequestList({
               {timelineSlot}
               {/* The timeline pages like the list, so older matches stay reachable. */}
               {loadMore}
+              {searchOlderRow}
             </>
           ) : searchLoading ? (
             <div className="px-3 py-6 text-center text-xs text-muted-foreground font-bold flex items-center justify-center gap-2">
@@ -535,17 +630,33 @@ export function RequestList({
           ) : pinned.length === 0 && unpinned.length === 0 ? (
             <>
               <div className="px-3 py-6 text-center text-xs text-muted-foreground font-bold">
-                {searchError
-                  ? "Search unavailable"
-                  : hasMore
-                    ? `None in the newest ${itemNoun}`
-                    : searchQuery
-                      ? // The detail pane explains an empty search and offers to clear it.
-                        "0 results"
-                      : `No matching ${itemNoun}`}
+                {searchError === "busy"
+                  ? SEARCH_BUSY_MESSAGE
+                  : searchError
+                    ? "Search unavailable"
+                    : hasMore
+                      ? `None in the newest ${itemNoun}`
+                      : searchOlder
+                        ? "No matches so far"
+                        : searchQuery
+                          ? // The detail pane explains an empty search and offers to clear it.
+                            "0 results"
+                          : `No matching ${itemNoun}`}
+                {searchError && onRetrySearch && (
+                  <div className="mt-3 flex justify-center">
+                    <Button
+                      variant="surface"
+                      className="py-1.5! px-4! text-xs font-normal"
+                      onClick={onRetrySearch}
+                    >
+                      Search again
+                    </Button>
+                  </div>
+                )}
               </div>
               {/* A filter can match nothing loaded so far and still match older pages. */}
               {loadMore}
+              {searchOlderRow}
             </>
           ) : (
             <>
@@ -584,6 +695,7 @@ export function RequestList({
               </ContextMenuTrigger>
 
               {loadMore}
+              {searchOlderRow}
             </>
           )}
         </div>

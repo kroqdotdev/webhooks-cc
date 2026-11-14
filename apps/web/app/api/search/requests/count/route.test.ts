@@ -5,7 +5,8 @@ const mockFns = vi.hoisted(() => ({
   extractBearerToken: vi.fn(),
   validateBearerTokenWithPlan: vi.fn(),
   checkRateLimitByKeyWithInfo: vi.fn(),
-  countSearchRequestsForUser: vi.fn(),
+  countSearchRequests: vi.fn(),
+  captureServerEvent: vi.fn(),
 }));
 
 vi.mock("@/lib/api-auth", () => ({
@@ -19,8 +20,17 @@ vi.mock("@/lib/rate-limit", () => ({
   applyRateLimitHeaders: (res: Response) => res,
 }));
 
-vi.mock("@/lib/supabase/search", () => ({
-  countSearchRequestsForUser: mockFns.countSearchRequestsForUser,
+vi.mock("@/lib/supabase/search", () => {
+  class InvalidSearchCursorError extends Error {}
+  return {
+    InvalidSearchCursorError,
+    isRequestKind: (value: unknown) => value === "http" || value === "email",
+    countSearchRequests: mockFns.countSearchRequests,
+  };
+});
+
+vi.mock("@/lib/analytics-server", () => ({
+  captureServerEvent: mockFns.captureServerEvent,
 }));
 
 describe("GET /api/search/requests/count", () => {
@@ -42,7 +52,13 @@ describe("GET /api/search/requests/count", () => {
       userId: "user_123",
       plan: "pro",
     });
-    mockFns.countSearchRequestsForUser.mockResolvedValue(42);
+    mockFns.countSearchRequests.mockResolvedValue({
+      count: 42,
+      exact: true,
+      searchedUntil: null,
+      cursor: null,
+      slices: 0,
+    });
 
     const { GET } = await import("./route");
     const response = await GET(
@@ -50,20 +66,53 @@ describe("GET /api/search/requests/count", () => {
     );
 
     expect(response.status).toBe(200);
-    await expect(response.json()).resolves.toEqual({ count: 42 });
+    await expect(response.json()).resolves.toEqual({
+      count: 42,
+      exact: true,
+      searchedUntil: null,
+      cursor: null,
+    });
     expect(mockFns.countBearerRead).toHaveBeenCalledWith(expect.any(Request), expect.any(String), {
       userId: "user_123",
       plan: "pro",
     });
-    expect(mockFns.countSearchRequestsForUser).toHaveBeenCalledWith({
+    expect(mockFns.countSearchRequests).toHaveBeenCalledWith({
       userId: "user_123",
       plan: "pro",
       slug: "demo",
       method: "POST",
       q: "foo",
+      kind: undefined,
       from: undefined,
       to: undefined,
+      cursor: undefined,
     });
+  });
+
+  test("says when the count is a lower bound, and where it stopped", async () => {
+    mockFns.extractBearerToken.mockReturnValue("token");
+    mockFns.validateBearerTokenWithPlan.mockResolvedValue({ userId: "user_123", plan: "pro" });
+    mockFns.countSearchRequests.mockResolvedValue({
+      count: 17,
+      exact: false,
+      searchedUntil: 1_700_000_000_000,
+      cursor: "next_1",
+      slices: 12,
+    });
+
+    const { GET } = await import("./route");
+    const response = await GET(
+      new Request("https://webhooks.cc/api/search/requests/count?slug=demo&q=rare")
+    );
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({
+      count: 17,
+      exact: false,
+      searchedUntil: 1_700_000_000_000,
+      cursor: "next_1",
+    });
+    expect(response.headers.get("X-Search-Complete")).toBe("false");
   });
 
   test("returns 401 for invalid bearer tokens", async () => {
@@ -92,6 +141,6 @@ describe("GET /api/search/requests/count", () => {
 
     expect(response.status).toBe(400);
     await expect(response.json()).resolves.toEqual({ error: "invalid_from" });
-    expect(mockFns.countSearchRequestsForUser).not.toHaveBeenCalled();
+    expect(mockFns.countSearchRequests).not.toHaveBeenCalled();
   });
 });

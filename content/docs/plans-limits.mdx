@@ -227,6 +227,8 @@ API routes enforce per-IP rate limits to prevent abuse. When a limit is exceeded
 | Send team invite                  | 20    | 10 minutes |
 | Share endpoint with team          | 30    | 10 minutes |
 
+Each search or count reads for up to about 2 seconds and answers with what it found and where it stopped, so a long history is [searched a page at a time](/docs/api#partial-pages-and-the-cursor). An account runs up to 2 searches at once; more get `429` with `search_busy` and a `Retry-After` header.
+
 ## Other limits
 
 | Resource                         | Limit                                              |

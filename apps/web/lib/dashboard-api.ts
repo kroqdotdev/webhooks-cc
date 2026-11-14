@@ -1038,31 +1038,91 @@ export async function fetchDashboardRequests(
   return records.map(toDashboardRequest);
 }
 
-export async function fetchDashboardSearch(
-  accessToken: string,
-  params: Record<string, string>
-): Promise<ClickHouseRequest[]> {
-  const url = new URL("/api/search/requests", window.location.origin);
+/** One page of a search: what matched, and how far back the search read. */
+export interface DashboardSearchPage {
+  requests: ClickHouseRequest[];
+  /** Whether the whole range was read. When false, `cursor` continues it. */
+  complete: boolean;
+  /** How far back the search read (epoch ms), when the server said. */
+  searchedUntil: number | null;
+  /** Send back with the same params to continue; null when complete. */
+  cursor: string | null;
+}
+
+/** The account already runs as many searches as it may (another tab, or an agent). */
+export class SearchBusyError extends Error {
+  constructor(readonly retryAfterSeconds: number | null) {
+    super("search_busy");
+    this.name = "SearchBusyError";
+  }
+}
+
+/** Whether a fetch failed because its signal was aborted. */
+export function isAbortError(err: unknown): boolean {
+  return (
+    typeof err === "object" && err !== null && "name" in err && (err as Error).name === "AbortError"
+  );
+}
+
+function searchUrl(path: string, params: Record<string, string>): string {
+  const url = new URL(path, window.location.origin);
   for (const [key, value] of Object.entries(params)) {
     url.searchParams.set(key, value);
   }
+  return url.toString();
+}
 
-  const response = await fetch(url.toString(), withAuthHeaders(accessToken));
-  return readJson<ClickHouseRequest[]>(response);
+async function throwIfSearchBusy(response: Response): Promise<void> {
+  if (response.status !== 429) return;
+  const data = (await response
+    .clone()
+    .json()
+    .catch(() => null)) as { error?: string } | null;
+  if (data?.error !== "search_busy") return;
+  const retryAfter = Number(response.headers.get("Retry-After"));
+  throw new SearchBusyError(Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter : null);
+}
+
+/** Reads the X-Search-* headers of a search answer. */
+export function readSearchProgress(headers: Headers): Omit<DashboardSearchPage, "requests"> {
+  const cursor = headers.get("X-Search-Cursor");
+  const until = headers.get("X-Search-Searched-Until");
+  const untilMs = until === null || until === "" ? NaN : Number(until);
+  return {
+    // A server from before bounded search sends no header and read everything.
+    complete: headers.get("X-Search-Complete") !== "false",
+    searchedUntil: Number.isFinite(untilMs) ? untilMs : null,
+    cursor: cursor ? cursor : null,
+  };
+}
+
+export async function fetchDashboardSearch(
+  accessToken: string,
+  params: Record<string, string>,
+  signal?: AbortSignal
+): Promise<DashboardSearchPage> {
+  const response = await fetch(
+    searchUrl("/api/search/requests", params),
+    withAuthHeaders(accessToken, { signal })
+  );
+  await throwIfSearchBusy(response);
+  const requests = await readJson<ClickHouseRequest[]>(response);
+  return { requests, ...readSearchProgress(response.headers) };
 }
 
 export async function fetchDashboardSearchCount(
   accessToken: string,
-  params: Record<string, string>
-): Promise<number> {
-  const url = new URL("/api/search/requests/count", window.location.origin);
-  for (const [key, value] of Object.entries(params)) {
-    url.searchParams.set(key, value);
-  }
-
-  const response = await fetch(url.toString(), withAuthHeaders(accessToken));
-  const data = await readJson<{ count: number }>(response);
-  return data.count;
+  params: Record<string, string>,
+  signal?: AbortSignal
+): Promise<{ count: number; exact: boolean }> {
+  const response = await fetch(
+    searchUrl("/api/search/requests/count", params),
+    withAuthHeaders(accessToken, { signal })
+  );
+  await throwIfSearchBusy(response);
+  const data = await readJson<{ count: number; exact?: boolean }>(response);
+  // Only an explicit false is a lower bound.
+  return { count: data.count, exact: data.exact !== false };
 }
 
 export function emitDashboardEndpointsChanged() {

@@ -18,7 +18,8 @@ The left panel shows captured requests sorted by time. Each entry displays the H
 - **Live mode**: new requests are auto-selected as they arrive
 - **Paused mode**: review at your pace; a banner shows how many new requests arrived
 - **Sort**: toggle between newest-first and oldest-first
-- **Filter**: filter by HTTP method or search by path, body, or request ID
+- **Filter**: filter by HTTP method, or search for text in the path, the headers or the body. Any part of a word matches, in upper or lower case, and an [email](/docs/email-capture) is also found by its subject, its text and its sender and recipient addresses. A request ID finds that request first
+- **Search older**: a search reads the newest requests first. On a long history the list shows how far back it has searched, and **Search older** continues from there
 - **Provider badge**: Stripe, GitHub, Shopify, Typeform, and other known providers show an icon in the list
 - **Event badge**: known event names like `checkout.session.completed`, `push`, or `form_response` appear under the request
 - **Answer**: the status the endpoint answered with, and the [response rule](/docs/mock-responses) that chose it, appear under the request

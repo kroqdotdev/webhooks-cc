@@ -1,0 +1,13 @@
+{
+  "title": "Search that stays fast on long histories",
+  "items": [
+    "Searching a large endpoint answers within a couple of seconds: it reads the newest requests first, shows how far back it has searched, and Search older in the dashboard continues from there",
+    "The search API returns X-Search-Complete, X-Search-Searched-Until and X-Search-Cursor headers, and takes cursor to read on from where a page stopped",
+    "Search finds emails by their subject, text and sender and recipient addresses, also when the message was sent as base64 or quoted-printable",
+    "Searching for a request id finds that request first",
+    "% and _ in a search are now found as written instead of matching any text",
+    "from and to accept durations such as 1h or 7d, so whk requests search --from 1h works",
+    "The search count says whether it is exact, and counts on with a cursor when it is not",
+    "An account runs up to 2 searches at once; more are asked to retry shortly (429 search_busy)"
+  ]
+}

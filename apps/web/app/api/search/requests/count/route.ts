@@ -5,25 +5,18 @@ import {
   applyRateLimitHeaders,
   type RateLimitInfo,
 } from "@/lib/rate-limit";
-import { countSearchRequestsForUser, isRequestKind } from "@/lib/supabase/search";
+import {
+  countSearchRequests,
+  InvalidSearchCursorError,
+  isRequestKind,
+} from "@/lib/supabase/search";
+import { SearchBusyError, withSearchSlot } from "@/lib/search-gate";
+import {
+  applySearchProgressHeaders,
+  parseSearchTime,
+  reportSearch,
+} from "@/lib/search-request-params";
 import { reportError } from "@/lib/observability";
-
-function parseOptionalInteger(
-  searchParams: URLSearchParams,
-  key: string
-): { value?: number; error?: Response } {
-  const raw = searchParams.get(key);
-  if (raw === null) {
-    return {};
-  }
-
-  const value = Number(raw);
-  if (!Number.isFinite(value) || value < 0) {
-    return { error: Response.json({ error: `invalid_${key}` }, { status: 400 }) };
-  }
-
-  return { value };
-}
 
 export async function GET(request: Request) {
   let rateLimit: RateLimitInfo | undefined;
@@ -65,13 +58,20 @@ export async function GET(request: Request) {
     }
 
     const url = new URL(request.url);
-    const parsedFrom = parseOptionalInteger(url.searchParams, "from");
-    if (parsedFrom.error) {
-      return applyRateLimitHeaders(parsedFrom.error, rateLimit);
+    // Epoch ms, or a duration back from now ("1h").
+    const from = parseSearchTime(url.searchParams.get("from"));
+    if (from === null) {
+      return applyRateLimitHeaders(
+        Response.json({ error: "invalid_from" }, { status: 400 }),
+        rateLimit
+      );
     }
-    const parsedTo = parseOptionalInteger(url.searchParams, "to");
-    if (parsedTo.error) {
-      return applyRateLimitHeaders(parsedTo.error, rateLimit);
+    const to = parseSearchTime(url.searchParams.get("to"));
+    if (to === null) {
+      return applyRateLimitHeaders(
+        Response.json({ error: "invalid_to" }, { status: 400 }),
+        rateLimit
+      );
     }
     const kind = url.searchParams.get("kind");
     if (kind !== null && !isRequestKind(kind)) {
@@ -80,19 +80,65 @@ export async function GET(request: Request) {
         rateLimit
       );
     }
-    const count = await countSearchRequestsForUser({
+    const slug = url.searchParams.get("slug") ?? undefined;
+    const q = url.searchParams.get("q") ?? undefined;
+    const cursor = url.searchParams.get("cursor") ?? undefined;
+    const started = performance.now();
+    // One endpoint's count without a term or method is exact. Any other
+    // covers what the time budget reached: `exact` says whether that was
+    // everything, and `cursor` counts on from there (the counts add up).
+    const result = await withSearchSlot(userId, () =>
+      countSearchRequests({
+        userId,
+        plan,
+        slug,
+        method: url.searchParams.get("method") ?? undefined,
+        kind: kind ?? undefined,
+        q,
+        from,
+        to,
+        cursor,
+      })
+    );
+    reportSearch({
       userId,
-      plan,
-      slug: url.searchParams.get("slug") ?? undefined,
-      method: url.searchParams.get("method") ?? undefined,
-      kind: kind ?? undefined,
-      q: url.searchParams.get("q") ?? undefined,
-      from: parsedFrom.value,
-      to: parsedTo.value,
+      kind: "count",
+      scoped: Boolean(slug?.trim()),
+      hasTerm: Boolean(q?.trim()),
+      continued: Boolean(cursor?.trim()),
+      complete: result.exact,
+      slices: result.slices,
+      results: result.count,
+      durationMs: performance.now() - started,
     });
 
-    return applyRateLimitHeaders(Response.json({ count }), rateLimit);
+    return applyRateLimitHeaders(
+      applySearchProgressHeaders(
+        Response.json({
+          count: result.count,
+          exact: result.exact,
+          searchedUntil: result.searchedUntil,
+          cursor: result.cursor,
+        }),
+        { complete: result.exact, searchedUntil: result.searchedUntil, cursor: result.cursor }
+      ),
+      rateLimit
+    );
   } catch (err) {
+    if (err instanceof InvalidSearchCursorError) {
+      const response = Response.json({ error: "invalid_cursor" }, { status: 400 });
+      return rateLimit ? applyRateLimitHeaders(response, rateLimit) : response;
+    }
+    if (err instanceof SearchBusyError) {
+      const response = Response.json(
+        { error: "search_busy", message: err.message },
+        { status: 429, headers: { "Retry-After": String(err.retryAfterSeconds) } }
+      );
+      return rateLimit ? applyRateLimitHeaders(response, rateLimit) : response;
+    }
+    if (request.signal.aborted) {
+      return new Response(null, { status: 499 });
+    }
     reportError("Search count API route error", err);
     const response = Response.json({ error: "Internal server error" }, { status: 500 });
     return rateLimit ? applyRateLimitHeaders(response, rateLimit) : response;
