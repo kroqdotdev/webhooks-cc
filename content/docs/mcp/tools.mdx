@@ -922,7 +922,30 @@ Your plan's request usage, remaining quota, and period end; `parsedPages`, `prev
 
 ### get_billing
 
-What the account pays for, read only: `plan`, `subscription` (`status`, `interval`, `renewsAt`, `cancelAtPeriodEnd`, `pendingChange`; null on Free), `quotaPeriod`, `addons` for requests, pages and domains, and `teams` with each team's subscription, seats and add-ons. Changing a plan, seats or add-ons takes the person in a browser. No parameters.
+What the account pays for, read only: `plan`, `subscription` (`status`, `interval`, `renewsAt`, `cancelAtPeriodEnd`, `pendingChange`; null on Free), `quotaPeriod`, `addons` for requests, pages and domains, and `teams` with each team's subscription, seats and add-ons. To buy something, hand the person a link from `create_checkout`; changing or cancelling a plan takes them in a browser. No parameters.
+
+### create_checkout
+
+A [checkout link](/docs/api#checkout-links) for the person to pay with their own card, when they ask to upgrade or buy: nothing is charged until they pay on Polar's page, so no approval is asked. A client that can open links (URL elicitation) opens the checkout for the person and the call finishes once they have paid; others get the link as text. In the account group. At most 5 links an hour and 3 open at once.
+
+| Parameter  | Type     | Required | Description                                                                          |
+| ---------- | -------- | -------- | ------------------------------------------------------------------------------------ |
+| `kind`     | `string` | yes      | `plan`, `team_plan`, `blocks`, `monthly_blocks` or `overage`                          |
+| `plan`     | `string` | no       | `pro` or `business` (plan); `team` or `team_business` (team_plan)                     |
+| `interval` | `string` | no       | `month` (default) or `year`                                                           |
+| `seats`    | `number` | no       | team_plan: 2 or more                                                                  |
+| `blocks`   | `number` | no       | blocks: how many to buy; monthly_blocks: how many in all                              |
+| `resource` | `string` | no       | `requests` (default), `pages` or `domains`                                            |
+| `teamId`   | `string` | no       | A team you own: the purchase is the team's                                            |
+
+### wait_for_checkout
+
+Waits for the person to pay a link from `create_checkout`, and says when it is paid or has expired.
+
+| Parameter | Type     | Required | Description                                  |
+| --------- | -------- | -------- | -------------------------------------------- |
+| `id`      | `string` | yes      | The checkout link's id                       |
+| `timeout` | `string` | no       | How long to wait, such as `45s` (the default) |
 
 ### list_provider_templates
 

@@ -352,10 +352,18 @@ Deleting a team ends its subscription at once and takes its shared endpoints fro
 
 ## billing
 
-What the account pays for, read only: the plan and its subscription (monthly or annual, its status, when it renews, a change waiting for the renewal, whether it ends), the add-ons (extra requests, parsed pages, domains), and every team you belong to with its seats, status and add-ons. With `--json` you get the whole `/api/billing` answer. Changing a plan, seats or add-ons is done in the browser, under Account > Plan.
+What the account pays for, read only: the plan and its subscription (monthly or annual, its status, when it renews, a change waiting for the renewal, whether it ends), the add-ons (extra requests, parsed pages, domains), and every team you belong to with its seats, status and add-ons. With `--json` you get the whole `/api/billing` answer.
+
+`whk billing checkout` makes a [checkout link](/docs/api#checkout-links) for the person to pay with their own card: a plan, a team subscription (`--team`, by id or name, the team's owner only), one-time blocks, monthly blocks (the number in all, more than now) or overage. It needs no approval, since nothing is charged until they pay on Polar's page. `--wait` waits for the payment after printing the link, and `whk billing checkout-status <id>` says where a link stands (`--wait` too). A link that expires before it is paid exits with `checkout_expired` (status 8). At most 5 links an hour and 3 open at once. Changing or cancelling a plan, fewer seats or add-ons is done in the browser, under Account > Plan.
 
 ```bash
 whk billing
+whk billing checkout plan --plan pro                       # prints the link for the person
+whk billing checkout team-plan --team Acme --seats 3 --wait
+whk billing checkout blocks --blocks 4 --resource requests
+whk billing checkout monthly-blocks --blocks 2 --resource pages
+whk billing checkout overage
+whk billing checkout-status <id> --wait --timeout 30m
 ```
 
 ## keys

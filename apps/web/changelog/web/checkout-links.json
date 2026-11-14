@@ -1,0 +1,8 @@
+{
+  "title": "Checkout links",
+  "items": [
+    "An agent can hand you a ready checkout instead of telling you where to find it: POST /api/billing/checkouts makes a Polar checkout for a plan, a team subscription or extra capacity, with an API key or a connected agent and no approval, since nothing is charged until you pay with your own card",
+    "GET /api/billing/checkouts/{id} says whether a link is open, paid or expired; after paying, Polar sends you to a page that says the agent can carry on",
+    "At most 5 links an hour and 3 open at once per account, and a team's purchases need the team's owner"
+  ]
+}

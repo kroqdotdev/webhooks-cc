@@ -23,6 +23,11 @@ fn leaf_commands() -> BTreeSet<String> {
                 format!("{prefix} {name}")
             };
             if sub.has_subcommands() {
+                // A command that also runs on its own (`whk billing`) is
+                // one too.
+                if !sub.is_subcommand_required_set() {
+                    out.insert(path.clone());
+                }
                 walk(sub, &path, out);
             } else {
                 out.insert(path);

@@ -71,6 +71,20 @@ class RateLimitError(WebhooksCCError):
         account already runs two searches or the server is at its limit."""
 
 
+class CheckoutExpiredError(WebhooksCCError):
+    """A checkout link expired before the person paid. Make a new one if they still
+    want it. Raised by ``billing.wait_for_checkout()``."""
+
+    def __init__(self, checkout_id: str, message: str | None = None) -> None:
+        super().__init__(
+            0,
+            message
+            or "The checkout link expired before it was paid. "
+            "Make a new one if the person still wants it.",
+        )
+        self.checkout_id = checkout_id
+
+
 class InvalidCursorError(WebhooksCCError):
     """The search cursor is not one the server issued for this search (400).
 

@@ -26,7 +26,7 @@ The local server without a key or saved connection runs a sandbox: 3 endpoints, 
 
 ## Approvals
 
-Some actions answer with a link and a code instead of acting: a new API key, a share link, team invites and deletion, removing a domain, renaming the account, connecting Google or picking a spreadsheet, and AI setup. Show the link, ask the person to check the code matches, then call `wait_for_approval` until it is answered (15 minutes). A client that can open links opens the page itself, and the tool finishes once it is approved. Paying for anything stays with the person; `get_billing` (account group) reads what they pay for.
+Some actions answer with a link and a code instead of acting: a new API key, a share link, team invites and deletion, removing a domain, renaming the account, connecting Google or picking a spreadsheet, and AI setup. Show the link, ask the person to check the code matches, then call `wait_for_approval` until it is answered (15 minutes). A client that can open links opens the page itself, and the tool finishes once it is approved. Paying for anything stays with the person; `get_billing` (account group) reads what they pay for, and when they ask to upgrade or buy, `create_checkout` hands them a checkout link to pay with their own card (no approval: nothing is charged until they pay), then `wait_for_checkout`.
 
 ## Jobs
 

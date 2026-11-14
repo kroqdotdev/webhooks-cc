@@ -1906,3 +1906,48 @@ class TunnelNameList:
             else [],
             raw=dict(data),
         )
+
+
+CheckoutStatus = Literal["open", "paid", "expired"]
+
+
+@dataclass(frozen=True)
+class CheckoutLink:
+    """A checkout link from ``billing.create_checkout()``: hand ``url`` to the person,
+    who pays on Polar's page with their own card. Nothing is charged until they do.
+
+    ``url`` is ``None`` once the link is no longer open; ``item`` is what it buys, as
+    the API took it, and ``summary`` says so in one sentence.
+    """
+
+    id: str
+    status: CheckoutStatus
+    kind: str
+    summary: str
+    item: dict[str, Any]
+    team_id: str | None
+    url: str | None
+    created_at: str
+    expires_at: str
+    paid_at: str | None
+    raw: dict[str, Any] = field(default_factory=dict, repr=False, compare=False)
+
+    @classmethod
+    def from_dict(cls, data: Mapping[str, Any]) -> CheckoutLink:
+        status = data.get("status")
+        item = data.get("item")
+        return cls(
+            id=str(data.get("id") or ""),
+            status=cast(
+                CheckoutStatus, status if status in ("open", "paid", "expired") else "open"
+            ),
+            kind=str(data.get("kind") or ""),
+            summary=str(data.get("summary") or ""),
+            item=dict(item) if isinstance(item, Mapping) else {},
+            team_id=_str_or_none(data.get("teamId")),
+            url=_str_or_none(data.get("url")),
+            created_at=str(data.get("createdAt") or ""),
+            expires_at=str(data.get("expiresAt") or ""),
+            paid_at=_str_or_none(data.get("paidAt")),
+            raw=dict(data),
+        )

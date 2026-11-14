@@ -26,6 +26,8 @@ import {
   asRecord,
   normalizeStoredSubscriptionStatus,
   parseEventTimestamp,
+  type CheckoutOptions,
+  type CheckoutSession,
 } from "./billing-shared";
 import type { Database } from "./database";
 import { removeMemberShares } from "./teams-endpoints";
@@ -480,6 +482,29 @@ export async function createTeamCheckout(
   plan: TeamPlan = "team",
   interval: BillingInterval = "month"
 ): Promise<string> {
+  return (await createTeamCheckoutSession(userId, teamId, seats, plan, interval)).url;
+}
+
+/** The session an open checkout cache entry stands for. */
+function openSession(open: OpenCheckout, url: string): CheckoutSession {
+  const expiresAt =
+    open.expiresAt ?? new Date(Date.parse(open.createdAt) + PENDING_CHECKOUT_TTL_MS).toISOString();
+  return { id: open.id, url, expiresAt };
+}
+
+/**
+ * createTeamCheckout(), answering the whole session (checkout links). The
+ * team's one open session is reused as the dashboard reuses it, so
+ * `options.successUrl` only applies to a session minted here.
+ */
+export async function createTeamCheckoutSession(
+  userId: string,
+  teamId: string,
+  seats: number,
+  plan: TeamPlan = "team",
+  interval: BillingInterval = "month",
+  options: CheckoutOptions = {}
+): Promise<CheckoutSession> {
   assertValidSeatCount(seats);
   const productId = requireTeamPlanProduct(plan, interval);
 
@@ -496,9 +521,9 @@ export async function createTeamCheckout(
   const open = openPendingCheckout(team.pending_checkout);
   if (open !== null) {
     if (open.seats === seats && open.product === productId) {
-      return open.url;
+      return openSession(open, open.url);
     }
-    return switchOpenCheckout(team.id, open, seats, productId);
+    return openSession(open, await switchOpenCheckout(team.id, open, seats, productId));
   }
 
   // Serialize minting: exactly one concurrent request wins the lease and
@@ -521,9 +546,12 @@ export async function createTeamCheckout(
 
     const freshOpen = openPendingCheckout(fresh?.pending_checkout ?? null);
     if (freshOpen !== null) {
-      return freshOpen.seats === seats && freshOpen.product === productId
-        ? freshOpen.url
-        : switchOpenCheckout(teamId, freshOpen, seats, productId);
+      return openSession(
+        freshOpen,
+        freshOpen.seats === seats && freshOpen.product === productId
+          ? freshOpen.url
+          : await switchOpenCheckout(teamId, freshOpen, seats, productId)
+      );
     }
 
     throw new TeamBillingError(
@@ -542,7 +570,8 @@ export async function createTeamCheckout(
       // change of plan can update this session instead of opening another.
       products: checkoutProducts(productId),
       seats,
-      success_url: `${await returnOrigin(appUrl)}/teams/${teamId}?subscribed=true`,
+      success_url:
+        options.successUrl ?? `${await returnOrigin(appUrl)}/teams/${teamId}?subscribed=true`,
       customer_id: customerId,
     });
 
@@ -564,7 +593,11 @@ export async function createTeamCheckout(
       reportError("[team-billing] failed to cache pending checkout", cacheError, { teamId });
     }
 
-    return checkout.url;
+    return {
+      id: checkout.id,
+      url: checkout.url,
+      expiresAt: parseEventTimestamp(checkout.expires_at),
+    };
   } catch (error) {
     // Release the lease (token-fenced) so a retry can mint immediately
     // instead of waiting out the lease TTL. Best effort: the TTL is the

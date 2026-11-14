@@ -13,6 +13,7 @@ import {
   MAX_RULE_NAME_LEN,
   ApprovalDeniedError,
   ApprovalExpiredError,
+  CheckoutExpiredError,
   NotFoundError,
   RateLimitError,
   TEMPLATE_METADATA,
@@ -536,7 +537,21 @@ export type ToolResult = {
    * an input request or drop it.
    */
   approval?: PendingApprovalAsk;
+  /**
+   * A checkout link for the person to pay (create_checkout): opened the same
+   * way as an approval for a client that can open a URL, and the retried
+   * call waits for the payment. Never sent as is.
+   */
+  checkout?: PendingCheckoutLink;
 };
+
+/** A checkout link a tool made for the person to pay. */
+export interface PendingCheckoutLink {
+  id: string;
+  summary: string;
+  url: string;
+  expiresAt: string;
+}
 
 /** What a tool asked the account's owner to approve. */
 export interface PendingApprovalAsk {
@@ -625,6 +640,25 @@ async function waitForApprovalText(client: WebhooksCC, id: string, ms: number): 
     throw error;
   }
 }
+
+/** Waits for a checkout link to be paid and says how it went. */
+async function waitForCheckoutText(client: WebhooksCC, id: string, ms: number): Promise<string> {
+  try {
+    const paid = await client.billing.waitForCheckout(id, { timeout: ms });
+    return `Paid: ${paid.summary} It is applied to the account within a minute; get_billing shows it.`;
+  } catch (error) {
+    if (error instanceof CheckoutExpiredError) {
+      return "The checkout link expired before it was paid. If the person still wants it, make a new one with create_checkout.";
+    }
+    if (error instanceof TimeoutError) {
+      return `Not paid yet. Remind the person of the link if needed, and call wait_for_checkout with id ${id} again.`;
+    }
+    throw error;
+  }
+}
+
+/** The tools that hand the person a checkout link: the only ones a retry waits on. */
+const CHECKOUT_TOOLS = new Set(["create_checkout"]);
 
 /** An approval id as it comes back from a client: untrusted, so only its shape is taken. */
 const APPROVAL_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -1365,6 +1399,25 @@ function toolTarget(
       // carrying its id: finish it rather than ask again. Otherwise a new
       // approval is asked of a client that can open links as a URL request.
       const handler: typeof inner = async (args, call) => {
+        // A checkout link the client opened for the person comes back the
+        // same way: wait for the payment rather than make a second link.
+        if (call?.requestState !== undefined && CHECKOUT_TOOLS.has(name)) {
+          const id = call.requestState;
+          if (!APPROVAL_ID.test(id)) {
+            return {
+              ...textContent("That checkout link is not one this server made."),
+              isError: true,
+            };
+          }
+          if (call.urlAnswer === "decline" || call.urlAnswer === "cancel") {
+            return textContent(
+              `The person closed the checkout. The link works until it expires: if they still want it, show it to them again and call wait_for_checkout with id ${id}.`
+            );
+          }
+          return withErrorHandling(async () =>
+            textContent(await waitForCheckoutText(client, id, APPROVAL_RETRY_WAIT_MS))
+          )(undefined);
+        }
         if (call?.requestState !== undefined && APPROVAL_TOOLS.has(name)) {
           const id = call.requestState;
           if (!APPROVAL_ID.test(id)) {
@@ -1383,10 +1436,11 @@ function toolTarget(
           )(undefined);
         }
         const result = await inner(args, call);
-        if (!result.approval) return result;
+        if (!result.approval && !result.checkout) return result;
         if (call?.urlElicitation) return result;
         const plain = { ...result };
         delete plain.approval;
+        delete plain.checkout;
         return plain;
       };
       if (remote && LOCAL_ONLY_TOOLS.has(name)) return { remove() {} };
@@ -3332,6 +3386,67 @@ export function registerTools(
     },
     withErrorHandling(async ({ id, timeout }) =>
       textContent(await waitForApprovalText(client, id, durationMs(timeout) ?? 45_000))
+    )
+  );
+
+  server.tool(
+    "create_checkout",
+    "Make a checkout link for the person to pay, when they ask to upgrade or buy something: a plan (pro or business), a team subscription (team_plan, the team's owner only), one-time blocks (blocks: 25,000 requests or 1,000 parsed pages each), monthly blocks (monthly_blocks: the number in all, only ever more than now; resource domains for extra custom domains) or overage. Paying stays with the person: nothing is charged until they pay on Polar's page with their own card, so no approval is asked. Show them the link, then call wait_for_checkout. At most 5 links an hour and 3 open at once.",
+    {
+      kind: z
+        .enum(["plan", "team_plan", "blocks", "monthly_blocks", "overage"])
+        .describe("What to buy"),
+      plan: z
+        .enum(["pro", "business", "team", "team_business"])
+        .optional()
+        .describe("plan: pro or business; team_plan: team (default) or team_business"),
+      interval: z.enum(["month", "year"]).optional().describe("Billing interval (default month)"),
+      seats: z.number().int().optional().describe("team_plan: seats, 2 or more"),
+      blocks: z
+        .number()
+        .int()
+        .optional()
+        .describe("blocks: how many to buy; monthly_blocks: how many in all"),
+      resource: z
+        .enum(["requests", "pages", "domains"])
+        .optional()
+        .describe("What the blocks or overage are for (default requests)"),
+      teamId: z
+        .string()
+        .optional()
+        .describe("A team you own (from list_teams): the purchase is the team's"),
+    },
+    withErrorHandling(async (args) => {
+      const item = Object.fromEntries(
+        Object.entries(args).filter(([, value]) => value !== undefined)
+      ) as unknown as Parameters<WebhooksCC["billing"]["createCheckout"]>[0];
+      const link = await client.billing.createCheckout(item);
+      const url = link.url ?? "";
+      return {
+        ...textContent(
+          [
+            `Checkout link made: ${link.summary}`,
+            `Show the person this link to pay: ${url}`,
+            `Nothing is charged until they pay there with their own card. The link expires at ${link.expiresAt}.`,
+            `Then call wait_for_checkout with id ${link.id}.`,
+          ].join("\n")
+        ),
+        checkout: { id: link.id, summary: link.summary, url, expiresAt: link.expiresAt },
+      };
+    })
+  );
+
+  server.tool(
+    "wait_for_checkout",
+    "Wait for the person to pay a checkout link from create_checkout. If they have not paid yet, call it again; once it expires, make a new one only if they still want it.",
+    {
+      id: z.string().describe("The checkout link's id"),
+      timeout: durationOrTimestampSchema
+        .default("45s")
+        .describe('How long to wait for the payment, for example "45s"'),
+    },
+    withErrorHandling(async ({ id, timeout }) =>
+      textContent(await waitForCheckoutText(client, id, durationMs(timeout) ?? 45_000))
     )
   );
 

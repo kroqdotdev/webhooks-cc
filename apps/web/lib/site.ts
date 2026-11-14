@@ -196,6 +196,7 @@ export const WEBHOOKS_TOP_LEVEL = [
   "auth.md",
   "blog",
   "changelog",
+  "checkout",
   "cli",
   "compare",
   "dashboard",

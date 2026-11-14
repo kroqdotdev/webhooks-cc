@@ -62,6 +62,8 @@ Endpoints created by logged-in users, on any plan, **never expire**. They persis
 
 **Invoices and payment method**: on the plan page, **Invoices and payment method** opens the customer portal of Polar, our payment provider, where you download invoices and receipts and change the card on file. Changing the plan stays on the plan page. A team's owner finds the same button under Billing on the team page.
 
+**Checkout links from an agent**: a coding agent working for you can hand you a ready checkout for a plan, a team subscription or extra capacity, instead of telling you where to find it (see [checkout links](/docs/api#checkout-links)). It opens Polar's checkout page, and nothing is charged until you pay there with your own card. After paying you land on a page that says the payment went through, and the agent carries on. The invoices, the card on file and plan changes stay with you in the browser.
+
 ## Request quotas
 
 Quotas limit how many webhook requests your endpoints can capture within a billing period. When your quota is exhausted, the receiver returns `429 Too Many Requests` with a `Retry-After` header indicating when the quota resets.

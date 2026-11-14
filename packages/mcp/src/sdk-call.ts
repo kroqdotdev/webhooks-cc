@@ -40,7 +40,20 @@ export function toolCallFrom(server: McpServer, ctx: ServerContext | undefined):
  * the field never reaches the wire.
  */
 export function sdkToolResult(result: ToolResult): CallToolResult | InputRequiredResult {
-  const { approval, ...plain } = result;
+  const { approval, checkout, ...plain } = result;
+  if (checkout && !approval) {
+    return inputRequired({
+      inputRequests: {
+        [APPROVAL_INPUT]: inputRequired.elicitUrl({
+          message: `${checkout.summary} Polar's checkout page: nothing is charged until you pay there with your card.`,
+          url: checkout.url,
+        }),
+      },
+      // The link's id: on its own it reaches nothing, since only the
+      // person who asked for it may read it (GET /api/billing/checkouts/{id}).
+      requestState: checkout.id,
+    });
+  }
   if (!approval) return plain;
   return inputRequired({
     inputRequests: {

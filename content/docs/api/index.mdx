@@ -84,6 +84,7 @@ Every route an API key can call. Timestamps are Unix milliseconds unless a field
 | `GET` `POST` `DELETE /api/api-keys`                                      | [API keys](#api-keys): list, ask for one (an approval), revoke                                 |
 | `GET /api/approvals/:id`                                                 | [Poll an approval](#approvals)                                                                 |
 | `GET /api/billing`                                                       | What the account pays for, read only                                                           |
+| `POST /api/billing/checkouts`, `GET .../:id`                             | [Checkout links](#checkout-links): make one for the person to pay, follow it                   |
 | `PATCH /api/account`                                                     | [Set the display name](#display-name) (an approval)                                            |
 | `GET /api/agent/registrations`, `DELETE .../:id`                         | [Connected agents](#connected-agents): list, disconnect                                        |
 | `GET /api/request-shares`, `DELETE .../:id`, `GET` `POST /api/requests/:id/shares` | [Share links](#share-links): list, revoke, ask for one (an approval)                 |
@@ -1361,6 +1362,48 @@ A new API key, a new share link, removing a custom domain and a rename are the a
 
 Show the owner `url`; the page shows the same `code` to compare. Then poll `GET /api/approvals/:id` with the same key (or any token of the same connected agent), at most every two seconds, until `status` is `completed` (with `result`), `denied` or `expired`. A new key is made on the poll after the approval and handed over that once; the other actions run when the owner approves, and every later poll carries their `result`. The owner has 15 minutes to answer. An account can have 10 approvals waiting. See [Approvals](/docs/agents#approvals).
 
+### Checkout links
+
+Paying stays with the person, but an agent can hand them a ready checkout. `POST /api/billing/checkouts` makes a Polar checkout for something the account (or a team you own) can buy, and answers `201` with its link at once: nothing is charged until the person pays on Polar's page with their own card, so there is no approval. After paying, Polar sends them to a page that says the payment went through.
+
+```bash
+curl -X POST https://webhooks.cc/api/billing/checkouts \
+  -H "Authorization: Bearer whcc_..." \
+  -H "Content-Type: application/json" \
+  -d '{ "kind": "plan", "plan": "pro", "interval": "month" }'
+```
+
+```json
+{
+  "checkout": {
+    "id": "6f1c2a8e-...",
+    "status": "open",
+    "kind": "plan",
+    "summary": "The Pro plan, billed monthly.",
+    "item": { "kind": "plan", "plan": "pro", "interval": "month" },
+    "teamId": null,
+    "url": "https://polar.sh/checkout/polar_c_...",
+    "createdAt": "2026-11-14T10:00:00.000Z",
+    "expiresAt": "2026-11-14T11:00:00.000Z",
+    "paidAt": null
+  }
+}
+```
+
+The body names one of:
+
+| `kind`           | Fields                                                                         | Buys                                                                 |
+| ---------------- | ------------------------------------------------------------------------------ | -------------------------------------------------------------------- |
+| `plan`           | `plan` (`pro`, `business`), `interval` (`month`, `year`)                        | A plan, for an account on Free                                        |
+| `team_plan`      | `teamId`, `seats` (2 or more), `plan` (`team`, `team_business`), `interval`    | A subscription for a team that has none                               |
+| `blocks`         | `blocks`, `resource` (`requests`, `pages`), `teamId`                           | One-time blocks, which never expire                                   |
+| `monthly_blocks` | `blocks` (in all, more than now), `resource` (`requests`, `pages`, `domains`), `teamId` | Monthly blocks or extra domains, renewing with the plan       |
+| `overage`        | `resource` (`requests`, `pages`), `teamId`                                     | Overage, up to the account's stored maximum or the default            |
+
+The same rules apply as in the dashboard: a plan the account already has, or add-ons the plan does not allow, are refused with `409`, and fewer monthly blocks or a change to live overage is not a purchase and stays with a browser session. A team's purchase needs the team's owner; a member gets `403`, and so does a pre-claim agent token. At most 5 links an hour and 3 open at once per account (or team): past them, `429` and `409` (`code: "too_many_open"`).
+
+`GET /api/billing/checkouts/:id` says where a link stands, for the person who asked for it with any of their keys, agents or sessions: `status` is `open`, `paid` (with `paidAt`) or `expired`, and `url` is only there while it is open. Poll it at most every two seconds. The TypeScript SDK (`client.billing.createCheckout()`, `waitForCheckout()`), the Python and Go SDKs, `whk billing checkout` and the MCP server's `create_checkout` and `wait_for_checkout` do it for you.
+
 ### API keys
 
 `GET /api/api-keys` lists the keys (`id`, `name`, `key_prefix`, `created_at`, `expires_at`, `last_used_at`); a key itself is never shown again. `POST /api/api-keys` with `{ "name": "GitHub Actions", "expiresInDays": 90 }` (1 to 365, default 90) asks for one: the result is `{ key, name, keyPrefix, expiresAt }`. `DELETE /api/api-keys?id=<id>` revokes one.
@@ -1399,7 +1442,7 @@ These answer `403` to an API key, because they are for a person at a browser:
 
 - `DELETE /api/account`: delete the account and all its data
 - `PATCH /api/account` with `approvalEmails`: whether approvals are emailed to the owner
-- `/api/billing/*` and `/api/teams/:id/billing/*` except reads and quotes: plans, seats, extra capacity, checkout and cancellation
+- `/api/billing/*` and `/api/teams/:id/billing/*` except reads, quotes and [checkout links](#checkout-links): plan changes, seats, extra capacity, the dashboard's checkout, the customer portal and cancellation
 
 ## Error handling
 

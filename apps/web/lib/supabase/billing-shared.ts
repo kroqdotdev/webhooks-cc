@@ -51,3 +51,33 @@ export function parseEventTimestamp(value: unknown): string | null {
     value instanceof Date ? value.getTime() : typeof value === "string" ? Date.parse(value) : NaN;
   return Number.isNaN(ms) ? null : new Date(ms).toISOString();
 }
+
+/**
+ * A Polar checkout session as the checkout creators return it: the
+ * dashboard's routes answer only its url, checkout links (lib/billing/
+ * checkout-links.ts) record its id and expiry too. id is null only for a
+ * team's open session cached before ids were stored.
+ */
+export interface CheckoutSession {
+  id: string | null;
+  url: string;
+  expiresAt: string | null;
+}
+
+/** How a checkout creator may be asked to differ from the dashboard's. */
+export interface CheckoutOptions {
+  /** Where Polar sends the person after paying, instead of the dashboard page. */
+  successUrl?: string;
+}
+
+export function checkoutSession(checkout: {
+  id: string;
+  url: string;
+  expires_at?: unknown;
+}): CheckoutSession {
+  return {
+    id: checkout.id,
+    url: checkout.url,
+    expiresAt: parseEventTimestamp(checkout.expires_at),
+  };
+}

@@ -67,6 +67,8 @@ function shouldNoIndexPath(pathname: string): boolean {
     "/ops",
     // The form for reporting a shared preview: reached from previews, not searches.
     "/report",
+    // Where Polar sends a person after paying a checkout link.
+    "/checkout",
   ];
   return privatePrefixes.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`));
 }

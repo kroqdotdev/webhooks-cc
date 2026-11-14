@@ -69,6 +69,17 @@ export class ApprovalExpiredError extends WebhooksCCError {
   }
 }
 
+/** A checkout link expired before the person paid. Make a new one if they still want it. */
+export class CheckoutExpiredError extends WebhooksCCError {
+  constructor(
+    public readonly checkoutId: string,
+    message = "The checkout link expired before it was paid. Make a new one if the person still wants it."
+  ) {
+    super(0, message);
+    this.name = "CheckoutExpiredError";
+  }
+}
+
 /** Rate limit metadata from X-RateLimit-* response headers. */
 export interface RateLimitMeta {
   /** Maximum number of requests allowed in the current window. */

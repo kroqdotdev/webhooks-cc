@@ -22,7 +22,7 @@ export const TOOL_GROUPS = {
   extras: "Bulk endpoint changes, favourites, request counts and payload schemas",
   teams: "Teams: members, invites, sharing endpoints with a team, and pricing team changes",
   account:
-    "The account: billing, API keys, connected agents, public share links to requests, and the display name",
+    "The account: billing and checkout links for the person to pay, API keys, connected agents, public share links to requests, and the display name",
   domains: "Custom inbound email domains: add, verify, route and remove them",
   sheets: "Google Sheets destinations: Google accounts, spreadsheets and their tabs",
   names: "Preview names: reserve, release and password-protect them",
@@ -160,6 +160,9 @@ export const TOOL_CATALOG: Record<string, CatalogEntry> = {
     list_share_links: read,
     create_share_link: write,
     revoke_share_link: remove,
+    // Opens a checkout on Polar; nothing is charged until the person pays there.
+    create_checkout: outward,
+    wait_for_checkout: read,
   }),
   ...group("domains", {
     list_domains: read,

@@ -84,6 +84,8 @@ const EXPECTED_TOOLS = [
   "list_api_keys",
   "create_api_key",
   "wait_for_approval",
+  "create_checkout",
+  "wait_for_checkout",
   "revoke_api_key",
   "rename_account",
   "list_connected_agents",
@@ -295,7 +297,7 @@ describe("registerTools", () => {
     const waitFor = vi.fn().mockResolvedValue({ id: "req1", method: "POST", headers: {} });
     const client = createMockClient({ requests: { waitFor } as unknown as WebhooksCC["requests"] });
     const tools = getRegisteredTools(client, { remote: true });
-    expect(Object.keys(tools)).toHaveLength(91);
+    expect(Object.keys(tools)).toHaveLength(93);
     expect(tools).not.toHaveProperty("send_to");
     expect(tools).not.toHaveProperty("replay_request");
     expect(tools).not.toHaveProperty("share_port");
@@ -350,7 +352,7 @@ describe("registerTools", () => {
   it("registers all wrapper and legacy tools", () => {
     const tools = getRegisteredTools(createMockClient());
 
-    expect(Object.keys(tools)).toHaveLength(94);
+    expect(Object.keys(tools)).toHaveLength(96);
     for (const name of EXPECTED_TOOLS) {
       expect(tools).toHaveProperty(name);
     }

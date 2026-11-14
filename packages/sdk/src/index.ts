@@ -23,6 +23,7 @@ export type {
 export {
   ApprovalDeniedError,
   ApprovalExpiredError,
+  CheckoutExpiredError,
   WebhooksCCError,
   UnauthorizedError,
   NotFoundError,
@@ -302,6 +303,10 @@ export type {
   BillingSummary,
   CapacityResource,
   CapacityState,
+  CheckoutItem,
+  CheckoutLink,
+  CheckoutStatus,
+  WaitForCheckoutOptions,
   TeamPlanQuote,
   TeamSeatQuote,
   Approval,

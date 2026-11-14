@@ -71,7 +71,8 @@ Exit status:
   5  not allowed by the plan, a limit or a permission (forbidden)
   6  rate limited; wait and retry (rate_limited)
   7  server or network failure; retry (server_error, network_error, request_timeout)
-  8  a wait ran out of time, or an approval expired (timeout, approval_expired)
+  8  a wait ran out of time, or an approval or checkout link expired (timeout,
+     approval_expired, checkout_expired)
   9  a destructive command was not confirmed; pass --yes (confirmation_required, cancelled),
      or the account's owner refused an approval (approval_denied)
 
@@ -410,8 +411,11 @@ deletion) refuse API keys.")]
         action: FieldsAction,
     },
 
-    /// What the account pays for: the plan, its subscription, add-ons, and every team's (read only)
-    Billing,
+    /// What the account pays for: the plan, its subscription, add-ons, and every team's; and checkout links for the person to pay
+    Billing {
+        #[command(subcommand)]
+        action: Option<BillingAction>,
+    },
 
     /// Manage the account's API keys (a new one needs the account's owner to approve it)
     Keys {
@@ -951,6 +955,73 @@ pub enum AiAction {
 
         #[command(flatten)]
         approval: ApprovalArgs,
+    },
+}
+
+#[derive(Subcommand, Debug)]
+pub enum BillingAction {
+    /// Make a checkout link for the person to pay with their own card. No
+    /// approval: nothing is charged until they pay on Polar's page
+    #[command(after_help = "\
+Examples:
+  whk billing checkout plan --plan pro
+  whk billing checkout team-plan --team Acme --seats 3 --plan team_business
+  whk billing checkout blocks --blocks 4
+  whk billing checkout monthly-blocks --blocks 2 --resource pages
+  whk billing checkout overage
+
+At most 5 links an hour and 3 open at once per account. A team's purchase
+needs the team's owner.")]
+    Checkout {
+        /// What to buy
+        #[arg(value_parser = ["plan", "team-plan", "blocks", "monthly-blocks", "overage"])]
+        kind: String,
+
+        /// The plan: pro or business (plan), team or team_business (team-plan)
+        #[arg(long, value_parser = ["pro", "business", "team", "team_business"])]
+        plan: Option<String>,
+
+        /// Billing interval (default month)
+        #[arg(long, value_parser = ["month", "year"])]
+        interval: Option<String>,
+
+        /// Seats, for team-plan (2 or more)
+        #[arg(long)]
+        seats: Option<u32>,
+
+        /// Blocks to buy (blocks), or the monthly blocks in all (monthly-blocks)
+        #[arg(long)]
+        blocks: Option<u32>,
+
+        /// What the blocks or overage are for (default requests)
+        #[arg(long, value_parser = ["requests", "pages", "domains"])]
+        resource: Option<String>,
+
+        /// A team you own, by id or name: the purchase is the team's
+        #[arg(long)]
+        team: Option<String>,
+
+        /// Wait until the person pays
+        #[arg(long)]
+        wait: bool,
+
+        /// How long --wait waits, such as 30m
+        #[arg(long, default_value = "1h")]
+        timeout: String,
+    },
+
+    /// Where a checkout link stands: open, paid or expired, and what it buys
+    CheckoutStatus {
+        /// The checkout link's id
+        id: String,
+
+        /// Wait until the person pays (exits with checkout_expired if it expires first)
+        #[arg(long)]
+        wait: bool,
+
+        /// How long --wait waits, such as 30m
+        #[arg(long, default_value = "1h")]
+        timeout: String,
     },
 }
 

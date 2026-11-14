@@ -5,8 +5,8 @@ use clap::Parser;
 
 use whk::api::ApiClient;
 use whk::cli::{
-    self, AccountAction, AgentsAction, AiAction, ApprovalsAction, AuthAction, Cli, Command,
-    DomainsAction, FieldsAction, GoogleAction, KeysAction, LayoutsAction, NamesAction,
+    self, AccountAction, AgentsAction, AiAction, ApprovalsAction, AuthAction, BillingAction, Cli,
+    Command, DomainsAction, FieldsAction, GoogleAction, KeysAction, LayoutsAction, NamesAction,
     RequestsAction, SandboxAction, ShareLinksAction, SharesAction, TeamsAction,
 };
 use whk::error::{classify, error_json};
@@ -414,7 +414,41 @@ async fn run(args: Cli) -> Result<()> {
             }
         },
 
-        Some(Command::Billing) => cli::billing::show(&client, args.json).await?,
+        Some(Command::Billing { action }) => match action {
+            None => cli::billing::show(&client, args.json).await?,
+            Some(BillingAction::Checkout {
+                kind,
+                plan,
+                interval,
+                seats,
+                blocks,
+                resource,
+                team,
+                wait,
+                timeout,
+            }) => {
+                let item = cli::billing::CheckoutArgs {
+                    kind,
+                    plan,
+                    interval,
+                    seats,
+                    blocks,
+                    resource,
+                    team,
+                };
+                cli::billing::checkout(&client, item, wait.then_some(timeout.as_str()), args.json)
+                    .await?
+            }
+            Some(BillingAction::CheckoutStatus { id, wait, timeout }) => {
+                cli::billing::checkout_status(
+                    &client,
+                    &id,
+                    wait.then_some(timeout.as_str()),
+                    args.json,
+                )
+                .await?
+            }
+        },
 
         Some(Command::Keys { action }) => match action {
             KeysAction::List => cli::keys::list(&client, args.json).await?,

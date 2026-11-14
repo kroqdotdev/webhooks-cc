@@ -2960,6 +2960,140 @@ paths:
         "500":
           $ref: "#/components/responses/InternalError"
 
+  /api/billing/checkouts:
+    post:
+      operationId: createCheckoutLink
+      tags: [Usage]
+      summary: Make a checkout link
+      description: >-
+        A Polar checkout link for something the account, or a team the caller owns, can buy:
+        a plan, a team subscription, one-time or monthly blocks, or overage. Hand `url` to the
+        person, who pays on Polar's page with their own card; nothing is charged until they do,
+        so an API key or a claimed agent token gets the link at once, with no approval. A
+        pre-claim agent token is refused (403), and so is a team purchase by anyone but the
+        team's owner. At most 5 links an hour and 3 open at once per billing account. After
+        paying, Polar sends the person to a page that says the payment went through. Follow
+        the link with `GET /api/billing/checkouts/{id}`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              oneOf:
+                - type: object
+                  title: Plan
+                  required: [kind, plan]
+                  additionalProperties: false
+                  properties:
+                    kind: { type: string, const: plan }
+                    plan: { type: string, enum: [pro, business] }
+                    interval: { type: string, enum: [month, year], default: month }
+                - type: object
+                  title: Team subscription
+                  required: [kind, teamId, seats]
+                  additionalProperties: false
+                  properties:
+                    kind: { type: string, const: team_plan }
+                    teamId: { type: string, format: uuid }
+                    seats: { type: integer, minimum: 2, maximum: 1000 }
+                    plan: { type: string, enum: [team, team_business], default: team }
+                    interval: { type: string, enum: [month, year], default: month }
+                - type: object
+                  title: One-time blocks
+                  required: [kind, blocks]
+                  additionalProperties: false
+                  properties:
+                    kind: { type: string, const: blocks }
+                    blocks: { type: integer, minimum: 1 }
+                    resource: { type: string, enum: [requests, pages], default: requests }
+                    teamId: { type: string, format: uuid }
+                - type: object
+                  title: Monthly blocks
+                  description: The monthly blocks in all; only ever more than the account has.
+                  required: [kind, blocks]
+                  additionalProperties: false
+                  properties:
+                    kind: { type: string, const: monthly_blocks }
+                    blocks: { type: integer, minimum: 1 }
+                    resource: { type: string, enum: [requests, pages, domains], default: requests }
+                    teamId: { type: string, format: uuid }
+                - type: object
+                  title: Overage
+                  description: Starts overage with the account's stored maximum, or the default.
+                  required: [kind]
+                  additionalProperties: false
+                  properties:
+                    kind: { type: string, const: overage }
+                    resource: { type: string, enum: [requests, pages], default: requests }
+                    teamId: { type: string, format: uuid }
+      responses:
+        "201":
+          description: The checkout link
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [checkout]
+                properties:
+                  checkout:
+                    $ref: "#/components/schemas/CheckoutLink"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: A pre-claim agent token, or a team purchase by someone other than its owner
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: >-
+            Not something the account can buy now (it already has the plan, or the purchase
+            would change nothing), or 3 links are still open (`code: too_many_open`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/billing/checkouts/{id}:
+    get:
+      operationId: getCheckoutLink
+      tags: [Usage]
+      summary: Follow a checkout link
+      description: >-
+        Where a checkout link stands (open, paid or expired) and what it buys, for the person
+        who asked for it, with any of their keys, agents or sessions. `url` is only there while
+        it is open. Poll every two seconds at most.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: The checkout link
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [checkout]
+                properties:
+                  checkout:
+                    $ref: "#/components/schemas/CheckoutLink"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
   # -- Teams -------------------------------------------------------------------
 
   /api/teams:
@@ -5126,6 +5260,46 @@ components:
         type: string
 
   schemas:
+    CheckoutLink:
+      type: object
+      required: [id, status, kind, summary, item, teamId, url, createdAt, expiresAt, paidAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [open, paid, expired]
+        kind:
+          type: string
+          enum: [plan, team_plan, blocks, monthly_blocks, overage]
+        summary:
+          type: string
+          description: One sentence saying what it buys.
+        item:
+          type: object
+          description: What it buys, as the request named it, with its defaults.
+          additionalProperties: true
+        teamId:
+          type: string
+          format: uuid
+          nullable: true
+        url:
+          type: string
+          format: uri
+          nullable: true
+          description: Polar's checkout page, while the link is open.
+        createdAt:
+          type: string
+          format: date-time
+        expiresAt:
+          type: string
+          format: date-time
+        paidAt:
+          type: string
+          format: date-time
+          nullable: true
+
     Approval:
       type: object
       required: [id, status, action, summary, code, url, expiresAt]

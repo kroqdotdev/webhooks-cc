@@ -1,5 +1,11 @@
 export type Json = string | number | boolean | null | { [key: string]: Json | undefined } | Json[];
 
+/** What a checkout link buys (migration 00104, lib/billing/checkout-links.ts). */
+export type BillingCheckoutKind = "plan" | "team_plan" | "blocks" | "monthly_blocks" | "overage";
+
+/** Where a checkout link stands (migration 00104). */
+export type BillingCheckoutStatus = "creating" | "open" | "paid" | "expired";
+
 /** Why a refund was recorded (migration 00086, lib/billing/refunds.ts). */
 export type PolarRefundReason =
   "duplicate_plan" | "duplicate_addon" | "deleted_account" | "addon_not_applied" | "addon_ended";
@@ -1164,6 +1170,50 @@ export interface Database {
           page_overage_reporting_to?: number | null;
           page_overage_report_lease?: string | null;
           extra_domains?: number;
+        };
+        Relationships: [];
+      };
+      billing_checkouts: {
+        Row: {
+          id: string;
+          user_id: string | null;
+          team_id: string | null;
+          created_by: string;
+          requested_by_key: string | null;
+          requested_by_agent: string | null;
+          kind: BillingCheckoutKind;
+          item: Json;
+          polar_checkout_id: string | null;
+          url: string | null;
+          status: BillingCheckoutStatus;
+          created_at: string;
+          expires_at: string;
+          paid_at: string | null;
+        };
+        Insert: {
+          id?: string;
+          user_id?: string | null;
+          team_id?: string | null;
+          created_by: string;
+          requested_by_key?: string | null;
+          requested_by_agent?: string | null;
+          kind: BillingCheckoutKind;
+          item?: Json;
+          polar_checkout_id?: string | null;
+          url?: string | null;
+          status?: BillingCheckoutStatus;
+          created_at?: string;
+          expires_at: string;
+          paid_at?: string | null;
+        };
+        Update: {
+          item?: Json;
+          kind?: BillingCheckoutKind;
+          polar_checkout_id?: string | null;
+          url?: string | null;
+          status?: BillingCheckoutStatus;
+          expires_at?: string;
+          paid_at?: string | null;
         };
         Relationships: [];
       };
@@ -2409,6 +2459,18 @@ export interface Database {
     };
     Views: Record<string, never>;
     Functions: {
+      reserve_billing_checkout: {
+        Args: {
+          p_user_id: string | null;
+          p_team_id: string | null;
+          p_created_by: string;
+          p_key_id: string | null;
+          p_agent_id: string | null;
+          p_kind: BillingCheckoutKind;
+          p_item: Json;
+        };
+        Returns: string;
+      };
       tunnel_open_share: {
         Args: {
           p_user_id: string;

@@ -569,12 +569,22 @@
         "POST /api/billing/cancel",
         "POST /api/billing/resubscribe"
       ],
-      "sessionOnly": "payment stays with a person; planned: checkout links an agent hands over",
+      "sessionOnly": "payment stays with a person; an agent hands them a checkout link instead (billing.checkout-links)",
       "sdk": "session only",
       "python": "session only",
       "go": "session only",
       "cli": "session only",
       "mcp": "session only"
+    },
+    {
+      "id": "billing.checkout-links",
+      "does": "Make a checkout link for the person to pay (a plan, a team subscription, extra capacity) and follow it until it is paid or expires",
+      "routes": ["POST /api/billing/checkouts", "GET /api/billing/checkouts/[id]"],
+      "sdk": ["billing.createCheckout", "billing.getCheckout", "billing.waitForCheckout"],
+      "python": ["billing.create_checkout", "billing.get_checkout", "billing.wait_for_checkout"],
+      "go": ["Billing.CreateCheckout", "Billing.GetCheckout", "Billing.WaitForCheckout"],
+      "cli": ["billing checkout", "billing checkout-status"],
+      "mcp": ["create_checkout", "wait_for_checkout"]
     },
     {
       "id": "support.tickets",
@@ -919,7 +929,7 @@
         "POST /api/teams/[teamId]/billing/cancel",
         "POST /api/teams/[teamId]/billing/resubscribe"
       ],
-      "sessionOnly": "payment stays with a person; planned: checkout links an agent hands over",
+      "sessionOnly": "payment stays with a person; an agent hands them a checkout link instead (billing.checkout-links)",
       "sdk": "session only",
       "python": "session only",
       "go": "session only",

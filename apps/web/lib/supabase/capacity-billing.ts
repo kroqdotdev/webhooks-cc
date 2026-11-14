@@ -27,7 +27,14 @@ import { planEntitlements, teamAllowance, teamEntitlements } from "@/lib/entitle
 import { createAdminClient } from "./admin";
 import { addMonthUtc, ensurePolarCustomerId, getBillingUser } from "./billing";
 import { returnOrigin } from "@/lib/site-server";
-import { asNonEmptyString, asRecord, parseEventTimestamp } from "./billing-shared";
+import {
+  asNonEmptyString,
+  asRecord,
+  checkoutSession,
+  parseEventTimestamp,
+  type CheckoutOptions,
+  type CheckoutSession,
+} from "./billing-shared";
 import type { Database } from "./database";
 import { ensureTeamPolarCustomerId, getTeamForOwner } from "./team-billing";
 
@@ -694,6 +701,17 @@ export async function createOneTimeBlocksCheckout(
   blocks: number,
   resource: CapacityResource = "requests"
 ): Promise<string> {
+  return (await createOneTimeBlocksCheckoutSession(account, actingUserId, blocks, resource)).url;
+}
+
+/** createOneTimeBlocksCheckout(), answering the whole session (checkout links). */
+export async function createOneTimeBlocksCheckoutSession(
+  account: CapacityAccount,
+  actingUserId: string,
+  blocks: number,
+  resource: CapacityResource = "requests",
+  options: CheckoutOptions = {}
+): Promise<CheckoutSession> {
   const spec = RESOURCES[resource];
   const { oneTime } = requireProducts(resource);
   if (!oneTime) throw notOffered(resource);
@@ -706,10 +724,89 @@ export async function createOneTimeBlocksCheckout(
     min_units: 1,
     max_units: spec.maxBlocks,
     customer_id: customerId,
-    success_url: await successUrl(account, "blocks", spec),
+    success_url: options.successUrl ?? (await successUrl(account, "blocks", spec)),
     metadata: { capacity: "one_time", resource },
   });
-  return checkout.url;
+  return checkoutSession(checkout);
+}
+
+/**
+ * The checkout for monthly blocks: a new subscription for `blocks` when the
+ * account has none (`current` null), else a one-time order at the full
+ * monthly price for the blocks above `current`'s.
+ */
+async function monthlyBlocksCheckout(
+  account: CapacityAccount,
+  actingUserId: string,
+  blocks: number,
+  resource: CapacityResource,
+  current: CapacitySubscriptionRow | null,
+  options: CheckoutOptions = {}
+): Promise<CheckoutSession> {
+  const spec = RESOURCES[resource];
+  const customerId = await ensureCustomer(account, actingUserId);
+  const success = options.successUrl ?? (await successUrl(account, "monthly", spec));
+  if (!current) {
+    return checkoutSession(
+      await createPolarClient().checkouts.create({
+        products: [requireProducts(resource).monthly],
+        units: blocks,
+        min_units: 1,
+        max_units: spec.maxBlocks,
+        customer_id: customerId,
+        success_url: success,
+        metadata: { capacity: "monthly", resource },
+      })
+    );
+  }
+  const added = blocks - current.units;
+  return checkoutSession(
+    await createPolarClient().checkouts.create({
+      products: [requireProducts(resource).monthlyAdd],
+      units: added,
+      min_units: added,
+      max_units: added,
+      customer_id: customerId,
+      success_url: success,
+      metadata: {
+        capacity: "monthly_add",
+        resource,
+        subscription_id: current.polar_subscription_id,
+      },
+    })
+  );
+}
+
+/**
+ * A checkout that takes the account's monthly blocks up to `blocks`
+ * (checkout links). Only ever a purchase: the same number or fewer is
+ * refused (not_a_purchase), since that changes a subscription without the
+ * person paying, which stays with a session (changeMonthlyBlocks()).
+ */
+export async function createMonthlyBlocksCheckoutSession(
+  account: CapacityAccount,
+  actingUserId: string,
+  blocks: number,
+  resource: CapacityResource = "requests",
+  options: CheckoutOptions = {}
+): Promise<CheckoutSession> {
+  const spec = RESOURCES[resource];
+  await requireEligible(account, { renewing: true, resource });
+  const current = liveOfKind(await liveSubscriptions(account), spec.blocks);
+  if (current?.status === "past_due") {
+    throw new CapacityError(
+      "past_due",
+      "The last payment for the monthly blocks failed. Update the payment method under Invoices and payment method first."
+    );
+  }
+  if (current && blocks <= current.units) {
+    throw new CapacityError(
+      "not_a_purchase",
+      `The account already has ${current.units} monthly ${current.units === 1 ? "block" : "blocks"}. A checkout link only adds blocks; fewer is a change the person makes in the dashboard.`,
+      409
+    );
+  }
+  return monthlyBlocksCheckout(account, actingUserId, blocks, resource, current, options);
 }
 
 export type MonthlyBlocksResult =
@@ -735,16 +832,7 @@ export async function changeMonthlyBlocks(
 
   if (!current) {
     if (blocks === 0) return { kind: "unchanged" };
-    const customerId = await ensureCustomer(account, actingUserId);
-    const checkout = await polar.checkouts.create({
-      products: [requireProducts(resource).monthly],
-      units: blocks,
-      min_units: 1,
-      max_units: spec.maxBlocks,
-      customer_id: customerId,
-      success_url: await successUrl(account, "monthly", spec),
-      metadata: { capacity: "monthly", resource },
-    });
+    const checkout = await monthlyBlocksCheckout(account, actingUserId, blocks, resource, null);
     return { kind: "checkout", url: checkout.url };
   }
 
@@ -770,20 +858,7 @@ export async function changeMonthlyBlocks(
   // More blocks: the paid order keeps blocks that were set to end
   // (applyPaidOrder), so an abandoned checkout changes nothing.
   if (blocks > current.units) {
-    const customerId = await ensureCustomer(account, actingUserId);
-    const checkout = await polar.checkouts.create({
-      products: [requireProducts(resource).monthlyAdd],
-      units: blocks - current.units,
-      min_units: blocks - current.units,
-      max_units: blocks - current.units,
-      customer_id: customerId,
-      success_url: await successUrl(account, "monthly", spec),
-      metadata: {
-        capacity: "monthly_add",
-        resource,
-        subscription_id: current.polar_subscription_id,
-      },
-    });
+    const checkout = await monthlyBlocksCheckout(account, actingUserId, blocks, resource, current);
     return { kind: "checkout", url: checkout.url };
   }
 
@@ -881,13 +956,7 @@ export async function setOverage(
   await writeOverageMax(account, maxRequests, resource);
 
   if (!current) {
-    const customerId = await ensureCustomer(account, actingUserId);
-    const checkout = await polar.checkouts.create({
-      products: [overageProduct],
-      customer_id: customerId,
-      success_url: await successUrl(account, "overage", spec),
-      metadata: { capacity: "overage", resource },
-    });
+    const checkout = await overageCheckout(account, actingUserId, overageProduct, resource);
     return { kind: "checkout", url: checkout.url };
   }
 
@@ -898,6 +967,54 @@ export async function setOverage(
     await markSubscription(current.id, { cancel_at_period_end: false, canceled_with_plan: false });
   }
   return { kind: "updated" };
+}
+
+async function overageCheckout(
+  account: CapacityAccount,
+  actingUserId: string,
+  overageProduct: string,
+  resource: CapacityResource,
+  options: CheckoutOptions = {}
+): Promise<CheckoutSession> {
+  const customerId = await ensureCustomer(account, actingUserId);
+  const checkout = await createPolarClient().checkouts.create({
+    products: [overageProduct],
+    customer_id: customerId,
+    success_url: options.successUrl ?? (await successUrl(account, "overage", RESOURCES[resource])),
+    metadata: { capacity: "overage", resource },
+  });
+  return checkoutSession(checkout);
+}
+
+/**
+ * A checkout that starts overage (checkout links), with the maximum the
+ * account has stored, else the default. Only when overage has no
+ * subscription yet: turning a live one back on, or changing its maximum,
+ * charges nothing new and stays with a session (setOverage()).
+ */
+export async function createOverageCheckoutSession(
+  account: CapacityAccount,
+  actingUserId: string,
+  resource: CapacityResource = "requests",
+  options: CheckoutOptions = {}
+): Promise<CheckoutSession> {
+  const spec = RESOURCES[resource];
+  const products = requireProducts(resource);
+  if (!spec.overage || !products.overage) throw notOffered(resource);
+  const current = liveOfKind(await liveSubscriptions(account), spec.overage);
+  if (current) {
+    throw new CapacityError(
+      "not_a_purchase",
+      current.cancel_at_period_end
+        ? "Overage is set to end with the period. Keeping it charges nothing new, so the person does that in the dashboard."
+        : "Overage is already on.",
+      409
+    );
+  }
+  const row = await requireEligible(account, { renewing: true, resource });
+  const storedMax = resource === "pages" ? row.page_overage_max : row.overage_max;
+  await writeOverageMax(account, storedMax > 0 ? storedMax : spec.defaultOverageMax, resource);
+  return overageCheckout(account, actingUserId, products.overage, resource, options);
 }
 
 async function writeOverageMax(

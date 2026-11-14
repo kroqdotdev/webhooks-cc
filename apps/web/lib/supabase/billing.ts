@@ -17,8 +17,11 @@ import { createAdminClient } from "./admin";
 import {
   asNonEmptyString,
   asRecord,
+  checkoutSession,
   normalizeStoredSubscriptionStatus,
   parseEventTimestamp,
+  type CheckoutOptions,
+  type CheckoutSession,
 } from "./billing-shared";
 import type { Database } from "./database";
 
@@ -195,6 +198,16 @@ export async function createCheckoutForUser(
   plan: PaidPlan = "pro",
   interval: BillingInterval = "month"
 ): Promise<string> {
+  return (await createPlanCheckoutSession(userId, plan, interval)).url;
+}
+
+/** createCheckoutForUser(), answering the whole session (checkout links). */
+export async function createPlanCheckoutSession(
+  userId: string,
+  plan: PaidPlan = "pro",
+  interval: BillingInterval = "month",
+  options: CheckoutOptions = {}
+): Promise<CheckoutSession> {
   const user = await getBillingUser(userId);
   if (user.plan !== "free" && user.polar_subscription_id) {
     throw new BillingActionError(
@@ -213,11 +226,12 @@ export async function createCheckoutForUser(
 
   const checkout = await polar.checkouts.create({
     products: [productId],
-    success_url: `${await returnOrigin(appUrl)}/account/plan?upgraded=${plan}`,
+    success_url:
+      options.successUrl ?? `${await returnOrigin(appUrl)}/account/plan?upgraded=${plan}`,
     customer_id: customerId,
   });
 
-  return checkout.url;
+  return checkoutSession(checkout);
 }
 
 const PLAN_RANK: Record<string, number> = { free: 0, pro: 1, business: 2 };

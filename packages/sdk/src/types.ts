@@ -2082,6 +2082,60 @@ export interface AiSetupResult {
 export type CapacityResource = "requests" | "pages" | "domains";
 
 /**
+ * What a checkout link buys (`POST /api/billing/checkouts`). With `teamId`,
+ * the team's (its owner only); without, the account's own.
+ */
+export type CheckoutItem =
+  | { kind: "plan"; plan: "pro" | "business"; interval?: "month" | "year" }
+  | {
+      kind: "team_plan";
+      teamId: string;
+      seats: number;
+      plan?: "team" | "team_business";
+      interval?: "month" | "year";
+    }
+  /** One-time blocks: 25,000 requests or 1,000 parsed pages each, never expiring. */
+  | { kind: "blocks"; blocks: number; resource?: "requests" | "pages"; teamId?: string }
+  /** Monthly blocks (or extra domains) in all; only ever more than the account has. */
+  | {
+      kind: "monthly_blocks";
+      blocks: number;
+      resource?: CapacityResource;
+      teamId?: string;
+    }
+  /** Overage, with the account's stored maximum (or the default). */
+  | { kind: "overage"; resource?: "requests" | "pages"; teamId?: string };
+
+export type CheckoutStatus = "open" | "paid" | "expired";
+
+/**
+ * A checkout link: hand `url` to the person, who pays on Polar's page with
+ * their own card. Nothing is charged until they do. `url` is null once the
+ * link is no longer open.
+ */
+export interface CheckoutLink {
+  id: string;
+  status: CheckoutStatus;
+  kind: CheckoutItem["kind"];
+  /** One sentence saying what it buys. */
+  summary: string;
+  item: CheckoutItem;
+  teamId: string | null;
+  url: string | null;
+  createdAt: string;
+  expiresAt: string;
+  paidAt: string | null;
+}
+
+export interface WaitForCheckoutOptions {
+  /** Give up after this many milliseconds (default: until the link expires). */
+  timeout?: number;
+  /** Milliseconds between polls (default 3000, at least 1000). */
+  pollInterval?: number;
+  signal?: AbortSignal;
+}
+
+/**
  * The add-ons of one account or team for one resource, as the API reads them
  * (`GET /api/billing/capacity`). Fields beyond these may appear.
  */

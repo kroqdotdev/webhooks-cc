@@ -1,5 +1,6 @@
 import { captureBillingEvent } from "@/lib/analytics-billing";
 import { auditPolarEvent } from "@/lib/audit";
+import { settleCheckoutLinkFromWebhook } from "@/lib/billing/checkout-links";
 import { getPolarWebhookSecret, loggablePolarError, PolarConfigError } from "@/lib/polar";
 import { applyPolarWebhookEvent, resolveWebhookUserId } from "@/lib/supabase/billing";
 import {
@@ -76,6 +77,10 @@ export async function POST(request: Request) {
           if (account) await reconcileAddonsWithPlan(account);
         }
       }
+      // A checkout link (lib/billing/checkout-links.ts) whose checkout this
+      // order or subscription came from is paid. Idempotent, so a redelivery
+      // after a later failure changes nothing.
+      await settleCheckoutLinkFromWebhook(event.type, data);
     } catch (applyError) {
       // Polar redelivers on a 5xx, so a failed apply shows up as an error row
       // followed by the retry's row.

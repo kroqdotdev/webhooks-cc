@@ -30,6 +30,7 @@ export type AuditAction =
   | "approval.approved"
   | "approval.denied"
   | "billing.checkout_started"
+  | "billing.checkout_link_created"
   | "billing.plan_changed"
   | "billing.portal_opened"
   | "billing.subscription_canceled"

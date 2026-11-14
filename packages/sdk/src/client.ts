@@ -16,6 +16,9 @@
 import { apiUserAgent } from "./user-agent";
 import type {
   BillingSummary,
+  CheckoutItem,
+  CheckoutLink,
+  WaitForCheckoutOptions,
   CapacityResource,
   CapacityState,
   TeamPlanQuote,
@@ -119,6 +122,7 @@ import { isEmailRequest, matchEmail } from "./matchers";
 import {
   ApprovalDeniedError,
   ApprovalExpiredError,
+  CheckoutExpiredError,
   WebhooksCCError,
   UnauthorizedError,
   NotFoundError,
@@ -1963,6 +1967,28 @@ export class WebhooksCC {
           description: "What changing a team's seat count would cost (owner only)",
           params: { teamId: "string", seats: "number" },
         },
+        createCheckout: {
+          description:
+            "A Polar checkout link for a plan, a team subscription (owner only) or extra capacity; hand its url to the person, who pays with their own card. No approval: nothing is charged until they pay",
+          params: {
+            kind: '"plan" | "team_plan" | "blocks" | "monthly_blocks" | "overage"',
+            plan: '"pro" | "business" | "team" | "team_business"?',
+            interval: '"month" | "year"?',
+            seats: "number? (team_plan)",
+            blocks: "number? (blocks, monthly_blocks: in all)",
+            resource: '"requests" | "pages" | "domains"?',
+            teamId: "string?",
+          },
+        },
+        getCheckout: {
+          description: "Where a checkout link stands: open, paid or expired, and what it buys",
+          params: { id: "string" },
+        },
+        waitForCheckout: {
+          description:
+            "Wait until the person pays; resolves with the paid link, throws CheckoutExpiredError when it expires first (polls at least a second apart)",
+          params: { id: "string", timeout: "number?", pollInterval: "number?" },
+        },
       },
       apiKeys: {
         list: { description: "List the account's API keys", params: {} },
@@ -2458,8 +2484,9 @@ export class WebhooksCC {
 
   /**
    * What the account pays for: the plan, its subscription, the add-ons and
-   * every team's. Reads only; changing a plan, seats or add-ons takes a
-   * person in a browser.
+   * every team's, and checkout links to hand the person. Paying stays with
+   * them: a checkout link charges nothing until they enter their card on
+   * Polar's page, and changing or cancelling a plan takes a browser.
    */
   billing = {
     /** The plan, its subscription and add-ons, and every team's. */
@@ -2502,6 +2529,63 @@ export class WebhooksCC {
         "GET",
         `/teams/${teamId}/billing/seats?seats=${encodeURIComponent(String(seats))}`
       );
+    },
+
+    /**
+     * A Polar checkout link for something the account can buy: a plan, a
+     * team subscription (the team's owner only), or extra capacity. Hand
+     * `url` to the person; they pay on Polar's page with their own card, so
+     * no approval is asked for. At most 5 links an hour and 3 open at once
+     * per account. Follow it with `waitForCheckout()`.
+     */
+    createCheckout: async (item: CheckoutItem): Promise<CheckoutLink> => {
+      const answer = await this.request<{ checkout: CheckoutLink }>(
+        "POST",
+        "/billing/checkouts",
+        item
+      );
+      return answer.checkout;
+    },
+
+    /** Where a checkout link stands: open, paid or expired, and what it buys. */
+    getCheckout: async (id: string, options: { timeout?: number } = {}): Promise<CheckoutLink> => {
+      validatePathSegment(id, "id");
+      const answer = await this.request<{ checkout: CheckoutLink }>(
+        "GET",
+        `/billing/checkouts/${id}`,
+        undefined,
+        { timeoutMs: options.timeout }
+      );
+      return answer.checkout;
+    },
+
+    /**
+     * Wait until the person pays. Resolves with the paid link; throws
+     * CheckoutExpiredError when it expires first, TimeoutError when
+     * `timeout` passes first.
+     */
+    waitForCheckout: async (
+      id: string,
+      options: WaitForCheckoutOptions = {}
+    ): Promise<CheckoutLink> => {
+      // At least a second apart: the status route allows two a second.
+      const interval = Math.max(1_000, options.pollInterval ?? 3_000);
+      const deadline = options.timeout === undefined ? Infinity : Date.now() + options.timeout;
+      const timedOut = () =>
+        new TimeoutError(options.timeout ?? 0, "Timed out waiting for the checkout to be paid");
+      for (;;) {
+        options.signal?.throwIfAborted();
+        const left = deadline - Date.now();
+        if (left <= 0) throw timedOut();
+        const checkout = await this.billing.getCheckout(id, {
+          timeout: Number.isFinite(left) ? left : undefined,
+        });
+        if (checkout.status === "paid") return checkout;
+        if (checkout.status === "expired") throw new CheckoutExpiredError(id);
+        const remaining = deadline - Date.now();
+        if (remaining <= 0) throw timedOut();
+        await sleep(Math.min(interval, remaining));
+      }
     },
   };
 
