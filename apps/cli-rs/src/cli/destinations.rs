@@ -832,13 +832,43 @@ pub async fn test(
     let answer = client
         .test_destination(slug, id, &test_body(request, kind))
         .await?;
+    // The result goes to stdout either way; a failed delivery then exits
+    // non-zero with `delivery_failed` on stderr.
     if json {
-        return print_json(&answer);
+        print_json(&answer)?;
+    } else {
+        for line in test_lines(&answer.value) {
+            println!("{line}");
+        }
     }
-    for line in test_lines(&answer.value) {
-        println!("{line}");
+    match test_failure(id, &answer.value) {
+        Some(error) => Err(error.into()),
+        None => Ok(()),
     }
-    Ok(())
+}
+
+/// The error for a test the destination did not accept, or None when it
+/// was delivered.
+fn test_failure(id: &str, answer: &Value) -> Option<CliError> {
+    if answer.get("delivered").and_then(Value::as_bool) == Some(true) {
+        return None;
+    }
+    let status = answer.get("status").and_then(Value::as_u64);
+    let error = answer
+        .get("error")
+        .and_then(Value::as_str)
+        .filter(|e| !e.is_empty());
+    let id = sanitize(id);
+    Some(CliError::DeliveryFailed(match (status, error) {
+        (Some(status), _) => {
+            format!("The test delivery to destination {id} was not accepted: it answered {status}.")
+        }
+        (None, Some(error)) => format!(
+            "The test delivery to destination {id} failed: {}",
+            crate::cli::output::sanitize_line(error)
+        ),
+        (None, None) => format!("The test delivery to destination {id} failed."),
+    }))
 }
 
 fn test_lines(answer: &Value) -> Vec<String> {
@@ -1205,6 +1235,25 @@ mod tests {
         assert!(lines.contains("https://example.invalid/hook"), "{lines}");
     }
 
+    #[test]
+    fn a_failed_test_exits_with_delivery_failed() {
+        let delivered = json!({ "delivered": true, "status": 200, "durationMs": 40 });
+        assert!(test_failure("d1", &delivered).is_none());
+
+        let refused = json!({ "delivered": false, "status": 502, "error": null });
+        let error = anyhow::Error::new(test_failure("d1", &refused).unwrap());
+        let c = classify(&error);
+        assert_eq!((c.code, c.exit), ("delivery_failed", 1));
+        assert!(error.to_string().contains("502"), "{error}");
+
+        let unreachable = json!({
+            "delivered": false, "status": null,
+            "error": "getaddrinfo ENOTFOUND example.invalid"
+        });
+        let error = test_failure("d1", &unreachable).unwrap().to_string();
+        assert!(error.contains("ENOTFOUND"), "{error}");
+    }
+
     async fn serve(app: axum::Router) -> String {
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let base = format!("http://127.0.0.1:{}", listener.local_addr().unwrap().port());
@@ -1251,6 +1300,22 @@ mod tests {
             sent.lock().unwrap().clone(),
             Some(json!({ "enabled": false }))
         );
+    }
+
+    #[tokio::test]
+    async fn a_test_the_destination_refused_fails_after_printing() {
+        let app = axum::Router::new().route(
+            "/api/endpoints/{slug}/destinations/{id}/test",
+            axum::routing::post(|| async {
+                axum::Json(json!({ "delivered": false, "status": 401, "durationMs": 30 }))
+            }),
+        );
+        let base = serve(app).await;
+        let error = test(&client(&base), "acme", "d1", None, None, true, true)
+            .await
+            .unwrap_err();
+        assert_eq!(classify(&error).code, "delivery_failed");
+        assert_eq!(classify(&error).exit, 1);
     }
 
     #[tokio::test]

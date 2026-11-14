@@ -65,7 +65,8 @@ pub struct Cli {
 pub const AFTER_HELP: &str = "\
 Exit status:
   0  success
-  1  any other failure, or the server refused the input (bad_request)
+  1  any other failure, the server refused the input (bad_request), or a test
+     delivery was not accepted by the destination (delivery_failed)
   2  bad arguments (usage)
   3  not logged in, or the credentials were refused (not_logged_in, unauthorized,
      connection_revoked, login_expired, login_denied)
