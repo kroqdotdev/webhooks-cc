@@ -46,4 +46,24 @@ impl ApiClient {
             .await?;
         resp.parse("email fields preview")
     }
+
+    /// A dry run of layouts on a captured email:
+    /// `{ problems, layoutsCap, request, parsed }`.
+    pub async fn preview_layouts(&self, slug: &str, body: &Value) -> Result<Fetched<Value>> {
+        self.require_auth()?;
+        let resp = self
+            .post(&format!("{}/layouts/preview", endpoint_path(slug)), body)
+            .await?;
+        resp.parse("layouts preview")
+    }
+
+    /// A dry run of the mock response and response rules on a captured
+    /// request: `{ rule, response, unknownPlaceholders, email, request }`.
+    pub async fn preview_response(&self, slug: &str, body: &Value) -> Result<Fetched<Value>> {
+        self.require_auth()?;
+        let resp = self
+            .post(&format!("{}/responses/preview", endpoint_path(slug)), body)
+            .await?;
+        resp.parse("response preview")
+    }
 }

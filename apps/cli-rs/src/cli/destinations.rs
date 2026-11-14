@@ -145,7 +145,7 @@ const MAX_FLAG_FILE_BYTES: u64 = 1024 * 1024;
 
 /// A flag's text, or the contents of the file `@file` names. A leading `@@`
 /// stands for a literal `@`, so `@@everyone` sends `@everyone`.
-fn text_or_file(flag: &str, value: &str) -> Result<String> {
+pub(crate) fn text_or_file(flag: &str, value: &str) -> Result<String> {
     if let Some(rest) = value.strip_prefix("@@") {
         return Ok(format!("@{rest}"));
     }
@@ -185,7 +185,7 @@ fn read_flag_file(flag: &str, file: &str) -> Result<String> {
 }
 
 /// A flag holding JSON, or `@file` with JSON in it.
-fn json_arg(flag: &str, value: &str) -> Result<Value> {
+pub(crate) fn json_arg(flag: &str, value: &str) -> Result<Value> {
     let text = text_or_file(flag, value)?;
     serde_json::from_str(&text)
         .map_err(|e| CliError::Usage(format!("{flag} is not valid JSON: {e}")).into())
