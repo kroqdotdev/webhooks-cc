@@ -44,7 +44,7 @@ describe("parseFileDropConfig, S3", () => {
 describe("parseDropSecret, SFTP keys", () => {
   // Throwaway keys made for each run, never real ones.
   const openssh = sshUtils.generateKeyPairSync("ed25519");
-  const rsa = generateKeyPairSync("rsa", { modulusLength: 1024 }).privateKey;
+  const rsa = generateKeyPairSync("rsa", { modulusLength: 2048 }).privateKey;
   const ec = generateKeyPairSync("ec", { namedCurve: "P-256" }).privateKey;
   const sftp = (privateKey: string) => parseDropSecret({ privateKey }, "sftp");
   const keyOf = (privateKey: string) => {
