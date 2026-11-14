@@ -66,6 +66,9 @@ const EXPECTED_TOOLS = [
   "remove_team_member",
   "leave_team",
   "withdraw_invite",
+  "invite_to_team",
+  "list_invites",
+  "answer_invite",
   "quote_team_change",
   "list_emails",
   "get_email",
@@ -296,7 +299,7 @@ describe("registerTools", () => {
     const waitFor = vi.fn().mockResolvedValue({ id: "req1", method: "POST", headers: {} });
     const client = createMockClient({ requests: { waitFor } as unknown as WebhooksCC["requests"] });
     const tools = getRegisteredTools(client, { remote: true });
-    expect(Object.keys(tools)).toHaveLength(88);
+    expect(Object.keys(tools)).toHaveLength(91);
     expect(tools).not.toHaveProperty("send_to");
     expect(tools).not.toHaveProperty("replay_request");
     expect(tools).not.toHaveProperty("share_port");
@@ -351,7 +354,7 @@ describe("registerTools", () => {
   it("registers all wrapper and legacy tools", () => {
     const tools = getRegisteredTools(createMockClient());
 
-    expect(Object.keys(tools)).toHaveLength(91);
+    expect(Object.keys(tools)).toHaveLength(94);
     for (const name of EXPECTED_TOOLS) {
       expect(tools).toHaveProperty(name);
     }
@@ -1683,6 +1686,54 @@ describe("registerTools", () => {
       parseJsonResult(await tools.withdraw_invite.handler({ teamId: "t2", inviteId: "i1" }))
     ).toEqual({ withdrawn: true, teamId: "t2", inviteId: "i1" });
     expect(withdrawInvite).toHaveBeenCalledWith("t2", "i1");
+  });
+
+  it("asks the owner to approve an invite, then lists and answers invites", async () => {
+    const pending = {
+      id: "ap2",
+      summary: 'Invite dev@example.com to "Payments".',
+      url: "https://webhooks.cc/approve?code=WXYZ-ABCD",
+      code: "WXYZ-ABCD",
+      expiresAt: "2026-11-14T12:15:00.000Z",
+      wait: vi.fn(),
+    };
+    const invite = vi.fn(async () => pending);
+    const list = vi.fn(async () => [{ id: "i9", teamName: "Ops", inviterEmail: "a@example.com" }]);
+    const accept = vi.fn(async () => undefined);
+    const decline = vi.fn(async () => undefined);
+    const wait = vi.fn(async () => ({
+      id: "i1",
+      teamId: "t1",
+      teamName: "Payments",
+      invitedEmail: "dev@example.com",
+      status: "pending",
+    }));
+    const tools = getRegisteredTools(
+      createMockClient({
+        teams: {
+          invite,
+          invites: { list, accept, decline },
+        } as unknown as WebhooksCC["teams"],
+        approvals: { wait } as unknown as WebhooksCC["approvals"],
+      })
+    );
+
+    const asked = await tools.invite_to_team.handler({ teamId: "t1", email: "dev@example.com" });
+    expect(invite).toHaveBeenCalledWith("t1", "dev@example.com");
+    expect(asked.content[0].text).toContain(pending.url);
+    expect(asked.content[0].text).toContain("wait_for_approval with id ap2");
+    const done = await tools.wait_for_approval.handler({ id: "ap2", timeout: "1s" });
+    expect(done.content[0].text).toContain('Invited dev@example.com to "Payments"');
+
+    expect(parseJsonResult(await tools.list_invites.handler({}))[0].id).toBe("i9");
+    expect(
+      parseJsonResult(await tools.answer_invite.handler({ inviteId: "i9", answer: "accept" }))
+    ).toEqual({ accepted: true, inviteId: "i9" });
+    expect(accept).toHaveBeenCalledWith("i9");
+    expect(
+      parseJsonResult(await tools.answer_invite.handler({ inviteId: "i8", answer: "decline" }))
+    ).toEqual({ declined: true, inviteId: "i8" });
+    expect(decline).toHaveBeenCalledWith("i8");
   });
 
   it("quotes a seat or plan change, one at a time", async () => {

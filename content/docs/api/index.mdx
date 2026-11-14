@@ -1053,6 +1053,8 @@ curl -X POST https://webhooks.cc/api/teams/TEAM_ID/invite \
   -d '{"email": "teammate@example.com"}'
 ```
 
+Sends the invite email and returns the invite. With an API key or agent token it returns `202` with an [approval](/docs/agents#approvals) instead, since an invite emails the address the asker names and accepting it takes one of the team's paid seats: the invite is sent once you approve, and the asker's poll then carries it.
+
 ### List members
 
 List all members and pending invites for a team.

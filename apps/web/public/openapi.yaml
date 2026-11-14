@@ -3257,6 +3257,8 @@ paths:
                   format: email
                   description: Email address to invite
       responses:
+        "202":
+          $ref: "#/components/responses/ApprovalAsked"
         "200":
           description: Invite sent
           headers:

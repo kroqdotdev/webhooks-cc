@@ -651,7 +651,7 @@ codex mcp add webhooks-cc -- npx -y @webhooks-cc/mcp
 
 ### MCP Tools
 
-The local server has 57 tools once it is connected to an account; the remote server has the same tools except `send_to`, `replay_request` and `share_port` (54). In the keyless sandbox the local server offers a smaller set, with `connect_account` and `wait_for_connection` to connect a human's account. `describe` returns every tool's parameters.
+The local server has 94 tools once it is connected to an account; the remote server has the same tools except `send_to`, `replay_request` and `share_port` (91). In the keyless sandbox the local server offers a smaller set, with `connect_account` and `wait_for_connection` to connect a human's account. `describe` returns every tool's parameters.
 
 | Tool | Parameters | Description |
 |------|-----------|-------------|

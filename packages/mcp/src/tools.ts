@@ -552,6 +552,14 @@ function approvalResultText(result: Record<string, unknown>): string {
   if (typeof result.url === "string") {
     return `Approved. The share link is ${result.url} (anyone with it can read the copy until ${String(result.expiresAt)}).`;
   }
+  if (typeof result.invitedEmail === "string") {
+    const team = typeof result.teamName === "string" ? ` to "${result.teamName}"` : "";
+    const warning =
+      typeof result.warning === "string"
+        ? ` ${result.warning} Tell them to sign up with that address and accept from their Teams page.`
+        : " They get an email; accepting claims one of the team's seats.";
+    return `Approved. Invited ${result.invitedEmail}${team} (invite ${String(result.id)}).${warning}`;
+  }
   if (typeof result.deleted === "string" && typeof result.teamId === "string") {
     return `Approved. The team ${result.deleted ? `"${result.deleted}" ` : ""}was deleted; its subscription has ended.`;
   }
@@ -1572,6 +1580,46 @@ export function registerTools(
     withErrorHandling(async ({ teamId }) => {
       await client.teams.leave(teamId);
       return jsonContent({ left: true, teamId });
+    })
+  );
+
+  server.tool(
+    "invite_to_team",
+    "Invite an email address to a team you own. It emails that address, so the team's owner must approve it: this returns a link and a code to show them, then call wait_for_approval, which returns the invite. Accepting the invite claims one of the team's paid seats. Only when the person asks for it.",
+    {
+      teamId: z.string().min(1).describe("Team id (from list_teams)"),
+      email: z.string().trim().email().describe("The address to invite"),
+    },
+    withErrorHandling(async ({ teamId, email }) => {
+      const pending = await client.teams.invite(teamId, email);
+      if (!pending.id) return textContent(approvalResultText({ ...(await pending.wait()) }));
+      return textContent(approvalAskText(pending));
+    })
+  );
+
+  server.tool(
+    "list_invites",
+    "List the team invites waiting for you to answer: team, who invited you, when, and the invite id for answer_invite.",
+    {},
+    withErrorHandling(async () => jsonContent(await client.teams.invites.list()))
+  );
+
+  server.tool(
+    "answer_invite",
+    "Accept or decline a team invite waiting for you (from list_invites). Accepting claims one of the team's paid seats and you join the team, seeing the endpoints shared with it; it fails when the team is full or suspended. Only when the person says which.",
+    {
+      inviteId: z.string().min(1).describe("The invite's id, from list_invites"),
+      answer: z
+        .enum(["accept", "decline"])
+        .describe("accept joins the team; decline turns it down"),
+    },
+    withErrorHandling(async ({ inviteId, answer }) => {
+      if (answer === "accept") {
+        await client.teams.invites.accept(inviteId);
+        return jsonContent({ accepted: true, inviteId });
+      }
+      await client.teams.invites.decline(inviteId);
+      return jsonContent({ declined: true, inviteId });
     })
   );
 
@@ -3117,7 +3165,7 @@ export function registerTools(
 
   server.tool(
     "wait_for_approval",
-    "Wait for the account's owner to answer an approval (from create_api_key, create_share_link, remove_domain, rename_account, delete_team, connect_google, pick_spreadsheet or ai_setup) and collect what it grants or did, such as the new API key, the share link or AI setup's proposals. If they have not answered yet, call it again.",
+    "Wait for the account's owner to answer an approval (from create_api_key, create_share_link, remove_domain, rename_account, delete_team, invite_to_team, connect_google, pick_spreadsheet or ai_setup) and collect what it grants or did, such as the new API key, the share link or AI setup's proposals. If they have not answered yet, call it again.",
     {
       id: z.string().describe("The approval id"),
       timeout: durationOrTimestampSchema

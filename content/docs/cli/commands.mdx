@@ -335,7 +335,7 @@ whk teams rename <team> "Payments EU"
 whk teams delete <team>                     # asks, waits for the approval
 whk teams share <slug> --team <team>        # share an endpoint you own (needs an active team)
 whk teams unshare <slug> --team <team>
-whk teams invite <team> <email>             # sends an invite email; accepting claims a seat
+whk teams invite <team> <email>             # asks, waits; then sends the invite email
 whk teams withdraw <team> <invite> --yes    # an invite id or the invited email
 whk teams remove <team> <member> --yes      # a user id or email; frees their seat
 whk teams leave <team> --yes
@@ -348,7 +348,7 @@ whk teams quote <team> --plan team_business --interval year
 
 Sharing moves the endpoint's requests onto the team's pooled quota. Only the endpoint owner can share or unshare, and only the team owner can rename, invite, withdraw an invite, remove a member, or ask for a quote. Removing a member, or leaving, unshares the endpoints that member shared with the team; an owner deletes the team instead of leaving it. `remove`, `leave` and `withdraw` ask first, and need `--yes` without a terminal.
 
-Deleting a team ends its subscription at once and takes its shared endpoints from every member, so it needs the team's owner to approve it, as a new API key does; `delete` takes the same `--remote`, `--no-browser`, `--no-wait` and `--timeout` as `keys create`. `quote` only prices a change (`--interval` is `month` unless you say `year`); seat and plan changes are made in the browser. Every subcommand supports `--json`.
+Deleting a team ends its subscription at once and takes its shared endpoints from every member, and an invite emails the address you name, so both need the team's owner to approve them, as a new API key does; once an invite is approved, whk prints it, and accepting it claims one of the team's seats. `delete` and `invite` take the same `--remote`, `--no-browser`, `--no-wait` and `--timeout` as `keys create`. `quote` only prices a change (`--interval` is `month` unless you say `year`); seat and plan changes are made in the browser. Every subcommand supports `--json`.
 
 ## billing
 

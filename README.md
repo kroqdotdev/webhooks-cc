@@ -159,7 +159,7 @@ await client.requests.replay(req.id, "http://localhost:3000/webhooks");
 
 ## MCP server
 
-The `@webhooks-cc/mcp` package exposes 57 tools (54 on the remote server) that let AI agents manage endpoints, inspect webhooks, send test payloads, replay requests, and share a local site at a public link through natural language.
+The `@webhooks-cc/mcp` package exposes 94 tools (91 on the remote server) that let AI agents manage endpoints, inspect webhooks, send test payloads, replay requests, and share a local site at a public link through natural language.
 
 ```
 You: "Create a webhook endpoint for testing Stripe"

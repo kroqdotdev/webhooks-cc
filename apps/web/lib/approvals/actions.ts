@@ -18,8 +18,10 @@ import { getRequestByIdForUser } from "@/lib/supabase/requests";
 import { createRequestShare } from "@/lib/supabase/request-shares";
 import { SHARE_EXPIRY_DAYS, type ShareExpiryDays } from "@/lib/request-share";
 import { TeamBillingError } from "@/lib/supabase/team-billing";
-import { deleteTeam, listTeamsForUser } from "@/lib/supabase/teams";
+import { createInvite, deleteTeam, listTeamsForUser } from "@/lib/supabase/teams";
 import { isUuid } from "@/lib/uuid";
+import { loggablePolarError } from "@/lib/polar";
+import { reportError } from "@/lib/observability";
 import {
   AssistRefusal,
   assistSamples,
@@ -62,7 +64,8 @@ export type ApprovalAction =
   | "google.connect"
   | "google.pick"
   | "ai.assist"
-  | "teams.delete";
+  | "teams.delete"
+  | "teams.invite";
 
 export interface ActionDetail {
   label: string;
@@ -390,12 +393,17 @@ const deleteTeamAction: ActionSpec<TeamDeleteParams> = {
   },
   summary: ({ name }) =>
     `Delete the team "${name}": its members lose the endpoints shared with it, and this cannot be undone.`,
-  async details({ teamId, name }, userId) {
+  async details({ teamId }, userId) {
+    // Read now, not when it was asked: a rename since then needed no approval.
     const team = await ownedTeam(userId, teamId);
-    const others = team ? Math.max(team.memberCount - 1, 0) : 0;
-    const subscribed = team !== null && team.subscriptionStatus !== null;
+    if (!team) {
+      return [{ label: "Team", value: "This team no longer exists, or is not yours" }];
+    }
+    const others = Math.max(team.memberCount - 1, 0);
     return [
-      { label: "Team", value: name },
+      { label: "Team", value: team.name },
+      { label: "Created", value: new Date(team.createdAt).toISOString().slice(0, 10) },
+      { label: "Team id", value: team.id },
       {
         label: "Members",
         value:
@@ -406,16 +414,79 @@ const deleteTeamAction: ActionSpec<TeamDeleteParams> = {
       { label: "Shared endpoints", value: "Stop being shared; they stay with their owners" },
       {
         label: "Subscription",
-        value: subscribed ? "Ends now, with the rest of its period" : "None",
+        value: team.subscriptionStatus !== null ? "Ends now, with the rest of its period" : "None",
       },
     ];
   },
   async run(userId, { teamId, name }) {
-    if (!(await deleteTeam(userId, teamId))) {
-      throw new ActionError(404, "Team not found or not owner");
+    let deleted: boolean;
+    try {
+      deleted = await deleteTeam(userId, teamId);
+    } catch (error) {
+      // Billing is ended before the team row goes, so a failure leaves the
+      // team in place: the approval waits, and approving again tries again.
+      reportError("Deleting a team on approval failed", loggablePolarError(error));
+      throw new ActionError(502, "The team could not be deleted just now. Try again in a minute.");
     }
+    if (!deleted) throw new ActionError(404, "Team not found or not owner");
     const result = { deleted: name, teamId };
     return { result, stored: result };
+  },
+};
+
+// ---------------------------------------------------------------------------
+// Inviting someone to a team
+// ---------------------------------------------------------------------------
+
+interface TeamInviteParams {
+  teamId: string;
+  name: string;
+  email: string;
+}
+
+/** An address an invite may go to: one @, something on each side, at most 254 characters. */
+const INVITE_EMAIL = /^[^\s@]+@[^\s@]+$/;
+
+const inviteToTeam: ActionSpec<TeamInviteParams> = {
+  runAt: "approve",
+  async parse(input, userId) {
+    const body = (input ?? {}) as Record<string, unknown>;
+    const teamId = body.teamId;
+    const email = typeof body.email === "string" ? body.email.trim().toLowerCase() : "";
+    if (!INVITE_EMAIL.test(email) || email.length > 254) {
+      return { ok: false, error: "Valid email is required" };
+    }
+    if (typeof teamId !== "string" || !isUuid(teamId)) {
+      return { ok: false, error: "Not authorized", status: 404 };
+    }
+    const team = await ownedTeam(userId, teamId);
+    if (!team) return { ok: false, error: "Not authorized", status: 404 };
+    return { ok: true, params: { teamId, name: team.name, email } };
+  },
+  summary: ({ name, email }) =>
+    `Invite ${email} to the team "${name}": webhooks.cc emails them, and accepting takes one of its seats.`,
+  async details({ teamId, name, email }, userId) {
+    const team = await ownedTeam(userId, teamId);
+    return [
+      { label: "Team", value: name },
+      { label: "Invite goes to", value: email },
+      {
+        label: "Seats",
+        value: team ? `${team.memberCount} of ${team.seats} taken` : "Unknown",
+      },
+      { label: "Email", value: "Sent from webhooks.cc when you approve" },
+    ];
+  },
+  async run(userId, { teamId, email }) {
+    const created = await createInvite(userId, teamId, email);
+    if (created.error || !created.invite) {
+      throw new ActionError(400, created.error ?? "The invite could not be made.");
+    }
+    const result = {
+      ...created.invite,
+      ...(created.warning ? { warning: created.warning } : {}),
+    };
+    return { result, stored: result as unknown as Json };
   },
 };
 
@@ -603,6 +674,7 @@ const ACTIONS: Record<ApprovalAction, ActionSpec<unknown>> = {
   "google.pick": pickSpreadsheet as ActionSpec<unknown>,
   "ai.assist": aiAssist as ActionSpec<unknown>,
   "teams.delete": deleteTeamAction as ActionSpec<unknown>,
+  "teams.invite": inviteToTeam as ActionSpec<unknown>,
 };
 
 export function actionSpec(action: ApprovalAction): ActionSpec<unknown> {

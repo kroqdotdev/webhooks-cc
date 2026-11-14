@@ -1,6 +1,6 @@
 ---
 title: "Tool Reference"
-description: "Complete reference for all 91 MCP tools available to AI coding agents, plus the sandbox tools for agents without an account. Parameters, return types, and usage examples for endpoint, request, email, forwarding, and webhook operations."
+description: "Complete reference for all 94 MCP tools available to AI coding agents, plus the sandbox tools for agents without an account. Parameters, return types, and usage examples for endpoint, request, email, forwarding, and webhook operations."
 section: mcp
 order: 2
 lastUpdated: 2026-11-10
@@ -8,7 +8,7 @@ schema: none
 keywords: ["MCP tools", "webhook MCP reference", "AI agent webhook tools"]
 seo:
   ogTitle: "MCP Tool Reference"
-  ogDescription: "Complete reference for all 91 MCP tools available to AI coding agents, plus the sandbox tools for agents without an account. Parameters, return types, and usage examples for endpoint, request, email, forwarding, and webhook operations."
+  ogDescription: "Complete reference for all 94 MCP tools available to AI coding agents, plus the sandbox tools for agents without an account. Parameters, return types, and usage examples for endpoint, request, email, forwarding, and webhook operations."
 ---
 
 ## Endpoint management
@@ -591,7 +591,7 @@ Verify the webhook signature on a captured request. Supports two modes:
 
 ## Teams
 
-An API key carries the team access of the account it belongs to. Shared endpoints already appear in `list_endpoints` and work with every request tool by slug except `clear_requests`, which only the owner may call; these tools manage the teams. Sending and answering invites are not exposed: accepting one claims a paid seat and inviting sends email, so those stay with people (dashboard, `whk teams`, or the SDK). Withdrawing an invite is, since it only takes one back.
+An API key carries the team access of the account it belongs to. Shared endpoints already appear in `list_endpoints` and work with every request tool by slug except `clear_requests`, which only the owner may call; these tools manage the teams. An invite emails the address you name, so `invite_to_team` waits for the team owner's approval; accepting an invite claims one of the team's paid seats.
 
 ### list_teams
 
@@ -647,6 +647,28 @@ Remove a member from a team you own. The endpoints they shared with the team sto
 ### leave_team
 
 Leave a team you belong to (`teamId`). The endpoints you shared with it stop being shared. An owner deletes the team instead.
+
+### invite_to_team
+
+Ask to invite an email address to a team you own. It sends an email, so the team's owner approves it first: returns an approval to show them, then `wait_for_approval` returns the invite (`id`, `teamName`, `invitedEmail`, and a `warning` when the email could not be sent). Accepting it claims one of the team's seats.
+
+| Parameter | Type     | Required | Description               |
+| --------- | -------- | -------- | ------------------------- |
+| `teamId`  | `string` | yes      | Team id from `list_teams` |
+| `email`   | `string` | yes      | The address to invite     |
+
+### list_invites
+
+The invites waiting for you to answer: the team, who invited you, when, and each invite's `id`. No parameters.
+
+### answer_invite
+
+Accept or decline an invite waiting for you. Accepting claims one of the team's paid seats and you join the team; it fails when the team is full or suspended.
+
+| Parameter  | Type     | Required | Description                         |
+| ---------- | -------- | -------- | ----------------------------------- |
+| `inviteId` | `string` | yes      | The invite's id, from `list_invites` |
+| `answer`   | `string` | yes      | `accept` or `decline`               |
 
 ### withdraw_invite
 
@@ -765,7 +787,7 @@ Ask for a new key. Returns the approval's link and code to show the person (the 
 
 ### wait_for_approval
 
-Wait for the person to answer and collect what the approval grants or did: the new key (shown once), the share link, the removed domain, the deleted team or the new name. If they have not answered when the wait ends, it says so; call it again. It also says when the approval was refused or expired.
+Wait for the person to answer and collect what the approval grants or did: the new key (shown once), the share link, the removed domain, the deleted team, the sent invite or the new name. If they have not answered when the wait ends, it says so; call it again. It also says when the approval was refused or expired.
 
 | Parameter | Type     | Required | Description                                         |
 | --------- | -------- | -------- | --------------------------------------------------- |

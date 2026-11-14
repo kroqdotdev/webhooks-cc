@@ -588,9 +588,11 @@ async fn run(args: Cli) -> Result<()> {
             TeamsAction::Unshare { slug, team } => {
                 cli::teams::unshare(&client, &slug, &team, args.json).await?
             }
-            TeamsAction::Invite { team, email } => {
-                cli::teams::invite(&client, &team, &email, args.json).await?
-            }
+            TeamsAction::Invite {
+                team,
+                email,
+                approval,
+            } => cli::teams::invite(&client, &team, &email, approval.into(), args.json).await?,
             TeamsAction::Invites => cli::teams::invites(&client, args.json).await?,
             TeamsAction::Accept { invite_id } => {
                 cli::teams::accept(&client, &invite_id, args.json).await?

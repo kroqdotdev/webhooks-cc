@@ -866,11 +866,12 @@
       "id": "team.invite",
       "does": "Invite someone to a team",
       "routes": ["POST /api/teams/[teamId]/invite"],
+      "approval": "an invite sends email to an address the asker names and accepting it takes one of the team's paid seats, so the team's owner approves each invite an API key or agent asks for",
       "sdk": ["teams.invite"],
       "python": "testing-focused SDK: added on demand",
       "go": "testing-focused SDK: added on demand",
       "cli": ["teams invite"],
-      "mcp": "kept with people on purpose: an invite sends real email"
+      "mcp": ["invite_to_team"]
     },
     {
       "id": "team.invite-withdraw",
@@ -894,7 +895,7 @@
       "python": "testing-focused SDK: added on demand",
       "go": "testing-focused SDK: added on demand",
       "cli": ["teams invites", "teams accept", "teams decline"],
-      "mcp": "kept with people on purpose: accepting claims a paid seat"
+      "mcp": ["list_invites", "answer_invite"]
     },
     {
       "id": "team.billing-quotes",

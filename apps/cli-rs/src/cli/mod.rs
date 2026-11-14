@@ -998,13 +998,16 @@ pub enum TeamsAction {
         team: String,
     },
 
-    /// Invite an email address to a team you own (sends an email; acceptance claims a seat)
+    /// Invite an email address to a team you own: prints a link for the team's owner to approve (it sends an email), then waits; accepting claims a seat
     Invite {
         /// Team id or name
         team: String,
 
         /// Email address to invite
         email: String,
+
+        #[command(flatten)]
+        approval: ApprovalArgs,
     },
 
     /// List invites waiting for you

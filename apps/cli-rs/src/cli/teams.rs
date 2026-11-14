@@ -235,34 +235,48 @@ pub async fn unshare(client: &ApiClient, slug: &str, team: &str, json: bool) -> 
     Ok(())
 }
 
-pub async fn invite(client: &ApiClient, team: &str, email: &str, json: bool) -> Result<()> {
-    let team = find_team(client, team).await?;
-    let invite = client.invite_team_member(&team.id, email).await?;
-
-    if json {
-        println!("{}", serde_json::to_string_pretty(&invite.json())?);
-    } else {
-        println!(
-            "{} Invited {} to {}",
-            green("✓"),
-            bold(&sanitize(&invite.invited_email)),
-            bold(&sanitize(&team.name))
-        );
-        match &invite.warning {
-            // The route answers 200 with a warning when the invite row exists
-            // but the email did not go out; the invitee only finds it in-app.
-            Some(warning) => println!(
-                "{} {} Tell them to sign up with that address and accept from their Teams page.",
-                red("!"),
-                sanitize(warning)
-            ),
-            None => println!(
-                "{}",
-                dim("They get an email; accepting claims one of the team's seats.")
-            ),
-        }
+/// The lines for a sent invite: who, to which team, and what happens next.
+pub(crate) fn print_invite(invite: &Value, team_name: &str) {
+    let text = |field: &str| invite.get(field).and_then(Value::as_str).unwrap_or("");
+    let team = match text("teamName") {
+        "" => team_name,
+        name => name,
+    };
+    println!(
+        "{} Invited {} to {}",
+        green("✓"),
+        bold(&sanitize(text("invitedEmail"))),
+        bold(&sanitize(team))
+    );
+    match invite.get("warning").and_then(Value::as_str) {
+        // The route answers with a warning when the invite row exists but
+        // the email did not go out; the invitee only finds it in-app.
+        Some(warning) => println!(
+            "{} {} Tell them to sign up with that address and accept from their Teams page.",
+            red("!"),
+            sanitize(warning)
+        ),
+        None => println!(
+            "{}",
+            dim("They get an email; accepting claims one of the team's seats.")
+        ),
     }
-    Ok(())
+}
+
+pub async fn invite(
+    client: &ApiClient,
+    team: &str,
+    email: &str,
+    opts: ApprovalOptions,
+    json: bool,
+) -> Result<()> {
+    let team = find_team(client, team).await?;
+    let answer = client.invite_team_member(&team.id, email.trim()).await?;
+    let team_name = team.name.clone();
+    ask(client, answer, opts, json, move |invite| {
+        print_invite(invite, &team_name)
+    })
+    .await
 }
 
 pub async fn invites(client: &ApiClient, json: bool) -> Result<()> {
@@ -383,12 +397,9 @@ pub async fn create(client: &ApiClient, name: &str, json: bool) -> Result<()> {
 pub async fn rename(client: &ApiClient, team: &str, name: &str, json: bool) -> Result<()> {
     let team = find_team(client, team).await?;
     let name = name.trim();
-    client.rename_team(&team.id, name).await?;
+    let answer = client.rename_team(&team.id, name).await?;
     if json {
-        println!(
-            "{}",
-            json!({ "renamed": true, "teamId": team.id, "name": name })
-        );
+        println!("{}", serde_json::to_string_pretty(&answer)?);
     } else {
         println!(
             "{} Renamed {} to {}",
@@ -469,9 +480,9 @@ pub async fn leave(client: &ApiClient, team: &str, yes: bool, json: bool) -> Res
         ),
         yes,
     )?;
-    client.leave_team(&team.id).await?;
+    let answer = client.leave_team(&team.id).await?;
     if json {
-        println!("{}", json!({ "left": true, "teamId": team.id }));
+        println!("{}", serde_json::to_string_pretty(&answer)?);
     } else {
         println!("{} Left {}", red("✓"), bold(&sanitize(&team.name)));
     }
@@ -496,12 +507,9 @@ pub async fn withdraw(
         ),
         yes,
     )?;
-    client.withdraw_invite(&team.id, &invite.id).await?;
+    let answer = client.withdraw_invite(&team.id, &invite.id).await?;
     if json {
-        println!(
-            "{}",
-            json!({ "withdrawn": invite.id, "email": invite.invited_email, "teamId": team.id })
-        );
+        println!("{}", serde_json::to_string_pretty(&answer)?);
     } else {
         println!(
             "{} Withdrew the invite for {}",
@@ -942,5 +950,83 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(removed.lock().unwrap().as_deref(), Some("u-dev"));
+    }
+
+    #[tokio::test]
+    async fn an_invite_asks_for_approval_with_the_email_then_collects_it() {
+        let sent: std::sync::Arc<std::sync::Mutex<Option<Value>>> = Default::default();
+        let seen = sent.clone();
+        let approval = |status: &str| {
+            json!({
+                "id": "0c8d6a5e-1c2f-4f3a-9d7e-2a1b3c4d5e6f", "status": status,
+                "action": "teams.invite", "summary": "Invite dev@example.com to \"Payments\".",
+                "code": "ABCD-EFGH", "url": "https://webhooks.cc/approve?code=ABCD-EFGH",
+                "expiresAt": "2026-11-14T12:15:00.000Z",
+            })
+        };
+        let app = axum::Router::new()
+            .route("/api/teams", teams_route())
+            .route(
+                "/api/teams/{id}/invite",
+                axum::routing::post(move |axum::Json(body): axum::Json<Value>| async move {
+                    *seen.lock().unwrap() = Some(body);
+                    (
+                        axum::http::StatusCode::ACCEPTED,
+                        axum::Json(json!({ "approval": approval("pending") })),
+                    )
+                }),
+            )
+            .route(
+                "/api/approvals/{id}",
+                axum::routing::get(move || async move {
+                    axum::Json(json!({
+                        "approval": approval("completed"),
+                        "result": {
+                            "id": "i1", "teamId": TEAM, "teamName": "Payments",
+                            "invitedEmail": "dev@example.com", "status": "pending",
+                        },
+                    }))
+                }),
+            );
+        let base = serve(app).await;
+        let opts = ApprovalOptions {
+            remote: true,
+            no_browser: true,
+            no_wait: false,
+            timeout: "1m".into(),
+        };
+        invite(&client(&base), "Payments", " dev@example.com ", opts, true)
+            .await
+            .unwrap();
+        assert_eq!(
+            sent.lock().unwrap().clone().unwrap(),
+            json!({ "email": "dev@example.com" })
+        );
+    }
+
+    #[tokio::test]
+    async fn an_invite_a_session_sent_at_once_needs_no_approval() {
+        let app = axum::Router::new()
+            .route("/api/teams", teams_route())
+            .route(
+                "/api/teams/{id}/invite",
+                axum::routing::post(|| async {
+                    axum::Json(json!({
+                        "id": "i1", "teamId": TEAM, "teamName": "Payments",
+                        "invitedEmail": "dev@example.com", "status": "pending",
+                    }))
+                }),
+            );
+        let base = serve(app).await;
+        let opts = ApprovalOptions {
+            remote: true,
+            no_browser: true,
+            no_wait: false,
+            timeout: "1m".into(),
+        };
+        // No approvals route: asking for one would fail the call.
+        invite(&client(&base), "Payments", "dev@example.com", opts, false)
+            .await
+            .unwrap();
     }
 }

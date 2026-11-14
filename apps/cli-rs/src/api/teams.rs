@@ -9,6 +9,14 @@ fn team_path(team_id: &str) -> String {
     format!("/api/teams/{}", crate::util::url::encode(team_id))
 }
 
+/// The answer's JSON as the server sent it, `null` for an empty body (204).
+fn raw(resp: super::client::ApiResponse) -> Result<Value> {
+    if resp.body.trim().is_empty() {
+        return Ok(Value::Null);
+    }
+    Ok(serde_json::from_str(&resp.body)?)
+}
+
 impl ApiClient {
     pub async fn list_teams(&self) -> Result<Fetched<Vec<Team>>> {
         self.require_auth()?;
@@ -51,20 +59,19 @@ impl ApiClient {
         Ok(())
     }
 
-    pub async fn invite_team_member(
-        &self,
-        team_id: &str,
-        email: &str,
-    ) -> Result<Fetched<TeamInvite>> {
+    /// Invite an email address to a team the caller owns. An API key gets
+    /// 202 `{ approval }` (the owner approves first, since it sends email);
+    /// a session gets the invite. The raw answer is returned so the caller
+    /// can tell the two apart.
+    pub async fn invite_team_member(&self, team_id: &str, email: &str) -> Result<Value> {
         self.require_auth()?;
-        let body = serde_json::json!({ "email": email });
         let resp = self
             .post(
-                &format!("/api/teams/{}/invite", crate::util::url::encode(team_id)),
-                &body,
+                &format!("{}/invite", team_path(team_id)),
+                &json!({ "email": email }),
             )
             .await?;
-        resp.parse("invite")
+        raw(resp)
     }
 
     pub async fn list_invites(&self) -> Result<Fetched<Vec<TeamInvite>>> {
@@ -108,11 +115,12 @@ impl ApiClient {
         resp.parse("team")
     }
 
-    pub async fn rename_team(&self, team_id: &str, name: &str) -> Result<()> {
+    /// The route's own answer (`{ success: true }`), for `--json`.
+    pub async fn rename_team(&self, team_id: &str, name: &str) -> Result<Value> {
         self.require_auth()?;
-        self.patch(&team_path(team_id), &json!({ "name": name }))
-            .await?;
-        Ok(())
+        raw(self
+            .patch(&team_path(team_id), &json!({ "name": name }))
+            .await?)
     }
 
     /// Delete a team the caller owns. An API key gets 202 `{ approval }` (the
@@ -120,11 +128,7 @@ impl ApiClient {
     /// answer is returned so the caller can tell the two apart.
     pub async fn delete_team(&self, team_id: &str) -> Result<Value> {
         self.require_auth()?;
-        let resp = self.delete(&team_path(team_id)).await?;
-        if resp.body.trim().is_empty() {
-            return Ok(Value::Null);
-        }
-        Ok(serde_json::from_str(&resp.body)?)
+        raw(self.delete(&team_path(team_id)).await?)
     }
 
     pub async fn remove_team_member(&self, team_id: &str, user_id: &str) -> Result<()> {
@@ -138,22 +142,24 @@ impl ApiClient {
         Ok(())
     }
 
-    pub async fn leave_team(&self, team_id: &str) -> Result<()> {
+    /// The route's own answer (`{ success: true }`), for `--json`.
+    pub async fn leave_team(&self, team_id: &str) -> Result<Value> {
         self.require_auth()?;
-        self.post(&format!("{}/leave", team_path(team_id)), &json!({}))
-            .await?;
-        Ok(())
+        raw(self
+            .post(&format!("{}/leave", team_path(team_id)), &json!({}))
+            .await?)
     }
 
-    pub async fn withdraw_invite(&self, team_id: &str, invite_id: &str) -> Result<()> {
+    /// The route's own answer (`{ revoked: true }`), for `--json`.
+    pub async fn withdraw_invite(&self, team_id: &str, invite_id: &str) -> Result<Value> {
         self.require_auth()?;
-        self.delete(&format!(
-            "{}/invites/{}",
-            team_path(team_id),
-            crate::util::url::encode(invite_id)
-        ))
-        .await?;
-        Ok(())
+        raw(self
+            .delete(&format!(
+                "{}/invites/{}",
+                team_path(team_id),
+                crate::util::url::encode(invite_id)
+            ))
+            .await?)
     }
 
     /// What changing a team's seat count would cost (owner only). Read

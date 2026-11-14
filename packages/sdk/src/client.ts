@@ -1925,7 +1925,7 @@ export class WebhooksCC {
         },
         invite: {
           description:
-            "Invite an email address to a team you own (sends an email; acceptance claims a paid seat)",
+            "Invite an email address to a team you own (sends an email; acceptance claims a paid seat). With an API key the owner approves first (PendingApproval)",
           params: { teamId: "string", email: "string" },
         },
         "invites.list": {
@@ -2362,15 +2362,23 @@ export class WebhooksCC {
     },
 
     /**
-     * Invite an email address to a team you own. Sends an invite email; an
-     * accepted invite claims one of the team's paid seats.
+     * Invite an email address to a team you own. The invite is emailed, and
+     * accepting it claims one of the team's paid seats. With an API key the
+     * owner approves each invite first: show them `url`, then `wait()`; a
+     * signed-in session invites at once.
      */
-    invite: async (teamId: string, email: string): Promise<TeamInvite> => {
+    invite: async (teamId: string, email: string): Promise<PendingApproval<TeamInvite>> => {
       validatePathSegment(teamId, "teamId");
       if (!email || typeof email !== "string" || !email.includes("@")) {
         throw new Error("invite requires a valid email address");
       }
-      return this.request<TeamInvite>("POST", `/teams/${teamId}/invite`, { email });
+      const answer = await this.request<(TeamInvite & { approval?: Approval }) | undefined>(
+        "POST",
+        `/teams/${teamId}/invite`,
+        { email },
+        { repeatable: false }
+      );
+      return this.pendingOr(answer, "teams.invite", "Sent the invite.", () => answer as TeamInvite);
     },
 
     invites: {
