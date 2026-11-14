@@ -117,13 +117,13 @@ describe("parseDropSecret, SFTP keys", () => {
     expect(keyOf(flat(pem))).toBe(pem);
     expect(
       sftp("-----BEGIN OPENSSH PRIVATE KEY----- made up -----END OPENSSH PRIVATE KEY-----")
-    ).toMatch(/line breaks were lost/);
+    ).toMatch(/arrived on one line/);
   });
 
   it("keeps a long run of spaces between the markers fast", () => {
     const started = performance.now();
     const spaced = `-----BEGIN OPENSSH PRIVATE KEY-----${" ".repeat(8_000)}x${" ".repeat(8_000)}-----END OPENSSH PRIVATE KEY-----`;
-    expect(sftp(spaced)).toMatch(/line breaks were lost/);
+    expect(sftp(spaced)).toMatch(/arrived on one line/);
     expect(sftp(`-----BEGIN OPENSSH PRIVATE KEY-----${" ".repeat(16_000)}`)).toMatch(
       /not a key drops can use/
     );

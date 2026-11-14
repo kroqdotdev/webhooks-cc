@@ -465,7 +465,13 @@ pub fn drop_secret_value(protocol: &str, secret: &str) -> Result<Value> {
     Ok(match protocol {
         "s3" => json!({ "secretAccessKey": secret }),
         "ftp" | "ftps" => json!({ "password": secret }),
-        "sftp" if secret.contains("PRIVATE KEY-----") => json!({ "privateKey": secret }),
+        // A key in PEM or OpenSSH form, or a PuTTY key file, which the server reads too.
+        "sftp"
+            if secret.contains("PRIVATE KEY-----")
+                || secret.trim_start().starts_with("PuTTY-User-Key-File-") =>
+        {
+            json!({ "privateKey": secret })
+        }
         "sftp" => json!({ "password": secret }),
         _ => {
             return Err(CliError::Usage(
@@ -1481,6 +1487,11 @@ mod tests {
         assert_eq!(
             drop_secret_value("sftp", key).unwrap(),
             json!({ "privateKey": key })
+        );
+        let ppk = "PuTTY-User-Key-File-3: ssh-ed25519\nEncryption: none\n";
+        assert_eq!(
+            drop_secret_value("sftp", ppk).unwrap(),
+            json!({ "privateKey": ppk })
         );
         let error = drop_secret_value("", "hunter2").unwrap_err();
         assert_eq!(classify(&error).code, "usage");

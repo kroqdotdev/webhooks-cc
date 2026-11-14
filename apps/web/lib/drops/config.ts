@@ -305,7 +305,7 @@ function usablePrivateKey(value: string): string | { problem: string } {
     if (oneLine) {
       return {
         problem:
-          "dropSecret.privateKey arrived on one line: its line breaks were lost. Send the key file as it is, a line break after each line.",
+          "dropSecret.privateKey arrived on one line, and with its line breaks put back it is still not a key drops can use. Send the key file as it is, a line break after each line; if it was, drops take an OpenSSH key, or an RSA or EC key (P-256, P-384 or P-521) in PEM or PKCS#8 form, without a passphrase.",
       };
     }
     return {
