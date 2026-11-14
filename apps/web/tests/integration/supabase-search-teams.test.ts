@@ -1,9 +1,10 @@
 /**
  * Search across endpoints shared through teams (migration 00039).
  *
- * search_requests / search_requests_count must show a team member the rows
- * on endpoints shared with a subscribed team they belong to, hide them again
- * when the team lapses, and never show them to a non-member. Retention: the
+ * Search (search_requests_page(), through lib/supabase/search) must show a
+ * team member the rows on endpoints shared with a subscribed team they belong
+ * to, hide them again when the team lapses, and never show them to a
+ * non-member. Retention: the
  * searcher's personal 7-day window applies only to their own non-team-billed
  * rows; rows on shared endpoints are bounded by the owner's cleanup instead.
  */

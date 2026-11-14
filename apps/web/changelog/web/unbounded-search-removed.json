@@ -1,0 +1,6 @@
+{
+  "title": "Search cleanup",
+  "items": [
+    "Every search now runs through the bounded search; the older search functions that could read an endpoint's whole history in one go are gone"
+  ]
+}

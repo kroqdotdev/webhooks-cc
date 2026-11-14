@@ -272,7 +272,7 @@ describe("Supabase Search Integration", () => {
   });
 
   it("does not allow anonymous clients to invoke the search rpc", async () => {
-    const { data, error } = await callAnonRpc("search_requests", {
+    const { data, error } = await callAnonRpc("search_requests_page", {
       p_user_id: testUserId,
       p_plan: "pro",
     });
@@ -282,13 +282,29 @@ describe("Supabase Search Integration", () => {
   });
 
   it("does not allow anonymous clients to invoke the search count rpc", async () => {
-    const { data, error } = await callAnonRpc("search_requests_count", {
+    const { data, error } = await callAnonRpc("search_requests_page", {
       p_user_id: testUserId,
       p_plan: "pro",
+      p_count: true,
     });
 
     expect(data).toBeNull();
     expect(error).not.toBeNull();
+  });
+
+  it("does not allow anonymous clients to cancel a search", async () => {
+    const { error } = await callAnonRpc("cancel_request_search", {
+      p_token: "00000000-0000-4000-8000-000000000000",
+    });
+
+    expect(error).not.toBeNull();
+  });
+
+  it("no longer has the unbounded search functions (migration 00102)", async () => {
+    for (const name of ["search_requests", "search_requests_count"]) {
+      const { error } = await admin.rpc(name as never, { p_user_id: testUserId } as never);
+      expect(error, name).not.toBeNull();
+    }
   });
 
   it("still allows the service role to invoke both search rpcs", async () => {

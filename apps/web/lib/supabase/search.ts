@@ -11,7 +11,24 @@ const MAX_LIMIT = 200;
 const MAX_OFFSET = 10_000;
 
 type UserPlan = Database["public"]["Tables"]["users"]["Row"]["plan"];
-type SearchRpcRow = Database["public"]["Functions"]["search_requests"]["Returns"][number];
+/** One request in search_requests_page()'s `requests` (migration 00100). */
+interface SearchRpcRow {
+  id: string;
+  slug: string;
+  method: string;
+  path: string;
+  headers: Json;
+  body: string | null;
+  query_params: Json;
+  content_type: string | null;
+  ip: string;
+  size: number;
+  received_at: number;
+  kind: "http" | "email";
+  email: Json | null;
+  /** bytea, as PostgREST's hex text. */
+  body_raw: string | null;
+}
 
 export interface SearchRequestRecord {
   id: string;
