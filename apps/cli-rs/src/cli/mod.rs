@@ -719,6 +719,22 @@ pub enum KeysAction {
     },
 }
 
+/// A destination id: a UUID, so an empty or mistyped value is refused here
+/// rather than sent, where an empty one would read as every destination.
+fn parse_destination_id(value: &str) -> Result<String, String> {
+    let value = value.trim();
+    let uuid = value.len() == 36
+        && value.char_indices().all(|(i, c)| match i {
+            8 | 13 | 18 | 23 => c == '-',
+            _ => c.is_ascii_hexdigit(),
+        });
+    if uuid {
+        Ok(value.to_string())
+    } else {
+        Err("a destination id, as `whk destinations ls <slug>` lists them".into())
+    }
+}
+
 fn parse_share_days(value: &str) -> Result<u32, String> {
     match value {
         "1" | "7" | "30" => Ok(value.parse().unwrap_or(7)),
@@ -1188,7 +1204,7 @@ pub enum DestinationsAction {
     /// Add a destination (up to 10 per endpoint); it gets a signing secret of its own
     #[command(after_help = "\
 Examples:
-  whk destinations add acme --url https://example.com/hooks --header \"Authorization: Bearer $TOKEN\"
+  whk destinations add acme --url https://example.com/hooks --header \"X-Source: webhooks.cc\"
   whk destinations add acme --url https://hooks.slack.com/services/... --http false
   whk destinations add acme --url https://example.com/orders --format template \\
     --body-template '{\"order\":\"{{ json.id }}\"}' --filter @filter.json
@@ -1252,7 +1268,7 @@ or typed at the terminal without being shown; it is never taken from a flag.")]
         slug: String,
 
         /// A saved destination to start from; the setting flags change it for the preview only
-        #[arg(long)]
+        #[arg(long, value_parser = parse_destination_id)]
         destination: Option<String>,
 
         /// A captured request (default: the newest of the kind the destination takes, or a sample)
@@ -1320,7 +1336,7 @@ pub enum DeliveriesAction {
         status: Option<String>,
 
         /// Only one destination's deliveries (its id)
-        #[arg(long)]
+        #[arg(long, value_parser = parse_destination_id)]
         destination: Option<String>,
 
         /// How many, 1 to 100 (default 5)
@@ -1344,7 +1360,7 @@ pub enum DeliveriesAction {
         request: String,
 
         /// Only this destination (its id); its filter is not applied
-        #[arg(long)]
+        #[arg(long, value_parser = parse_destination_id)]
         destination: Option<String>,
 
         /// Send without asking (needed without a terminal)
@@ -1911,7 +1927,7 @@ mod tests {
             "preview",
             "acme",
             "--destination",
-            "d1",
+            "6f1c2a4e-8b3d-4c5e-9f00-1a2b3c4d5e6f",
             "--request",
             "r1",
             "--format",
@@ -1929,7 +1945,10 @@ mod tests {
                         ..
                     },
             }) => {
-                assert_eq!(destination.as_deref(), Some("d1"));
+                assert_eq!(
+                    destination.as_deref(),
+                    Some("6f1c2a4e-8b3d-4c5e-9f00-1a2b3c4d5e6f")
+                );
                 assert_eq!(request.as_deref(), Some("r1"));
                 assert_eq!(fields.format.as_deref(), Some("chat"));
             }
@@ -2001,9 +2020,20 @@ mod tests {
         );
         assert!(parse(&["ls", "acme", "--limit", "0"]).is_err());
         assert!(parse(&["ls", "acme", "--status", "succeeded"]).is_err());
-        match parse(&["redeliver", "r1", "--destination", "d1", "--yes"])
-            .unwrap()
-            .command
+        assert!(
+            parse(&["redeliver", "r1", "--destination", "", "--yes"]).is_err(),
+            "an empty destination would widen the redelivery to every destination"
+        );
+        assert!(parse(&["redeliver", "r1", "--destination", "d1", "--yes"]).is_err());
+        match parse(&[
+            "redeliver",
+            "r1",
+            "--destination",
+            "6f1c2a4e-8b3d-4c5e-9f00-1a2b3c4d5e6f",
+            "--yes",
+        ])
+        .unwrap()
+        .command
         {
             Some(Command::Deliveries {
                 action:
@@ -2014,7 +2044,10 @@ mod tests {
                     },
             }) => {
                 assert_eq!(request, "r1");
-                assert_eq!(destination.as_deref(), Some("d1"));
+                assert_eq!(
+                    destination.as_deref(),
+                    Some("6f1c2a4e-8b3d-4c5e-9f00-1a2b3c4d5e6f")
+                );
                 assert!(yes);
             }
             other => panic!("expected deliveries redeliver, got {other:?}"),

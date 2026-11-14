@@ -186,6 +186,7 @@ impl ApiClient {
         path: &str,
         body: Option<Vec<u8>>,
     ) -> Result<ApiResponse> {
+        checked_path(path)?;
         let mut request = self
             .http
             .request(method, self.url(path))
@@ -259,6 +260,7 @@ impl ApiClient {
         extra: &HeaderMap,
         timeout: Option<Duration>,
     ) -> Result<Response> {
+        checked_path(path)?;
         let mut headers = self.headers_with(refresh).await?;
         for (name, value) in extra {
             headers.insert(name.clone(), value.clone());
@@ -276,6 +278,31 @@ impl ApiClient {
         }
         request.send().await.context("request failed")
     }
+}
+
+/// Refuses a path with an empty, `.` or `..` segment before it is sent. An id
+/// or slug of `..` would otherwise be resolved away by the URL parser, so
+/// `whk destinations rm acme ..` reached `DELETE /api/endpoints/acme`, and an
+/// empty id would name the collection instead of one item.
+fn checked_path(path: &str) -> Result<()> {
+    let route = path.split(['?', '#']).next().unwrap_or("");
+    let bad = route.split('/').skip(1).find(|segment| {
+        // The URL parser reads `%2e` as a dot in a path segment too.
+        let plain = segment.replace("%2e", ".").replace("%2E", ".");
+        plain.is_empty() || plain == "." || plain == ".."
+    });
+    if let Some(segment) = bad {
+        let shown = if segment.is_empty() {
+            "an empty value"
+        } else {
+            segment
+        };
+        return Err(crate::error::CliError::Usage(format!(
+            "{shown} is not a slug or id; give the one the command names."
+        ))
+        .into());
+    }
+    Ok(())
 }
 
 async fn read_response(resp: Response) -> Result<ApiResponse> {
@@ -335,5 +362,29 @@ mod tests {
             json!({"_id": "r1", "id": "r1", "method": "POST", "signatureVerified": null,
                 "nested": {"a": 1, "b": null}, "list": [{"x": 1, "y": null}]})
         );
+    }
+
+    #[test]
+    fn refuses_dot_and_empty_segments() {
+        for path in [
+            "/api/endpoints/acme/destinations/..",
+            "/api/endpoints/acme/destinations/.",
+            "/api/endpoints/acme/destinations/",
+            "/api/endpoints//destinations",
+            "/api/endpoints/../keys?x=1",
+            "/api/endpoints/%2E%2E",
+            "/api/endpoints/acme/.%2e",
+        ] {
+            let error = super::checked_path(path).unwrap_err();
+            assert_eq!(crate::error::classify(&error).code, "usage", "{path}");
+        }
+        for path in [
+            "/api/endpoints/acme/destinations/d1",
+            "/api/endpoints/a.b/destinations",
+            "/api/requests?before=a/b",
+            "/api/endpoints/%252e%252e",
+        ] {
+            assert!(super::checked_path(path).is_ok(), "{path}");
+        }
     }
 }

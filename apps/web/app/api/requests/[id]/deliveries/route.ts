@@ -3,6 +3,7 @@ import { authenticateRequestRequireUser } from "@/lib/api-auth";
 import { applyRateLimitHeaders, checkRateLimitWithInfo } from "@/lib/rate-limit";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { listDestinations } from "@/lib/supabase/destinations";
+import { isUuid } from "@/lib/uuid";
 import {
   listDeliveriesForRequest,
   queueDestinationRedelivery,
@@ -77,7 +78,9 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     const text = await request.text();
     const parsed = text ? (JSON.parse(text) as { destinationId?: unknown }) : {};
     if (parsed.destinationId !== undefined && parsed.destinationId !== null) {
-      if (typeof parsed.destinationId !== "string") {
+      // An empty or made-up id is refused rather than read as "every
+      // destination", which would widen the redelivery.
+      if (typeof parsed.destinationId !== "string" || !isUuid(parsed.destinationId)) {
         return reply({ error: "destinationId must be a destination id." }, 400);
       }
       destinationId = parsed.destinationId;

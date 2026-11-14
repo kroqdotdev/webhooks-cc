@@ -309,7 +309,8 @@ pub async fn redeliver(
     confirm(&question, yes)?;
     let answer = client
         .redeliver_request(request_id, destination.map(str::trim))
-        .await?;
+        .await
+        .map_err(|error| maybe_queued(error, request_id))?;
     if json {
         return print_json(&answer);
     }
@@ -326,6 +327,19 @@ pub async fn redeliver(
         )
     );
     Ok(())
+}
+
+/// A redelivery whose answer never came may still have been queued, so the
+/// error says to look before sending it again.
+fn maybe_queued(error: anyhow::Error, request_id: &str) -> anyhow::Error {
+    if crate::error::classify(&error).code == "network_error" {
+        error.context(format!(
+            "No answer came, so it may already be queued: check `whk deliveries ls --request {}` before sending it again",
+            sanitize_line(request_id)
+        ))
+    } else {
+        error
+    }
 }
 
 pub async fn redeliver_failed(
