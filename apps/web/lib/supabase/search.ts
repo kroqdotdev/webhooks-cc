@@ -150,8 +150,19 @@ async function resolvePlan(userId: string, plan: UserPlan | undefined): Promise<
   return data?.plan ?? "free";
 }
 
-/** How long one search may read rows before it answers with what it found. */
+/**
+ * How long one search may read rows before it answers with what it found,
+ * for callers that page with the cursor (`paged=true`).
+ */
 export const SEARCH_BUDGET_MS = 2_000;
+
+/**
+ * The budget for callers that do not say they page: the SDKs, CLI, MCP
+ * server and integrations released before bounded search read one answer
+ * and stop, so they get longer to find what they asked for. It stays well
+ * inside their 30 s request timeouts.
+ */
+export const LEGACY_SEARCH_BUDGET_MS = 10_000;
 
 /** A cursor this server did not issue, or one for the other order. */
 export class InvalidSearchCursorError extends Error {
@@ -191,6 +202,7 @@ interface PageRpcResult {
   searched_until?: number | string | null;
   cursor?: string | null;
   slices?: number;
+  cancelled?: boolean;
 }
 
 interface CountRpcResult {
@@ -199,6 +211,7 @@ interface CountRpcResult {
   searched_until?: number | string | null;
   cursor?: string | null;
   slices?: number;
+  cancelled?: boolean;
 }
 
 // The database's cursor ("d|<time>|<id>") travels base64url-encoded, so
@@ -231,10 +244,19 @@ function isInvalidCursorError(error: unknown): boolean {
   return e?.code === "22023" && e?.message === "invalid cursor";
 }
 
-interface PageRpcArgs extends SearchRequestsInput {
-  count: boolean;
-  budgetMs?: number;
+/** What every search call may carry besides its filters. */
+export interface SearchRunOptions {
   cursor?: string;
+  budgetMs?: number;
+  /**
+   * A token cancelRequestSearch() can name to stop the search after the
+   * slice it is in (the caller went away).
+   */
+  cancelToken?: string;
+}
+
+interface PageRpcArgs extends SearchRequestsInput, SearchRunOptions {
+  count: boolean;
 }
 
 async function callSearchPage(input: PageRpcArgs): Promise<unknown> {
@@ -243,8 +265,9 @@ async function callSearchPage(input: PageRpcArgs): Promise<unknown> {
   const cursor = decodeCursor(input.cursor);
 
   // No abort signal reaches the call: PostgREST does not cancel a running
-  // statement when the client goes away, so the scan finishes within its
-  // budget either way, and the caller's search slot stays held until it has.
+  // statement when the client goes away. The search stops at its budget, or
+  // earlier when cancelRequestSearch() names its token, and the caller's
+  // search slot stays held until it has.
   const { data, error } = await admin.rpc("search_requests_page", {
     p_user_id: input.userId,
     p_plan: plan,
@@ -260,6 +283,7 @@ async function callSearchPage(input: PageRpcArgs): Promise<unknown> {
     p_cursor: cursor,
     p_budget_ms: Math.max(1, Math.floor(input.budgetMs ?? SEARCH_BUDGET_MS)),
     p_count: input.count,
+    p_cancel: input.cancelToken ?? null,
   });
   if (error) {
     if (isInvalidCursorError(error)) throw new InvalidSearchCursorError();
@@ -273,7 +297,7 @@ async function callSearchPage(input: PageRpcArgs): Promise<unknown> {
  * found, and where it stopped. Continue with `cursor` until `complete`.
  */
 export async function searchRequestPage(
-  input: SearchRequestsInput & { cursor?: string; budgetMs?: number }
+  input: SearchRequestsInput & SearchRunOptions
 ): Promise<SearchPage> {
   const data = (await callSearchPage({ ...input, count: false })) as PageRpcResult | null;
   return {
@@ -286,12 +310,12 @@ export async function searchRequestPage(
 }
 
 /**
- * Counts what a search matches. One endpoint's count without a term or a
- * method is an exact index count; any other covers what the time budget
- * reached and says whether that was all.
+ * Counts what a search matches. A count without a term or a method is an
+ * exact index count; any other covers what the time budget reached and
+ * says whether that was all.
  */
 export async function countSearchRequests(
-  input: CountSearchRequestsInput & { cursor?: string; budgetMs?: number }
+  input: CountSearchRequestsInput & SearchRunOptions
 ): Promise<SearchCount> {
   const data = (await callSearchPage({ ...input, count: true })) as CountRpcResult | null;
   return {
@@ -301,6 +325,16 @@ export async function countSearchRequests(
     cursor: encodeCursor(data?.cursor),
     slices: data?.slices ?? 0,
   };
+}
+
+/**
+ * Stops the search running with this token after the slice it is in. Best
+ * effort: a search that already finished is unaffected.
+ */
+export async function cancelRequestSearch(token: string): Promise<void> {
+  const admin = createAdminClient();
+  const { error } = await admin.rpc("cancel_request_search", { p_token: token });
+  if (error) throw error;
 }
 
 /** The first page's requests (kept for callers that only want rows). */

@@ -866,8 +866,8 @@ All endpoints require `Authorization: Bearer whcc_...` unless noted. "Bearer" is
 | GET | `/api/requests/[id]/raw` | Bearer | A captured email's exact message as `message/rfc822` |
 | GET | `/api/requests/[id]/attachments/[index]` | Bearer | One attachment of a stored email, as a download |
 | POST | `/api/requests/[id]/render` | Bearer | A captured email as an inbound mail provider posts it; body `{ "format": "postmark" \| "sendgrid" \| "mailgun" \| "cloudmailin" \| "json" }`; returns `{ "format", "method", "headers", "body" }` |
-| GET | `/api/search/requests` | Bearer | Search requests (`slug`, `method`, `kind`, `q`, `from`, `to`, `limit`, `cursor`, `offset`, `order`). `q` is a case-insensitive substring of path, headers or body (emails: also decoded subject, text, addresses); `from`/`to` are ms timestamps or durations back (`1h`). Reads newest first for about 2 s per call: while the `X-Search-Complete` header is `false`, repeat with `cursor` set to `X-Search-Cursor` |
-| GET | `/api/search/requests/count` | Bearer | Count matching requests: `{ "count": 42, "exact": true, "searchedUntil": null, "cursor": null }`; `exact: false` means a lower bound, count on with `cursor` and add up |
+| GET | `/api/search/requests` | Bearer | Search requests (`slug`, `method`, `kind`, `q`, `from`, `to`, `limit`, `paged`, `cursor`, `offset`, `order`). `q` (at most 1,000 characters) is a case-insensitive substring of path, headers or body (emails: also decoded subject, text, addresses); `from`/`to` are ms timestamps or durations back (`1h`). Reads newest first: send `paged=true` (about 2 s per call, 10 s without it) and, while the `X-Search-Complete` header is `false`, repeat with `cursor` set to `X-Search-Cursor` |
+| GET | `/api/search/requests/count` | Bearer | Count matching requests: `{ "count": 42, "exact": true, "searchedUntil": null, "cursor": null }`. Exact without `q` and `method`; with either, `exact: false` means a lower bound: count on with `cursor` and add up |
 
 ### Webhooks
 
@@ -1534,9 +1534,9 @@ curl -X POST https://webhooks.cc/api/endpoints/<slug>/destinations \
 - Layouts preview: 20 per minute; email fields preview: 30 per minute
 - Redeliver a request: 30 per minute; redeliver all failed: 10 per minute
 - Replay one request: 60 per minute; replay a time range: 10 per minute
-- Search: 60 per 10 minutes
-- Search count: 120 per 10 minutes
-- Running searches: 2 at once per account (more get 429 `search_busy` with `Retry-After`); each call reads for about 2 seconds
+- Search: 60 per 10 minutes; calls that continue with a `cursor`: 300 per 10 minutes
+- Search count: 120 per 10 minutes; counting on with a `cursor`: 300 per 10 minutes
+- Running searches: 2 at once per account, and a limit for the whole service (past either: 429 `search_busy`, wait for `Retry-After`); each call reads for about 2 seconds with `paged=true`, about 10 without
 - Guest endpoint creation: 20 per 10 minutes per IP
 - Device auth: 10 per minute per IP
 

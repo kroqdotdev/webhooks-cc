@@ -271,7 +271,7 @@ Captured [emails](/docs/email-capture) are listed with an `EMAIL` method, the ad
 2026-10-08 16:47:20 EMAIL acme+run-7@mailhooks.cc Confirm your email 1.2 KB
 ```
 
-`whk requests search` finds `-q` as a case-insensitive substring of the path, the headers or the body, and in an email's subject, text and addresses. `--from` and `--to` take a duration back from now (`90s`, `15m`, `1h`, `7d`) or a timestamp in milliseconds, so `--from 1h` searches the last hour. A search reads the newest requests first and answers within about 2 seconds, so on a long history narrow the time range when a rare term finds less than you expect.
+`whk requests search` finds `-q` as a case-insensitive substring of the path, the headers or the body, and in an email's subject, text and addresses. `--from` and `--to` take a duration back from now (`90s`, `15m`, `1h`, `7d`) or a timestamp in milliseconds, so `--from 1h` searches the last hour. A search reads the newest requests first and answers within about 10 seconds, so on a long history narrow the time range when a rare term finds less than you expect.
 
 `whk requests get` on a request a [live tunnel](/docs/live-tunnel) relayed adds the **Live Response**: the status the sender got and why, the first few headers and the start of the body (`--json` has the whole record as `liveResponse`).
 

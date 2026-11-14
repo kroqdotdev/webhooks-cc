@@ -89,11 +89,17 @@ import {
   arrivalsFrom,
   buildSearchParams,
   canSearchOlder,
+  collectExportRows,
   createCoalescedRunner,
   createLatestOnly,
+  exportNotice,
   mergeSearchResults,
+  progressOf,
+  reconcileTopRefresh,
   SEARCH_NOT_STARTED,
+  searchWording,
   type SearchFailure,
+  type SearchOrder,
   type SearchProgress,
 } from "@/lib/dashboard-search";
 import { createRefreshScheduler } from "@/lib/refresh-scheduler";
@@ -166,6 +172,10 @@ const COUNT_RESYNC_INTERVAL_MS = 60_000;
 const SEARCH_ANCHOR_SLACK_MS = 5 * 60 * 1000;
 // A burst of matching arrivals is read in at most this many pages per pass.
 const SEARCH_ARRIVAL_PAGES = 3;
+// An export holds at most this many requests, gathered over at most this many
+// pages of a search (each page reads for the server's time budget).
+const EXPORT_MAX_ROWS = 200;
+const EXPORT_MAX_PAGES = 5;
 // No event says a parse finished: while an email that arrived in the last two
 // minutes on an endpoint with layouts has no result, the list is read again.
 const PARSE_FRESH_MS = 2 * 60 * 1000;
@@ -657,14 +667,28 @@ export default function DashboardPage() {
   const [searchLoading, setSearchLoading] = useState(false);
   const [searchError, setSearchError] = useState<SearchFailure | null>(null);
   // How far the active search has read, and how "Search older" is going.
+  // The ref is written with the state (applySearchProgress), for the passes
+  // that decide from it between renders.
   const [searchProgress, setSearchProgress] = useState<SearchProgress>(SEARCH_NOT_STARTED);
+  const searchProgressRef = useRef<SearchProgress>(SEARCH_NOT_STARTED);
+  const applySearchProgress = useCallback((progress: SearchProgress) => {
+    searchProgressRef.current = progress;
+    setSearchProgress(progress);
+  }, []);
+  // The way the active search reads: back in time, or forward when the list
+  // sorts oldest first.
+  const [searchOrder, setSearchOrder] = useState<SearchOrder>("desc");
+  // How far back "Load More" searched when its last page stopped at the time
+  // budget (a method filter makes the list a scan).
+  const [olderSearchedUntil, setOlderSearchedUntil] = useState<number | null>(null);
   const [searchingOlder, setSearchingOlder] = useState(false);
   const [searchOlderError, setSearchOlderError] = useState<SearchFailure | null>(null);
   const retainedCountRequestSeq = useRef(0);
   const recentRequestsRequestSeq = useRef(0);
   const searchResultsRequestSeq = useRef(0);
   // One search and one count at a time: starting the next aborts the one
-  // before, so a stale answer is dropped (the server finishes its read anyway).
+  // before, which drops its answer and has the server stop reading for it
+  // within a slice of its work.
   const [searchRun] = useState(createLatestOnly);
   // Arrivals are read one pass at a time, and a pass is never cut short by
   // the next signal (the range between its pages would be skipped): a signal
@@ -681,6 +705,13 @@ export default function DashboardPage() {
   // server time arrivals are read from while no match is shown, and the
   // matches as the latest render has them.
   const activeSearchParamsRef = useRef<Record<string, string> | null>(null);
+  // The params the progress's cursor continues: the search's own, or those of
+  // the read of arrivals it was taken from (oldest first).
+  const continueParamsRef = useRef<Record<string, string> | null>(null);
+  // Newest first, a read of arrivals stopped early and left requests unread
+  // between what it added and this time, down from which everything was read
+  // before: the top of the search is read again until the two join.
+  const topRefreshFromRef = useRef<number | null>(null);
   const searchPendingRef = useRef(false);
   const searchAnchorRef = useRef(0);
   const searchResultsRef = useRef<ClickHouseRequest[]>([]);
@@ -688,6 +719,9 @@ export default function DashboardPage() {
   const olderContinuationRef = useRef<{ params: Record<string, string>; cursor: string } | null>(
     null
   );
+  // Moves on whenever the older pages start over (another endpoint, another
+  // filter), so an answer asked for before that is dropped.
+  const olderGenerationRef = useRef(0);
   const hasAccessToken = accessToken !== null;
   const accessTokenRef = useRef(accessToken);
   useEffect(() => {
@@ -807,22 +841,6 @@ export default function DashboardPage() {
     [accessToken, ownsCurrentEndpoint]
   );
 
-  const fetchFromClickHouse = useCallback(
-    async (
-      params: Record<string, string>
-    ): Promise<{ data: ClickHouseRequest[]; ok: boolean; page?: DashboardSearchPage }> => {
-      if (!accessToken) return { data: [], ok: false };
-      try {
-        const page = await fetchDashboardSearch(accessToken, params);
-        return { data: page.requests, ok: true, page };
-      } catch (err) {
-        console.error("ClickHouse search failed:", err);
-        return { data: [], ok: false };
-      }
-    },
-    [accessToken]
-  );
-
   const storeClickHouseResults = useCallback((results: ClickHouseRequest[]) => {
     const map = clickHouseDetailMap.current;
     for (const r of results) {
@@ -859,6 +877,9 @@ export default function DashboardPage() {
       prevListFilters.current = filters;
       setOlderRequests([]);
       olderContinuationRef.current = null;
+      olderGenerationRef.current++;
+      setOlderSearchedUntil(null);
+      setLoadingMore(false);
       setHasMore(false);
       setHasLoadedOlderPage(false);
     }
@@ -872,7 +893,8 @@ export default function DashboardPage() {
   }, []);
 
   const handleLoadMore = useCallback(async () => {
-    if (!currentEndpoint || loadingMore) return;
+    const token = accessTokenRef.current;
+    if (!currentSlug || !token || loadingMore) return;
     setLoadingMore(true);
 
     const currentOldest = olderRequests.length > 0 ? olderRequests[olderRequests.length - 1] : null;
@@ -882,7 +904,7 @@ export default function DashboardPage() {
     const toTimestamp = currentOldest?.receivedAt ?? oldestRecentRequest?.receivedAt;
 
     const params: Record<string, string> = {
-      slug: currentEndpoint.slug,
+      slug: currentSlug,
       limit: String(CLICKHOUSE_PAGE_SIZE),
       order: "desc",
     };
@@ -893,40 +915,44 @@ export default function DashboardPage() {
     // A page that stopped at the time budget (a method filter makes the list a
     // scan) goes on from its cursor, which also moves past an empty page.
     const continuation = olderContinuationRef.current;
+    // The endpoint or the filters may change while this is on its way: the
+    // answer then belongs to a list that is no longer shown.
+    const generation = olderGenerationRef.current;
     try {
-      const {
-        data: results,
-        ok,
-        page,
-      } = await fetchFromClickHouse(
+      const page = await fetchDashboardSearch(
+        token,
         continuation ? { ...continuation.params, cursor: continuation.cursor } : params
       );
-      if (!ok) {
-        // The button stays for another try, from the oldest row shown.
-        olderContinuationRef.current = null;
-        return;
-      }
-      storeClickHouseResults(results);
-      setOlderRequests((prev) => mergeSearchResults(prev, results));
+      if (generation !== olderGenerationRef.current) return;
+      storeClickHouseResults(page.requests);
+      setOlderRequests((prev) => mergeSearchResults(prev, page.requests));
       olderContinuationRef.current =
-        page && !page.complete && page.cursor
+        !page.complete && page.cursor
           ? { params: continuation?.params ?? params, cursor: page.cursor }
           : null;
-      setHasMore(olderContinuationRef.current !== null || results.length >= CLICKHOUSE_PAGE_SIZE);
+      setOlderSearchedUntil(olderContinuationRef.current ? page.searchedUntil : null);
+      setHasMore(
+        olderContinuationRef.current !== null || page.requests.length >= CLICKHOUSE_PAGE_SIZE
+      );
       setHasLoadedOlderPage(true);
     } catch (err) {
+      if (generation !== olderGenerationRef.current) return;
       console.error("Load more failed:", err);
-    } finally {
-      setLoadingMore(false);
+      // The button stays, and the next try goes on from the same place; only
+      // a cursor the server no longer takes starts from the oldest row shown.
+      if (err instanceof Error && err.message === "invalid_cursor") {
+        olderContinuationRef.current = null;
+        setOlderSearchedUntil(null);
+      }
     }
+    setLoadingMore(false);
   }, [
-    currentEndpoint,
+    currentSlug,
     loadingMore,
     olderRequests,
     recentRequests,
     methodFilter,
     kindFilter,
-    fetchFromClickHouse,
     storeClickHouseResults,
   ]);
 
@@ -941,6 +967,7 @@ export default function DashboardPage() {
     arrivalsRun.abort();
     arrivalsQueue.clear();
     arrivalsWaitingRef.current = false;
+    topRefreshFromRef.current = null;
     setSearchError(null);
     setSearchingOlder(false);
     setSearchOlderError(null);
@@ -952,9 +979,10 @@ export default function DashboardPage() {
     if (!debouncedSearch || !currentSlug || !hasAccessToken || !token) {
       searchRun.abort();
       activeSearchParamsRef.current = null;
+      continueParamsRef.current = null;
       searchPendingRef.current = false;
       setSearchResults([]);
-      setSearchProgress(SEARCH_NOT_STARTED);
+      applySearchProgress(SEARCH_NOT_STARTED);
       setSearchLoading(false);
       return;
     }
@@ -967,8 +995,12 @@ export default function DashboardPage() {
       methodFilter,
       kindFilter,
       limit: CLICKHOUSE_PAGE_SIZE,
+      // Oldest first, the search reads forward, so going on means "newer".
+      order: sortNewest ? "desc" : "asc",
     });
     activeSearchParamsRef.current = params;
+    continueParamsRef.current = params;
+    setSearchOrder(sortNewest ? "desc" : "asc");
     searchPendingRef.current = true;
     const newestKnown = countedRequestsRef.current[0];
     searchAnchorRef.current =
@@ -983,7 +1015,7 @@ export default function DashboardPage() {
       // The ref too, so a pass started below reads from these matches.
       searchResultsRef.current = page.requests;
       setSearchResults(page.requests);
-      setSearchProgress(page);
+      applySearchProgress(progressOf(page));
       searchPendingRef.current = false;
       setSearchLoading(false);
       // A request that arrived meanwhile may have missed this page's read.
@@ -998,7 +1030,7 @@ export default function DashboardPage() {
       if (!(err instanceof SearchBusyError)) console.error("Search failed:", err);
       setSearchError(err instanceof SearchBusyError ? "busy" : "failed");
       setSearchResults([]);
-      setSearchProgress(SEARCH_NOT_STARTED);
+      applySearchProgress(SEARCH_NOT_STARTED);
       // Nothing is shown for arrivals to be added to until it is searched again.
       activeSearchParamsRef.current = null;
     }
@@ -1010,8 +1042,10 @@ export default function DashboardPage() {
     currentEndpointId,
     methodFilter,
     kindFilter,
+    sortNewest,
     hasAccessToken,
     storeClickHouseResults,
+    applySearchProgress,
     searchRun,
     arrivalsRun,
     arrivalsQueue,
@@ -1031,13 +1065,15 @@ export default function DashboardPage() {
     [searchRun, arrivalsRun, countRun]
   );
 
-  // "Search older": the next page of the active search, from where the last
-  // one stopped, added below the matches already shown.
+  // "Search older" (or "Search newer", oldest first): the next page of the
+  // active search, from where the last one stopped, merged into the matches
+  // already shown.
   const handleSearchOlder = useCallback(async () => {
-    const params = activeSearchParamsRef.current;
+    const active = activeSearchParamsRef.current;
+    const params = continueParamsRef.current;
     const token = accessTokenRef.current;
     const cursor = searchProgress.cursor;
-    if (!params || !token || !cursor || searchingOlder || searchLoading) return;
+    if (!active || !params || !token || !cursor || searchingOlder || searchLoading) return;
 
     const requestSeq = ++searchResultsRequestSeq.current;
     const signal = searchRun.start();
@@ -1047,8 +1083,9 @@ export default function DashboardPage() {
       const page = await fetchDashboardSearch(token, { ...params, cursor }, signal);
       if (requestSeq !== searchResultsRequestSeq.current) return;
       storeClickHouseResults(page.requests);
+      searchResultsRef.current = mergeSearchResults(searchResultsRef.current, page.requests);
       setSearchResults((prev) => mergeSearchResults(prev, page.requests));
-      setSearchProgress(page);
+      applySearchProgress(progressOf(page));
     } catch (err) {
       if (isAbortError(err) || requestSeq !== searchResultsRequestSeq.current) return;
       if (err instanceof Error && err.message === "invalid_cursor") {
@@ -1066,14 +1103,15 @@ export default function DashboardPage() {
     searchLoading,
     searchRun,
     storeClickHouseResults,
+    applySearchProgress,
     runSearch,
   ]);
 
   // Requests arrived while a search is active (or the page came back into
   // view, where signals may have been missed): search only the range newer
-  // than the newest match shown and add what matches at the top. A pass that
-  // fails before it read anything waits for the next signal, which reads the
-  // same range again.
+  // than the newest match shown and merge what matches. Nothing here empties
+  // the list, shows "Searching..." or drops pages "Search older" loaded: a
+  // pass that fails leaves the list as it is and is made up for by the next.
   const searchArrivals = useCallback(() => {
     if (!activeSearchParamsRef.current) return;
     // The first page is still on its way: one pass follows when it lands.
@@ -1086,52 +1124,88 @@ export default function DashboardPage() {
       const params = activeSearchParamsRef.current;
       const token = accessTokenRef.current;
       if (!params || !token || searchPendingRef.current) return;
-
-      const signal = arrivalsRun.start();
-      const from = arrivalsFrom(searchResultsRef.current, searchAnchorRef.current);
-      // Everything up to the newest request this page holds is read by this pass.
-      const newestKnown = countedRequestsRef.current[0];
-      // Matches come newest first, so a pass that stops before the end of its
-      // range has left arrivals unread below the ones it added.
-      let unreadBelow = false;
-      try {
-        let cursor: string | null = null;
-        for (let pass = 0; pass < SEARCH_ARRIVAL_PAGES; pass++) {
-          const page: DashboardSearchPage = await fetchDashboardSearch(
-            token,
-            { ...params, from: String(from), ...(cursor ? { cursor } : {}) },
-            signal
-          );
-          if (activeSearchParamsRef.current !== params) return;
-          if (page.requests.length > 0) {
-            storeClickHouseResults(page.requests);
-            searchResultsRef.current = mergeSearchResults(searchResultsRef.current, page.requests);
-            setSearchResults((prev) => mergeSearchResults(prev, page.requests));
-          }
-          if (page.complete) {
-            unreadBelow = false;
-            if (newestKnown && newestKnown.receivedAt > searchAnchorRef.current) {
-              searchAnchorRef.current = newestKnown.receivedAt;
-            }
-            break;
-          }
-          unreadBelow = true;
-          if (!page.cursor) break;
-          cursor = page.cursor;
-        }
-      } catch (err) {
-        if (isAbortError(err)) return;
+      const stale = () => activeSearchParamsRef.current !== params;
+      const merge = (requests: ClickHouseRequest[]) => {
+        if (requests.length === 0) return;
+        storeClickHouseResults(requests);
+        searchResultsRef.current = mergeSearchResults(searchResultsRef.current, requests);
+        setSearchResults((prev) => mergeSearchResults(prev, requests));
+      };
+      const failed = (err: unknown) => {
         if (!(err instanceof SearchBusyError)) {
           console.error("Search for new arrivals failed:", err);
         }
+      };
+
+      const ascending = params.order === "asc";
+      // Oldest first, a search that has not read up to now has not reached
+      // the arrivals yet: "Search newer" gets to them.
+      if (ascending && !searchProgressRef.current.complete) return;
+
+      const signal = arrivalsRun.start();
+      if (topRefreshFromRef.current === null) {
+        const from = arrivalsFrom(searchResultsRef.current, searchAnchorRef.current);
+        const rangeParams = { ...params, from: String(from) };
+        // Everything up to the newest request this page holds is read by this pass.
+        const newestKnown = countedRequestsRef.current[0];
+        let last: DashboardSearchPage | null = null;
+        try {
+          let cursor: string | null = null;
+          for (let pass = 0; pass < SEARCH_ARRIVAL_PAGES; pass++) {
+            const page: DashboardSearchPage = await fetchDashboardSearch(
+              token,
+              cursor ? { ...rangeParams, cursor } : rangeParams,
+              signal
+            );
+            if (stale()) return;
+            merge(page.requests);
+            last = page;
+            if (page.complete || !page.cursor) break;
+            cursor = page.cursor;
+          }
+        } catch (err) {
+          if (isAbortError(err)) return;
+          failed(err);
+        }
+        if (stale() || !last) return;
+        if (last.complete) {
+          if (newestKnown && newestKnown.receivedAt > searchAnchorRef.current) {
+            searchAnchorRef.current = newestKnown.receivedAt;
+          }
+          return;
+        }
+        if (ascending) {
+          // The pass read forward from the newest match and stopped: the
+          // search is unfinished again, and goes on from there.
+          if (last.cursor) {
+            continueParamsRef.current = rangeParams;
+            applySearchProgress(progressOf(last));
+          }
+          return;
+        }
+        // Newest first, the pass stopped above arrivals it did not read. The
+        // next pass would start above them and never reach them.
+        topRefreshFromRef.current = from;
       }
-      // The next pass would start above the unread arrivals and never reach
-      // them, so the term is searched again from the top instead.
-      if (unreadBelow && activeSearchParamsRef.current === params) {
-        runSearchRef.current();
+
+      // Read the top of the search again and join it to what was read before.
+      const coveredFrom = topRefreshFromRef.current;
+      try {
+        const fresh = await fetchDashboardSearch(token, params, signal);
+        if (stale()) return;
+        merge(fresh.requests);
+        const next = reconcileTopRefresh(searchProgressRef.current, fresh, coveredFrom);
+        if (next !== searchProgressRef.current) {
+          continueParamsRef.current = params;
+          applySearchProgress(next);
+        }
+        topRefreshFromRef.current = null;
+      } catch (err) {
+        // Still due: the next signal, or coming back to the page, tries again.
+        if (!isAbortError(err)) failed(err);
       }
     });
-  }, [arrivalsRun, arrivalsQueue, storeClickHouseResults]);
+  }, [arrivalsRun, arrivalsQueue, storeClickHouseResults, applySearchProgress]);
 
   useEffect(() => {
     searchArrivalsRef.current = searchArrivals;
@@ -1491,8 +1565,10 @@ export default function DashboardPage() {
     setDebouncedSearch("");
     setOlderRequests([]);
     olderContinuationRef.current = null;
+    olderGenerationRef.current++;
+    setOlderSearchedUntil(null);
     setSearchResults([]);
-    setSearchProgress(SEARCH_NOT_STARTED);
+    applySearchProgress(SEARCH_NOT_STARTED);
     setSearchingOlder(false);
     setSearchOlderError(null);
     setHasMore(false);
@@ -1503,7 +1579,7 @@ export default function DashboardPage() {
     setSearchLoading(false);
     setSearchError(null);
     clickHouseDetailMap.current.clear();
-  }, [currentEndpointId, defaultKind, cancelRequestWrite]);
+  }, [currentEndpointId, defaultKind, cancelRequestWrite, applySearchProgress]);
 
   const handleSelect = useCallback(
     (id: string) => {
@@ -1598,51 +1674,47 @@ export default function DashboardPage() {
     }
   }, [displayedItems, writeRequestSoon]);
 
-  const handleExportJson = useCallback(async () => {
-    if (!currentEndpoint) return;
-    const params: Record<string, string> = {
-      slug: currentEndpoint.slug,
-      limit: "200",
-      order: "desc",
-    };
-    if (methodFilter !== "ALL") params.method = methodFilter;
-    if (kindFilter !== "all") params.kind = kindFilter;
-    if (debouncedSearch) params.q = debouncedSearch;
+  // An export gathers up to EXPORT_MAX_ROWS matches by following the search's
+  // cursor, and says so when it could not read the whole range.
+  const exportRequests = useCallback(
+    async (format: "json" | "csv") => {
+      const token = accessTokenRef.current;
+      if (!currentSlug || !token) return;
+      const params: Record<string, string> = {
+        slug: currentSlug,
+        limit: String(EXPORT_MAX_ROWS),
+        order: "desc",
+      };
+      if (methodFilter !== "ALL") params.method = methodFilter;
+      if (kindFilter !== "all") params.kind = kindFilter;
+      if (debouncedSearch) params.q = debouncedSearch;
 
-    const { data: results, ok } = await fetchFromClickHouse(params);
-    if (!ok || results.length === 0) {
-      alert("Export failed: could not fetch data. Please try again.");
-      return;
-    }
-    downloadFile(exportToJson(results), "webhooks-export.json", "application/json");
-    trackRequestExported("json", results.length);
-    if (results.length >= 200) {
-      alert("Exported first 200 requests. Use search filters to narrow the export.");
-    }
-  }, [currentEndpoint, methodFilter, kindFilter, debouncedSearch, fetchFromClickHouse]);
-
-  const handleExportCsv = useCallback(async () => {
-    if (!currentEndpoint) return;
-    const params: Record<string, string> = {
-      slug: currentEndpoint.slug,
-      limit: "200",
-      order: "desc",
-    };
-    if (methodFilter !== "ALL") params.method = methodFilter;
-    if (kindFilter !== "all") params.kind = kindFilter;
-    if (debouncedSearch) params.q = debouncedSearch;
-
-    const { data: results, ok } = await fetchFromClickHouse(params);
-    if (!ok || results.length === 0) {
-      alert("Export failed: could not fetch data. Please try again.");
-      return;
-    }
-    downloadFile(exportToCsv(results), "webhooks-export.csv", "text/csv");
-    trackRequestExported("csv", results.length);
-    if (results.length >= 200) {
-      alert("Exported first 200 requests. Use search filters to narrow the export.");
-    }
-  }, [currentEndpoint, methodFilter, kindFilter, debouncedSearch, fetchFromClickHouse]);
+      let result;
+      try {
+        result = await collectExportRows(
+          (cursor) => fetchDashboardSearch(token, cursor ? { ...params, cursor } : params),
+          { maxRows: EXPORT_MAX_ROWS, maxPages: EXPORT_MAX_PAGES }
+        );
+      } catch (err) {
+        console.error("Export failed:", err);
+        alert("Export failed: could not fetch data. Please try again.");
+        return;
+      }
+      if (result.rows.length > 0) {
+        if (format === "json") {
+          downloadFile(exportToJson(result.rows), "webhooks-export.json", "application/json");
+        } else {
+          downloadFile(exportToCsv(result.rows), "webhooks-export.csv", "text/csv");
+        }
+        trackRequestExported(format, result.rows.length);
+      }
+      const notice = exportNotice(result);
+      if (notice) alert(notice);
+    },
+    [currentSlug, methodFilter, kindFilter, debouncedSearch]
+  );
+  const handleExportJson = useCallback(() => exportRequests("json"), [exportRequests]);
+  const handleExportCsv = useCallback(() => exportRequests("csv"), [exportRequests]);
 
   // Keyboard shortcuts: use refs for frequently-changing values so the
   // listener doesn't re-register on every state change (rerender-dependencies).
@@ -2033,6 +2105,7 @@ export default function DashboardPage() {
     debouncedSearch !== "" && !searchLoading && !searchError && canSearchOlder(searchProgress);
   const searchOlder = olderUnsearched
     ? {
+        order: searchOrder,
         searchedUntil: searchProgress.searchedUntil,
         loading: searchingOlder,
         error: searchOlderError,
@@ -2190,6 +2263,7 @@ export default function DashboardPage() {
                   totalCountLowerBound={listCountLowerBound}
                   searchOlder={searchOlder}
                   onRetrySearch={retrySearch}
+                  loadMoreSearchedUntil={olderSearchedUntil}
                   methodFilter={methodFilter}
                   onMethodFilterChange={setMethodFilter}
                   searchQuery={searchInput}
@@ -2258,6 +2332,7 @@ export default function DashboardPage() {
                     noun={itemNoun}
                     listEmpty={displayedItems.length === 0}
                     canSearchOlder={olderUnsearched}
+                    searchOrder={searchOrder}
                     onClear={() => setSearchInput("")}
                   />
                 ) : displayRequest?.kind === "email" ? (
@@ -2361,6 +2436,7 @@ export default function DashboardPage() {
                 totalCountLowerBound={listCountLowerBound}
                 searchOlder={searchOlder}
                 onRetrySearch={retrySearch}
+                loadMoreSearchedUntil={olderSearchedUntil}
                 methodFilter={methodFilter}
                 onMethodFilterChange={setMethodFilter}
                 searchQuery={searchInput}
@@ -2497,12 +2573,14 @@ function NoMatchingRequest({
   noun,
   listEmpty,
   canSearchOlder: olderLeft = false,
+  searchOrder = "desc",
   onClear,
 }: {
   noun: "request" | "email";
   listEmpty: boolean;
   /** The search has not read the whole range yet. */
   canSearchOlder?: boolean;
+  searchOrder?: SearchOrder;
   onClear: () => void;
 }) {
   return (
@@ -2510,7 +2588,7 @@ function NoMatchingRequest({
       <div className="text-center space-y-3 max-w-sm">
         <p className="text-sm text-muted-foreground">
           {listEmpty && olderLeft
-            ? `No ${noun} matches this search so far. Search older from the list, or clear the search to see all ${noun}s.`
+            ? `No ${noun} matches this search so far. ${searchWording(searchOrder).action} from the list, or clear the search to see all ${noun}s.`
             : listEmpty
               ? `No ${noun} matches this search. Clear the search to see all ${noun}s.`
               : `The ${noun} that was open does not match this search. Pick one from the list, or clear the search to see all ${noun}s.`}

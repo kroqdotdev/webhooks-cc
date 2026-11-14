@@ -10,11 +10,14 @@ import {
   InvalidSearchCursorError,
   isRequestKind,
 } from "@/lib/supabase/search";
-import { SearchBusyError, withSearchSlot } from "@/lib/search-gate";
+import { SearchBusyError } from "@/lib/search-gate";
 import {
   applySearchProgressHeaders,
+  isPagedSearch,
+  MAX_SEARCH_TERM_LENGTH,
   parseSearchTime,
   reportSearch,
+  runBoundedSearch,
 } from "@/lib/search-request-params";
 import { reportError } from "@/lib/observability";
 
@@ -52,12 +55,17 @@ export async function GET(request: Request) {
     const userId = validated.userId;
     const plan = validated.plan;
 
-    rateLimit = await checkRateLimitByKeyWithInfo(`search-count:${userId}`, 120, 10 * 60_000);
+    const url = new URL(request.url);
+    const cursor = url.searchParams.get("cursor")?.trim() || undefined;
+    // Counting on from a cursor has its own, larger allowance (see the list
+    // route).
+    rateLimit = cursor
+      ? await checkRateLimitByKeyWithInfo(`search-count-more:${userId}`, 300, 10 * 60_000)
+      : await checkRateLimitByKeyWithInfo(`search-count:${userId}`, 120, 10 * 60_000);
     if (rateLimit.response) {
       return rateLimit.response;
     }
 
-    const url = new URL(request.url);
     // Epoch ms, or a duration back from now ("1h").
     const from = parseSearchTime(url.searchParams.get("from"));
     if (from === null) {
@@ -82,34 +90,47 @@ export async function GET(request: Request) {
     }
     const slug = url.searchParams.get("slug") ?? undefined;
     const q = url.searchParams.get("q") ?? undefined;
-    const cursor = url.searchParams.get("cursor") ?? undefined;
-    const started = performance.now();
-    // One endpoint's count without a term or method is exact. Any other
-    // covers what the time budget reached: `exact` says whether that was
-    // everything, and `cursor` counts on from there (the counts add up).
-    const result = await withSearchSlot(userId, () =>
-      countSearchRequests({
-        userId,
-        plan,
-        slug,
-        method: url.searchParams.get("method") ?? undefined,
-        kind: kind ?? undefined,
-        q,
-        from,
-        to,
-        cursor,
-      })
-    );
+    if (q && q.length > MAX_SEARCH_TERM_LENGTH) {
+      return applyRateLimitHeaders(
+        Response.json({ error: "invalid_q" }, { status: 400 }),
+        rateLimit
+      );
+    }
+    const paged = isPagedSearch(url.searchParams);
+    // A count without a term or method is exact. Any other covers what the
+    // time budget reached: `exact` says whether that was everything, and
+    // `cursor` counts on from there (the counts add up).
+    const { result, waitedMs, ranMs } = await runBoundedSearch({
+      userId,
+      signal: request.signal,
+      paged,
+      run: ({ budgetMs, cancelToken }) =>
+        countSearchRequests({
+          userId,
+          plan,
+          slug,
+          method: url.searchParams.get("method") ?? undefined,
+          kind: kind ?? undefined,
+          q,
+          from,
+          to,
+          cursor,
+          budgetMs,
+          cancelToken,
+        }),
+    });
     reportSearch({
       userId,
       kind: "count",
       scoped: Boolean(slug?.trim()),
       hasTerm: Boolean(q?.trim()),
-      continued: Boolean(cursor?.trim()),
+      continued: Boolean(cursor),
+      paged,
       complete: result.exact,
       slices: result.slices,
       results: result.count,
-      durationMs: performance.now() - started,
+      durationMs: ranMs,
+      waitedMs,
     });
 
     return applyRateLimitHeaders(

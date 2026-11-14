@@ -3093,8 +3093,13 @@ export interface Database {
           p_cursor?: string | null;
           p_budget_ms?: number;
           p_count?: boolean;
+          p_cancel?: string | null;
         };
         Returns: Json;
+      };
+      cancel_request_search: {
+        Args: { p_token: string };
+        Returns: undefined;
       };
       claim_quota_exhausted_users: {
         Args: { p_limit?: number };

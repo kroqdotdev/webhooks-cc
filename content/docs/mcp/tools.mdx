@@ -254,7 +254,7 @@ Poll until a specified number of requests arrive at an endpoint.
 
 Search captured requests for text. Supports time ranges, method filters, and pagination.
 
-`q` matches as a case-insensitive substring of the path, the headers or the body, and an email also matches on its decoded subject, text and sender and recipient addresses; a request id finds that request first. A search reads the most recent requests first and answers within a couple of seconds, so a rare term on a long history can come back with fewer results than exist: narrow `from` and `to` to search one stretch of time at a time.
+`q` matches as a case-insensitive substring of the path, the headers or the body, and an email also matches on its decoded subject, text and sender and recipient addresses; a request id finds that request first. A search reads the most recent requests first and answers within about 10 seconds, so a rare term on a long history can come back with fewer results than exist: narrow `from` and `to` to search one stretch of time at a time.
 
 | Parameter | Type     | Required | Description                                                  |
 | --------- | -------- | -------- | ------------------------------------------------------------ |
@@ -270,7 +270,7 @@ Search captured requests for text. Supports time ranges, method filters, and pag
 
 ### count_requests
 
-Count requests matching the given filters. Takes the filters of `search_requests`, without its paging and order. With `q`, the count covers what a couple of seconds of reading reached, so on a long history it can be lower than the real number.
+Count requests matching the given filters. Takes the filters of `search_requests`, without its paging and order. Without `q` and `method` the count is exact. With either, it covers what about 10 seconds of reading reached, so on a long history it can be lower than the real number.
 
 | Parameter | Type     | Required | Description             |
 | --------- | -------- | -------- | ----------------------- |

@@ -3,7 +3,7 @@
  * process.
  *
  * A search reads rows until its time budget is spent (see
- * search_requests_page(), migration 00098), so each one may hold a database
+ * search_requests_page(), migration 00100), so each one may hold a database
  * connection and a core for that long. The box has four cores and captures
  * must always keep one, so the process runs at most three searches, and one
  * account at most two (a dashboard tab and an agent). A search that finds no
@@ -77,15 +77,25 @@ function release(gate: GateState, accountId: string): void {
   }
 }
 
+function abortError(): Error {
+  const error = new Error("The search was aborted.");
+  error.name = "AbortError";
+  return error;
+}
+
 /**
  * Runs `fn` once a slot is free for the account, waiting up to
  * `SEARCH_SLOT_WAIT_MS`; throws SearchBusyError when none frees in time.
+ * A caller that goes away (`signal`) leaves the queue at once and never
+ * starts.
  */
 export async function withSearchSlot<T>(
   accountId: string,
   fn: () => Promise<T>,
-  waitMs: number = SEARCH_SLOT_WAIT_MS
+  options: { waitMs?: number; signal?: AbortSignal } = {}
 ): Promise<T> {
+  const { waitMs = SEARCH_SLOT_WAIT_MS, signal } = options;
+  if (signal?.aborted) throw abortError();
   const gate = state();
   // Run at once unless an earlier waiter could take the slot (one held back
   // only by its own account's cap does not block other accounts).
@@ -93,20 +103,31 @@ export async function withSearchSlot<T>(
     take(gate, accountId);
   } else {
     await new Promise<void>((resolve, reject) => {
+      const leave = (error: Error) => {
+        clearTimeout(timer);
+        signal?.removeEventListener("abort", onAbort);
+        const index = gate.waiters.indexOf(waiter);
+        if (index >= 0) gate.waiters.splice(index, 1);
+        reject(error);
+      };
+      const onAbort = () => leave(abortError());
       const waiter: Waiter = {
         accountId,
         grant: () => {
           clearTimeout(timer);
+          signal?.removeEventListener("abort", onAbort);
           resolve();
         },
       };
-      const timer = setTimeout(() => {
-        const index = gate.waiters.indexOf(waiter);
-        if (index >= 0) gate.waiters.splice(index, 1);
-        reject(new SearchBusyError());
-      }, waitMs);
+      const timer = setTimeout(() => leave(new SearchBusyError()), waitMs);
+      signal?.addEventListener("abort", onAbort, { once: true });
       gate.waiters.push(waiter);
     });
+    if (signal?.aborted) {
+      // Granted just as the caller left: hand the slot on.
+      release(gate, accountId);
+      throw abortError();
+    }
   }
 
   try {

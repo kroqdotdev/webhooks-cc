@@ -4,7 +4,12 @@ import {
   arrivalsFrom,
   buildSearchParams,
   canSearchOlder,
+  collectExportRows,
   createCoalescedRunner,
+  exportNotice,
+  progressOf,
+  reconcileTopRefresh,
+  searchWording,
   createLatestOnly,
   mergeSearchResults,
   SEARCH_NOT_STARTED,
@@ -61,6 +66,17 @@ describe("buildSearchParams", () => {
         limit: 50,
       })
     ).toEqual({ slug: "demo", q: "needle", limit: "50", order: "desc" });
+    // Oldest first searches, and continues, forward in time.
+    expect(
+      buildSearchParams({
+        slug: "demo",
+        query: "needle",
+        methodFilter: "ALL",
+        kindFilter: "all",
+        limit: 50,
+        order: "asc",
+      }).order
+    ).toBe("asc");
     expect(
       buildSearchParams({
         slug: "demo",
@@ -171,5 +187,175 @@ describe("createCoalescedRunner", () => {
     first.release();
     await settle();
     expect(log).toEqual(["start first", "end first"]);
+  });
+});
+
+describe("progressOf", () => {
+  test("keeps the progress and leaves the requests behind", () => {
+    const page = { requests: [row("a", 1)], complete: false, searchedUntil: 9, cursor: "c" };
+    expect(progressOf(page)).toEqual({ complete: false, searchedUntil: 9, cursor: "c" });
+  });
+});
+
+describe("searchWording", () => {
+  test("continuing means older newest first and newer oldest first", () => {
+    expect(searchWording("desc").action).toBe("Search older");
+    expect(searchWording("desc").reached).toBe("Searched back to");
+    expect(searchWording("asc").action).toBe("Search newer");
+    expect(searchWording("asc").reached).toBe("Searched up to");
+    expect(searchWording("asc").unsearched("emails")).toBe("Newer emails not searched yet");
+  });
+});
+
+describe("reconcileTopRefresh", () => {
+  // "Search older" read back to 1000 and can go on from there.
+  const older = { complete: false, searchedUntil: 1000, cursor: "older" };
+
+  test("keeps the older progress when the fresh page read down to what was covered", () => {
+    const fresh = { complete: false, searchedUntil: 4000, cursor: "fresh" };
+    expect(reconcileTopRefresh(older, fresh, 5000)).toBe(older);
+    expect(reconcileTopRefresh(older, { ...fresh, searchedUntil: 5000 }, 5000)).toBe(older);
+  });
+
+  test("keeps a finished search finished when the fresh page joins it", () => {
+    const done = { complete: true, searchedUntil: null, cursor: null };
+    const fresh = { complete: false, searchedUntil: 4000, cursor: "fresh" };
+    expect(reconcileTopRefresh(done, fresh, 5000)).toBe(done);
+  });
+
+  test("goes on from the fresh page when it stopped above what was covered", () => {
+    const fresh = { complete: false, searchedUntil: 7000, cursor: "fresh" };
+    expect(reconcileTopRefresh(older, fresh, 5000)).toEqual(fresh);
+    // Not knowing how far it read is not knowing that it joined.
+    expect(reconcileTopRefresh(older, { ...fresh, searchedUntil: null }, 5000).cursor).toBe(
+      "fresh"
+    );
+  });
+
+  test("a fresh page that read everything finishes the search", () => {
+    const fresh = { complete: true, searchedUntil: null, cursor: null };
+    expect(reconcileTopRefresh(older, fresh, 5000)).toEqual(fresh);
+  });
+});
+
+describe("collectExportRows", () => {
+  const page = (
+    ids: string[],
+    progress: { complete: boolean; searchedUntil?: number | null; cursor?: string | null }
+  ) => ({
+    requests: ids.map((id) => ({ id })),
+    complete: progress.complete,
+    searchedUntil: progress.searchedUntil ?? null,
+    cursor: progress.cursor ?? null,
+  });
+  /** Answers page by page and records the cursors asked for. */
+  function pages(answers: (ReturnType<typeof page> | Error)[]) {
+    const cursors: (string | null)[] = [];
+    return {
+      cursors,
+      fetchPage: async (cursor: string | null) => {
+        cursors.push(cursor);
+        const answer = answers[cursors.length - 1];
+        if (answer instanceof Error) throw answer;
+        return answer;
+      },
+    };
+  }
+  const limits = { maxRows: 5, maxPages: 5 };
+
+  test("follows the cursor until the range is read", async () => {
+    const source = pages([
+      page(["a", "b"], { complete: false, searchedUntil: 900, cursor: "c1" }),
+      page(["c"], { complete: true }),
+    ]);
+    expect(await collectExportRows(source.fetchPage, limits)).toEqual({
+      rows: [{ id: "a" }, { id: "b" }, { id: "c" }],
+      complete: true,
+      truncated: false,
+      searchedUntil: null,
+    });
+    expect(source.cursors).toEqual([null, "c1"]);
+  });
+
+  test("an empty page that is not complete is not a failure", async () => {
+    const source = pages([
+      page([], { complete: false, searchedUntil: 900, cursor: "c1" }),
+      page([], { complete: false, searchedUntil: 800, cursor: "c2" }),
+      page(["a"], { complete: true }),
+    ]);
+    const result = await collectExportRows(source.fetchPage, limits);
+    expect(result.rows).toEqual([{ id: "a" }]);
+    expect(result.complete).toBe(true);
+  });
+
+  test("stops at the row limit and says it was cut", async () => {
+    const source = pages([
+      page(["a", "b", "c"], { complete: false, searchedUntil: 900, cursor: "c1" }),
+      page(["c", "d", "e", "f"], { complete: false, searchedUntil: 800, cursor: "c2" }),
+      page(["g"], { complete: true }),
+    ]);
+    const result = await collectExportRows(source.fetchPage, limits);
+    // One row per id, and no more than asked for.
+    expect(result.rows.map((r) => r.id)).toEqual(["a", "b", "c", "d", "e"]);
+    expect(result.truncated).toBe(true);
+    expect(source.cursors).toEqual([null, "c1"]);
+  });
+
+  test("stops after the page limit with how far it searched", async () => {
+    const source = pages(
+      Array.from({ length: 9 }, (_, i) =>
+        page([], { complete: false, searchedUntil: 900 - i, cursor: `c${i}` })
+      )
+    );
+    const result = await collectExportRows(source.fetchPage, limits);
+    expect(source.cursors).toHaveLength(5);
+    expect(result).toEqual({ rows: [], complete: false, truncated: false, searchedUntil: 896 });
+  });
+
+  test("keeps what it has when a later page fails, and throws when the first does", async () => {
+    const later = pages([
+      page(["a"], { complete: false, searchedUntil: 900, cursor: "c1" }),
+      new Error("boom"),
+    ]);
+    expect(await collectExportRows(later.fetchPage, limits)).toEqual({
+      rows: [{ id: "a" }],
+      complete: false,
+      truncated: false,
+      searchedUntil: 900,
+    });
+    await expect(collectExportRows(pages([new Error("boom")]).fetchPage, limits)).rejects.toThrow(
+      "boom"
+    );
+  });
+});
+
+describe("exportNotice", () => {
+  const at = (timestamp: number) => `T${timestamp}`;
+  const result = (count: number, rest: Partial<Parameters<typeof exportNotice>[0]> = {}) => ({
+    rows: { length: count },
+    complete: true,
+    truncated: false,
+    searchedUntil: null,
+    ...rest,
+  });
+
+  test("says nothing about an export that holds everything", () => {
+    expect(exportNotice(result(12), at)).toBeNull();
+  });
+
+  test("says how far an unfinished export searched", () => {
+    expect(exportNotice(result(12, { complete: false, searchedUntil: 900 }), at)).toBe(
+      "Exported 12 requests: what was found searching back to T900. Older requests were not searched."
+    );
+    expect(exportNotice(result(0, { complete: false, searchedUntil: 900 }), at)).toBe(
+      "Nothing to export yet: nothing matched in what was searched back to T900. Older requests were not searched."
+    );
+  });
+
+  test("tells an export cut at the row limit and an empty one apart", () => {
+    expect(exportNotice(result(200, { complete: false, truncated: true }), at)).toBe(
+      "Exported first 200 requests. Use search filters to narrow the export."
+    );
+    expect(exportNotice(result(0), at)).toBe("Nothing to export: no requests match.");
   });
 });

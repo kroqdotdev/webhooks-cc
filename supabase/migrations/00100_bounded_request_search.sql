@@ -1,4 +1,4 @@
--- 00098: request search that stays fast however long an endpoint keeps
+-- 00100: request search that stays fast however long an endpoint keeps
 -- its requests.
 --
 -- search_requests() and search_requests_count() (00076) match a substring
@@ -24,28 +24,66 @@
 --     the planner guesses ~50 matches for any '%x%' and otherwise sorts the
 --     whole range first.
 --   * A term made only of printable ASCII matches under COLLATE "C": ILIKE
---     lower()s both sides, and lower() under the database's ICU-free
---     en_US.UTF-8 locale was ~63% of the cost a row. For an ASCII term the
---     result is the same (only ASCII letters can match its letters); other
---     terms keep the locale's case folding.
+--     lower()s both sides, and lower() under the database's libc
+--     en_US.UTF-8 locale was ~63% of the cost a row. Under that locale only
+--     two non-ASCII characters lower to ASCII letters (U+0130 to i, the
+--     Kelvin sign U+212A to k), so a term with an i or a k also matches,
+--     on the locale's ILIKE, the rare row that holds one of those two;
+--     every other ASCII term gives exactly the old result. Other terms keep
+--     the locale's case folding.
 --   * %, _ and \ in the term are literal (they were LIKE wildcards).
 --   * Emails also match their decoded subject, text and addresses, not only
 --     the raw MIME (which is base64 or quoted-printable for many messages).
 --   * A term that is a request id finds that request first, by primary key.
 --   * With p_count it counts instead, under the same budget, and says
 --     whether the count is exact.
+--   * With p_cancel it stops after the slice it is in once
+--     cancel_request_search() records that token: PostgREST does not cancel
+--     a statement when its client goes away, so the web app records the
+--     token when the browser or agent that asked disconnects.
 --   * A slug-scoped search reads the endpoint once (the old function read a
 --     team-shared endpoint twice), and a slug the caller can neither own nor
 --     see through a team answers at once instead of walking someone else's
 --     rows.
 --
 -- New bodies are compressed with lz4, which decompresses about twice as
--- fast as pglz; rows already stored keep pglz until rewritten.
+-- fast as pglz (about 2.5% larger on webhook JSON); rows already stored
+-- keep pglz until rewritten. That ALTER takes an ACCESS EXCLUSIVE lock for
+-- an instant, so it comes last, alone, and only when not done yet: if it
+-- times out behind a long reader, run the file again.
 --
 -- The old functions stay until the web release that calls them is gone
--- (a later migration drops them). Re-runnable.
+-- (a later migration drops them). Re-runnable: apply with ON_ERROR_STOP and
+-- a short lock_timeout, as AGENTS.md describes.
 
-alter table public.requests alter column body set compression lz4;
+begin;
+
+-- Tokens of searches whose caller went away. Unlogged and tiny: a row lives
+-- for a few minutes at most.
+create unlogged table if not exists public.request_search_cancels (
+  token uuid primary key,
+  created_at timestamptz not null default now()
+);
+alter table public.request_search_cancels enable row level security;
+revoke all on table public.request_search_cancels from public, anon, authenticated;
+
+create or replace function public.cancel_request_search(p_token uuid)
+returns void
+language sql
+security definer
+set search_path to ''
+as $$
+  delete from public.request_search_cancels where created_at < now() - interval '10 minutes';
+  insert into public.request_search_cancels (token) values (p_token) on conflict do nothing;
+$$;
+
+revoke all on function public.cancel_request_search(uuid) from public, anon, authenticated;
+grant execute on function public.cancel_request_search(uuid) to service_role;
+
+-- An earlier draft of this function had no p_cancel; only development
+-- databases ever had it, and an overload would make PostgREST's choice
+-- ambiguous.
+drop function if exists public.search_requests_page(uuid, text, text, text, text, bigint, bigint, integer, integer, text, text, text, integer, boolean);
 
 create or replace function public.search_requests_page(
   p_user_id uuid,
@@ -61,7 +99,8 @@ create or replace function public.search_requests_page(
   p_kind text default null,
   p_cursor text default null,
   p_budget_ms integer default 2000,
-  p_count boolean default false
+  p_count boolean default false,
+  p_cancel uuid default null
 )
 returns json
 language plpgsql
@@ -149,7 +188,6 @@ declare
   v_bound_stream text;
   v_edge timestamptz;
   v_b timestamptz;
-  v_sid uuid;
   v_final boolean;
   v_started timestamptz := clock_timestamp();
   v_slice_started timestamptz;
@@ -169,6 +207,15 @@ declare
   v_stop_id uuid;
   v_slices integer := 0;
   v_part_kind text;
+  v_rec record;
+  -- Per shared endpoint: the last edge found (null when it had less than a
+  -- slice left), and the slice size it was found with.
+  v_s_edge timestamptz[];
+  v_s_n integer[];
+  v_s_bytes bigint[];
+  v_s_known boolean[];
+  v_i integer;
+  v_cancelled boolean := false;
   v_page uuid[];
   v_rows json;
   v_until bigint;
@@ -199,13 +246,28 @@ begin
     if v_q ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' then
       v_q_id := v_q::uuid;
     end if;
-    v_match := format(
-      ' and (r.path%1$s ilike $5 or r.headers::text%1$s ilike $5 or r.body%1$s ilike $5'
+    -- Each field matched once under the chosen collation; for an ASCII
+    -- term with an i or a k, also on the locale's ILIKE when the field holds
+    -- U+0130 or U+212A (see the header).
+    v_match := ' and (' || array_to_string(array(
+      select case
+        when v_collate <> '' and v_q ~* '[ik]' then
+          format('(%1$s collate "C" ilike $5 or ((strpos(%1$s, %2$L) > 0 or strpos(%1$s, %3$L) > 0) and %1$s ilike $5))',
+                 f, chr(304), chr(8490))
+        else format('%s%s ilike $5', f, v_collate)
+      end
+      from unnest(array['r.path', 'r.headers::text', 'r.body']) f), ' or ')
       || ' or (r.kind = ''email'' and r.email is not null and ('
-      || '(r.email->>''subject'')%1$s ilike $5 or (r.email->>''text'')%1$s ilike $5'
-      || ' or (r.email->''from'')::text%1$s ilike $5 or (r.email->''to'')::text%1$s ilike $5'
-      || ' or (r.email->''cc'')::text%1$s ilike $5)))',
-      v_collate);
+      || array_to_string(array(
+      select case
+        when v_collate <> '' and v_q ~* '[ik]' then
+          format('(%1$s collate "C" ilike $5 or ((strpos(%1$s, %2$L) > 0 or strpos(%1$s, %3$L) > 0) and %1$s ilike $5))',
+                 f, chr(304), chr(8490))
+        else format('%s%s ilike $5', f, v_collate)
+      end
+      from unnest(array['(r.email->>''subject'')', '(r.email->>''text'')', '(r.email->''from'')::text',
+                        '(r.email->''to'')::text', '(r.email->''cc'')::text']) f), ' or ')
+      || ')))';
   end if;
 
   if v_method is not null then
@@ -310,41 +372,64 @@ begin
     v_bytes := c_max_bytes * 1024;
   end if;
 
-  -- An endpoint's count with no term and no method (the dashboard's total)
-  -- is exact and cheap: every row of an endpoint carries its owner's
-  -- user_id, so inside the range only personal rows past the plan's
-  -- retention need their heap row, and the rest is an index-only count of
-  -- requests_endpoint_time (or requests_endpoint_email_time for email).
-  if p_count and v_slug is not null and v_q is null and v_method is null
+  -- A count with no term and no method (the dashboard's total, an agent's
+  -- "how many") is exact and cheap: every row of an endpoint carries its
+  -- owner's user_id, so per endpoint in scope only personal rows past the
+  -- plan's retention need their heap row, and the rest is an index-only
+  -- count of requests_endpoint_time (requests_endpoint_email_time for
+  -- email; HTTP is every row less the email ones).
+  if p_count and v_q is null and v_method is null
      and (p_cursor is null or btrim(p_cursor) = '') then
-    -- HTTP is every row less the email ones, each an index-only count.
-    foreach v_part_kind in array (case when v_kind = 'http' then array['all', 'email']
-                                       else array[coalesce(v_kind, 'all')] end) loop
-      execute 'select count(*) from public.requests r where r.endpoint_id = $1'
-        || ' and r.received_at >= $2 and r.received_at <= $3'
-        || case when v_part_kind = 'email' then ' and r.kind = ''email''' else '' end
-        into v_got_count
-        using v_endpoint_id,
-              greatest(coalesce(v_lo, '-infinity'::timestamptz), coalesce(v_row_cutoff, '-infinity'::timestamptz)),
-              coalesce(v_hi, 'infinity'::timestamptz);
-      v_count := v_count + (case when v_part_kind = 'email' and v_kind = 'http'
-                                 then -v_got_count else v_got_count end);
-      if v_row_cutoff is not null and v_row_cutoff > coalesce(v_lo, '-infinity'::timestamptz) then
+    for v_rec in
+      select v_endpoint_id as id, v_row_cutoff as cutoff, v_lo as lo
+       where v_slug is not null
+      union all
+      select e.id, v_owned_cutoff,
+             greatest(v_lo, case when e.retention_days is null then null
+                                 else now() - make_interval(days => e.retention_days) end)
+        from public.endpoints e
+       where v_slug is null and e.user_id = p_user_id
+      union all
+      select e.id,
+             case when pe.retention_days is null then null
+                  else now() - make_interval(days => pe.retention_days) end,
+             greatest(v_lo, case when e.retention_days is null then null
+                                 else now() - make_interval(days => e.retention_days) end)
+        from public.endpoints e
+        left join public.users u on u.id = e.user_id
+        left join public.plan_entitlements pe on pe.key = u.plan
+       where v_slug is null and e.id = any(v_shared)
+    loop
+      foreach v_part_kind in array (case when v_kind = 'http' then array['all', 'email']
+                                         else array[coalesce(v_kind, 'all')] end) loop
         execute 'select count(*) from public.requests r where r.endpoint_id = $1'
-          || ' and r.received_at >= $2 and r.received_at < $3 and r.received_at <= $4'
-          || ' and r.team_id is not null'
+          || ' and r.received_at >= $2 and r.received_at <= $3'
           || case when v_part_kind = 'email' then ' and r.kind = ''email''' else '' end
           into v_got_count
-          using v_endpoint_id, coalesce(v_lo, '-infinity'::timestamptz), v_row_cutoff,
+          using v_rec.id,
+                greatest(coalesce(v_rec.lo, '-infinity'::timestamptz),
+                         coalesce(v_rec.cutoff, '-infinity'::timestamptz)),
                 coalesce(v_hi, 'infinity'::timestamptz);
         v_count := v_count + (case when v_part_kind = 'email' and v_kind = 'http'
                                    then -v_got_count else v_got_count end);
-      end if;
+        if v_rec.cutoff is not null and v_rec.cutoff > coalesce(v_rec.lo, '-infinity'::timestamptz) then
+          -- Team-billed rows keep the team's retention past the plan's cut.
+          execute 'select count(*) from public.requests r where r.endpoint_id = $1'
+            || ' and r.received_at >= $2 and r.received_at < $3 and r.received_at <= $4'
+            || ' and r.team_id is not null'
+            || case when v_part_kind = 'email' then ' and r.kind = ''email''' else '' end
+            into v_got_count
+            using v_rec.id, coalesce(v_rec.lo, '-infinity'::timestamptz), v_rec.cutoff,
+                  coalesce(v_hi, 'infinity'::timestamptz);
+          v_count := v_count + (case when v_part_kind = 'email' and v_kind = 'http'
+                                     then -v_got_count else v_got_count end);
+        end if;
+      end loop;
     end loop;
     return json_build_object('count', v_count, 'exact', true, 'searched_until',
                              case when v_lo is null then null
                                   else floor(extract(epoch from v_lo) * 1000)::bigint end,
-                             'cursor', null, 'slices', 0);
+                             'cursor', null, 'slices', 0, 'cancelled', false);
   end if;
 
   -- Where the walk starts: the cursor, else the near end of the range.
@@ -493,13 +578,37 @@ begin
       v_final := false;
     end if;
     if v_slug is null then
-      foreach v_sid in array v_shared loop
+      if v_s_known is null then
+        v_s_known := array_fill(false, array[cardinality(v_shared)]);
+        v_s_edge := array_fill(null::timestamptz, array[cardinality(v_shared)]);
+        v_s_n := array_fill(0, array[cardinality(v_shared)]);
+        v_s_bytes := array_fill(0::bigint, array[cardinality(v_shared)]);
+      end if;
+      for v_i in 1 .. coalesce(cardinality(v_shared), 0) loop
+        -- An earlier edge stays a bound while the slice is no smaller: the
+        -- position only moves away from it, so the stream's next edge lies at
+        -- or beyond it. A stream that had less than a slice left keeps having
+        -- less; one whose edge lies beyond this slice's cannot be what ends
+        -- it. Either way it needs no query (many shared endpoints).
+        if v_s_known[v_i] and v_n >= v_s_n[v_i] and v_bytes >= v_s_bytes[v_i]
+           and (v_s_edge[v_i] is null
+                or (v_edge is not null
+                    and ((v_desc and v_s_edge[v_i] < v_edge) or (not v_desc and v_s_edge[v_i] > v_edge)))) then
+          if v_s_edge[v_i] is not null then
+            v_final := false;
+          end if;
+          continue;
+        end if;
         execute format(v_bound_sql, v_cmp_lo, v_cmp_hi, v_dir, 'r.endpoint_id = $1') into v_b
-          using v_sid, p_user_id, null::timestamptz, null::uuid[], null::text,
+          using v_shared[v_i], p_user_id, null::timestamptz, null::uuid[], null::text,
                 case when v_desc then coalesce(v_lo, '-infinity'::timestamptz) else v_pos_ts end,
                 case when v_desc then v_pos_ts else coalesce(v_hi, 'infinity'::timestamptz) end,
                 null::timestamptz, null::uuid, null::text, null::text, null::integer, null::uuid,
                 v_n, v_bytes;
+        v_s_known[v_i] := true;
+        v_s_edge[v_i] := v_b;
+        v_s_n[v_i] := v_n;
+        v_s_bytes[v_i] := v_bytes;
         if v_b is not null then
           v_final := false;
           v_edge := case when v_edge is null then v_b
@@ -570,6 +679,15 @@ begin
       v_stop_id := v_pos_id;
       exit;
     end if;
+    -- The caller went away: answer what was found (nobody reads it) and
+    -- free the connection.
+    if p_cancel is not null
+       and exists (select 1 from public.request_search_cancels c where c.token = p_cancel) then
+      v_cancelled := true;
+      v_stop_ts := v_pos_ts;
+      v_stop_id := v_pos_id;
+      exit;
+    end if;
 
     -- Size the next slice to take an eighth of the budget, or what is left
     -- of it, at the rate the last one ran, growing at most 4x.
@@ -598,7 +716,7 @@ begin
 
   if p_count then
     return json_build_object('count', v_count, 'exact', v_complete, 'searched_until', v_until,
-                             'cursor', v_cursor, 'slices', v_slices);
+                             'cursor', v_cursor, 'slices', v_slices, 'cancelled', v_cancelled);
   end if;
 
   v_page := v_ids[v_offset + 1 : v_offset + v_limit];
@@ -623,9 +741,23 @@ begin
     join public.endpoints e on e.id = r.endpoint_id;
 
   return json_build_object('requests', v_rows, 'complete', v_complete, 'searched_until', v_until,
-                           'cursor', v_cursor, 'slices', v_slices);
+                           'cursor', v_cursor, 'slices', v_slices, 'cancelled', v_cancelled);
 end;
 $$;
 
-revoke all on function public.search_requests_page(uuid, text, text, text, text, bigint, bigint, integer, integer, text, text, text, integer, boolean) from public, anon, authenticated;
-grant execute on function public.search_requests_page(uuid, text, text, text, text, bigint, bigint, integer, integer, text, text, text, integer, boolean) to service_role;
+revoke all on function public.search_requests_page(uuid, text, text, text, text, bigint, bigint, integer, integer, text, text, text, integer, boolean, uuid) from public, anon, authenticated;
+grant execute on function public.search_requests_page(uuid, text, text, text, text, bigint, bigint, integer, integer, text, text, text, integer, boolean, uuid) to service_role;
+
+commit;
+
+-- Last and alone: an instant ACCESS EXCLUSIVE lock on requests, skipped
+-- once done. Under the short lock_timeout a long reader makes it fail
+-- harmlessly; run the file again when that reader is gone.
+do $$
+begin
+  if (select a.attcompression from pg_catalog.pg_attribute a
+       where a.attrelid = 'public.requests'::regclass and a.attname = 'body') is distinct from 'l' then
+    alter table public.requests alter column body set compression lz4;
+  end if;
+end
+$$;

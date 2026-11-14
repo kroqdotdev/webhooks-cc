@@ -51,7 +51,12 @@ import type { ParsedEmail } from "@webhooks-cc/sdk/email";
 import { ResponseAnswerCompact } from "./response-answer";
 import { Button } from "@/components/ui/button";
 import { formatListCount } from "@/lib/dashboard-count";
-import type { SearchFailure } from "@/lib/dashboard-search";
+import {
+  formatSearchedUntil,
+  searchWording,
+  type SearchFailure,
+  type SearchOrder,
+} from "@/lib/dashboard-search";
 
 const TS_PREF_KEY = "request_list_relative_time";
 
@@ -80,6 +85,11 @@ interface RequestListProps {
   onLoadMore?: () => void;
   hasMore?: boolean;
   loadingMore?: boolean;
+  /**
+   * Set when the last "Load More" page stopped at the server's time budget
+   * (a filter makes the list a search): how far back it read.
+   */
+  loadMoreSearchedUntil?: number | null;
   searchLoading?: boolean;
   searchError?: SearchFailure | null;
   /** Runs the search again after it failed. */
@@ -89,6 +99,8 @@ interface RequestListProps {
    * how to go on from there.
    */
   searchOlder?: {
+    /** The way the search reads: going on means older (desc) or newer (asc). */
+    order: SearchOrder;
     searchedUntil: number | null;
     loading: boolean;
     error: SearchFailure | null;
@@ -136,19 +148,6 @@ const MAIL_KINDS: { id: KindFilter; label: string }[] = [KINDS[0], KINDS[2], KIN
 
 const SEARCH_BUSY_MESSAGE = "Another search is still running on this account.";
 
-/** How far back a search read: the day and the minute, in the viewer's locale. */
-function formatSearchedUntil(timestamp: number): string {
-  const date = new Date(timestamp);
-  return date.toLocaleString(undefined, {
-    month: "short",
-    day: "numeric",
-    ...(date.getFullYear() !== new Date().getFullYear() && { year: "numeric" }),
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-  });
-}
-
 const METHODS = ["ALL", "GET", "POST", "PUT", "PATCH", "DELETE"] as const;
 const METHOD_LABELS: Record<(typeof METHODS)[number], string> = {
   ALL: "All methods",
@@ -178,6 +177,7 @@ export function RequestList({
   onLoadMore,
   hasMore,
   loadingMore,
+  loadMoreSearchedUntil = null,
   searchLoading,
   searchError,
   onRetrySearch,
@@ -210,6 +210,8 @@ export function RequestList({
     kindFilter === "email" || (site.key === "mailhooks" && requests.every(isEmailItem));
   const displayCount = totalCount ?? requests.length;
   const countLabel = formatListCount(displayCount, totalCountLowerBound);
+  // A search that failed found nothing out: no count beside the error.
+  const showCount = !searchError;
   const kinds = site.key === "mailhooks" ? MAIL_KINDS : KINDS;
   const internalSearchRef = useRef<HTMLInputElement>(null);
   const inputRef = searchInputRef ?? internalSearchRef;
@@ -359,47 +361,54 @@ export function RequestList({
     className: rowClass(id, isComparing),
   });
 
-  const loadMore = hasMore ? (
-    <div className="px-3 py-3 flex justify-center border-t border-foreground/10">
-      <Button
-        variant="surface"
-        className={cn(
-          "py-1.5! px-4! text-xs flex items-center gap-2",
-          loadingMore && "opacity-60 cursor-not-allowed"
-        )}
-        onClick={onLoadMore}
-        disabled={loadingMore}
-      >
-        {loadingMore ? (
-          <>
-            <Loader2 className="h-3 w-3 animate-spin" />
-            Loading...
-          </>
-        ) : (
-          "Load More"
-        )}
-      </Button>
+  const loadMoreButton = (
+    <Button
+      variant="surface"
+      className={cn(
+        "py-1.5! px-4! text-xs flex items-center gap-2",
+        loadingMore && "opacity-60 cursor-not-allowed"
+      )}
+      onClick={onLoadMore}
+      disabled={loadingMore}
+    >
+      {loadingMore ? (
+        <>
+          <Loader2 className="h-3 w-3 animate-spin" />
+          Loading...
+        </>
+      ) : (
+        "Load More"
+      )}
+    </Button>
+  );
+  const loadMore = !hasMore ? null : loadMoreSearchedUntil != null ? (
+    // The last page stopped at the time budget: say how far back it read.
+    <div className="px-3 py-3 flex flex-wrap items-center justify-between gap-x-3 gap-y-2 border-t border-foreground/10">
+      <p className="text-xs text-muted-foreground">
+        Searched back to <SearchedUntil timestamp={loadMoreSearchedUntil} />
+      </p>
+      {loadMoreButton}
     </div>
-  ) : null;
+  ) : (
+    <div className="px-3 py-3 flex justify-center border-t border-foreground/10">
+      {loadMoreButton}
+    </div>
+  );
 
-  // A search answers within a time budget: this row says how far back it
-  // read and goes on from there.
+  // A search answers within a time budget: this row says how far it read
+  // (back in time, or forward when the list sorts oldest first) and goes on
+  // from there.
+  const wording = searchWording(searchOlder?.order ?? "desc");
   const searchOlderRow = searchOlder ? (
     <div className="px-3 py-3 border-t border-foreground/10">
       <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
         <p className="text-xs text-muted-foreground">
           {searchOlder.searchedUntil != null ? (
             <>
-              Searched back to{" "}
-              <time
-                dateTime={new Date(searchOlder.searchedUntil).toISOString()}
-                className="font-mono text-foreground"
-              >
-                {formatSearchedUntil(searchOlder.searchedUntil)}
-              </time>
+              {wording.reached} <SearchedUntil timestamp={searchOlder.searchedUntil} />
             </>
           ) : (
-            `Older ${itemNoun} not searched yet`
+            wording.unsearched(itemNoun)
           )}
         </p>
         <Button
@@ -417,7 +426,7 @@ export function RequestList({
               Searching...
             </>
           ) : (
-            "Search older"
+            wording.action
           )}
         </Button>
       </div>
@@ -457,7 +466,9 @@ export function RequestList({
                   value={kind.id}
                   // The count is read as part of the name, not run into it ("Email1").
                   aria-label={
-                    kindFilter === kind.id ? `${kind.label}, ${countLabel} shown` : kind.label
+                    kindFilter === kind.id && showCount
+                      ? `${kind.label}, ${countLabel} shown`
+                      : kind.label
                   }
                   className={cn(
                     "flex items-center gap-1.5 px-2.5 py-1 max-md:py-2 text-xs font-bold cursor-pointer transition-colors whitespace-nowrap",
@@ -469,7 +480,7 @@ export function RequestList({
                 >
                   {kind.label}
                   {/* The count of what is shown, from the server, so only the picked kind has one. */}
-                  {kindFilter === kind.id && (
+                  {kindFilter === kind.id && showCount && (
                     <span
                       aria-hidden
                       className="hidden @[300px]:inline font-mono font-normal opacity-90"
@@ -482,7 +493,7 @@ export function RequestList({
             </RadioGroup>
           ) : (
             <span className="text-sm font-bold">
-              {countLabel} request{displayCount !== 1 ? "s" : ""}
+              {showCount ? `${countLabel} request${displayCount !== 1 ? "s" : ""}` : "Requests"}
             </span>
           )}
           <div className="flex items-center gap-2 shrink-0">
@@ -582,9 +593,11 @@ export function RequestList({
         {/* New requests banner */}
         {/* Screen readers hear the count change as requests arrive. */}
         <p role="status" aria-live="polite" className="sr-only">
-          {totalCountLowerBound
-            ? `${displayCount} or more ${itemNoun}`
-            : `${displayCount} ${displayCount === 1 ? itemNoun.slice(0, -1) : itemNoun}`}
+          {!showCount
+            ? null
+            : totalCountLowerBound
+              ? `${displayCount} or more ${itemNoun}`
+              : `${displayCount} ${displayCount === 1 ? itemNoun.slice(0, -1) : itemNoun}`}
         </p>
         {!liveMode && (newCount ?? 0) > 0 && onJumpToNew && (
           <button
@@ -910,6 +923,15 @@ export function RequestList({
     }
     return { kind: "none" };
   }
+}
+
+/** How far a search read, as a time a screen reader and a script can read too. */
+function SearchedUntil({ timestamp }: { timestamp: number }) {
+  return (
+    <time dateTime={new Date(timestamp).toISOString()} className="font-mono text-foreground">
+      {formatSearchedUntil(timestamp)}
+    </time>
+  );
 }
 
 /** The list's empty state while an endpoint has no email: where to send some. */

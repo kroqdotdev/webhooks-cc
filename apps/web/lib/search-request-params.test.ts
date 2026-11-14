@@ -4,18 +4,22 @@ import { applySearchProgressHeaders, parseSearchTime } from "./search-request-pa
 describe("parseSearchTime", () => {
   const now = 1_800_000_000_000;
 
-  test("is undefined when absent and null when empty or invalid", () => {
+  test("is undefined when absent or empty and null when invalid", () => {
     expect(parseSearchTime(null, now)).toBeUndefined();
-    expect(parseSearchTime("", now)).toBeNull();
+    expect(parseSearchTime("", now)).toBeUndefined();
+    expect(parseSearchTime("  ", now)).toBeUndefined();
     expect(parseSearchTime("yesterday", now)).toBeNull();
     expect(parseSearchTime("-5", now)).toBeNull();
-    expect(parseSearchTime("1e3", now)).toBeNull();
-    expect(parseSearchTime("0x10", now)).toBeNull();
+    expect(parseSearchTime("Infinity", now)).toBeNull();
+    expect(parseSearchTime("NaN", now)).toBeNull();
   });
 
-  test("reads epoch milliseconds", () => {
+  test("reads epoch milliseconds as the route always did, floored and bounded", () => {
     expect(parseSearchTime("1700000000000", now)).toBe(1_700_000_000_000);
     expect(parseSearchTime("0", now)).toBe(0);
+    expect(parseSearchTime("1700000000000.5", now)).toBe(1_700_000_000_000);
+    expect(parseSearchTime("1e12", now)).toBe(1_000_000_000_000);
+    expect(parseSearchTime("9000000000000000000", now)).toBe(8.64e15);
   });
 
   test("reads a duration as that long before now", () => {

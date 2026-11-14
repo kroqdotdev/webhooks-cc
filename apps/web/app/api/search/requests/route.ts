@@ -6,11 +6,14 @@ import {
   type RateLimitInfo,
 } from "@/lib/rate-limit";
 import { InvalidSearchCursorError, isRequestKind, searchRequestPage } from "@/lib/supabase/search";
-import { SearchBusyError, withSearchSlot } from "@/lib/search-gate";
+import { SearchBusyError } from "@/lib/search-gate";
 import {
   applySearchProgressHeaders,
+  isPagedSearch,
+  MAX_SEARCH_TERM_LENGTH,
   parseSearchTime,
   reportSearch,
+  runBoundedSearch,
 } from "@/lib/search-request-params";
 import { reportError } from "@/lib/observability";
 
@@ -60,12 +63,18 @@ export async function GET(request: Request) {
     const userId = validated.userId;
     const plan = validated.plan;
 
-    rateLimit = await checkRateLimitByKeyWithInfo(`search:${userId}`, 60, 10 * 60_000);
+    const url = new URL(request.url);
+    const cursor = url.searchParams.get("cursor")?.trim() || undefined;
+    // Reading on from a cursor has its own, larger allowance: one search
+    // read to the end takes several pages, and the gate already bounds how
+    // many run at once.
+    rateLimit = cursor
+      ? await checkRateLimitByKeyWithInfo(`search-more:${userId}`, 300, 10 * 60_000)
+      : await checkRateLimitByKeyWithInfo(`search:${userId}`, 60, 10 * 60_000);
     if (rateLimit.response) {
       return rateLimit.response;
     }
 
-    const url = new URL(request.url);
     // Epoch ms, or a duration back from now ("1h").
     const from = parseSearchTime(url.searchParams.get("from"));
     if (from === null) {
@@ -97,40 +106,54 @@ export async function GET(request: Request) {
       return applyRateLimitHeaders(parsedOffset.error, rateLimit);
     }
 
+    const q = url.searchParams.get("q") ?? undefined;
+    if (q && q.length > MAX_SEARCH_TERM_LENGTH) {
+      return applyRateLimitHeaders(
+        Response.json({ error: "invalid_q" }, { status: 400 }),
+        rateLimit
+      );
+    }
+
     const order = url.searchParams.get("order");
     const slug = url.searchParams.get("slug") ?? undefined;
-    const q = url.searchParams.get("q") ?? undefined;
-    const cursor = url.searchParams.get("cursor") ?? undefined;
-    const started = performance.now();
+    const paged = isPagedSearch(url.searchParams);
     // A search answers within its time budget with what it found and where it
     // stopped; the body stays the array older clients read, and the rest
     // travels in X-Search-* headers.
-    const page = await withSearchSlot(userId, () =>
-      searchRequestPage({
-        userId,
-        plan,
-        slug,
-        method: url.searchParams.get("method") ?? undefined,
-        kind: kind ?? undefined,
-        q,
-        from,
-        to,
-        limit: parsedLimit.value,
-        offset: parsedOffset.value,
-        order: order === "asc" ? "asc" : "desc",
-        cursor,
-      })
-    );
+    const { result: page, waitedMs, ranMs } = await runBoundedSearch({
+      userId,
+      signal: request.signal,
+      paged,
+      run: ({ budgetMs, cancelToken }) =>
+        searchRequestPage({
+          userId,
+          plan,
+          slug,
+          method: url.searchParams.get("method") ?? undefined,
+          kind: kind ?? undefined,
+          q,
+          from,
+          to,
+          limit: parsedLimit.value,
+          offset: parsedOffset.value,
+          order: order === "asc" ? "asc" : "desc",
+          cursor,
+          budgetMs,
+          cancelToken,
+        }),
+    });
     reportSearch({
       userId,
       kind: "list",
       scoped: Boolean(slug?.trim()),
       hasTerm: Boolean(q?.trim()),
-      continued: Boolean(cursor?.trim()),
+      continued: Boolean(cursor),
+      paged,
       complete: page.complete,
       slices: page.slices,
       results: page.requests.length,
-      durationMs: performance.now() - started,
+      durationMs: ranMs,
+      waitedMs,
     });
 
     return applyRateLimitHeaders(

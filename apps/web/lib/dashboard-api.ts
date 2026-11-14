@@ -1069,7 +1069,51 @@ function searchUrl(path: string, params: Record<string, string>): string {
   for (const [key, value] of Object.entries(params)) {
     url.searchParams.set(key, value);
   }
+  // The dashboard pages with the cursor, which gets the short time budget;
+  // without this the server takes the caller for an older client and reads
+  // for much longer before it answers.
+  url.searchParams.set("paged", "true");
   return url.toString();
+}
+
+/** The longest a busy search waits before its one retry. */
+const SEARCH_BUSY_MAX_WAIT_MS = 3000;
+const SEARCH_BUSY_DEFAULT_WAIT_MS = 1000;
+
+/** Waits, or rejects with an AbortError as soon as the signal aborts. */
+function abortableWait(ms: number, signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const aborted = () => new DOMException("The operation was aborted.", "AbortError");
+    if (signal?.aborted) return reject(aborted());
+    const onAbort = () => {
+      clearTimeout(timer);
+      reject(aborted());
+    };
+    const timer = setTimeout(() => {
+      signal?.removeEventListener("abort", onAbort);
+      resolve();
+    }, ms);
+    signal?.addEventListener("abort", onAbort, { once: true });
+  });
+}
+
+/**
+ * The account's other searches (another tab, an agent) usually finish within
+ * a moment, so a busy answer is tried once more after the wait the server
+ * names (3 s at most) before the caller hears about it.
+ */
+async function retryOnceWhenBusy<T>(run: () => Promise<T>, signal?: AbortSignal): Promise<T> {
+  try {
+    return await run();
+  } catch (err) {
+    if (!(err instanceof SearchBusyError)) throw err;
+    const waitMs =
+      err.retryAfterSeconds === null
+        ? SEARCH_BUSY_DEFAULT_WAIT_MS
+        : Math.min(err.retryAfterSeconds * 1000, SEARCH_BUSY_MAX_WAIT_MS);
+    await abortableWait(waitMs, signal);
+    return run();
+  }
 }
 
 async function throwIfSearchBusy(response: Response): Promise<void> {
@@ -1101,13 +1145,15 @@ export async function fetchDashboardSearch(
   params: Record<string, string>,
   signal?: AbortSignal
 ): Promise<DashboardSearchPage> {
-  const response = await fetch(
-    searchUrl("/api/search/requests", params),
-    withAuthHeaders(accessToken, { signal })
-  );
-  await throwIfSearchBusy(response);
-  const requests = await readJson<ClickHouseRequest[]>(response);
-  return { requests, ...readSearchProgress(response.headers) };
+  return retryOnceWhenBusy(async () => {
+    const response = await fetch(
+      searchUrl("/api/search/requests", params),
+      withAuthHeaders(accessToken, { signal })
+    );
+    await throwIfSearchBusy(response);
+    const requests = await readJson<ClickHouseRequest[]>(response);
+    return { requests, ...readSearchProgress(response.headers) };
+  }, signal);
 }
 
 export async function fetchDashboardSearchCount(
@@ -1115,14 +1161,16 @@ export async function fetchDashboardSearchCount(
   params: Record<string, string>,
   signal?: AbortSignal
 ): Promise<{ count: number; exact: boolean }> {
-  const response = await fetch(
-    searchUrl("/api/search/requests/count", params),
-    withAuthHeaders(accessToken, { signal })
-  );
-  await throwIfSearchBusy(response);
-  const data = await readJson<{ count: number; exact?: boolean }>(response);
-  // Only an explicit false is a lower bound.
-  return { count: data.count, exact: data.exact !== false };
+  return retryOnceWhenBusy(async () => {
+    const response = await fetch(
+      searchUrl("/api/search/requests/count", params),
+      withAuthHeaders(accessToken, { signal })
+    );
+    await throwIfSearchBusy(response);
+    const data = await readJson<{ count: number; exact?: boolean }>(response);
+    // Only an explicit false is a lower bound.
+    return { count: data.count, exact: data.exact !== false };
+  }, signal);
 }
 
 export function emitDashboardEndpointsChanged() {

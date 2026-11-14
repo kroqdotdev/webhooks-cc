@@ -93,18 +93,70 @@ describe("dashboard search requests", () => {
       cursor: "c1",
     });
     const [url, init] = fetchMock.mock.calls[0];
-    expect(url).toBe("https://app.test/api/search/requests?slug=demo&q=a+b&cursor=x%2By");
+    expect(url).toBe(
+      "https://app.test/api/search/requests?slug=demo&q=a+b&cursor=x%2By&paged=true"
+    );
     expect(init?.signal).toBe(controller.signal);
     expect(new Headers(init?.headers).get("Authorization")).toBe("Bearer token");
   });
 
-  it("throws SearchBusyError with the wait on a busy answer", async () => {
-    fetchMock.mockResolvedValue(
-      Response.json({ error: "search_busy" }, { status: 429, headers: { "Retry-After": "2" } })
+  const busy = (retryAfter: string) =>
+    Response.json(
+      { error: "search_busy" },
+      { status: 429, headers: { "Retry-After": retryAfter } }
     );
-    const err = await fetchDashboardSearch("token", { slug: "demo" }).catch((e: unknown) => e);
-    expect(err).toBeInstanceOf(SearchBusyError);
-    expect((err as SearchBusyError).retryAfterSeconds).toBe(2);
+
+  it("tries a busy search once more after the wait the server names", async () => {
+    vi.useFakeTimers();
+    try {
+      fetchMock
+        .mockResolvedValueOnce(busy("2"))
+        .mockResolvedValueOnce(Response.json([{ id: "r1" }]));
+      const pending = fetchDashboardSearch("token", { slug: "demo" });
+      await vi.advanceTimersByTimeAsync(1999);
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      await vi.advanceTimersByTimeAsync(1);
+      expect((await pending).requests).toEqual([{ id: "r1" }]);
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("waits 3 seconds at most, and throws SearchBusyError when still busy", async () => {
+    vi.useFakeTimers();
+    try {
+      fetchMock.mockImplementation(async () => busy("30"));
+      const pending = fetchDashboardSearch("token", { slug: "demo" }).catch((e: unknown) => e);
+      await vi.advanceTimersByTimeAsync(3000);
+      const err = await pending;
+      expect(err).toBeInstanceOf(SearchBusyError);
+      expect((err as SearchBusyError).retryAfterSeconds).toBe(30);
+      // One retry, not a loop.
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("gives up the wait when the search is aborted", async () => {
+    fetchMock.mockImplementation(async () => busy("3"));
+    const controller = new AbortController();
+    const pending = fetchDashboardSearch("token", { slug: "demo" }, controller.signal).catch(
+      (e: unknown) => e
+    );
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    controller.abort();
+    expect(isAbortError(await pending)).toBe(true);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("sends paged=true with a count too", async () => {
+    fetchMock.mockResolvedValue(Response.json({ count: 1, exact: true }));
+    await fetchDashboardSearchCount("token", { slug: "demo" });
+    expect(fetchMock.mock.calls[0][0]).toBe(
+      "https://app.test/api/search/requests/count?slug=demo&paged=true"
+    );
   });
 
   it("keeps other failures as plain errors", async () => {

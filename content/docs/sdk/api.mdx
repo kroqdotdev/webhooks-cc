@@ -465,7 +465,7 @@ replay(requestId: string, targetUrl: string): Promise<Response>
 
 Search captured requests across endpoints for text.
 
-`q` matches as a case-insensitive substring of the path, the headers or the body (`%` and `_` are literal), and an email also matches on its decoded subject, text and sender and recipient addresses; a request id finds that request first. A search reads the most recent requests first and answers within about 2 seconds, so a rare term on a long history can return fewer results than exist: narrow `from` and `to` to search one stretch of time at a time.
+`q` matches as a case-insensitive substring of the path, the headers or the body (`%` and `_` are literal), and an email also matches on its decoded subject, text and sender and recipient addresses; a request id finds that request first. A search reads the most recent requests first and answers within about 10 seconds, so a rare term on a long history can return fewer results than exist: narrow `from` and `to` to search one stretch of time at a time.
 
 ```ts
 search(filters?: SearchFilters): Promise<SearchResult[]>
@@ -490,7 +490,7 @@ search(filters?: SearchFilters): Promise<SearchResult[]>
 
 <ApiMethod method="GET" path="/requests/count" title="client.requests.count">
 
-Count captured requests matching the given filters. With `q`, the count covers what about 2 seconds of reading reached, so on a long history it can be lower than the real number.
+Count captured requests matching the given filters. Without `q` and `method` the count is exact. With either, it covers what about 10 seconds of reading reached, so on a long history it can be lower than the real number.
 
 ```ts
 count(filters?: SearchFilters): Promise<number>

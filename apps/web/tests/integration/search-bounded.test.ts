@@ -2,13 +2,14 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createClient } from "@supabase/supabase-js";
 import { createEndpointForUser } from "@/lib/supabase/endpoints";
 import {
+  cancelRequestSearch,
   countSearchRequests,
   InvalidSearchCursorError,
   searchRequestPage,
   type SearchRequestRecord,
 } from "@/lib/supabase/search";
 
-// search_requests_page() (migration 00098): a search reads within a time
+// search_requests_page() (migration 00100): a search reads within a time
 // budget and pages backwards through time with a cursor. These tests force
 // small budgets so a few thousand rows take several pages.
 
@@ -354,6 +355,31 @@ describe("bounded request search", () => {
     expect(http.exact && email.exact && all.exact).toBe(true);
     expect(email.count).toBe(1);
     expect(http.count + email.count).toBe(all.count);
+  });
+
+  it("counts every endpoint exactly without a term", async () => {
+    const all = await countSearchRequests({ userId: ownerId });
+    expect(all.exact).toBe(true);
+    // The big and small endpoints' rows, nothing of the other account's.
+    const big = await countSearchRequests({ userId: ownerId, slug: bigSlug });
+    const small = await countSearchRequests({ userId: ownerId, slug: smallSlug });
+    expect(all.count).toBe(big.count + small.count);
+  });
+
+  it("stops a search whose caller cancelled it", async () => {
+    const cancelToken = crypto.randomUUID();
+    await cancelRequestSearch(cancelToken);
+    const page = await searchRequestPage({
+      userId: ownerId,
+      slug: bigSlug,
+      q: `absent-${RUN}`,
+      budgetMs: 10_000,
+      cancelToken,
+    });
+    // The cancel was recorded first, so the walk stops after its first slice.
+    expect(page.complete).toBe(false);
+    expect(page.cursor).toBeTruthy();
+    expect(page.slices).toBe(1);
   });
 
   it("refuses a cursor it did not issue, or one for the other order", async () => {

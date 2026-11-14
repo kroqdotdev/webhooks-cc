@@ -403,7 +403,7 @@ describe("Raw Body Fidelity & Search", () => {
       });
 
       // A count with a term is exact only when the search read the whole
-      // range within its time budget (search_requests_page, 00098); a
+      // range within its time budget (search_requests_page, 00100); a
       // handful of rows always fits.
       const { count, exact } = await countSearchRequests({
         userId: testUserId,

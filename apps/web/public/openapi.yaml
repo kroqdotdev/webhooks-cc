@@ -2038,16 +2038,23 @@ paths:
         by the owner's retention, not the caller's plan.
 
         A search reads requests newest first (oldest first with `order=asc`)
-        for about 2 seconds at most, and stops at a full page, the end of the
-        range, or that time limit, whichever comes first. The body is the
-        matches found so far; the `X-Search-*` headers say whether that was
-        everything and where the search stopped. While `X-Search-Complete` is
-        `false`, repeat the call with `cursor` set to `X-Search-Cursor` (and
-        the other parameters unchanged) to read on. An empty page that is not
-        complete means nothing was found yet, not that nothing matches.
+        for a limited time, and stops at a full page, the end of the range, or
+        that time limit, whichever comes first. With `paged=true` the limit is
+        about 2 seconds a call, and the caller reads on with the cursor; use
+        that in new integrations. Without it a call reads for about 10
+        seconds, so a client that reads one answer still reaches older
+        matches. The body is the matches found so far; the `X-Search-*`
+        headers say whether that was everything and where the search stopped.
+        While `X-Search-Complete` is `false`, repeat the call with `cursor`
+        set to `X-Search-Cursor` (and the other parameters unchanged) to read
+        on. An empty page that is not complete means nothing was found yet,
+        not that nothing matches.
 
-        Rate limited to 60 requests per 10 minutes. An account runs at most 2
-        searches at once; more answer 429 `search_busy`.
+        Rate limited to 60 requests per 10 minutes; calls with a `cursor`
+        count against their own limit of 300 per 10 minutes instead. An
+        account runs at most 2 searches at once and the service limits how
+        many run in all, so a call can answer 429 `search_busy` even when the
+        account runs none: wait for `Retry-After` seconds and send it again.
       parameters:
         - name: slug
           in: query
@@ -2070,6 +2077,7 @@ paths:
           in: query
           schema:
             type: string
+            maxLength: 1000
           description: |
             Text to find, as a case-insensitive substring of the path, the
             headers or the body. Every character is literal (`%`, `_` and `\`
@@ -2080,10 +2088,10 @@ paths:
           in: query
           schema:
             type: string
-            pattern: '^(\d+|\d+(\.\d+)?\s*(ms|s|m|h|d))$'
           description: |
-            Start time: a Unix timestamp in milliseconds, or a duration back
-            from now (`500ms`, `90s`, `15m`, `1h`, `1.5h`, `7d`).
+            Start time: a Unix timestamp in milliseconds (any number from
+            zero up; a fraction is rounded down), or a duration back from now
+            (`500ms`, `90s`, `15m`, `1h`, `1.5h`, `7d`). Empty means no bound.
           examples:
             timestamp:
               value: "1791450602000"
@@ -2093,10 +2101,10 @@ paths:
           in: query
           schema:
             type: string
-            pattern: '^(\d+|\d+(\.\d+)?\s*(ms|s|m|h|d))$'
           description: |
-            End time: a Unix timestamp in milliseconds, or a duration back
-            from now (`500ms`, `90s`, `15m`, `1h`, `1.5h`, `7d`).
+            End time: a Unix timestamp in milliseconds (any number from
+            zero up; a fraction is rounded down), or a duration back from now
+            (`500ms`, `90s`, `15m`, `1h`, `1.5h`, `7d`). Empty means no bound.
           examples:
             timestamp:
               value: "1791450602000"
@@ -2110,6 +2118,15 @@ paths:
             minimum: 1
             maximum: 200
           description: Maximum number of results in a page
+        - name: paged
+          in: query
+          schema:
+            type: boolean
+            default: false
+          description: |
+            Send `true` (or `1`) when you page with the cursor: each call then
+            reads for about 2 seconds at most. Without it a call reads for
+            about 10 seconds before answering.
         - name: cursor
           in: query
           schema:
@@ -2157,7 +2174,8 @@ paths:
         "400":
           description: |
             Validation error: `invalid_from`, `invalid_to`, `invalid_kind`,
-            `invalid_limit`, `invalid_offset`, `invalid_cursor` (not a cursor this API returned, or one
+            `invalid_q` (longer than 1,000 characters), `invalid_limit`,
+            `invalid_offset`, `invalid_cursor` (not a cursor this API returned, or one
             made for the other order).
           headers:
             X-RateLimit-Limit:
@@ -2188,8 +2206,8 @@ paths:
         "429":
           description: |
             Rate limit exceeded, or `search_busy`: too many searches are
-            running (an account runs 2 at once). Retry after `Retry-After`
-            seconds.
+            running (an account runs 2 at once, and the service limits how
+            many run in all). Retry after `Retry-After` seconds.
           headers:
             Retry-After:
               description: Seconds to wait before trying again
@@ -2223,15 +2241,20 @@ paths:
         Covers endpoints shared with you through a subscribed team.
         Accepts the same query parameters as search (except `limit`, `offset`, `order`).
 
-        A count of one endpoint (`slug`) without `q` or `method` is always
-        exact. A count with `q` reads requests like a search does, for about 2
-        seconds at most: `exact` says whether it read the whole range, and
-        when it is `false`, `count` is a lower bound. Call again with `cursor`
-        to count the next stretch; each call counts only what it read, so the
-        counts add up.
+        A count without `q` and without `method` is always exact, for one
+        endpoint or for all of them. A count with `q` or `method` reads
+        requests like a search does, for a limited time (about 2 seconds with
+        `paged=true`, about 10 without): `exact` says whether it read the
+        whole range, and when it is `false`, `count` is a lower bound. Call
+        again with `cursor` to count the next stretch; each call counts only
+        what it read, so the counts add up.
 
-        Rate limited to 120 requests per 10 minutes. An account runs at most 2
-        searches and counts at once; more answer 429 `search_busy`.
+        Rate limited to 120 requests per 10 minutes; calls with a `cursor`
+        count against their own limit of 300 per 10 minutes instead. An
+        account runs at most 2 searches and counts at once and the service
+        limits how many run in all, so a call can answer 429 `search_busy`
+        even when the account runs none: wait for `Retry-After` seconds and
+        send it again.
       parameters:
         - name: slug
           in: query
@@ -2254,6 +2277,7 @@ paths:
           in: query
           schema:
             type: string
+            maxLength: 1000
           description: |
             Text to find, as a case-insensitive substring of the path, the
             headers or the body. Every character is literal (`%`, `_` and `\`
@@ -2264,10 +2288,10 @@ paths:
           in: query
           schema:
             type: string
-            pattern: '^(\d+|\d+(\.\d+)?\s*(ms|s|m|h|d))$'
           description: |
-            Start time: a Unix timestamp in milliseconds, or a duration back
-            from now (`500ms`, `90s`, `15m`, `1h`, `1.5h`, `7d`).
+            Start time: a Unix timestamp in milliseconds (any number from
+            zero up; a fraction is rounded down), or a duration back from now
+            (`500ms`, `90s`, `15m`, `1h`, `1.5h`, `7d`). Empty means no bound.
           examples:
             timestamp:
               value: "1791450602000"
@@ -2277,15 +2301,24 @@ paths:
           in: query
           schema:
             type: string
-            pattern: '^(\d+|\d+(\.\d+)?\s*(ms|s|m|h|d))$'
           description: |
-            End time: a Unix timestamp in milliseconds, or a duration back
-            from now (`500ms`, `90s`, `15m`, `1h`, `1.5h`, `7d`).
+            End time: a Unix timestamp in milliseconds (any number from
+            zero up; a fraction is rounded down), or a duration back from now
+            (`500ms`, `90s`, `15m`, `1h`, `1.5h`, `7d`). Empty means no bound.
           examples:
             timestamp:
               value: "1791450602000"
             duration:
               value: 1h
+        - name: paged
+          in: query
+          schema:
+            type: boolean
+            default: false
+          description: |
+            Send `true` (or `1`) when you page with the cursor: each call then
+            reads for about 2 seconds at most. Without it a call reads for
+            about 10 seconds before answering.
         - name: cursor
           in: query
           schema:
@@ -2340,7 +2373,7 @@ paths:
         "400":
           description: |
             Validation error: `invalid_from`, `invalid_to`, `invalid_kind`,
-            `invalid_cursor` (not a cursor this API returned, or one
+            `invalid_q` (longer than 1,000 characters), `invalid_cursor` (not a cursor this API returned, or one
             made for the other order).
           headers:
             X-RateLimit-Limit:
@@ -2371,8 +2404,8 @@ paths:
         "429":
           description: |
             Rate limit exceeded, or `search_busy`: too many searches are
-            running (an account runs 2 at once). Retry after `Retry-After`
-            seconds.
+            running (an account runs 2 at once, and the service limits how
+            many run in all). Retry after `Retry-After` seconds.
           headers:
             Retry-After:
               description: Seconds to wait before trying again
@@ -7149,7 +7182,7 @@ components:
       properties:
         id:
           type: string
-          description: Synthetic ID (not compatible with requests.get/replay)
+          description: The request's ID (usable with the request routes, such as GET /api/requests/{id})
         slug:
           type: string
         method:

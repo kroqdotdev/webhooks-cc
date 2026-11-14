@@ -7,6 +7,7 @@ const mockFns = vi.hoisted(() => ({
   checkRateLimitByKeyWithInfo: vi.fn(),
   countSearchRequests: vi.fn(),
   captureServerEvent: vi.fn(),
+  cancelRequestSearch: vi.fn(),
 }));
 
 vi.mock("@/lib/api-auth", () => ({
@@ -24,6 +25,9 @@ vi.mock("@/lib/supabase/search", () => {
   class InvalidSearchCursorError extends Error {}
   return {
     InvalidSearchCursorError,
+    SEARCH_BUDGET_MS: 2_000,
+    LEGACY_SEARCH_BUDGET_MS: 10_000,
+    cancelRequestSearch: mockFns.cancelRequestSearch,
     isRequestKind: (value: unknown) => value === "http" || value === "email",
     countSearchRequests: mockFns.countSearchRequests,
   };
@@ -86,6 +90,8 @@ describe("GET /api/search/requests/count", () => {
       from: undefined,
       to: undefined,
       cursor: undefined,
+      budgetMs: 10_000,
+      cancelToken: expect.any(String),
     });
   });
 
