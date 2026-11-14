@@ -672,7 +672,9 @@ describe("registerTools", () => {
           schema.parse({ slug: "acme", destinationId: "d1", ...change })
         );
         expect(result.isError, JSON.stringify(change)).toBe(true);
-        expect(parseJsonResult(result).message).toContain("File drops are changed in");
+        expect(parseJsonResult(result).message).toContain(
+          "are changed in the dashboard, the SDK or the API"
+        );
       }
       expect(update).not.toHaveBeenCalled();
 

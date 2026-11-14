@@ -397,7 +397,7 @@ function destinationWriteInput<
     (input.format !== undefined || input.url !== undefined || config !== undefined)
   ) {
     throw new Error(
-      "File drops are changed in the dashboard, the CLI or the API, where the server password can be given: here only a drop's name, enabled, filter, templates and timing change"
+      "A file drop's format, url and config are changed in the dashboard, the SDK or the API (for example whk api), where its server password can be given. Everything else still changes here: kinds, headers, retries, filter, templates, timing, name and enabled"
     );
   }
   const format = input.format ?? current?.format;
@@ -3119,7 +3119,7 @@ export function registerTools(
 
   server.tool(
     "update_destination",
-    "Change a destination: any of its fields; only the ones you pass change. A Google Sheets destination's config is replaced as a whole, with format sheets: pass its connectionId, spreadsheetId and columns again; rows left out keeps the current mode, and a sheet left out keeps the current tab on the same spreadsheet (a new spreadsheet starts on Sheet1). A Sheets destination's URL is its spreadsheet's, so a url is refused on one that stays a Sheets destination; to move one to another format, pass that format with a url, and its spreadsheet settings are cleared. A file drop's format, url and config are refused (they are changed in the dashboard, the CLI or the API, where its server password can be given); its other settings change as usual. Owner only.",
+    "Change a destination: any of its fields; only the ones you pass change. A Google Sheets destination's config is replaced as a whole, with format sheets: pass its connectionId, spreadsheetId and columns again; rows left out keeps the current mode, and a sheet left out keeps the current tab on the same spreadsheet (a new spreadsheet starts on Sheet1). A Sheets destination's URL is its spreadsheet's, so a url is refused on one that stays a Sheets destination; to move one to another format, pass that format with a url, and its spreadsheet settings are cleared. A file drop's format, url and config are refused (they are changed in the dashboard, the SDK or the API, for example whk api, where its server password can be given); its other settings change as usual. Owner only.",
     {
       slug: z.string().describe("The endpoint slug"),
       destinationId: z.string().describe("The destination's id (from list_destinations)"),

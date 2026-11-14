@@ -66,7 +66,9 @@ export async function POST(request: Request, { params }: { params: Promise<{ slu
     }
     const parsed = parseDestinationInput(draft as Record<string, unknown>, {
       creating: !saved,
-      current: saved ? { http: saved.http, email: saved.email } : undefined,
+      current: saved
+        ? { http: saved.http, email: saved.email, format: saved.format, config: saved.config }
+        : undefined,
     });
     if (!parsed.ok) return reply({ error: parsed.error }, 400);
     const changes = parsed.changes;

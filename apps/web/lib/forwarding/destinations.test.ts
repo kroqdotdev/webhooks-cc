@@ -129,6 +129,134 @@ describe("parseDestinationInput", () => {
     });
   });
 
+  describe("Sheets destinations and file drops", () => {
+    const sheetsConfig = {
+      connectionId: "4b3a2f1e-0d9c-4b8a-9f7e-6d5c4b3a2f1e",
+      spreadsheetId: "1AbCdEfGhIjKlMnOpQrStUvWxYz0123456789",
+      columns: [{ header: "Subject", value: "{{ subject }}" }],
+    };
+    const sheets = {
+      http: false,
+      email: true,
+      format: "sheets" as const,
+      config: { ...sheetsConfig, sheet: "Sheet1", rows: "email" },
+    };
+    const drop = {
+      http: false,
+      email: true,
+      format: "file_drop" as const,
+      config: { protocol: "sftp", host: "files.example.com" },
+    };
+    const change = (body: Record<string, unknown>, current: typeof sheets | typeof drop) =>
+      parseDestinationInput(body, { creating: false, current, allowPrivate: false });
+
+    it("moves a Sheets destination to another format only with a URL, clearing its config", () => {
+      expect(change({ format: "json" }, sheets)).toEqual({
+        ok: false,
+        error: expect.stringMatching(/^Enter the URL to send to: a Google Sheets destination/),
+      });
+      expect(change({ format: "json", url: "https://a.example/in" }, sheets)).toEqual({
+        ok: true,
+        changes: { format: "json", url: "https://a.example/in", config: null },
+      });
+      // Clearing the config by name says the same.
+      expect(
+        change({ format: "auto", url: "https://a.example/in", config: null }, sheets)
+      ).toMatchObject({ ok: true, changes: { config: null } });
+    });
+
+    it("moves a file drop to another format only with a URL, clearing its config and secret", () => {
+      expect(change({ format: "json" }, drop)).toEqual({
+        ok: false,
+        error: expect.stringMatching(/^Enter the URL to send to: a file drop/),
+      });
+      for (const extra of [{}, { dropSecret: null }]) {
+        expect(change({ format: "json", url: "https://a.example/in", ...extra }, drop)).toEqual({
+          ok: true,
+          changes: { format: "json", url: "https://a.example/in", config: null, dropSecret: null },
+        });
+      }
+      expect(
+        change({ format: "json", url: "https://a.example/in", dropSecret: { password: "x" } }, drop)
+      ).toEqual({ ok: false, error: "dropSecret is for file drops only." });
+    });
+
+    it("refuses a config for a format that takes none", () => {
+      const refused = {
+        ok: false,
+        error:
+          'config is for Google Sheets destinations and file drops: send format "sheets" or "file_drop" with it.',
+      };
+      expect(
+        parseDestinationInput(
+          { url: "https://a.example/in", format: "json", config: sheetsConfig },
+          { creating: true, allowPrivate: false }
+        )
+      ).toEqual(refused);
+      expect(
+        parseDestinationInput(
+          { url: "https://a.example/in", config: sheetsConfig },
+          { creating: true, allowPrivate: false }
+        )
+      ).toEqual(refused);
+      expect(
+        change({ format: "json", url: "https://a.example/in", config: sheetsConfig }, sheets)
+      ).toEqual(refused);
+      expect(
+        parseDestinationInput(
+          { config: sheetsConfig },
+          {
+            creating: false,
+            current: { http: true, email: true, format: "json", config: null },
+            allowPrivate: false,
+          }
+        )
+      ).toEqual(refused);
+      // A config with its own format still works, and a null config on any format.
+      expect(
+        parseDestinationInput(
+          {
+            url: "https://a.example/in",
+            format: "sheets",
+            email: true,
+            http: false,
+            config: sheetsConfig,
+          },
+          { creating: true, allowPrivate: false }
+        )
+      ).toMatchObject({ ok: true, changes: { format: "sheets" } });
+      expect(
+        parseDestinationInput(
+          { url: "https://a.example/in", format: "json", config: null },
+          { creating: true, allowPrivate: false }
+        ).ok
+      ).toBe(true);
+    });
+
+    it("keeps a Sheets destination's URL the spreadsheet's", () => {
+      expect(change({ url: "https://a.example/in" }, sheets)).toEqual({
+        ok: false,
+        error:
+          "A Google Sheets destination's URL is its spreadsheet's: send its config to change the spreadsheet.",
+      });
+      // The dashboard's editor sends the URL with the config, which sets it.
+      expect(
+        change({ url: "https://a.example/in", format: "sheets", config: sheetsConfig }, sheets)
+      ).toMatchObject({
+        ok: true,
+        changes: {
+          url: `https://docs.google.com/spreadsheets/d/${sheetsConfig.spreadsheetId}/edit`,
+        },
+      });
+      // Settings without a target change as before.
+      expect(change({ name: "Orders", enabled: false }, sheets)).toEqual({
+        ok: true,
+        changes: { name: "Orders", enabled: false },
+      });
+      expect(change({ name: "Nightly" }, drop)).toEqual({ ok: true, changes: { name: "Nightly" } });
+    });
+  });
+
   it("asks a template destination for its template", () => {
     expect(templateProblem({ format: "template", bodyTemplate: null })).toMatch(
       /needs its bodyTemplate/

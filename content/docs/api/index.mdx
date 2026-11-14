@@ -743,6 +743,8 @@ curl -X POST https://webhooks.cc/api/endpoints/abc123/destinations \
 
 A [Google Sheets](/docs/forwarding#google-sheets) destination has `"format": "sheets"` and `config`: `{ "connectionId", "spreadsheetId", "sheet", "rows": "email" | "line_items", "columns": [{ "header", "value" }] }`. Connecting a Google account and choosing an existing spreadsheet need the owner in a browser (Google's consent page and Drive picker), so with an API key they are [approvals](#approvals) whose page takes the owner there; a new spreadsheet can be made directly. After that the destination can be read and changed here like any other.
 
+Only `sheets` and `file_drop` take a `config`; any other format answers `400` to one. A Sheets destination or a file drop changed to another format needs a `url` in the same request, and loses its `config` (and a drop its secret), so nothing of the spreadsheet or the server stays behind. A Sheets destination's URL is its spreadsheet's: a `url` without its `config` is refused.
+
 ### Connected Google accounts
 
 ```bash
