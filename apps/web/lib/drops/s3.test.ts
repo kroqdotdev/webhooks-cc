@@ -10,9 +10,13 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
  */
 
 let port = 0;
+const opened = vi.hoisted(() => vi.fn());
 vi.mock("./connect", async (importOriginal) => ({
   ...(await importOriginal<typeof import("./connect")>()),
-  openDropSocket: async () => ({ socket: net.connect(port, "127.0.0.1") }),
+  openDropSocket: async (host: string, to: number) => {
+    opened(host, to);
+    return { socket: net.connect(port, "127.0.0.1") };
+  },
 }));
 vi.mock("./tls", () => ({ secureSocket: async (socket: net.Socket) => socket }));
 
@@ -55,6 +59,7 @@ describe("s3Put", () => {
       "text/csv"
     );
     const request = seen.at(-1)!;
+    expect(opened).toHaveBeenLastCalledWith("acme-drops.s3.eu-central-1.amazonaws.com", 443);
     expect(request.headers.host).toBe("acme-drops.s3.eu-central-1.amazonaws.com");
     expect(request.url).toBe("/orders/order-20261114-001500-abcdef12.csv");
     expect(request.headers.authorization).toMatch(/SignedHeaders=[^,]*\bhost\b/);
@@ -69,6 +74,7 @@ describe("s3Put", () => {
       "text/csv"
     );
     const request = seen.at(-1)!;
+    expect(opened).toHaveBeenLastCalledWith("storage.acme.example", 9443);
     expect(request.headers.host).toBe("storage.acme.example:9443");
     expect(request.url).toBe("/acme-drops/a.csv");
   });
