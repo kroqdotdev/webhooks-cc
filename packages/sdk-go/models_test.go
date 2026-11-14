@@ -175,3 +175,22 @@ func TestRequestReadsLiveResponse(t *testing.T) {
 		t.Fatalf("LiveResponse = %+v, want nil", plain.LiveResponse)
 	}
 }
+
+// A request fetched by ID names its endpoint's slug as endpointSlug.
+func TestRequestReadsEndpointSlug(t *testing.T) {
+	var request webhookscc.Request
+	data := `{"id":"r1","endpointId":"ep_1","endpointSlug":"acme-orders","method":"POST","path":"/"}`
+	if err := json.Unmarshal([]byte(data), &request); err != nil {
+		t.Fatal(err)
+	}
+	if request.Slug != "acme-orders" {
+		t.Fatalf("Slug = %q, want acme-orders", request.Slug)
+	}
+	var found webhookscc.Request
+	if err := json.Unmarshal([]byte(`{"id":"r2","slug":"acme","method":"GET","path":"/"}`), &found); err != nil {
+		t.Fatal(err)
+	}
+	if found.Slug != "acme" {
+		t.Fatalf("Slug = %q, want acme", found.Slug)
+	}
+}

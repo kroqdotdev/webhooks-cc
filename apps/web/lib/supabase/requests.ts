@@ -66,6 +66,12 @@ type SelectedParse = {
 export interface RequestRecord {
   id: string;
   endpointId: string;
+  /**
+   * The slug of the endpoint that captured it, on a request read by id
+   * (getRequestByIdForUser, getSandboxRequest), which looks the endpoint up
+   * anyway. Lists leave it out: their caller named the endpoint.
+   */
+  endpointSlug?: string;
   method: string;
   path: string;
   headers: Record<string, string>;
@@ -710,7 +716,7 @@ export async function getRequestByIdForUser(
   const ownCutoff = endpointCutoff(access.retentionDays);
   if (ownCutoff !== null && parseMillis(row.received_at) < ownCutoff) return null;
 
-  return normalizeRequest(row);
+  return { ...normalizeRequest(row), endpointSlug: endpointData.data.slug };
 }
 
 export async function listRequestsForEndpointByUser(input: {
@@ -1005,11 +1011,11 @@ export async function getSandboxRequest(
 
   const { data: endpoint, error: endpointError } = await admin
     .from("endpoints")
-    .select("id")
+    .select("id, slug")
     .eq("id", row.endpoint_id)
     .eq("agent_registration_id", registrationId)
     .gt("expires_at", new Date().toISOString())
     .maybeSingle();
   if (endpointError) throw endpointError;
-  return endpoint ? normalizeRequest(row) : null;
+  return endpoint ? { ...normalizeRequest(row), endpointSlug: endpoint.slug } : null;
 }

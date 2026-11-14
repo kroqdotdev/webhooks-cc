@@ -54,7 +54,8 @@ type Request struct {
 	// other request calls take it.
 	ID         string
 	EndpointID string
-	// Slug is the endpoint's slug, on search results (which carry no EndpointID).
+	// Slug is the endpoint's slug, on search results (which carry no
+	// EndpointID) and on a request fetched by ID (the API's endpointSlug).
 	Slug        string
 	Method      string
 	Path        string
@@ -141,10 +142,14 @@ func (r *Request) UnmarshalJSON(data []byte) error {
 	if !ok {
 		ip = "unknown"
 	}
+	slug := o.str("slug")
+	if slug == "" {
+		slug = o.str("endpointSlug")
+	}
 	*r = Request{
 		ID:                id,
 		EndpointID:        o.str("endpointId"),
-		Slug:              o.str("slug"),
+		Slug:              slug,
 		Method:            o.str("method"),
 		Path:              path,
 		Headers:           Headers(o.strMap("headers")),

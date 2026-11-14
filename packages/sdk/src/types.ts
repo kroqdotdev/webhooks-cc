@@ -195,6 +195,12 @@ export interface Request {
   id: string;
   /** Endpoint that received this request */
   endpointId: string;
+  /**
+   * Slug of the endpoint that received it. Present on a request fetched by
+   * id (`requests.get()`, `emails.get()`); lists leave it out, since their
+   * caller named the endpoint.
+   */
+  endpointSlug?: string;
   /** HTTP method (GET, POST, PUT, etc.) */
   method: string;
   /** Request path after the endpoint slug */

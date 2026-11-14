@@ -45,7 +45,7 @@ let recent: StripState | null = null;
 let finding = false;
 /** Why the last ask for recent requests found no endpoint, shown beside the button. */
 let recentMissing: string | null = null;
-/** Endpoint ids looked up in list_endpoints, with their slugs (null: not listed). Failed lookups are not kept. */
+/** Endpoint ids looked up in list_endpoints, with their slugs (null: not listed). Failed or cut lookups are not kept. */
 const slugs = new Map<string, string | null>();
 /** Bumped for every request shown, so a late answer for an older one is dropped. */
 let generation = 0;
@@ -214,9 +214,11 @@ async function loadFull(id: string): Promise<void> {
 /**
  * The endpoint the request is at, then its recent requests: the slug the
  * caller already knows (a pick from the strip), else the one the tool was
- * called with, else the one the request names, else its endpoint id looked
- * up in list_endpoints. An email's address names the endpoint only at the
- * capture domain; at a custom domain it is the recipient's own.
+ * called with, else the one the request names (a request read by id names
+ * it; an email's capture address does too), else its endpoint id looked up
+ * in list_endpoints, for a server too old to name it. An email's address
+ * names the endpoint only at the capture domain; at a custom domain it is
+ * the recipient's own.
  */
 async function findRecent(current: View, known: string | null): Promise<void> {
   const token = ++findToken;
@@ -225,7 +227,7 @@ async function findRecent(current: View, known: string | null): Promise<void> {
   let missing = "Could not tell which endpoint this request is at.";
   if (!slug && typeof toolArgs.endpointSlug === "string" && toolArgs.endpointSlug)
     slug = toolArgs.endpointSlug;
-  if (!slug && current.kind === "email") slug = current.slug;
+  if (!slug) slug = current.slug;
   if (!slug && current.endpointId) {
     const endpointId = current.endpointId;
     if (!slugs.has(endpointId)) {
@@ -234,7 +236,11 @@ async function findRecent(current: View, known: string | null): Promise<void> {
         renderRecent();
       }
       try {
-        slugs.set(endpointId, slugForEndpoint(await callTool("list_endpoints", {}), endpointId));
+        const found = slugForEndpoint(await callTool("list_endpoints", {}), endpointId);
+        // A list cut to fit the output may have left the endpoint out: not
+        // kept, so the next ask tries again.
+        if (found.listed) slugs.set(endpointId, found.slug);
+        else missing = "The endpoint was not among those listed.";
       } catch (error) {
         // Not kept: the next ask tries again.
         missing =

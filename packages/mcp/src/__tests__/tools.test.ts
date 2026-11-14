@@ -2107,14 +2107,44 @@ describe("email and forwarding tools", () => {
     }
   });
 
-  it("finds the endpoint of an email at a custom domain by its id", async () => {
-    // Mail to a Business custom domain is stored under the recipient's own address.
+  it("takes the endpoint the email names over its address", async () => {
+    // An email read by id names its endpoint's slug, at a custom domain too.
+    const email = {
+      ...makeEmail("e1"),
+      endpointId: "ep_orders",
+      endpointSlug: "acme-orders",
+      path: "orders@acme.example",
+    };
+    const get = vi.fn(async () => email);
+    const client = emailClient({ emails: { get } as never });
+    const list = vi.fn(async () => []);
+    client.endpoints.list = list as never;
+    const tools = getRegisteredTools(client);
+
+    const detail = parseJsonResult(
+      await tools.get_email.handler({ requestId: "e1", includeHtml: false })
+    );
+    expect(list).not.toHaveBeenCalled();
+    expect(client.endpoints.get).toHaveBeenCalledTimes(1);
+    expect(client.endpoints.get).toHaveBeenLastCalledWith("acme-orders");
+    expect(detail.endpoint).toEqual({ slug: "acme-orders", name: "Acme signups" });
+  });
+
+  it("finds the endpoint of an email at a custom domain by its id, in one call", async () => {
+    // Mail to a Business custom domain is stored under the recipient's own
+    // address; a server that does not name the slug leaves the list to find it.
     const email = { ...makeEmail("e1"), endpointId: "ep_orders", path: "orders@acme.example" };
     const get = vi.fn(async () => email);
     const client = emailClient({ emails: { get } as never });
     const list = vi.fn(async () => [
       { id: "ep_other", slug: "orders", createdAt: 1 },
-      { id: "ep_orders", slug: "acme-orders", createdAt: 1 },
+      {
+        id: "ep_orders",
+        slug: "acme-orders",
+        name: "Acme orders",
+        createdAt: 1,
+        showEmailExtracts: false,
+      },
     ]);
     client.endpoints.list = list as never;
     const tools = getRegisteredTools(client);
@@ -2123,8 +2153,10 @@ describe("email and forwarding tools", () => {
       await tools.get_email.handler({ requestId: "e1", includeHtml: false })
     );
     expect(list).toHaveBeenCalledTimes(1);
-    expect(client.endpoints.get).toHaveBeenLastCalledWith("acme-orders");
-    expect(detail.endpoint).toEqual({ slug: "acme-orders", name: "Acme signups" });
+    expect(client.endpoints.get).not.toHaveBeenCalled();
+    expect(detail.endpoint).toEqual({ slug: "acme-orders", name: "Acme orders" });
+    // The listed endpoint's own setting applies.
+    expect(detail).not.toHaveProperty("code");
 
     list.mockResolvedValueOnce([]);
     const missing = await tools.get_email.handler({ requestId: "e1", includeHtml: false });
@@ -3100,6 +3132,7 @@ describe("search_requests and count_requests", () => {
     expect(result.requests[1]).toMatchObject({ id: "r0", bodyTruncated: true, bodySize: 4_000 });
     expect(result.requests[49]).toEqual({
       id: "headers",
+      endpointId: "ep_123",
       method: "POST",
       path: "/webhooks/github",
       contentType: "application/json",
@@ -3268,12 +3301,19 @@ describe("a request larger than the tool output", () => {
 
   it("get_request keeps a summary when the headers alone are too large", async () => {
     const get = vi.fn(async () =>
-      makeRequest({ id: "headers", headers: { "x-big": "h".repeat(40_000) } })
+      makeRequest({
+        id: "headers",
+        endpointSlug: "acme",
+        headers: { "x-big": "h".repeat(40_000) },
+      })
     );
     const tools = getRegisteredTools(requestsClient({ get }));
 
+    // The endpoint stays named, for the inspector's recent requests.
     expect(parseJsonResult(await tools.get_request.handler({ requestId: "headers" }))).toEqual({
       id: "headers",
+      endpointSlug: "acme",
+      endpointId: makeRequest().endpointId,
       method: "POST",
       path: "/webhooks/github",
       contentType: "application/json",

@@ -5,7 +5,14 @@ import { InMemoryTransport } from "@modelcontextprotocol/server";
 import { serveStdio } from "@modelcontextprotocol/server/stdio";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { buildInspectorHtml, inspectorExports } from "../../scripts/build-app.mjs";
-import { isSecretHeader, slugFromAddress, viewOf } from "../../app/model";
+import {
+  MASK,
+  isSecretHeader,
+  maskQuery,
+  slugForEndpoint,
+  slugFromAddress,
+  viewOf,
+} from "../../app/model";
 import { APP_MIME_TYPE, INSPECTOR_URI, appToolMeta } from "../app";
 import { INSPECTOR_HASH, INSPECTOR_HTML } from "../app-html";
 import { TOOL_CATALOG } from "../catalog";
@@ -231,6 +238,62 @@ describe("the inspector's model", () => {
       subject: "Order 1001",
     });
     expect(view).toMatchObject({ kind: "email", slug: "acme-orders", full: true });
+  });
+
+  it("reads the endpoint's slug a request read by id names", () => {
+    expect(
+      viewOf({ id: "req_1", endpointId: "ep_1", endpointSlug: "acme", method: "POST", path: "/" })
+    ).toMatchObject({ kind: "http", slug: "acme", endpointId: "ep_1" });
+    expect(viewOf({ id: "req_1", endpointId: "ep_1", method: "POST", path: "/" })).toMatchObject({
+      slug: null,
+    });
+    // An email at a custom domain: its address names no endpoint, the answer does.
+    expect(
+      viewOf({
+        id: "req_2",
+        endpointId: "ep_2",
+        endpointSlug: "acme-orders",
+        kind: "email",
+        method: "EMAIL",
+        path: "orders@acme.example",
+        email: {},
+      })
+    ).toMatchObject({ kind: "email", slug: "acme-orders" });
+  });
+
+  it("masks the query values a share link hides", () => {
+    expect(maskQuery("?code=abc123&state=xyz&page=2&sig=s&api_key=k&key=k2&access_token=t")).toBe(
+      `?code=${MASK}&state=${MASK}&page=2&sig=${MASK}&api_key=${MASK}&key=${MASK}&access_token=${MASK}`
+    );
+    // Names are matched decoded and in any case; the rest stays as sent.
+    expect(maskQuery("?Api%2DKey=k&q=a+b&flag&empty=")).toBe(
+      `?Api%2DKey=${MASK}&q=a+b&flag&empty=`
+    );
+    expect(maskQuery("")).toBe("");
+    const view = viewOf({
+      id: "req_1",
+      method: "GET",
+      path: "/oauth/callback",
+      queryRaw: "code=abc123&state=xyz",
+    });
+    expect(view).toMatchObject({ query: `?code=${MASK}&state=${MASK}` });
+    expect(JSON.stringify(view)).not.toContain("abc123");
+    const fromParams = viewOf({
+      id: "req_2",
+      method: "GET",
+      path: "/",
+      queryParams: { token: "t0ps3cret", page: "2" },
+    });
+    expect(fromParams).toMatchObject({ query: `?token=${MASK}&page=2` });
+  });
+
+  it("finds an endpoint's slug in list_endpoints, and knows a cut list may leave it out", () => {
+    const listed = [{ id: "ep_1", slug: "acme" }];
+    expect(slugForEndpoint(listed, "ep_1")).toEqual({ slug: "acme", listed: true });
+    expect(slugForEndpoint(listed, "ep_2")).toEqual({ slug: null, listed: true });
+    const cut = { items: listed, truncated: true, total: 400, returned: 1 };
+    expect(slugForEndpoint(cut, "ep_1")).toEqual({ slug: "acme", listed: true });
+    expect(slugForEndpoint(cut, "ep_2")).toEqual({ slug: null, listed: false });
   });
 
   it("reads the subject of an email summary, which keeps it beside the message", () => {

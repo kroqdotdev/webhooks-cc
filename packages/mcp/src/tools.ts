@@ -34,6 +34,7 @@ import {
   conditionIssues,
   type ConditionField,
   type EmailRequest,
+  type Endpoint,
   type LiveShare,
   type TunnelShareList,
   type PayloadSchemaFormat,
@@ -824,6 +825,9 @@ function shortenRequest(
   const summary: JsonRecord = {
     id: request.id,
     slug: clip(request.slug, 64),
+    // What the inspector reads to find the endpoint's recent requests.
+    endpointSlug: clip(request.endpointSlug, 64),
+    endpointId: clip(request.endpointId, 64),
     method: clip(request.method, 16),
     path: clip(request.path, 200),
     contentType: clip(request.contentType, 100),
@@ -1114,7 +1118,12 @@ interface EmailEndpointView {
 }
 
 async function emailEndpointView(client: WebhooksCC, slug: string): Promise<EmailEndpointView> {
-  const endpoint = await client.endpoints.get(slug);
+  return endpointViewOf(await client.endpoints.get(slug));
+}
+
+function endpointViewOf(
+  endpoint: Pick<Endpoint, "slug" | "name" | "showEmailExtracts">
+): EmailEndpointView {
   return {
     endpoint: { slug: endpoint.slug, name: endpoint.name ?? null },
     includeExtracts: endpoint.showEmailExtracts !== false,
@@ -1122,15 +1131,21 @@ async function emailEndpointView(client: WebhooksCC, slug: string): Promise<Emai
 }
 
 /**
- * The slug of the endpoint an email is at. A capture address
- * ({slug}[+tag]@mailhooks.cc) names it; mail to a custom inbound domain is
- * stored under the recipient's own address, so its endpoint is looked up by
- * id among the account's endpoints.
+ * The endpoint an email is at, with what `get_email` needs to know of it.
+ * An email read by id names its endpoint's slug, and so does a capture
+ * address ({slug}[+tag]@mailhooks.cc). Mail to a custom inbound domain is
+ * stored under the recipient's own address, so without the slug (an older
+ * server) its endpoint is found by id among the account's endpoints, whose
+ * list already says all that is needed.
  */
-async function emailEndpointSlug(client: WebhooksCC, email: EmailRequest): Promise<string> {
+async function emailEndpointViewFor(
+  client: WebhooksCC,
+  email: EmailRequest
+): Promise<EmailEndpointView> {
+  if (email.endpointSlug) return emailEndpointView(client, email.endpointSlug);
   const at = email.path.lastIndexOf("@");
   if (at > 0 && email.path.slice(at + 1).toLowerCase() === DEFAULT_EMAIL_DOMAIN) {
-    return email.path.slice(0, at).split("+")[0].toLowerCase();
+    return emailEndpointView(client, email.path.slice(0, at).split("+")[0].toLowerCase());
   }
   const endpoint = (await client.endpoints.list()).find(
     (candidate) => candidate.id === email.endpointId
@@ -1138,7 +1153,7 @@ async function emailEndpointSlug(client: WebhooksCC, email: EmailRequest): Promi
   if (!endpoint) {
     throw new NotFoundError(`The endpoint of email ${email.id} was not found`);
   }
-  return endpoint.slug;
+  return endpointViewOf(endpoint);
 }
 
 /** A main link in `list_emails` longer than this is left out, so one email cannot fill the list. */
@@ -2860,10 +2875,9 @@ export function registerTools(
           `No email at ${endpointSlug}${tag ? ` with tag "${tag}"` : ""} yet. Send one with send_test_email, or wait with wait_for_email.`
         );
       }
-      const view = await emailEndpointView(
-        client,
-        endpointSlug ?? (await emailEndpointSlug(client, email))
-      );
+      const view = endpointSlug
+        ? await emailEndpointView(client, endpointSlug)
+        : await emailEndpointViewFor(client, email);
       return jsonContent(emailDetail(client, email, view, includeHtml));
     })
   );

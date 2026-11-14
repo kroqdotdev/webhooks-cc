@@ -10,6 +10,8 @@ type Rec = Record<string, unknown>;
 export interface HttpView {
   kind: "http";
   id: string | null;
+  /** The endpoint's slug, when the answer names it (a request read by id). */
+  slug: string | null;
   endpointId: string | null;
   method: string;
   path: string;
@@ -48,7 +50,7 @@ export interface Attachment {
 export interface EmailView {
   kind: "email";
   id: string | null;
-  /** The endpoint's slug when the answer names it, or the capture address shows it. */
+  /** The endpoint's slug when the answer names it, or else the capture address shows it. */
   slug: string | null;
   endpointId: string | null;
   /** From get_email: codes and links are there when the endpoint shows them. */
@@ -128,15 +130,55 @@ export function slugFromAddress(value: string | null): string | null {
 }
 
 /**
- * Header names whose values are usually secrets, shown masked until
- * revealed: the share-link redaction's names (apps/web/lib/request-share.ts)
- * and the credential headers.
+ * Names that usually hold secrets, signatures or one-time values, and the
+ * query parameters that do (OAuth codes and state, API keys, signatures):
+ * copied from the share-link redaction (SENSITIVE_NAME and
+ * SENSITIVE_QUERY_NAME in apps/web/lib/request-share.ts), whose test keeps
+ * them equal.
  */
-const SECRET_HEADER =
-  /^(authorization|proxy-authorization|cookie|set-cookie)$|token|secret|passw|api[-_]?key|apikey|key$|signature|hmac|session|csrf|xsrf|auth|jwt|assertion|credential/i;
+export const SENSITIVE_NAME =
+  /token|secret|passw|api[-_]?key|apikey|key$|signature|hmac|session|csrf|xsrf|auth|jwt|assertion|credential/i;
+export const SENSITIVE_QUERY_NAME = /^(code|key|sig|state)$/i;
 
+/** Headers that carry credentials (CREDENTIAL_HEADERS there). */
+const CREDENTIAL_HEADER = /^(authorization|proxy-authorization|cookie|set-cookie)$/i;
+
+/** Header names whose values are shown masked until revealed. */
 export function isSecretHeader(name: string): boolean {
-  return SECRET_HEADER.test(name);
+  return CREDENTIAL_HEADER.test(name) || SENSITIVE_NAME.test(name);
+}
+
+/** Query parameter names whose values are masked, as a share link hides them by default. */
+export function isSecretQueryName(name: string): boolean {
+  return SENSITIVE_NAME.test(name) || SENSITIVE_QUERY_NAME.test(name);
+}
+
+/** What a masked value is shown as. */
+export const MASK = "\u2022".repeat(6);
+
+function decodedName(raw: string): string {
+  try {
+    return decodeURIComponent(raw.replace(/\+/g, " "));
+  } catch {
+    return raw;
+  }
+}
+
+/**
+ * A query string ("?a=1&b=2") with the values of sensitive parameters
+ * masked, for the heading: the rest is kept exactly as sent.
+ */
+export function maskQuery(query: string): string {
+  if (!query) return query;
+  const body = query.startsWith("?") ? query.slice(1) : query;
+  const parts = body.split("&").map((part) => {
+    const eq = part.indexOf("=");
+    if (eq < 0 || eq === part.length - 1) return part;
+    return isSecretQueryName(decodedName(part.slice(0, eq)))
+      ? `${part.slice(0, eq + 1)}${MASK}`
+      : part;
+  });
+  return `${query.startsWith("?") ? "?" : ""}${parts.join("&")}`;
 }
 
 function queryString(data: Rec): string {
@@ -159,10 +201,11 @@ function httpView(data: Rec): HttpView {
   return {
     kind: "http",
     id: str(data.id),
+    slug: str(data.endpointSlug),
     endpointId: str(data.endpointId),
     method: (str(data.method) ?? "?").toUpperCase(),
     path: str(data.path) ?? "/",
-    query: queryString(data),
+    query: maskQuery(queryString(data)),
     receivedAt: timeOf(data.receivedAt),
     size: num(data.size),
     contentType: str(data.contentType),
@@ -279,7 +322,7 @@ function emailRequestView(data: Rec): EmailView {
   return {
     kind: "email",
     id: str(data.id),
-    slug: slugFromAddress(str(data.path)),
+    slug: str(data.endpointSlug) ?? slugFromAddress(str(data.path)),
     endpointId: str(data.endpointId),
     full: false,
     // The compact form keeps the subject beside the message, not in it.
@@ -344,15 +387,19 @@ export function recentOf(data: unknown): RecentItem[] {
   });
 }
 
-/** An endpoint's slug from list_endpoints' answer, by its id. */
-export function slugForEndpoint(data: unknown, endpointId: string): string | null {
-  const list = Array.isArray(data)
-    ? data
-    : isRec(data) && Array.isArray(data.items)
-      ? data.items
-      : [];
+/**
+ * An endpoint's slug from list_endpoints' answer, by its id. `listed` is
+ * false when the answer was cut to fit the output and the id is not in what
+ * is left, so the endpoint may still exist.
+ */
+export function slugForEndpoint(
+  data: unknown,
+  endpointId: string
+): { slug: string | null; listed: boolean } {
+  const cut = isRec(data) && Array.isArray(data.items);
+  const list = Array.isArray(data) ? data : cut ? (data.items as unknown[]) : [];
   for (const item of list) {
-    if (isRec(item) && item.id === endpointId) return str(item.slug);
+    if (isRec(item) && item.id === endpointId) return { slug: str(item.slug), listed: true };
   }
-  return null;
+  return { slug: null, listed: !(cut && (data as Rec).truncated === true) };
 }
