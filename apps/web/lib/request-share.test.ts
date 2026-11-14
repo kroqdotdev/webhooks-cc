@@ -81,6 +81,35 @@ describe("share snapshot", () => {
     expect(snapshot).not.toHaveProperty("ip");
   });
 
+  it("copies only its own fields, never extra ones the record carries", () => {
+    // The caller passes a whole request record; endpoint settings such as the
+    // agent repository must never reach a public link.
+    const record = { ...source, agentRepo: "acme/api", endpointId: "e1", ip: "203.0.113.9" };
+    const snapshot = buildShareSnapshot(record, { hideSensitive: true });
+    expect(Object.keys(snapshot).sort()).toEqual(
+      [
+        "v",
+        "method",
+        "path",
+        "headers",
+        "queryParams",
+        "redactedHeaders",
+        "redactedQuery",
+        "contentType",
+        "body",
+        "bodyTruncated",
+        "bodyNotUtf8",
+        "size",
+        "receivedAt",
+        "detectedProvider",
+        "detectedEvent",
+        "signatureVerified",
+        "signingProvider",
+      ].sort()
+    );
+    expect(JSON.stringify(snapshot)).not.toContain("acme/api");
+  });
+
   it("hides function keys and identity assertions too", () => {
     const headers = {
       "x-functions-key": "k",

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { alertEmail, alertFixPrompt, describeAlert } from "./notify";
+import { alertDestinationFormat, alertEmail, alertFixPrompt, describeAlert } from "./notify";
 
 describe("alert wording", () => {
   it("names the missing fields and what to do", () => {
@@ -114,6 +114,21 @@ describe("failed-delivery alert email", () => {
     for (const format of ["chat", "sheets", "file_drop"]) {
       expect(alertFixPrompt(event, "acme/api", format)).toBeNull();
     }
+    // An automatic format (stored null) is chat for a Slack or Discord URL.
+    for (const url of [
+      "https://hooks.slack.com/services/T/B/X",
+      "https://discord.com/api/webhooks/123/abc",
+    ]) {
+      expect(alertFixPrompt(event, "acme/api", alertDestinationFormat(null, url))).toBeNull();
+    }
+    expect(
+      alertFixPrompt(
+        event,
+        "acme/api",
+        alertDestinationFormat(null, "https://api.acme.example/hooks")
+      )
+    ).not.toBeNull();
+    expect(alertDestinationFormat("json", "https://hooks.slack.com/services/T/B/X")).toBe("json");
     // An alert opened before the ids were recorded has nothing to name.
     expect(
       alertFixPrompt({ ...event, details: { failed: 1, lastError: "x" } }, "acme/api", "json")

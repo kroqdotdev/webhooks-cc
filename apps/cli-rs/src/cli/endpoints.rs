@@ -202,7 +202,6 @@ pub async fn get(client: &ApiClient, slug: &str, json: bool) -> Result<()> {
     Ok(())
 }
 
-#[allow(clippy::too_many_arguments)]
 /// What `whk update-endpoint` was asked to change.
 pub struct EndpointUpdate {
     pub name: Option<String>,

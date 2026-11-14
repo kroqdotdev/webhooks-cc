@@ -56,7 +56,7 @@ export function AgentSection({ endpoint }: { endpoint: DashboardEndpoint }) {
         error={
           value.trim() !== "" && !parsed.ok ? "Enter it as owner/name, like acme/api." : undefined
         }
-        help="The prompt names the delivery and its request by id, never their contents. The agent reads the rest through the webhooks.cc MCP server or whk."
+        help="The prompt names the delivery and its request by id, never their contents. The agent reads the rest through the webhooks.cc MCP server or whk. Team members who can view this endpoint see the repository name."
       >
         <FieldControl
           className="ph-no-capture w-full max-w-sm text-sm py-2! font-mono"

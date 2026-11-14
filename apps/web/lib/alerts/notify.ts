@@ -8,6 +8,7 @@ import { NO_LAYOUT, PARSE_FAILED } from "./state";
 import { byteaToBuffer } from "@/lib/supabase/destinations";
 import { customChatPayload, isDiscordUrl, isSlackUrl } from "@/lib/forwarding/chat";
 import { sendOptions } from "@/lib/forwarding/config";
+import { isChatUrl } from "@/lib/forwarding/format";
 import { isDelivered, jsonForward, sendForward } from "@/lib/forwarding/send";
 import { forwardHeaders, FORWARD_USER_AGENT } from "@/lib/forwarding/sign";
 import { buildFixPrompt, t3CodeLink, takesFixPrompt } from "@/lib/fix-prompt";
@@ -163,7 +164,7 @@ async function contextFor(endpointId: string): Promise<AlertContext | null> {
     url: string;
     format: string | null;
   }[]) {
-    formats.set(row.id, row.format);
+    formats.set(row.id, alertDestinationFormat(row.format, row.url));
     let label = row.name;
     if (!label) {
       try {
@@ -186,6 +187,14 @@ async function contextFor(endpointId: string): Promise<AlertContext | null> {
     destinationFormats: formats,
     agentRepo: endpoint.agent_repo ?? null,
   };
+}
+
+/**
+ * A destination's format as the worker resolves it (`resolveFormat`): unset
+ * means automatic, which is the chat message for a Slack or Discord URL.
+ */
+export function alertDestinationFormat(format: string | null, url: string): string | null {
+  return format ?? (isChatUrl(url) ? "chat" : null);
 }
 
 /**

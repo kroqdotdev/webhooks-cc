@@ -316,6 +316,8 @@ curl -X PUT https://webhooks.cc/api/endpoints/abc123/alerts \
 
 Each event has `id`, `kind` (`fields`, `silence` or `destination`), `subject` (the destination, for a destination alert), `openedAt`, `resolvedAt` (`null` while open) and `details`.
 
+A destination alert's `details` has `failed` (deliveries that failed for good), `lastError`, `lastFailedAt`, and, for alerts opened since fix prompts arrived, `lastDeliveryId`, `lastRequestId` and `lastStatus` (the HTTP status, or `null` when there was no answer): the ids a [fix prompt](/docs/forwarding#fix-prompts) names. The `alert.opened` and `alert.resolved` JSON events carry the same `details` in `data.details`. New keys may be added, so ignore the ones you do not know.
+
 ## Requests
 
 ### List requests
