@@ -740,6 +740,28 @@ describe("Teams Integration", () => {
       // Forwarding state without its URL, so members can read delivery history.
       expect(ep!.forwardEnabled).toBe(false);
       expect(ep!.hasForwardSecret).toBe(false);
+      expect(ep!.deleteAfterDelivery).toBe(false);
+      expect(ep!.agentRepo).toBeNull();
+    });
+
+    it("getSharedEndpointsForUser carries what the member's fix prompts read", async () => {
+      // Deliver, then delete leaves fix prompts off; the repository names the
+      // project the member's T3 Code link opens in.
+      const { error } = await admin
+        .from("endpoints")
+        .update({ delete_after_delivery: true, agent_repo: "acme/api" })
+        .eq("id", endpointId);
+      expect(error).toBeNull();
+      try {
+        const ep = (await getSharedEndpointsForUser(memberId)).find((e) => e.id === endpointId);
+        expect(ep!.deleteAfterDelivery).toBe(true);
+        expect(ep!.agentRepo).toBe("acme/api");
+      } finally {
+        await admin
+          .from("endpoints")
+          .update({ delete_after_delivery: false, agent_repo: null })
+          .eq("id", endpointId);
+      }
     });
 
     it("owner does not see their own endpoint in shared list", async () => {

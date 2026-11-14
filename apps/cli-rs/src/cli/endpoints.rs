@@ -216,8 +216,9 @@ pub struct EndpointUpdate {
 /// GitHub's rules, as the API checks them: an owner of letters, digits and
 /// dashes (not starting with a dash, at most 39), then a repository name of
 /// letters, digits, dots, dashes and underscores (at most 100, not only dots).
-/// Spaces around it and a trailing `.git` are dropped.
-pub fn parse_agent_repo(value: &str) -> Result<String> {
+/// Spaces around it and a trailing `.git` are dropped, and what is then empty
+/// (`--agent-repo ""`) clears it, as the API reads it: `Ok(None)`.
+pub fn parse_agent_repo(value: &str) -> Result<Option<String>> {
     let trimmed = value.trim();
     let repo = trimmed
         .len()
@@ -225,6 +226,9 @@ pub fn parse_agent_repo(value: &str) -> Result<String> {
         .and_then(|cut| Some((trimmed.get(..cut)?, trimmed.get(cut..)?)))
         .filter(|(_, suffix)| suffix.eq_ignore_ascii_case(".git"))
         .map_or(trimmed, |(head, _)| head);
+    if repo.is_empty() {
+        return Ok(None);
+    }
     let valid = repo.split_once('/').is_some_and(|(owner, name)| {
         let owner_ok = !owner.is_empty()
             && owner.len() <= 39
@@ -245,7 +249,7 @@ pub fn parse_agent_repo(value: &str) -> Result<String> {
         ))
         .into());
     }
-    Ok(repo.to_string())
+    Ok(Some(repo.to_string()))
 }
 
 pub async fn update_endpoint(
@@ -268,7 +272,7 @@ pub async fn update_endpoint(
             .as_deref()
             .map(parse_agent_repo)
             .transpose()?
-            .map(serde_json::Value::String)
+            .map(|repo| repo.map_or(serde_json::Value::Null, serde_json::Value::String))
     };
 
     let req = UpdateEndpointRequest {
@@ -376,26 +380,36 @@ mod tests {
 
     #[test]
     fn agent_repo_takes_owner_and_name() {
-        assert_eq!(parse_agent_repo("acme/api").unwrap(), "acme/api");
-        assert_eq!(parse_agent_repo(" acme/api.git ").unwrap(), "acme/api");
+        assert_eq!(parse_agent_repo("acme/api").unwrap().unwrap(), "acme/api");
         assert_eq!(
-            parse_agent_repo("Acme-Inc/web.app_2").unwrap(),
+            parse_agent_repo(" acme/api.git ").unwrap().unwrap(),
+            "acme/api"
+        );
+        assert_eq!(
+            parse_agent_repo("Acme-Inc/web.app_2").unwrap().unwrap(),
             "Acme-Inc/web.app_2"
         );
         let longest = format!("{}/{}", "a".repeat(39), "b".repeat(100));
-        assert_eq!(parse_agent_repo(&longest).unwrap(), longest);
+        assert_eq!(parse_agent_repo(&longest).unwrap().unwrap(), longest);
+    }
+
+    #[test]
+    fn agent_repo_empty_clears_it_as_the_api_does() {
+        for empty in ["", "  ", ".git", " .GIT "] {
+            assert_eq!(parse_agent_repo(empty).unwrap(), None, "{empty:?}");
+        }
     }
 
     #[test]
     fn agent_repo_refuses_anything_else() {
         for bad in [
-            "",
             "acme",
             "acme/",
             "/api",
             "-acme/api",
             "acme/api/extra",
             "acme/..",
+            "acme/.git",
             "acme_inc/api",
             "ac me/api",
             "https://github.com/acme/api",

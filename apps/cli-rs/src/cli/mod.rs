@@ -163,7 +163,7 @@ pub enum Command {
         #[arg(long)]
         clear_mock: bool,
 
-        /// GitHub repository (owner/name) a coding agent fixes failed deliveries in: fix prompts open there, and alert emails link to it
+        /// GitHub repository (owner/name) a coding agent fixes failed deliveries in: fix prompts open there, and alert emails link to it ("" clears it, like --clear-agent-repo)
         #[arg(long, value_name = "OWNER/NAME", conflicts_with = "clear_agent_repo")]
         agent_repo: Option<String>,
 
