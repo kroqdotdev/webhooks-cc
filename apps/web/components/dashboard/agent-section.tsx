@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { DashboardEndpoint } from "@/lib/dashboard-api";
 import { parseAgentRepo } from "@/lib/fix-prompt";
 import { Field, SaveFooter, Section, useSave } from "./settings-primitives";
@@ -16,13 +16,22 @@ export function AgentSection({ endpoint }: { endpoint: DashboardEndpoint }) {
   const initial = endpoint.agentRepo ?? "";
   const [value, setValue] = useState(initial);
   const { save, saving, error, saved, setError, setSaved } = useSave(endpoint.slug);
+  // The saved value the field last showed, and what was last sent: a new
+  // saved value replaces the field only when it was not edited since.
+  const shown = useRef(initial);
+  const sent = useRef<string | null>(null);
 
   useEffect(() => {
-    setValue(initial);
+    setValue((current) =>
+      asSaved(current) === shown.current || current === sent.current ? initial : current
+    );
+    shown.current = initial;
   }, [initial]);
 
   const parsed = parseAgentRepo(value);
-  const dirty = value.trim() !== initial;
+  // Compared as it would be saved, so `acme/api.git` beside a saved
+  // `acme/api` is no change.
+  const dirty = asSaved(value) !== initial;
 
   return (
     <Section
@@ -42,9 +51,14 @@ export function AgentSection({ endpoint }: { endpoint: DashboardEndpoint }) {
             setSaved(false);
           }}
           onSave={() => {
+            const submitted = value;
+            sent.current = submitted;
             void save({ agentRepo: parsed.ok ? parsed.value : value }, () => {
               if (!parsed.ok)
                 throw new Error("Enter the repository as owner/name, or leave it empty.");
+            }).then((ok) => {
+              // Show the saved form (no .git, no spaces) unless it was edited meanwhile.
+              if (ok) setValue((current) => (current === submitted ? asSaved(submitted) : current));
             });
           }}
         />
@@ -68,4 +82,10 @@ export function AgentSection({ endpoint }: { endpoint: DashboardEndpoint }) {
       </Field>
     </Section>
   );
+}
+
+/** A field value as the API would store it; as typed when it would be refused. */
+function asSaved(value: string): string {
+  const parsed = parseAgentRepo(value);
+  return parsed.ok ? (parsed.value ?? "") : value.trim();
 }

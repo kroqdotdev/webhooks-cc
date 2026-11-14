@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { Check, Copy, ExternalLink } from "lucide-react";
 import { buildFixPrompt, isAgentRepo, t3CodeLink, type FixPromptDelivery } from "@/lib/fix-prompt";
 import { useCopyWithFeedback } from "@/hooks/use-copy-with-feedback";
@@ -24,6 +25,7 @@ export function FixPromptActions({
   canRedeliver?: boolean;
 }) {
   const { copy, isCopied } = useCopyWithFeedback();
+  const [copyFailed, setCopyFailed] = useState(false);
   const prompt = buildFixPrompt(delivery, { canRedeliver });
   if (!prompt) return null;
   const copied = isCopied();
@@ -38,7 +40,10 @@ export function FixPromptActions({
           variant="primary"
           type="button"
           className="ph-no-capture py-1! px-2.5! text-xs flex items-center gap-1.5"
-          onClick={() => void copy(prompt)}
+          onClick={() => {
+            setCopyFailed(false);
+            void copy(prompt).then((ok) => setCopyFailed(!ok));
+          }}
         >
           {copied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
           {copied ? "Copied" : "Copy prompt"}
@@ -63,8 +68,14 @@ export function FixPromptActions({
           Open in T3 Code
         </Button>
       </div>
+      {copyFailed && (
+        <p className="basis-full text-xs text-destructive-ink">
+          The browser did not allow copying. Open in T3 Code, or ask your agent to read this
+          delivery with the webhooks.cc MCP server or whk.
+        </p>
+      )}
       <span role="status" aria-live="polite" className="sr-only">
-        {copied ? "Prompt copied" : ""}
+        {copied ? "Prompt copied" : copyFailed ? "The prompt was not copied" : ""}
       </span>
     </div>
   );
