@@ -20,12 +20,16 @@ From the CLI: `whk wait <slug> --kind email --since now`.
 
 ## Named fields
 
+`emailFields`, `layouts` and `responseRules` each replace the whole list:
+read the current ones with `get_endpoint` and send them back with your
+change, or the others are deleted.
+
 For other values (an order number, an amount, a token in an odd place),
 `update_endpoint` with `emailFields`: each a `name`, where it reads (`from`:
 subject, text, html, from, to, or header with `header`) and an RE2 `pattern`
 whose first group is the value. `get_email` returns them as `fields`, and the
 reply without its quoted part as `replyText`. Try fields on a captured email
-first with `preview_email_fields` (or `whk fields preview <slug>`).
+first with `preview_email_fields` (layouts group; or `whk fields preview <slug>`).
 
 ## Layouts: different senders, line items, attachments
 
@@ -36,7 +40,7 @@ a spreadsheet attachment's columns) and `parseAttachments` (CSV, TSV, XLSX,
 XLS, ODS, PDF text, text). The result is `parsed` on the email, and
 deliveries wait for it.
 
-- `preview_layouts` with draft `layouts` and a `requestId` shows what matches
+- (Layouts group.) `preview_layouts` with draft `layouts` and a `requestId` shows what matches
   and what it finds, without saving or using pages.
 - `list_layout_templates` and `add_layout_template` add ready-made layouts
   (Shopify, WooCommerce, Etsy orders, payments, bookings and more); CLI
@@ -50,7 +54,8 @@ deliveries wait for it.
 `ai_setup` proposes fields, a layout, or a repaired field from 1 to 5 of the
 endpoint's emails. It sends those emails to Anthropic, so it is an approval:
 show the link, then `wait_for_approval` returns the proposals, each checked
-against every email. Apply them with `update_endpoint`. `ai_setup_status`
+against every email. Apply them with `update_endpoint`, together with the
+endpoint's existing fields or layouts. `ai_setup_status`
 says whether it is offered and how many assists are left. CLI: `whk ai setup`.
 
 ## An inbound email handler (Postmark, SendGrid, Mailgun, CloudMailin)

@@ -33,7 +33,8 @@ Needs the local MCP server (the remote one cannot reach localhost).
 
 With only the remote server, run `whk tunnel <port> --endpoint <slug>` and
 `send_webhook` to that endpoint: the tunnel delivers the signed request to
-the handler. `test_webhook_flow` runs create, mock, send, wait, verify,
+the handler (not for providers that sign the URL, such as Twilio, Square
+and HubSpot: they sign the capture URL, not the local one). `test_webhook_flow` runs create, mock, send, wait, verify,
 replay and clean-up in one call.
 
 ## Providers

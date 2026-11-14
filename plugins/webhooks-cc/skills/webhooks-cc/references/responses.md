@@ -10,7 +10,8 @@ backoff, idempotency or code that reads the reply.
 - `mockResponse`: the default answer, with `status`, `body`, `headers` and
   `delay` (milliseconds, at most 30 seconds), for example
   `{ "status": 503, "delay": 2000 }`.
-- `responseRules`: answers that depend on the request. Checked top to
+- `responseRules`: answers that depend on the request. Sending them replaces
+  the whole list, so include the rules to keep (`get_endpoint`). Checked top to
   bottom; the first match answers; without a match the mock response (or a
   plain 200) does. Each rule has `conditions` (all must hold, or any with
   `logic: "or"`) and a `response` shaped like `mockResponse`. At most 50

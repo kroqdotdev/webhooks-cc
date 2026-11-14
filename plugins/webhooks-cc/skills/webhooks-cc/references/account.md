@@ -4,7 +4,6 @@
 
 | Plan          | Requests               | Retention |
 | ------------- | ---------------------- | --------- |
-| Agent sandbox | 100 in 24 hours        | 24 hours  |
 | Free          | 50 a day               | 7 days    |
 | Pro           | 100,000 a month        | 31 days   |
 | Business      | 250,000 a month        | 90 days   |

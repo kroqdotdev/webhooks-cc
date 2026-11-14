@@ -15,8 +15,8 @@ a spreadsheet with a destination, instead of writing a relay. Owner only.
 
 ## Add one
 
-`add_destination` with the endpoint `slug`, a `url`, the kinds it takes
-(`http`, `email`) and:
+`add_destination` with the endpoint `slug`, a `url`, `http` and `email`
+(booleans, both on by default) and:
 
 - `format`: `"auto"` (picked from the URL), `"as_received"` (the request
   unchanged), `"json"` (a signed envelope; the default for email),
@@ -28,16 +28,20 @@ a spreadsheet with a destination, instead of writing a relay. Owner only.
   `kind`, `email` (`name`: subject, from, to, text or tag), `email_field`,
   `spam_score`, `email_auth` (`name`: spf, dkim or dmarc) and `signature`
   (`verified`, `failed` or `missing`).
-- `throttleSeconds` (1 makes a heads-up channel rather than a message per
-  request), `delaySeconds` (up to 3600, for callbacks), `retrySeconds`,
+- `throttleSeconds` (at most one delivery every N seconds; the rest are not
+  sent, so 1 makes a heads-up channel), `delaySeconds` (up to 3600, for callbacks), `retrySeconds`,
   `keepOrder`, `headers`.
 
 Template placeholders: HTTP requests read `json.<path>`, `headers.<name>`,
 `query.<name>`, `method`, `path`, `body`; emails read `subject`,
-`from.address`, `text`, `codes.0`, `links.0`, `fields.<name>`,
+`from.address`, `text`, `codes.0`, `links.0.url`, `fields.<name>`,
 `parsed.fields.<name>`. A string that is only a placeholder keeps its type.
 
 ## Check and run it
+
+`preview_destination`, `test_forwarding`, `get_forwarding_secret` and
+`configure_forwarding` are in the forwarding group; `list_deliveries` and
+`redeliver` are core.
 
 1. `preview_destination` with a captured `requestId`: whether the filter
    passes and the exact request it would send. Fix `unknownPlaceholders`.

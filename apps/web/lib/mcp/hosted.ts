@@ -209,7 +209,7 @@ function buildServer(caller: CallerAuth | undefined): McpServer {
     {
       // The tool list never changes within a request: no listChanged, so a
       // subscriptions/listen stream completes at once instead of holding a slot.
-      capabilities: { tools: { listChanged: false } },
+      capabilities: { tools: { listChanged: false }, resources: { listChanged: false } },
       instructions: INSTRUCTIONS,
       // The list depends on the caller (its client, ?tools=, ?readonly=):
       // cached per caller, and it changes otherwise only with a deploy.

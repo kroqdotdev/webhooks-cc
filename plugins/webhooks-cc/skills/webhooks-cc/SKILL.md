@@ -16,7 +16,7 @@ Everything works without the dashboard. Do it yourself with the tools; send the 
 1. **MCP tools** (server `webhooks-cc`) when they are available.
    - Remote, `https://webhooks.cc/mcp`: needs an account, cannot reach this machine (no `send_to`, `replay_request` or `share_port`; `targetUrl` is refused), and waits return after 50 seconds, so call them again.
    - Local, `npx -y @webhooks-cc/mcp`: reaches localhost and runs without an account.
-   - Servers load the core group: endpoints, requests, emails, sending, signatures, destinations, deliveries, previews, usage, approvals. When a tool is missing, call `enable_tools` (local), or have the person set `WHK_MCP_TOOLS=all` (local) or use `https://webhooks.cc/mcp?tools=all`. Other groups: forwarding, layouts, extras, teams, account, domains, sheets, names.
+   - Claude Code, Claude, Codex and ChatGPT get every tool; other clients get the core group (endpoints, requests, emails, sending, signatures, destinations, deliveries, previews, usage, approvals). When a tool is missing, call `enable_tools` (local), or have the person set `WHK_MCP_TOOLS=all` (local) or use `https://webhooks.cc/mcp?tools=all`.
 2. **CLI `whk`**: for tunnels, shares and scripts. Pass `--json`. See [references/cli.md](references/cli.md).
 3. **SDKs** for tests that run in CI: `@webhooks-cc/sdk`, `webhooks-cc` (Python, with pytest fixtures), `webhooks.cc/go`. See [references/sdk-tests.md](references/sdk-tests.md).
 
@@ -26,11 +26,11 @@ The local server without a key or saved connection runs a sandbox: 3 endpoints, 
 
 ## Approvals
 
-Some actions answer with a link and a code instead of acting: a new API key, a share link, team invites and deletion, removing a domain, renaming the account, connecting Google or picking a spreadsheet, and AI setup. Show the link, ask the person to check the code matches, then call `wait_for_approval` until it is answered (15 minutes). Paying for anything stays with the person; `get_billing` reads what they pay for.
+Some actions answer with a link and a code instead of acting: a new API key, a share link, team invites and deletion, removing a domain, renaming the account, connecting Google or picking a spreadsheet, and AI setup. Show the link, ask the person to check the code matches, then call `wait_for_approval` until it is answered (15 minutes). Paying for anything stays with the person; `get_billing` (account group) reads what they pay for.
 
 ## Jobs
 
-- **Capture and inspect**: `create_endpoint` (`ephemeral: true` for throwaway work), point the sender at its `url`, then `wait_for_request`, `get_request`, `search_requests`, `compare_requests`. `generate_payload_schema` writes Zod, TypeScript, Pydantic or JSON Schema from real captures.
+- **Capture and inspect**: `create_endpoint` (`ephemeral: true` for throwaway work), point the sender at its `url`, then `wait_for_request`, `get_request`, `search_requests`, `compare_requests`. `generate_payload_schema` (extras group) writes Zod, TypeScript, Pydantic or JSON Schema from real captures.
 - **Test a handler with signed webhooks**: `list_provider_templates`, then `send_to` the local route with `provider`, `template` and the test `secret`; `send_webhook` sends to a capture URL; `verify_signature` checks a captured request. See [references/testing.md](references/testing.md).
 - **Mock responses and rules**: `update_endpoint` with `mockResponse` and `responseRules`, checked with `preview_response`. See [references/responses.md](references/responses.md).
 - **Email**: sign up with `<slug>+<run>@mailhooks.cc`, then `wait_for_email` returns the one-time code and main link. Named fields, layouts and inbound handler tests are in [references/email.md](references/email.md).
