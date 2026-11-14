@@ -354,7 +354,7 @@ deletion) refuse API keys.")]
         include: bool,
     },
 
-    /// Replay a captured request
+    /// Replay a captured request from this machine (`whk requests replay` runs it through its endpoint on the server instead)
     Replay {
         /// Request ID to replay
         id: String,

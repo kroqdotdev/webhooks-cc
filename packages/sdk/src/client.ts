@@ -3146,6 +3146,7 @@ export class WebhooksCC {
       return this.request<SendTestEmailResult>("POST", "/send-test-email", {
         slug: endpointSlug,
         ...(options.tag !== undefined ? { tag: options.tag } : {}),
+        ...(options.template !== undefined ? { template: options.template } : {}),
       });
     },
 

@@ -308,6 +308,11 @@ describe("client.emails", () => {
     await expect(client.emails.sendTest("acme", { tag: "no spaces" })).rejects.toThrow(
       /Invalid email tag/
     );
+    await client.emails.sendTest("acme", { template: "shopify-orders" });
+    expect(JSON.parse(fetchMock.mock.calls[1][1].body)).toEqual({
+      slug: "acme",
+      template: "shopify-orders",
+    });
   });
 
   it("builds addresses from the endpoint the server reports", () => {
