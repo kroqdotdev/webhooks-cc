@@ -49,6 +49,8 @@ export async function GET(request: Request) {
   ).replace(/\/+$/, "");
   const secure = url.protocol === "https:";
   const back = (path: string, outcome: string) => {
+    // One line per attempt, so failed ones are seen too (never who, or which account).
+    console.info(`[google] connect ${outcome}`);
     const target = new URL(path, `${appUrl}/`);
     target.searchParams.set("google", outcome);
     return new Response(null, {

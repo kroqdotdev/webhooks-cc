@@ -53,6 +53,7 @@ import { PlaceholderMenu, forwardingPlaceholders, insertAtCursor } from "./place
 import { Field, Segmented, Switch, SwitchRow, useConfirmStep } from "./settings-primitives";
 import { useReportDirty } from "./dirty-sections";
 import { SheetsDestinationEditor } from "./sheets-destination-editor";
+import type { GoogleOutcome } from "@/lib/integrations/google-return";
 import { FileDropDestinationEditor } from "./file-drop-destination-editor";
 import { CodeBox } from "@/components/ui/code";
 import { FieldControl } from "@/components/ui/field";
@@ -536,6 +537,8 @@ function GenericDestinationEditor({
   /** null for a new destination. */
   destination: DashboardDestination | null;
   preset?: DestinationPreset;
+  /** How connecting a Google account just went (the Sheets editor says so). */
+  googleOutcome?: GoogleOutcome | null;
   /** Whether the endpoint checks signatures (a filter can then use the result). */
   signingConfigured: boolean;
   /** The endpoint's named email fields, for templates and filters. */
