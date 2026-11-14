@@ -61,6 +61,9 @@ export function acceptedResources(): string[] {
  */
 export function normalizeResource(value: string): string {
   const app = issuer();
+  // RFC 8707 2: a resource carries no fragment. Returned as it is, it is
+  // never one of acceptedResources(), so both endpoints answer invalid_target.
+  if (value.includes("#")) return value;
   const query = value.indexOf("?");
   const base = query === -1 ? value : value.slice(0, query);
   if (query !== -1 && (base === `${app}/mcp` || base === `${app}/mcp/`)) return `${app}/mcp`;

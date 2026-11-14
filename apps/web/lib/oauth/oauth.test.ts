@@ -204,6 +204,14 @@ describe("checkAuthorizationRequest", () => {
     expect(other.ok).toBe(false);
   });
 
+  it("refuses a resource with a fragment (RFC 8707 2)", async () => {
+    for (const resource of [`${APP}/mcp?tools=all#x`, `${APP}/mcp#x`, `${APP}/api/#`]) {
+      const check = await checkAuthorizationRequest(request({ resource }));
+      expect(check.ok, resource).toBe(false);
+      expect(check.ok ? null : check.error).toBe("invalid_target");
+    }
+  });
+
   it("names a resource the same way at the token endpoint: settings only on /mcp", () => {
     const accepted = (value: string) => acceptedResources().includes(normalizeResource(value));
     for (const value of [
@@ -223,6 +231,9 @@ describe("checkAuthorizationRequest", () => {
       `${APP}/mcp/x?tools=all`,
       `${APP}/?tools=all`,
       `https://elsewhere.example/mcp?tools=all`,
+      `${APP}/mcp?tools=all#x`,
+      `${APP}/mcp/#x`,
+      `${APP}/api/#x`,
     ]) {
       expect(accepted(value)).toBe(false);
     }

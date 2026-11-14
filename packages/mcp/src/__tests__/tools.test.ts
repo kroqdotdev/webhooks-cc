@@ -448,17 +448,25 @@ describe("registerTools", () => {
       { header: "Subject", value: "{{ subject }}" },
     ];
 
-    function sheetsTools() {
+    const savedSheets = {
+      id: "d1",
+      format: "sheets",
+      url: `https://docs.google.com/spreadsheets/d/${spreadsheetId}/edit`,
+      config: { connectionId, spreadsheetId, sheet: "Orders", rows: "line_items", columns },
+    };
+
+    function sheetsTools(current: Record<string, unknown> = savedSheets) {
       const create = vi.fn().mockResolvedValue({ id: "d1", format: "sheets" });
       const update = vi.fn().mockResolvedValue({ id: "d1", format: "sheets" });
+      const get = vi.fn().mockResolvedValue(current);
       const createSpreadsheet = vi.fn().mockResolvedValue({ id: spreadsheetId });
       const tools = getRegisteredTools(
         createMockClient({
-          destinations: { create, update },
+          destinations: { create, update, get },
           google: { createSpreadsheet },
         } as unknown as Partial<WebhooksCC>)
       );
-      return { tools, create, update, createSpreadsheet };
+      return { tools, create, update, get, createSpreadsheet };
     }
 
     it("adds one with its config and the spreadsheet's URL", async () => {
@@ -540,6 +548,90 @@ describe("registerTools", () => {
       ).toBe(false);
     });
 
+    it("keeps a Sheets destination's tab and row mode when a change leaves them out", async () => {
+      const { tools, update, get } = sheetsTools();
+      const schema = z.object(tools.update_destination.schema as z.ZodRawShape);
+      const newColumns = [{ header: "From", value: "{{ from.address }}" }];
+      const result = await tools.update_destination.handler(
+        schema.parse({
+          slug: "acme",
+          destinationId: "d1",
+          format: "sheets",
+          config: { connectionId, spreadsheetId, columns: newColumns },
+        })
+      );
+      expect(result.isError).toBeUndefined();
+      expect(get).toHaveBeenCalledWith("acme", "d1");
+      expect(update).toHaveBeenCalledWith("acme", "d1", {
+        format: "sheets",
+        config: {
+          connectionId,
+          spreadsheetId,
+          sheet: "Orders",
+          rows: "line_items",
+          columns: newColumns,
+        },
+        url: `https://docs.google.com/spreadsheets/d/${spreadsheetId}/edit`,
+      });
+    });
+
+    it("gives a destination that becomes a Sheets one the defaults", async () => {
+      const { tools, update } = sheetsTools({
+        id: "d1",
+        format: "json",
+        url: "https://api.example.com/in",
+        config: null,
+      });
+      const schema = z.object(tools.update_destination.schema as z.ZodRawShape);
+      await tools.update_destination.handler(
+        schema.parse({
+          slug: "acme",
+          destinationId: "d1",
+          format: "sheets",
+          config: { connectionId, spreadsheetId, columns },
+        })
+      );
+      expect(update).toHaveBeenCalledWith("acme", "d1", {
+        format: "sheets",
+        config: { connectionId, spreadsheetId, sheet: "Sheet1", rows: "email", columns },
+        url: `https://docs.google.com/spreadsheets/d/${spreadsheetId}/edit`,
+      });
+    });
+
+    it("refuses a url for a destination that is or stays a Sheets one", async () => {
+      const { tools, update, get } = sheetsTools();
+      const schema = z.object(tools.update_destination.schema as z.ZodRawShape);
+      const url = "https://api.example.com/in";
+      for (const args of [
+        { slug: "acme", destinationId: "d1", url },
+        { slug: "acme", destinationId: "d1", url, format: "sheets" },
+      ]) {
+        const result = await tools.update_destination.handler(schema.parse(args));
+        expect(result.isError).toBe(true);
+        expect(parseJsonResult(result).message).toContain("leave url out");
+      }
+      expect(update).not.toHaveBeenCalled();
+      // Only the one without a format had to read the destination.
+      expect(get).toHaveBeenCalledTimes(1);
+
+      // Moving it to another format with a url of its own is a plain change.
+      await tools.update_destination.handler(
+        schema.parse({ slug: "acme", destinationId: "d1", url, format: "json" })
+      );
+      expect(update).toHaveBeenCalledWith("acme", "d1", { url, format: "json" });
+      expect(get).toHaveBeenCalledTimes(1);
+    });
+
+    it("lets a url change on a destination that is not a Sheets one", async () => {
+      const { tools, update } = sheetsTools({ id: "d1", format: "json", config: null });
+      const schema = z.object(tools.update_destination.schema as z.ZodRawShape);
+      const url = "https://api.example.com/v2";
+      await tools.update_destination.handler(
+        schema.parse({ slug: "acme", destinationId: "d1", url })
+      );
+      expect(update).toHaveBeenCalledWith("acme", "d1", { url });
+    });
+
     it("replaces a Sheets destination's config only with format sheets", async () => {
       const { tools, update } = sheetsTools();
       const schema = z.object(tools.update_destination.schema as z.ZodRawShape);
@@ -578,6 +670,30 @@ describe("registerTools", () => {
         spreadsheetId,
         sheet: undefined,
         headers: ["Received", "Subject"],
+      });
+    });
+
+    it("refuses an empty or malformed spreadsheetId, and a title with one", async () => {
+      const { tools, createSpreadsheet } = sheetsTools();
+      const schema = z.object(tools.create_spreadsheet.schema as z.ZodRawShape);
+      const headers = ["Received"];
+      expect(schema.safeParse({ connectionId, spreadsheetId: "", headers }).success).toBe(false);
+      expect(schema.safeParse({ connectionId, spreadsheetId: "a/b", headers }).success).toBe(false);
+      const result = await tools.create_spreadsheet.handler(
+        schema.parse({ connectionId, spreadsheetId, title: "Orders", headers })
+      );
+      expect(result.isError).toBe(true);
+      expect(parseJsonResult(result).message).toContain("leave it out with spreadsheetId");
+      expect(createSpreadsheet).not.toHaveBeenCalled();
+
+      await tools.create_spreadsheet.handler(
+        schema.parse({ connectionId, title: "Orders", headers })
+      );
+      expect(createSpreadsheet).toHaveBeenCalledWith({
+        connectionId,
+        title: "Orders",
+        sheet: undefined,
+        headers,
       });
     });
   });

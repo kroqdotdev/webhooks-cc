@@ -602,6 +602,13 @@ describe("OAuth for an MCP address with tool settings", () => {
     ).json()) as Record<string, unknown>;
     expect(plain.resource).toBe(`${APP}/mcp`);
 
+    // An address with a trailing slash never reaches the route: Next.js
+    // sends it to /mcp with its query, so the metadata names /mcp.
+    const slashed = await fetch(`${WEB}/mcp/?tools=all`, { method: "POST", redirect: "manual" });
+    expect(slashed.status).toBe(308);
+    expect(new URL(slashed.headers.get("location") ?? "", WEB).pathname).toBe("/mcp");
+    expect(new URL(slashed.headers.get("location") ?? "", WEB).search).toBe("?tools=all");
+
     const issuerUrl = (prm.authorization_servers as string[])[0];
     asMetadata = (await (
       await fetch(local(`${issuerUrl}/.well-known/oauth-authorization-server`))
@@ -632,8 +639,9 @@ describe("OAuth for an MCP address with tool settings", () => {
       .single();
     expect(data?.resource).toBe(`${APP}/mcp`);
 
-    // Neither the API with settings nor another path is the MCP server.
-    for (const resource of [`${APP}/api/?tools=all`, `${APP}/mcpx?tools=all`]) {
+    // Neither the API with settings nor another path is the MCP server, and a
+    // resource never carries a fragment (RFC 8707 2).
+    for (const resource of [`${APP}/api/?tools=all`, `${APP}/mcpx?tools=all`, `${ALL}#x`]) {
       expect(await exchange(grant, resource)).toMatchObject({
         status: 400,
         body: { error: "invalid_target" },
@@ -664,6 +672,27 @@ describe("OAuth for an MCP address with tool settings", () => {
     ] as const) {
       const result = await callTool(address, accessToken, tool);
       expect(result.isError, `${tool} through ${address}`).not.toBe(true);
+    }
+  });
+
+  it("refuses an authorization request for a resource with a fragment", async () => {
+    const pair = verifierPair();
+    for (const resource of [`${ALL}#x`, `${APP}/mcp#x`]) {
+      const params = {
+        client_id: settingsClient,
+        redirect_uri: "http://127.0.0.1:50124/callback",
+        response_type: "code",
+        state: "s3",
+        code_challenge: pair.challenge,
+        code_challenge_method: "S256",
+        resource,
+      };
+      const shown = await fetch(
+        `${WEB}/api/oauth2/authorize?${new URLSearchParams(params).toString()}`,
+        { headers: { authorization: `Bearer ${session}`, "x-forwarded-for": nextIp() } }
+      );
+      expect(shown.status, resource).toBe(400);
+      expect(((await shown.json()) as { error: string }).error).toBe("invalid_target");
     }
   });
 

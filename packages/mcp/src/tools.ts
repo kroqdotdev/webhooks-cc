@@ -33,6 +33,7 @@ import {
   CONDITION_OPS,
   conditionIssues,
   type ConditionField,
+  type Destination,
   type EmailRequest,
   type Endpoint,
   type LiveShare,
@@ -304,18 +305,23 @@ const sheetsConfigSchema = z
       .string()
       .regex(/^[A-Za-z0-9_-]{20,100}$/, "spreadsheetId is a Google Sheets id")
       .describe("From create_spreadsheet (its id) or pick_spreadsheet (its spreadsheetId)"),
+    // No defaults here: on update_destination a default would move a
+    // destination whose columns change to Sheet1 or email rows. A new one
+    // gets them in destinationWriteInput, a changed one keeps its own.
     sheet: z
       .string()
       .trim()
       .min(1)
       .max(100)
-      .default("Sheet1")
-      .describe('The tab rows go to (default "Sheet1"; list_sheet_tabs lists them)'),
+      .optional()
+      .describe(
+        'The tab rows go to (list_sheet_tabs lists them). Left out: "Sheet1" for a new destination, the current tab on a change'
+      ),
     rows: z
       .enum(["email", "line_items"])
-      .default("email")
+      .optional()
       .describe(
-        '"email": a row per capture (default); "line_items": a row per line item a layout found'
+        '"email": a row per capture; "line_items": a row per line item a layout found. Left out: "email" for a new destination, the current mode on a change'
       ),
     columns: z
       .array(
@@ -362,26 +368,42 @@ const destinationWriteFields = {
   config: sheetsConfigSchema.optional(),
 };
 
+type SheetsConfigInput = z.infer<typeof sheetsConfigSchema>;
+
+const SHEETS_URL_REFUSED =
+  "A Google Sheets destination's URL is its spreadsheet's: leave url out and pass config";
+
 /**
  * Checks a Sheets destination's arguments and gives it its spreadsheet's URL,
  * which the API sets on the row whatever is sent (and needs to create one).
+ * `current` is the destination being changed (null when creating, or when
+ * the change touches neither its url nor its config): a Sheets config left
+ * without its tab or row mode keeps the current one, and a url is refused on
+ * a destination that stays a Sheets destination.
  */
-function destinationWriteInput<T extends { url?: string; format?: string; config?: SheetsConfig }>(
-  input: T,
-  creating: boolean
-): T {
-  if (input.config) {
+function destinationWriteInput<
+  T extends { url?: string; format?: string; config?: SheetsConfigInput },
+>(input: T, creating: boolean, current: Destination | null = null) {
+  const { config, ...rest } = input;
+  const format = input.format ?? current?.format;
+  if (input.url !== undefined && format === "sheets") {
+    throw new Error(SHEETS_URL_REFUSED);
+  }
+  if (config) {
     if (input.format !== "sheets") {
       throw new Error('config is for Google Sheets destinations: pass format: "sheets" with it');
     }
-    if (input.url !== undefined) {
-      throw new Error(
-        "A Google Sheets destination's URL is its spreadsheet's: leave url out and pass config"
-      );
-    }
+    const kept =
+      current?.format === "sheets" && current.config ? (current.config as SheetsConfig) : null;
+    const full: SheetsConfig = {
+      ...config,
+      sheet: config.sheet ?? kept?.sheet ?? "Sheet1",
+      rows: config.rows ?? kept?.rows ?? "email",
+    };
     return {
-      ...input,
-      url: `https://docs.google.com/spreadsheets/d/${input.config.spreadsheetId}/edit`,
+      ...rest,
+      config: full,
+      url: `https://docs.google.com/spreadsheets/d/${config.spreadsheetId}/edit`,
     };
   }
   if (creating && input.format === "sheets") {
@@ -392,7 +414,7 @@ function destinationWriteInput<T extends { url?: string; format?: string; config
   if (creating && input.url === undefined) {
     throw new Error("Pass the url to send to (a Google Sheets destination takes config instead)");
   }
-  return input;
+  return rest;
 }
 
 const responseRuleSchema = z.object({
@@ -3071,16 +3093,27 @@ export function registerTools(
 
   server.tool(
     "update_destination",
-    "Change a destination: any of its fields; only the ones you pass change. A Google Sheets destination's config (spreadsheet, tab, rows, columns) is replaced as a whole: pass format sheets with it. Owner only.",
+    "Change a destination: any of its fields; only the ones you pass change. A Google Sheets destination's config is replaced as a whole, with format sheets: pass its connectionId, spreadsheetId and columns again; a sheet or rows left out keeps the current one. A Sheets destination's URL is its spreadsheet's, so a url is refused on one that stays a Sheets destination. Owner only.",
     {
       slug: z.string().describe("The endpoint slug"),
       destinationId: z.string().describe("The destination's id (from list_destinations)"),
-      url: httpUrlSchema.optional().describe("A new URL (not for format sheets)"),
+      url: httpUrlSchema
+        .optional()
+        .describe("A new URL (not for a Sheets destination, whose URL is its spreadsheet's)"),
       ...destinationWriteFields,
     },
     withErrorHandling(async ({ slug, destinationId, ...input }) => {
+      // The current destination, when the change depends on it: a config
+      // keeps its tab and row mode, and a url is refused on a Sheets one.
+      const needsCurrent =
+        input.config !== undefined || (input.url !== undefined && input.format === undefined);
+      const current = needsCurrent ? await client.destinations.get(slug, destinationId) : null;
       return jsonContent(
-        await client.destinations.update(slug, destinationId, destinationWriteInput(input, false))
+        await client.destinations.update(
+          slug,
+          destinationId,
+          destinationWriteInput(input, false, current)
+        )
       );
     })
   );
@@ -3654,12 +3687,17 @@ export function registerTools(
 
   server.tool(
     "create_spreadsheet",
-    "Create a new spreadsheet with a header row in a connected Google account, for a Sheets destination (then add_destination with format sheets and its id as spreadsheetId). With spreadsheetId (one from pick_spreadsheet), write the header row into that spreadsheet instead, only when its first row is empty. Needs no approval: the app reaches only spreadsheets it created or that were chosen for it.",
+    "Create a new spreadsheet with a header row in a connected Google account, for a Sheets destination (then add_destination with format sheets and its id as spreadsheetId). With spreadsheetId (one from pick_spreadsheet), write the header row into that spreadsheet instead, only when its first row is empty; a title is refused then, since nothing is created. Needs no approval: the app reaches only spreadsheets it created or that were chosen for it.",
     {
       connectionId: z.string().describe("The Google connection's id, from list_google_connections"),
-      title: z.string().max(200).optional().describe("The spreadsheet's title"),
+      title: z
+        .string()
+        .max(200)
+        .optional()
+        .describe("The new spreadsheet's title (not with spreadsheetId)"),
       spreadsheetId: z
         .string()
+        .regex(/^[A-Za-z0-9_-]{20,100}$/, "spreadsheetId is a Google Sheets id")
         .optional()
         .describe("An existing spreadsheet (from pick_spreadsheet) to write the header row into"),
       sheet: z.string().max(100).optional().describe('The tab rows go to (default "Sheet1")'),
@@ -3668,17 +3706,22 @@ export function registerTools(
         .max(50)
         .describe("The header row, one per column: the destination's column headers, in order"),
     },
-    withErrorHandling(async ({ connectionId, title, spreadsheetId, sheet, headers }) =>
-      jsonContent(
+    withErrorHandling(async ({ connectionId, title, spreadsheetId, sheet, headers }) => {
+      if (spreadsheetId !== undefined && title !== undefined) {
+        throw new Error(
+          "title names a new spreadsheet: leave it out with spreadsheetId, which writes into one that exists"
+        );
+      }
+      return jsonContent(
         await client.google.createSpreadsheet({
           connectionId,
           title,
-          ...(spreadsheetId ? { spreadsheetId } : {}),
+          ...(spreadsheetId !== undefined ? { spreadsheetId } : {}),
           sheet,
           headers,
         })
-      )
-    )
+      );
+    })
   );
 
   server.tool(

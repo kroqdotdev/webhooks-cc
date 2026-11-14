@@ -97,16 +97,28 @@ export interface ProtectedResourceMetadata {
 }
 
 /**
+ * The query an RFC 3986 URI may carry: unreserved characters, percent
+ * escapes, sub-delims, ":", "@", "/" and "?". None of them is a quote, a
+ * backslash, a space or a line break, so it cannot leave the quoted-string
+ * of a WWW-Authenticate parameter. `URL.search` already escapes the quote
+ * and spaces, but keeps a backslash and characters such as "{" or "|", which
+ * this refuses.
+ */
+const SETTINGS_QUERY = /^\?[A-Za-z0-9\-._~%!$&'()*+,;=:@/?]+$/;
+
+/**
  * The MCP server's settings (`?tools=core,teams&readonly=1`) from an address,
- * to carry over into its metadata URL and resource; empty when there are
- * none, or when the query holds anything else than plain settings (it ends
- * up in a WWW-Authenticate header).
+ * to carry over into its metadata URL and resource exactly as the client
+ * sent them; empty when there are none, when the query is long, or when it
+ * holds anything an RFC 3986 query cannot (it ends up in a WWW-Authenticate
+ * header). The path is not repeated: Next.js answers `/mcp/` with a redirect
+ * to `/mcp` before any route runs, so the metadata names `/mcp`, and clients
+ * compare resource paths with the trailing slash ignored (the MCP SDK's
+ * `checkResourceAllowed`).
  */
 export function mcpSettingsQuery(url: URL): string {
   const query = url.search;
-  return query.length > 1 && query.length <= 256 && /^\?[A-Za-z0-9_.,=&%-]+$/.test(query)
-    ? query
-    : "";
+  return query.length > 1 && query.length <= 256 && SETTINGS_QUERY.test(query) ? query : "";
 }
 
 /**

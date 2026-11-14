@@ -445,7 +445,7 @@ A [Google Sheets](/docs/forwarding#google-sheets) destination takes `format: "sh
 
 ### update_destination
 
-Change a destination; only the fields passed change. Takes `slug`, `destinationId` and any field of `add_destination`, `url` included. A Sheets destination's `config` is replaced as a whole and goes with `format: "sheets"`. Switching it off or taking a kind away fails the deliveries still waiting for it.
+Change a destination; only the fields passed change. Takes `slug`, `destinationId` and any field of `add_destination`, `url` included. A Sheets destination's `config` is replaced as a whole and goes with `format: "sheets"`, with its `connectionId`, `spreadsheetId` and `columns`; a `sheet` or `rows` left out keeps the current one. A Sheets destination's URL is its spreadsheet's, so a `url` is refused for one that stays a Sheets destination. Switching it off or taking a kind away fails the deliveries still waiting for it.
 
 ### remove_destination
 
@@ -891,7 +891,7 @@ Ask the person to choose an existing spreadsheet (`connectionId`). The approval 
 
 ### create_spreadsheet
 
-Create a spreadsheet with a header row in a connected account (`connectionId`, `headers`, optional `title` and `sheet`), then pass its `id` to `add_destination` as `spreadsheetId`. With `spreadsheetId` (one from `pick_spreadsheet`) it writes the header row into that spreadsheet instead, only when its first row is empty. Needs no approval: the app reaches only spreadsheets it created or that were chosen for it.
+Create a spreadsheet with a header row in a connected account (`connectionId`, `headers`, optional `title` and `sheet`), then pass its `id` to `add_destination` as `spreadsheetId`. With `spreadsheetId` (one from `pick_spreadsheet`) it writes the header row into that spreadsheet instead, only when its first row is empty; a `title` is refused with it, since nothing is created. Needs no approval: the app reaches only spreadsheets it created or that were chosen for it.
 
 ### list_sheet_tabs
 
