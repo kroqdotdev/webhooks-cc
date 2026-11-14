@@ -30,11 +30,11 @@ export const TRACK_LABELS: Record<ChangelogTrack, string> = {
 const RELEASE = release as { version: string | null; entries: ChangelogEntry[] };
 
 export const APP_VERSION: string = RELEASE.version ?? "dev";
-export const CLI_VERSION = "1.15.0";
-export const SDK_VERSION = "1.25.0";
+export const CLI_VERSION = "1.16.0";
+export const SDK_VERSION = "1.26.0";
 export const PYTHON_SDK_VERSION = "0.7.0";
 export const GO_SDK_VERSION = "0.7.0";
-export const MCP_VERSION = "1.21.0";
+export const MCP_VERSION = "1.22.0";
 
 export const CHANGELOG: ChangelogEntry[] = [
   ...RELEASE.entries,
@@ -2145,6 +2145,19 @@ export const CHANGELOG: ChangelogEntry[] = [
 
   // ─── CLI ────────────────────────────────────────────────────────────
   {
+    version: "1.16.0",
+    date: "2026-11-14",
+    title: "Without The Dashboard",
+    track: "cli",
+    items: [
+      "`whk agents list` and `whk agents disconnect <id>` show and disconnect the agents connected to the account",
+      "`whk share-links list`, `create <request-id>` and `revoke <id>`: a new link is published once the account's owner approves it, and whk prints it",
+      "`whk domains list`, `add`, `verify`, `route` and `remove` manage custom inbound domains; `route` takes endpoints by slug and keeps what you leave out, and `remove` waits for the owner's approval",
+      "`whk account rename <name>` (or `--clear`) asks the owner to approve a new display name",
+      "`whk approvals wait <id>` follows any approval and prints what it did",
+    ],
+  },
+  {
     version: "1.15.0",
     date: "2026-11-13",
     title: "What You Pay For",
@@ -2463,6 +2476,19 @@ export const CHANGELOG: ChangelogEntry[] = [
   },
 
   // ─── SDK ────────────────────────────────────────────────────────────
+  {
+    version: "1.26.0",
+    date: "2026-11-14",
+    title: "Without The Dashboard",
+    track: "sdk",
+    items: [
+      "`client.agents.list()` and `disconnect(id)` for the account's connected agents",
+      "`client.shareLinks.list()`, `forRequest(requestId)`, `create(requestId, options)` and `revoke(id)`; `create` returns a pending approval whose `wait()` resolves with the link",
+      "`client.domains.list()`, `add()`, `verify()`, `route()` and `remove()`, each with an optional `teamId`; `remove` returns a pending approval",
+      "`client.account.rename(name)` returns a pending approval for a new display name",
+      "`client.approvals.wait()` returns the result of actions that run when the owner approves, on every poll",
+    ],
+  },
   {
     version: "1.25.0",
     date: "2026-11-13",
@@ -3076,6 +3102,19 @@ export const CHANGELOG: ChangelogEntry[] = [
   },
 
   // ─── MCP ────────────────────────────────────────────────────────────
+  {
+    version: "1.22.0",
+    date: "2026-11-14",
+    title: "Without The Dashboard",
+    track: "mcp",
+    items: [
+      "`list_connected_agents` and `disconnect_agent` for the account's connected agents",
+      "`list_share_links`, `create_share_link` and `revoke_share_link`; a new link waits for the owner's approval",
+      "`list_domains`, `add_domain`, `verify_domain`, `route_domain` and `remove_domain` for custom inbound domains; removing one waits for the owner's approval",
+      "`rename_account` asks the owner to approve a new display name",
+      "`wait_for_approval` reports what any approval did: a key, a share link, a removed domain or a new name",
+    ],
+  },
   {
     version: "1.21.0",
     date: "2026-11-13",
