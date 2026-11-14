@@ -6,9 +6,10 @@ const { baseUrl, renderEmail } = require("../lib");
 // 2 seconds and says how far back it got; Zapier ends a step at 30 seconds,
 // and the email found still has to be fetched, so stop starting pages here.
 const SEARCH_DEADLINE_MS = 20_000;
-// A page can take a little over its 2 seconds; do not start one this close
-// to the deadline.
-const PAGE_MS = 2_500;
+// The longest a page can take: up to 2.5 seconds waiting for a free search
+// slot, its 2-second budget, and the slice it finishes. No page starts this
+// close to the deadline.
+const PAGE_MS = 5_000;
 
 /**
  * The newest email at an endpoint containing the text, following the

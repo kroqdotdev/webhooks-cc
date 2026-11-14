@@ -95,8 +95,9 @@ describe("Find Email", () => {
     }));
     const z = fakeZ(pages);
     expect(await perform(z, bundle)).toEqual([]);
-    // 20 s deadline, no page started within 2.5 s of it: 9 pages of 2 s.
-    expect(z.calls).toHaveLength(9);
+    // 20 s deadline, no page started within 5 s of it: pages start at
+    // 0, 2, ..., 14 seconds.
+    expect(z.calls).toHaveLength(8);
     expect(Date.now()).toBeLessThanOrEqual(20_000);
   });
 });
