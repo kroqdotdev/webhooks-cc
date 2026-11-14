@@ -507,7 +507,7 @@ To test the deployed handler through webhooks.cc instead, use **Send test delive
 
 ## Manage forwarding from code
 
-The SDK's `client.destinations` methods do everything the **Forwarding** section does, `client.forwarding` the **Deliveries** log, and the [MCP server](/docs/mcp/tools#add_destination) has the same as tools, so an agent can set up and check forwarding for you. They are for the endpoint's owner only: for anyone else they throw `NotFoundError`.
+The SDK's `client.destinations` methods do everything the **Forwarding** section does, `client.forwarding` the **Deliveries** log, and the [MCP server](/docs/mcp/tools#add_destination) has the same as tools, so an agent can set up and check forwarding for you. They are for the endpoint's owner only: for anyone else they throw `NotFoundError`. From a terminal or a script, [`whk destinations` and `whk deliveries`](/docs/cli/commands#destinations) do the same.
 
 ```ts
 import { WebhooksCC } from "@webhooks-cc/sdk";

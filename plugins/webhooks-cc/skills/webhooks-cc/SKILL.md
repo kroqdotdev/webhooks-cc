@@ -34,7 +34,7 @@ Some actions answer with a link and a code instead of acting: a new API key, a s
 - **Test a handler with signed webhooks**: `list_provider_templates`, then `send_to` the local route with `provider`, `template` and the test `secret`; `send_webhook` sends to a capture URL; `verify_signature` checks a captured request. See [references/testing.md](references/testing.md).
 - **Mock responses and rules**: `update_endpoint` with `mockResponse` and `responseRules`, checked with `preview_response`. See [references/responses.md](references/responses.md).
 - **Email**: sign up with `<slug>+<run>@mailhooks.cc`, then `wait_for_email` returns the one-time code and main link. Named fields, layouts and inbound handler tests are in [references/email.md](references/email.md).
-- **Forwarding**: `add_destination` sends captures to a server, Slack or Discord, as your own JSON, or as rows in a Google Sheet; file drops are added with the SDK or `whk api`. `list_deliveries` and `redeliver` show and resend. See [references/forwarding.md](references/forwarding.md).
+- **Forwarding**: `add_destination` sends captures to a server, Slack or Discord, as your own JSON, or as rows in a Google Sheet; file drops are added with the SDK or `whk destinations add`. `list_deliveries` and `redeliver` show and resend. See [references/forwarding.md](references/forwarding.md).
 - **Local app**: `whk tunnel <port>` delivers captures to localhost; `--live` gives the sender your app's answer; `share_port` or `whk share <port>` opens a preview link. See [references/tunnels.md](references/tunnels.md).
 - **Teams, keys and the account**: see [references/account.md](references/account.md).
 

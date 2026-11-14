@@ -323,7 +323,7 @@
       "sdk": ["destinations.list", "destinations.get"],
       "python": ["destinations.list", "destinations.get"],
       "go": ["Destinations.List", "Destinations.Get"],
-      "cli": "no command yet: `whk api` reaches it",
+      "cli": ["destinations ls", "destinations get"],
       "mcp": ["list_destinations"]
     },
     {
@@ -333,7 +333,7 @@
       "sdk": ["destinations.create"],
       "python": ["destinations.create"],
       "go": ["Destinations.Create"],
-      "cli": "no command yet: `whk api` reaches it",
+      "cli": ["destinations add"],
       "mcp": ["add_destination"]
     },
     {
@@ -346,7 +346,7 @@
       "sdk": ["destinations.update", "destinations.reorder"],
       "python": ["destinations.update", "destinations.reorder"],
       "go": ["Destinations.Update", "Destinations.Reorder"],
-      "cli": "no command yet: `whk api` reaches it",
+      "cli": ["destinations update", "destinations reorder"],
       "mcp": ["update_destination"]
     },
     {
@@ -356,7 +356,7 @@
       "sdk": ["destinations.delete"],
       "python": ["destinations.delete"],
       "go": ["Destinations.Delete"],
-      "cli": "no command yet: `whk api` reaches it",
+      "cli": ["destinations rm"],
       "mcp": ["remove_destination"]
     },
     {
@@ -366,7 +366,7 @@
       "sdk": ["destinations.preview"],
       "python": ["destinations.preview"],
       "go": ["Destinations.Preview"],
-      "cli": "no command yet: `whk api` reaches it",
+      "cli": ["destinations preview"],
       "mcp": ["preview_destination"]
     },
     {
@@ -379,7 +379,7 @@
       "sdk": ["destinations.test", "forwarding.test"],
       "python": ["destinations.test"],
       "go": ["Destinations.Test"],
-      "cli": "no command yet: `whk api` reaches it",
+      "cli": ["destinations test"],
       "mcp": ["test_forwarding"]
     },
     {
@@ -409,7 +409,7 @@
         "Forwarding.Secret",
         "Forwarding.RotateSecret"
       ],
-      "cli": "no command yet: `whk api` reaches it",
+      "cli": ["destinations secret"],
       "mcp": ["get_forwarding_secret"]
     },
     {
@@ -428,7 +428,7 @@
       ],
       "python": "testing-focused SDK: added on demand",
       "go": "testing-focused SDK: added on demand",
-      "cli": "no command yet: `whk api` reaches it",
+      "cli": ["deliveries ls", "deliveries summary"],
       "mcp": ["list_deliveries"]
     },
     {
@@ -441,7 +441,7 @@
       "sdk": ["forwarding.redeliver", "forwarding.redeliverFailed"],
       "python": "testing-focused SDK: added on demand",
       "go": "testing-focused SDK: added on demand",
-      "cli": "no command yet: `whk api` reaches it",
+      "cli": ["deliveries redeliver", "deliveries redeliver-failed"],
       "mcp": ["redeliver"]
     },
     {

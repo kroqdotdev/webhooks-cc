@@ -25,6 +25,7 @@
 | Read, search, export               | `whk requests list`, `get`, `search`, `count`, `export`, `clear`                                                  |
 | Send                               | `whk send <slug> -d @body.json`, `whk send-to <url>`, `whk replay <id> --to <url>`                                |
 | Local app                          | `whk tunnel <port> [--live]`, `whk share <port>`, `whk shares`, `whk names`                                       |
+| Forwarding                         | `whk destinations ls`, `add`, `update`, `preview`, `test`, `secret`, `rm`; `whk deliveries ls`, `redeliver`       |
 | Email setup                        | `whk fields preview`, `whk layouts`, `whk ai setup`, `whk domains`                                                |
 | Account                            | `whk usage`, `whk billing`, `whk keys`, `whk agents`, `whk account`, `whk share-links`, `whk teams`, `whk google` |
 | Anything else                      | `whk api <path> [-X METHOD] [-d JSON]`                                                                            |
@@ -33,9 +34,16 @@
 the sender, and its exit is the signal. Without `--since now`, a request
 from the last 5 minutes also counts.
 
-`whk api` reaches every route a command does not cover (destinations among
-them): `whk api endpoints/<slug>/destinations`,
-`whk api -X POST endpoints/<slug>/destinations -d @destination.json`.
+`whk api` reaches every route a command does not cover (alerts among
+them): `whk api endpoints/<slug>/alerts`,
+`whk api -X PUT endpoints/<slug>/alerts -d @alerts.json`.
+
+`whk destinations add` and `update` take a flag per setting (`--url`,
+`--format`, `--filter @filter.json`, `--header NAME:VALUE`, ...); `update`
+changes only what you pass. A file drop's password or key comes from
+`WHK_DROP_SECRET` (never a flag), so the person sets it in their own
+environment. `whk destinations preview` is a dry run; `test`,
+`secret --rotate`, `rm` and `whk deliveries redeliver` need `--yes`.
 
 Commands that need the person's approval (`whk keys create`,
 `whk share-links create`, `whk teams invite`, `whk domains remove`, ...)
