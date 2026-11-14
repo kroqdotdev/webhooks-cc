@@ -1,4 +1,4 @@
-import { McpServer, ResourceTemplate } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { ResourceTemplate, type McpServer } from "@modelcontextprotocol/server";
 import type { Request, WebhooksCC } from "@webhooks-cc/sdk";
 import { compactRequest } from "./compact";
 

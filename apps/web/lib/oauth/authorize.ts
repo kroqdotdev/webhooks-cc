@@ -54,8 +54,13 @@ export function acceptedResources(): string[] {
 }
 
 function normalizeResource(value: string): string {
-  // `${app}/mcp/` and `${app}/api` name the same resources.
+  // `${app}/mcp/` and `${app}/api` name the same resources. The MCP server's
+  // address may carry settings (`?tools=all`, `?readonly=1`), and a client
+  // names the address it was given: they choose tools, not the resource.
   const app = issuer();
+  const query = value.indexOf("?");
+  const base = query === -1 ? value : value.slice(0, query);
+  if (query !== -1 && (base === `${app}/mcp` || base === `${app}/mcp/`)) return `${app}/mcp`;
   if (value === `${app}/mcp/`) return `${app}/mcp`;
   if (value === `${app}/api`) return `${app}/api/`;
   return value;

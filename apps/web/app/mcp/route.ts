@@ -2,7 +2,14 @@ import { extractBearerToken } from "@/lib/api-auth";
 import { publicEnv } from "@/lib/env";
 import { getClientIp, checkRateLimitByKeyWithInfo, checkRateLimitWithInfo } from "@/lib/rate-limit";
 import { POST_CLAIM_SCOPES } from "@/lib/agent/constants";
-import { mcpHandler } from "@/lib/mcp/hosted";
+import { CLIENT_INFO_META_KEY } from "@modelcontextprotocol/server";
+import { TOOL_GROUP_NAMES } from "@webhooks-cc/mcp/tools";
+import {
+  mcpHandler,
+  registrationClientName,
+  requestClientName,
+  toolSelection,
+} from "@/lib/mcp/hosted";
 import { preflight, withCors } from "@/lib/oauth/cors";
 import { validateApiKeyWithMetadata } from "@/lib/supabase/api-keys";
 import { readBoundedBody } from "@/lib/agent/http";
@@ -114,6 +121,20 @@ async function handle(request: Request): Promise<Response> {
     }
   }
 
+  // The groups only shape tools/list: a call may name any tool the caller
+  // could have been listed (a client need not name itself on every request,
+  // so a later call may not repeat what decided its list). Read-only holds
+  // for calls too.
+  const url = new URL(request.url);
+  const listing = (parsedBody as { method?: unknown } | undefined)?.method === "tools/list";
+  const tools = listing
+    ? toolSelection(url, [
+        requestClientName(parsedBody, CLIENT_INFO_META_KEY),
+        url.searchParams.has("tools")
+          ? null
+          : await registrationClientName(validation.agentRegistrationId ?? null),
+      ])
+    : { groups: new Set(TOOL_GROUP_NAMES), readOnly: toolSelection(url, []).readOnly };
   const response = await mcpHandler.fetch(request, {
     parsedBody,
     authInfo: {
@@ -121,7 +142,12 @@ async function handle(request: Request): Promise<Response> {
       clientId: validation.agentRegistrationId ?? "api-key",
       scopes: POST_CLAIM_SCOPES,
       // Without a Cloudflare or proxy header (local runs) there is no address to pass on.
-      extra: { clientIp: clientIpOrNull(request), userId: validation.userId },
+      extra: {
+        clientIp: clientIpOrNull(request),
+        userId: validation.userId,
+        groups: tools.groups,
+        readOnly: tools.readOnly,
+      },
     },
   });
   return withCors(response);

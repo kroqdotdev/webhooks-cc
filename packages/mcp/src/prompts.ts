@@ -1,4 +1,4 @@
-import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import type { McpServer } from "@modelcontextprotocol/server";
 import { z } from "zod";
 
 export function registerPrompts(server: McpServer): void {
@@ -7,11 +7,11 @@ export function registerPrompts(server: McpServer): void {
     {
       title: "Debug Webhook Delivery",
       description: "Guide an agent through diagnosing why webhook delivery is failing or missing.",
-      argsSchema: {
+      argsSchema: z.object({
         provider: z.string().optional().describe("Webhook provider, if known"),
         endpointSlug: z.string().optional().describe("Hosted endpoint slug, if known"),
         targetUrl: z.string().optional().describe("Your app's receiving URL, if known"),
-      },
+      }),
     },
     async ({ provider, endpointSlug, targetUrl }) => {
       const scope = [
@@ -53,10 +53,10 @@ export function registerPrompts(server: McpServer): void {
     {
       title: "Setup Provider Testing",
       description: "Guide an agent through setting up webhook testing for a provider.",
-      argsSchema: {
+      argsSchema: z.object({
         provider: z.string().describe("Webhook provider to test"),
         targetUrl: z.string().optional().describe("Optional local or remote target URL"),
-      },
+      }),
     },
     async ({ provider, targetUrl }) => {
       return {
@@ -90,14 +90,14 @@ export function registerPrompts(server: McpServer): void {
     {
       title: "Compare Webhook Attempts",
       description: "Guide an agent through comparing two webhook deliveries or retries.",
-      argsSchema: {
+      argsSchema: z.object({
         endpointSlug: z
           .string()
           .optional()
           .describe("Endpoint slug to inspect for recent attempts"),
         leftRequestId: z.string().optional().describe("First request ID, if already known"),
         rightRequestId: z.string().optional().describe("Second request ID, if already known"),
-      },
+      }),
     },
     async ({ endpointSlug, leftRequestId, rightRequestId }) => {
       return {

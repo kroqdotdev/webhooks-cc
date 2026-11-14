@@ -37,6 +37,8 @@ describe.skipIf(!API_KEY)("MCP protocol integration tests", () => {
       apiKey: API_KEY!,
       baseUrl: BASE_URL,
       webhookUrl: WEBHOOK_URL,
+      // create_endpoints and delete_endpoints are outside the core.
+      tools: "all",
     });
 
     rawClient = new WebhooksCC({

@@ -1,7 +1,14 @@
 import { createMcpHandler, McpServer } from "@modelcontextprotocol/server";
 import { z } from "zod";
 import { WebhooksCC } from "@webhooks-cc/sdk";
-import { registerTools, type ToolServer } from "@webhooks-cc/mcp/tools";
+import {
+  defaultToolGroups,
+  parseToolGroups,
+  registerTools,
+  type ToolGroup,
+  type ToolServer,
+} from "@webhooks-cc/mcp/tools";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { publicEnv, serverEnv } from "@/lib/env";
 import { sendOptions } from "@/lib/forwarding/config";
 import { sendForward } from "@/lib/forwarding/send";
@@ -98,10 +105,10 @@ const running = new Map<string, number>();
 /** registerTools' view of the v2 server, with the per-account cap. */
 function toolServer(server: McpServer, account: string): ToolServer {
   return {
-    tool(name, description, shape, handler) {
+    tool(name, description, shape, handler, annotations) {
       return server.registerTool(
         name,
-        { description, inputSchema: z.object(shape) },
+        { title: annotations?.title, description, inputSchema: z.object(shape), annotations },
         async (args: unknown) => {
           const busy = running.get(account) ?? 0;
           if (busy >= MAX_RUNNING_TOOLS_PER_ACCOUNT) {
@@ -134,6 +141,61 @@ export interface CallerAuth {
   clientIp: string | null;
   /** The account the token acts for; the cap on running tools is per account. */
   userId: string;
+  /** The tool groups this caller gets (toolSelection). */
+  groups: ReadonlySet<ToolGroup>;
+  readOnly: boolean;
+}
+
+/**
+ * Which tools a caller gets: `?tools=` (all, or groups such as core,teams)
+ * and `?readonly=1` on the server's address win; else by the client's own
+ * name, from this request (the 2026-07-28 per-request _meta, or a 2025-era
+ * initialize) or from the OAuth app the token was granted to. Clients that
+ * load tools on demand get every group; the rest get the core, since Cursor
+ * stops at about 40 tools across all its servers (catalog.ts).
+ */
+export function toolSelection(
+  url: URL,
+  clientNames: (string | null | undefined)[]
+): { groups: Set<ToolGroup>; readOnly: boolean } {
+  const readOnly = /^(1|true|yes)$/i.test(url.searchParams.get("readonly") ?? "");
+  const chosen = parseToolGroups(url.searchParams.get("tools"));
+  if (chosen) return { groups: chosen.groups, readOnly };
+  const name = clientNames.find((value): value is string => Boolean(value));
+  return { groups: defaultToolGroups(name), readOnly };
+}
+
+/** The client name a request names itself by, if any. */
+export function requestClientName(body: unknown, metaKey: string): string | null {
+  if (!body || typeof body !== "object") return null;
+  const params = (body as { params?: Record<string, unknown> }).params;
+  if (!params || typeof params !== "object") return null;
+  const meta = params._meta as Record<string, unknown> | undefined;
+  const fromMeta = (meta?.[metaKey] as { name?: unknown } | undefined)?.name;
+  if (typeof fromMeta === "string") return fromMeta;
+  const fromInit = (params.clientInfo as { name?: unknown } | undefined)?.name;
+  return typeof fromInit === "string" ? fromInit : null;
+}
+
+/** The OAuth app or agent a token's registration names itself, cached briefly. */
+const registrationNames = new Map<string, { name: string | null; at: number }>();
+const REGISTRATION_NAME_TTL_MS = 10 * 60_000;
+
+export async function registrationClientName(id: string | null): Promise<string | null> {
+  if (!id) return null;
+  const cached = registrationNames.get(id);
+  if (cached && Date.now() - cached.at < REGISTRATION_NAME_TTL_MS) return cached.name;
+  const { data, error } = await createAdminClient()
+    .from("agent_registrations")
+    .select("client_name")
+    .eq("id", id)
+    .maybeSingle();
+  // A failed read only means the default tools: never a refused request.
+  if (error) return null;
+  const name = (data?.client_name as string | null | undefined) ?? null;
+  if (registrationNames.size > 5_000) registrationNames.clear();
+  registrationNames.set(id, { name, at: Date.now() });
+  return name;
 }
 
 function buildServer(caller: CallerAuth | undefined): McpServer {
@@ -144,8 +206,9 @@ function buildServer(caller: CallerAuth | undefined): McpServer {
       // subscriptions/listen stream completes at once instead of holding a slot.
       capabilities: { tools: { listChanged: false } },
       instructions: INSTRUCTIONS,
-      // Every caller sees the same tools; the list changes only with a deploy.
-      cacheHints: { "tools/list": { ttlMs: 3_600_000, cacheScope: "public" } },
+      // The list depends on the caller (its client, ?tools=, ?readonly=):
+      // cached per caller, and it changes otherwise only with a deploy.
+      cacheHints: { "tools/list": { ttlMs: 3_600_000, cacheScope: "private" } },
     }
   );
   // A request that reached the handler was authenticated by the route.
@@ -157,7 +220,11 @@ function buildServer(caller: CallerAuth | undefined): McpServer {
     // Tells the remote server's calls apart from the stdio server's in analytics.
     userAgent: `webhooks-cc-mcp-remote/${APP_VERSION}`,
   });
-  registerTools(toolServer(server, caller?.userId ?? "anonymous"), client, { remote: true });
+  registerTools(toolServer(server, caller?.userId ?? "anonymous"), client, {
+    remote: true,
+    groups: caller?.groups ?? new Set<ToolGroup>(["core"]),
+    readOnly: caller?.readOnly ?? false,
+  });
   return server;
 }
 
@@ -169,6 +236,8 @@ export const mcpHandler = createMcpHandler(
             token: authInfo.token,
             clientIp: (authInfo.extra?.clientIp as string | undefined) ?? null,
             userId: (authInfo.extra?.userId as string | undefined) ?? authInfo.token,
+            groups: (authInfo.extra?.groups as Set<ToolGroup> | undefined) ?? new Set(["core"]),
+            readOnly: authInfo.extra?.readOnly === true,
           }
         : undefined
     ),

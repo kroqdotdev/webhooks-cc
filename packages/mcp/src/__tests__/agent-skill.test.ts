@@ -1,8 +1,9 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { McpServer } from "@modelcontextprotocol/server";
 import { describe, expect, it, vi } from "vitest";
 import { CONDITION_FIELDS, type WebhooksCC } from "@webhooks-cc/sdk";
+import { asToolServer } from "../local-tools";
 import { registerSandboxTools } from "../sandbox-tools";
 import { registerTools } from "../tools";
 
@@ -15,12 +16,12 @@ const read = (path: string) => readFileSync(path, "utf-8");
 
 function toolNames(register: (server: McpServer) => void): Set<string> {
   const server = new McpServer({ name: "test", version: "0.0.0" });
-  const spy = vi.spyOn(server, "tool");
+  const spy = vi.spyOn(server, "registerTool");
   register(server);
   return new Set(spy.mock.calls.map((call) => call[0] as string));
 }
 
-const fullTools = toolNames((server) => registerTools(server, {} as WebhooksCC));
+const fullTools = toolNames((server) => registerTools(asToolServer(server), {} as WebhooksCC));
 const sandboxTools = toolNames((server) => registerSandboxTools(server, {}));
 
 function frontmatter(markdown: string): Record<string, string> {

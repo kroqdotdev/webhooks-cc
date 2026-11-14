@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import { createHmac } from "node:crypto";
-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { McpServer } from "@modelcontextprotocol/server";
 import { z } from "zod";
 import {
   ApprovalDeniedError,
@@ -16,7 +16,7 @@ import {
   type Request,
 } from "@webhooks-cc/sdk";
 import { registerResources } from "../resources";
-import { registerTools, toolWords } from "../tools";
+import { registerTools, toolWords, type ToolServer } from "../tools";
 
 const EXPECTED_TOOLS = [
   "create_endpoint",
@@ -272,21 +272,15 @@ function getRegisteredTools(
   client: WebhooksCC,
   options: { remote?: boolean } = {}
 ): Record<string, RegisteredTool> {
-  const server = new McpServer({ name: "test", version: "0.0.0" });
-  const toolSpy = vi.spyOn(server, "tool");
-
+  const tools: Record<string, RegisteredTool> = {};
+  const server: ToolServer = {
+    tool(name, description, schema, handler) {
+      tools[name] = { description, schema, handler: handler as RegisteredTool["handler"] };
+      return { remove() {} };
+    },
+  };
   registerTools(server, client, options);
-
-  return Object.fromEntries(
-    toolSpy.mock.calls.map((call) => [
-      call[0] as string,
-      {
-        description: call[1] as string,
-        schema: call[2],
-        handler: call[3] as RegisteredTool["handler"],
-      },
-    ])
-  );
+  return tools;
 }
 
 function parseJsonResult(result: { content: Array<{ text: string }> }) {

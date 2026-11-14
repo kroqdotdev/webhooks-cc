@@ -2,7 +2,7 @@
   "name": "@webhooks-cc/mcp",
   "version": "1.24.0",
   "mcpName": "io.github.kroqdotdev/webhooks-cc",
-  "description": "MCP server for webhooks.cc — AI agent integration for webhook testing",
+  "description": "MCP server for webhooks.cc: AI agent integration for webhook testing",
   "main": "dist/index.js",
   "module": "dist/index.mjs",
   "types": "dist/index.d.ts",
@@ -49,11 +49,12 @@
   },
   "homepage": "https://webhooks.cc",
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.32.2",
+    "@modelcontextprotocol/server": "^2.4.0",
     "@webhooks-cc/sdk": "workspace:*",
     "zod": "^4.6.7"
   },
   "devDependencies": {
+    "@modelcontextprotocol/sdk": "^1.32.2",
     "@types/node": "^26.6.6",
     "tsup": "^9.0.0",
     "typescript": "^6.0.3",

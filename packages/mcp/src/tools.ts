@@ -55,6 +55,7 @@ import {
   sliceText,
   TEXT_FLOOR,
 } from "./compact";
+import { TOOL_CATALOG, toolAnnotations, type ToolGroup } from "./catalog";
 
 const MAX_BODY_SIZE = MAX_OUTPUT;
 const HTTP_METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"] as const;
@@ -1187,9 +1188,14 @@ export interface ToolServer {
     name: string,
     description: string,
     shape: Shape,
-    handler: (args: z.infer<z.ZodObject<Shape>>) => Promise<ToolResult>
+    handler: (args: z.infer<z.ZodObject<Shape>>) => Promise<ToolResult>,
+    /** MCP tool annotations (catalog.ts), set by registerTools for every tool. */
+    annotations?: ToolAnnotationsHint
   ): RegisteredToolHandle;
 }
+
+/** MCP tool annotations as registerTools passes them on. */
+export type ToolAnnotationsHint = ReturnType<typeof toolAnnotations>;
 
 /** A registered tool, removable when the tool set is swapped. */
 export interface RegisteredToolHandle {
@@ -1204,6 +1210,13 @@ export interface RegisterToolsOptions {
    * others, and cap waits below the proxy's timeout.
    */
   remote?: boolean;
+  /**
+   * The tool groups to register (catalog.ts). Default: every group, as before
+   * groups existed; the servers choose (WHK_MCP_TOOLS, ?tools=, the client).
+   */
+  groups?: ReadonlySet<ToolGroup>;
+  /** Register only the tools that change nothing (readOnlyHint). */
+  readOnly?: boolean;
 }
 
 /**
@@ -1236,12 +1249,17 @@ function durationMs(value: unknown): number | null {
  */
 function toolTarget(
   target: ToolServer,
-  remote: boolean,
+  options: RegisterToolsOptions,
   handles: RegisteredToolHandle[]
 ): ToolServer {
+  const remote = options.remote === true;
   return {
     tool(name, description, shape, handler) {
       if (remote && LOCAL_ONLY_TOOLS.has(name)) return { remove() {} };
+      const entry = TOOL_CATALOG[name];
+      if (!entry) throw new Error(`${name} has no entry in catalog.ts`);
+      if (options.groups && !options.groups.has(entry.group)) return { remove() {} };
+      if (options.readOnly && entry.readOnly !== true) return { remove() {} };
       const wrapped: typeof handler = remote
         ? async (args) => {
             const input = args as Record<string, unknown>;
@@ -1279,7 +1297,7 @@ function toolTarget(
             return handler(bounded as unknown as typeof args);
           }
         : handler;
-      const handle = target.tool(name, description, shape, wrapped);
+      const handle = target.tool(name, description, shape, wrapped, toolAnnotations(name));
       handles.push(handle);
       return handle;
     },
@@ -1404,7 +1422,7 @@ export function registerTools(
 ): RegisteredToolHandle[] {
   const handles: RegisteredToolHandle[] = [];
   const remote = options.remote === true;
-  const server = toolTarget(target, remote, handles);
+  const server = toolTarget(target, options, handles);
   // How the tool descriptions say to start a preview: the hosted server has
   // no share_port (it cannot run whk on the person's computer).
   const shareWith = remote ? REMOTE_SHARE : "share_port";
@@ -3596,3 +3614,14 @@ export function registerTools(
 
   return handles;
 }
+
+export {
+  clientLoadsEverything,
+  defaultToolGroups,
+  parseToolGroups,
+  TOOL_CATALOG,
+  TOOL_GROUP_NAMES,
+  TOOL_GROUPS,
+  toolAnnotations,
+  type ToolGroup,
+} from "./catalog";

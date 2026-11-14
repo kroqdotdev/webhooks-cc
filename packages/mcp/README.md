@@ -6,12 +6,14 @@ The easiest way in is the [remote server](#remote-server) at `https://webhooks.c
 
 ## Install
 
-No API key is needed. Without one, the server starts with the full tools for the account a human connected the agent to before, or else in the keyless [agent sandbox](#without-an-api-key-the-agent-sandbox). It reads:
+No API key is needed. Without one, the server starts with the tools for the account a human connected the agent to before, or else in the keyless [agent sandbox](#without-an-api-key-the-agent-sandbox). It reads:
 
 - `WHK_API_KEY` (optional) for an API key, which always wins over a saved connection
 - `WHK_AGENT_FILE` for where the sandbox and the connection are saved (default `~/.config/whk/agent.json`, see [the agent credential file](#the-agent-credential-file))
 - `WHK_BASE_URL` for a custom API base URL
 - `WHK_WEBHOOK_URL` for a custom receiver base URL
+- `WHK_MCP_TOOLS` for which [tool groups](#tool-groups) to list, such as `all` or `core,teams`
+- `WHK_MCP_READ_ONLY` set to `1` to list only the tools that change nothing
 
 ### Claude Code plugin
 
@@ -83,7 +85,29 @@ Leave out `env` to start without a key. Get your API key at [webhooks.cc/account
 
 ## What it exposes
 
-The server exposes `94` tools, `3` prompts, and `3` resource surfaces with an API key, the same `94` tools and the prompts with a saved connection, and `11` sandbox tools otherwise. The remote server exposes `91` tools.
+With an API key or a saved connection, the server lists the `39` core tools and `enable_tools` by default, and all `94` tools for Claude Code, Codex and ChatGPT (see [Tool groups](#tool-groups)), plus `3` prompts (and, with an API key, `3` resource surfaces). Without either, it lists `11` sandbox tools. The remote server exposes the `36` core tools it can run by default, and `91` with `?tools=all` or for clients that load every group.
+
+### Tool groups
+
+The tools come in groups, so that clients with a limit on tools (Cursor stops at about 40 across all servers) get a list they can use:
+
+- `core`: endpoints, captured requests and emails, sending test webhooks, signatures, forwarding destinations, deliveries, previews of your local app, usage and approvals
+- `forwarding`: dry runs of a destination, the endpoint's forwarding settings and signing secret (rotating it counts as a change), test deliveries
+- `layouts`: email layouts and named fields, ready-made layouts, and AI setup
+- `extras`: bulk endpoint changes, favourites, request counts and payload schemas
+- `teams`: teams, members, invites, sharing endpoints with a team, team pricing
+- `account`: billing, API keys, connected agents, public share links, the display name
+- `domains`: custom inbound email domains
+- `sheets`: Google Sheets destinations
+- `names`: reserved preview names, their passwords, and the requests visitors made
+
+Without `WHK_MCP_TOOLS`, the server lists `core`. A client that loads tools only when the model looks for them, or takes long lists (Claude Code, claude.ai, Codex, ChatGPT), gets every group once it connects, announced with one `notifications/tools/list_changed`. With `WHK_MCP_TOOLS` (`all`, or `core` plus group names separated by commas), the server lists exactly those groups for every client; unknown names are reported on stderr.
+
+`enable_tools` loads more groups during a session: pass `groups` (for example `["teams"]`, or `["all"]`). It answers with the tools each group added, and its description lists every group and which are loaded, so an agent that misses a tool knows where it lives. It is there whenever a group is left to load.
+
+`WHK_MCP_READ_ONLY=1` lists only the tools that change nothing (their `readOnlyHint` is true). `enable_tools` stays, since it only changes what this session lists, and loads only a group's read-only tools; without an account, `connect_account` and `wait_for_connection` stay too.
+
+Every tool carries MCP annotations (`readOnlyHint`, `destructiveHint`, `idempotentHint`, `openWorldHint`) and a title.
 
 ### Endpoint tools
 
@@ -171,14 +195,15 @@ Everything the dashboard's Shares page does is here, so an agent never needs it;
 - `list_provider_templates`
 - `get_usage` (personal plan plus each subscribed team's pool)
 - `describe`
+- `enable_tools` (local server only: loads more [tool groups](#tool-groups))
 
 ### Without an API key: the agent sandbox
 
-Started without `WHK_API_KEY`, the server starts with the full tools when [the agent credential file](#the-agent-credential-file) holds a live connection to a human's account. Otherwise it registers sandbox tools instead ([auth.md](https://webhooks.cc/auth.md)):
+Started without `WHK_API_KEY`, the server starts with the account's tools when [the agent credential file](#the-agent-credential-file) holds a live connection to a human's account. Otherwise it registers sandbox tools instead ([auth.md](https://webhooks.cc/auth.md)):
 
 - `create_endpoint`, `list_endpoints`, `get_endpoint`, `delete_endpoint`, `list_requests`, `get_request`, `wait_for_request`, `generate_payload_schema`: the same names and arguments as the full tools, in a sandbox of up to 3 endpoints, 25 captured requests each and 100 in all, for 24 hours. The first `create_endpoint` registers it (a few seconds of proof of work).
 - `connect_account`: returns a link and a 6-digit code for a human to connect the agent to their account. Pass the email they sign in to webhooks.cc with.
-- `wait_for_connection`: waits for the human, then replaces the sandbox tools with the full tools for that account (`notifications/tools/list_changed`) and saves the connection.
+- `wait_for_connection`: waits for the human, then replaces the sandbox tools with the tools for that account, in the same [groups](#tool-groups) (`notifications/tools/list_changed`) and saves the connection.
 - `about_sandbox`: the limits and how to connect, without a network call.
 
 The human approves the agent once: later sessions start connected, for 90 days. When they disconnect the agent under Account, Connected agents, the sandbox tools come back. A sandbox made in an earlier session cannot move into the account, because only the process that registered holds the claim token; `connect_account` then connects through a new registration and says so, and the old endpoints stay in the sandbox until they expire.
@@ -264,19 +289,21 @@ Typical agent flows:
 
 ## Programmatic use
 
-The package also exports `createServer()`, `registerTools()`, `registerSandboxTools()`, `registerPrompts()`, and `registerResources()` if you want to embed the server yourself. `createServer()` without `apiKey` takes `credentialsFile` (a path, or `false` to keep the sandbox and the connection in memory). `registerTools(server, client, { remote: true })` applies the remote server's restrictions; it is also exported from `@webhooks-cc/mcp/tools`.
+The package also exports `createServer()`, `registerTools()`, `registerSandboxTools()`, `registerPrompts()`, and `registerResources()` if you want to embed the server yourself. `createServer()` takes `tools` and `readOnly` (default `WHK_MCP_TOOLS` and `WHK_MCP_READ_ONLY`), and without `apiKey` also `credentialsFile` (a path, or `false` to keep the sandbox and the connection in memory). `registerTools(target, client, { remote, groups, readOnly })` registers the tools on anything with a `tool()` method (`asToolServer(mcpServer)` adapts an `McpServer` from `@modelcontextprotocol/server`); `remote: true` applies the remote server's restrictions. It is also exported from `@webhooks-cc/mcp/tools`.
 
 ```ts
 import { createServer } from "@webhooks-cc/mcp";
-import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import { serveStdio } from "@modelcontextprotocol/server/stdio";
 
-const server = createServer({
-  apiKey: process.env.WHK_API_KEY!,
-  baseUrl: process.env.WHK_BASE_URL,
-  webhookUrl: process.env.WHK_WEBHOOK_URL,
-});
-
-await server.connect(new StdioServerTransport());
+// One server per connection; serves 2026-07-28 clients and those that open with initialize.
+serveStdio(() =>
+  createServer({
+    apiKey: process.env.WHK_API_KEY!,
+    baseUrl: process.env.WHK_BASE_URL,
+    webhookUrl: process.env.WHK_WEBHOOK_URL,
+    tools: "core,teams",
+  })
+);
 ```
 
 ## Example conversation
