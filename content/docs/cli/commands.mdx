@@ -502,7 +502,9 @@ whk destinations rm <slug> <id> --yes
 | `--drop-secret`                                        | Send a file drop's password, private key or S3 secret key again (see below)                                                                                              |
 | `--mailgun-signing-key`, `--clear-mailgun-signing-key` | For `mailgun`: send your Mailgun signing key (from `WHK_MAILGUN_SIGNING_KEY`, or typed), or remove it                                                                    |
 
-Secrets are never taken from a flag, where they would stay in your shell history. A [file drop](/docs/forwarding#file-drops)'s password, private key or S3 secret key comes from `WHK_DROP_SECRET`, or is typed at the terminal without being shown: `add` asks for it whenever `--format` is `file_drop`, and `update` sends it with `--drop-secret`, which the server asks for whenever the drop would go to another server, login or bucket, or trust another key. For SFTP a value that holds a private key is sent as the key, anything else as the password. Header values are flags, so give a token as a variable in double quotes (`--header "Authorization: Bearer $HOOK_TOKEN"`): the shell stores the variable's name in its history, not the token. Stored values come back masked. A Google Sheets destination takes the spreadsheet's address as `--url` and its `--config` from `whk google` ([Google Sheets](/docs/forwarding#google-sheets)).
+A flag that takes `@file` reads that file (up to 1 MB); start the value with `@@` to send a literal `@`, as in `--message-template "@@here the deploy failed"`.
+
+Secrets are never taken from a flag, where they would stay in your shell history. A [file drop](/docs/forwarding#file-drops)'s password, private key or S3 secret key comes from `WHK_DROP_SECRET`, or is typed at the terminal without being shown: `add` asks for it whenever `--format` is `file_drop`, and `update` sends it with `--drop-secret`, which the server asks for whenever the drop would go to another server, login or bucket, or trust another key. For SFTP a value that holds a private key is sent as the key, anything else as the password. Pass a key from its file, `WHK_DROP_SECRET="$(cat ~/.ssh/drop_key)" whk destinations add ...`; a key pasted at the prompt is read to its `-----END` line. Header values are flags, so give a token as a variable in double quotes (`--header "Authorization: Bearer $HOOK_TOKEN"`): the shell stores the variable's name in its history, not the token. Stored values come back masked. A Google Sheets destination takes the spreadsheet's address as `--url` and its `--config` from `whk google` ([Google Sheets](/docs/forwarding#google-sheets)).
 
 ```bash
 whk destinations preview <slug> --destination <id>                 # what it would send for the newest request
@@ -524,7 +526,7 @@ The [delivery log](/docs/forwarding#the-delivery-log) of an endpoint's destinati
 whk deliveries ls <slug>                                  # newest first, 5 by default
 whk deliveries ls <slug> --status failed --limit 50       # all, pending, failed or skipped
 whk deliveries ls <slug> --destination <id>
-whk deliveries ls --request <request-id>                  # one request's deliveries, with each try
+whk deliveries ls --request <request-id>                  # one request's deliveries, with each try (no slug)
 whk deliveries summary <slug>                             # last 24 hours, waiting, failed
 whk deliveries redeliver <request-id> --yes               # to every destination that takes its kind
 whk deliveries redeliver <request-id> --destination <id> --yes   # to one, whatever its filter says
