@@ -30,6 +30,11 @@ import { isChatUrl } from "@/lib/forwarding/format";
 import { chatServiceName, formatCappedCount } from "@/lib/forwarding/display";
 import { StatusDot } from "./delivery-journey";
 import { DestinationEditor, type DestinationPreset } from "./destination-editor";
+import {
+  readGoogleReturn,
+  withoutGoogleReturn,
+  type GoogleReturn,
+} from "@/lib/integrations/google-return";
 import { Section, Switch } from "./settings-primitives";
 import { useDocumentVisible, useOnScreen } from "./use-delivery-summary";
 import { Button } from "@/components/ui/button";
@@ -287,6 +292,24 @@ export function DestinationsSection({
       ?.focus({ preventScroll: true });
   }, [picking]);
 
+  // Back from connecting a Google account: open the Sheets editor that
+  // started it again, so it can say how it went, and tidy the address.
+  const [googleReturn, setGoogleReturn] = useState<GoogleReturn | null>(null);
+  useEffect(() => {
+    const back = readGoogleReturn(window.location.search);
+    if (!back) return;
+    setGoogleReturn(back);
+    if (back.editor === "new") setAdding("sheets");
+    else setOpen((prev) => new Set(prev).add(back.editor));
+    window.history.replaceState(
+      window.history.state,
+      "",
+      withoutGoogleReturn(window.location.href)
+    );
+  }, []);
+  const outcomeFor = (editor: string) =>
+    googleReturn?.editor === editor ? googleReturn.outcome : null;
+
   const load = useCallback(async () => {
     if (!accessToken) return;
     try {
@@ -480,6 +503,7 @@ export function DestinationsSection({
                   <DestinationEditor
                     slug={endpoint.slug}
                     destination={destination}
+                    googleOutcome={outcomeFor(destination.id)}
                     signingConfigured={signingConfigured}
                     emailFieldNames={emailFieldNames}
                     onSaved={(saved) => {
@@ -544,6 +568,7 @@ export function DestinationsSection({
             slug={endpoint.slug}
             destination={null}
             preset={adding}
+            googleOutcome={adding === "sheets" ? outcomeFor("new") : null}
             signingConfigured={signingConfigured}
             emailFieldNames={emailFieldNames}
             onSaved={(saved) => {

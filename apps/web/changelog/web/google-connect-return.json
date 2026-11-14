@@ -1,0 +1,7 @@
+{
+  "title": "Connecting Google says how it went",
+  "items": [
+    "Back from Google, the Sheets destination you were editing opens again and says whether the account was connected, and selects it",
+    "When Google's consent page was left without access to your spreadsheets, or the connection was cancelled or took too long, the editor says so and how to fix it, instead of dropping you on the settings page without a word"
+  ]
+}

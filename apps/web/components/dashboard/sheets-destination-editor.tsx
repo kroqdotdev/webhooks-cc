@@ -18,6 +18,11 @@ import {
   type SheetsDestinationConfig,
 } from "@/lib/dashboard-api";
 import { ConditionList } from "./condition-list";
+import {
+  googleOutcomeMessage,
+  googleReturnPath,
+  type GoogleOutcome,
+} from "@/lib/integrations/google-return";
 import { Field, Segmented, SwitchRow } from "./settings-primitives";
 import { useReportDirty } from "./dirty-sections";
 import { Button } from "@/components/ui/button";
@@ -62,11 +67,14 @@ export function SheetsDestinationEditor({
   onSaved,
   onDeleted,
   onCancel,
+  googleOutcome = null,
 }: {
   slug: string;
   destination: DashboardDestination | null;
   emailFieldNames?: string[];
   signingConfigured: boolean;
+  /** How connecting a Google account just went, back from Google. */
+  googleOutcome?: GoogleOutcome | null;
   onSaved: (saved: DashboardDestination) => void;
   onDeleted?: () => void;
   onCancel?: () => void;
@@ -99,10 +107,24 @@ export function SheetsDestinationEditor({
     fetchGoogleConnections(accessToken)
       .then((info) => {
         setGoogle(info);
-        setConnectionId((current) => current || info.connections[0]?.id || "");
+        // Back from connecting one: the account just connected (the newest).
+        const newest =
+          googleOutcome === "connected"
+            ? [...info.connections].sort((a, b) => b.createdAt - a.createdAt)[0]?.id
+            : undefined;
+        setConnectionId((current) => newest || current || info.connections[0]?.id || "");
       })
       .catch((err) => setError(err instanceof Error ? err.message : String(err)));
+    // googleOutcome is read once, when the editor opens on the way back.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [accessToken]);
+
+  const outcomeMessage = googleOutcome ? googleOutcomeMessage(googleOutcome) : null;
+  // Back from Google, the page opens at its top: bring the outcome into view.
+  const outcomeRef = useRef<HTMLParagraphElement>(null);
+  useEffect(() => {
+    if (googleOutcome) outcomeRef.current?.scrollIntoView({ block: "center" });
+  }, [googleOutcome]);
 
   const headers = useMemo(() => columns.map((column) => column.header), [columns]);
 
@@ -138,7 +160,8 @@ export function SheetsDestinationEditor({
     if (!accessToken) return;
     setError(null);
     try {
-      const returnTo = `${window.location.pathname}${window.location.search}`;
+      // Back to this page, with this editor open again to say how it went.
+      const returnTo = googleReturnPath(window.location.href, destination?.id ?? "new");
       window.location.assign(await startGoogleConnect(accessToken, returnTo));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Google could not be reached.");
@@ -398,6 +421,20 @@ export function SheetsDestinationEditor({
             </Button>
           </div>
         </Field>
+        {outcomeMessage && (
+          <p
+            className={
+              outcomeMessage.ok
+                ? "text-sm border rounded-md p-3"
+                : "text-sm text-destructive-ink bg-destructive/10 border border-destructive/40 rounded-md p-3"
+            }
+            ref={outcomeRef}
+            role={outcomeMessage.ok ? "status" : "alert"}
+            data-testid="google-outcome"
+          >
+            {outcomeMessage.text}
+          </p>
+        )}
         {connectionId && (
           <>
             {spreadsheetId ? (

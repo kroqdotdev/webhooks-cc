@@ -24,6 +24,8 @@ export async function GET(request: Request) {
   const secure = url.protocol === "https:";
   const ticket = openFinishTicket(url.searchParams.get("ticket") ?? "");
   const back = (path: string, outcome: string) => {
+    // One line per attempt, as in the callback (never who, or which account).
+    console.info(`[google] connect ${outcome}`);
     const target = new URL(path, `${siteOrigin("mailhooks")}/`);
     target.searchParams.set("google", outcome);
     return new Response(null, {
