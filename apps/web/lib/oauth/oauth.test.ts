@@ -194,6 +194,14 @@ describe("checkAuthorizationRequest", () => {
       expect((await checkAuthorizationRequest(request({ resource }))).ok).toBe(true);
     }
   });
+
+  it("accepts the MCP server's address with its tool settings", async () => {
+    for (const resource of [`${APP}/mcp?tools=all`, `${APP}/mcp/?tools=core,teams&readonly=1`]) {
+      expect((await checkAuthorizationRequest(request({ resource }))).ok).toBe(true);
+    }
+    const other = await checkAuthorizationRequest(request({ resource: `${APP}/mcpx?tools=all` }));
+    expect(other.ok).toBe(false);
+  });
 });
 
 describe("responses", () => {

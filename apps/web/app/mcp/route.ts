@@ -3,6 +3,7 @@ import { publicEnv } from "@/lib/env";
 import { getClientIp, checkRateLimitByKeyWithInfo, checkRateLimitWithInfo } from "@/lib/rate-limit";
 import { POST_CLAIM_SCOPES } from "@/lib/agent/constants";
 import { CLIENT_INFO_META_KEY } from "@modelcontextprotocol/server";
+import { TOOL_GROUP_NAMES } from "@webhooks-cc/mcp/tools";
 import {
   mcpHandler,
   registrationClientName,
@@ -120,10 +121,20 @@ async function handle(request: Request): Promise<Response> {
     }
   }
 
-  const tools = toolSelection(new URL(request.url), [
-    requestClientName(parsedBody, CLIENT_INFO_META_KEY),
-    await registrationClientName(validation.agentRegistrationId ?? null),
-  ]);
+  // The groups only shape tools/list: a call may name any tool the caller
+  // could have been listed (a client need not name itself on every request,
+  // so a later call may not repeat what decided its list). Read-only holds
+  // for calls too.
+  const url = new URL(request.url);
+  const listing = (parsedBody as { method?: unknown } | undefined)?.method === "tools/list";
+  const tools = listing
+    ? toolSelection(url, [
+        requestClientName(parsedBody, CLIENT_INFO_META_KEY),
+        url.searchParams.has("tools")
+          ? null
+          : await registrationClientName(validation.agentRegistrationId ?? null),
+      ])
+    : { groups: new Set(TOOL_GROUP_NAMES), readOnly: toolSelection(url, []).readOnly };
   const response = await mcpHandler.fetch(request, {
     parsedBody,
     authInfo: {

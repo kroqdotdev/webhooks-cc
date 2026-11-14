@@ -51,6 +51,8 @@ const read: Behaviour = { readOnly: true };
 const write: Behaviour = {};
 const update: Behaviour = { idempotent: true };
 const remove: Behaviour = { destructive: true, idempotent: true };
+/** Overwrites settings: the same call twice does nothing more, but the old values are gone. */
+const replace: Behaviour = { destructive: true, idempotent: true };
 const outward: Behaviour = { openWorld: true };
 
 function group(name: ToolGroup, tools: Record<string, Behaviour>): Record<string, CatalogEntry> {
@@ -64,7 +66,8 @@ export const TOOL_CATALOG: Record<string, CatalogEntry> = {
     create_endpoint: write,
     list_endpoints: read,
     get_endpoint: read,
-    update_endpoint: update,
+    // Replaces what it is given (a mock response, the signing secret).
+    update_endpoint: replace,
     delete_endpoint: remove,
     list_requests: read,
     search_requests: read,
@@ -89,7 +92,7 @@ export const TOOL_CATALOG: Record<string, CatalogEntry> = {
     render_email: outward,
     list_destinations: read,
     add_destination: write,
-    update_destination: update,
+    update_destination: replace,
     remove_destination: remove,
     list_deliveries: read,
     redeliver: outward,
@@ -104,7 +107,7 @@ export const TOOL_CATALOG: Record<string, CatalogEntry> = {
   }),
   ...group("forwarding", {
     preview_destination: read,
-    configure_forwarding: update,
+    configure_forwarding: replace,
     // rotate: true replaces the secret, and receivers holding the old one fail.
     get_forwarding_secret: { destructive: true },
     test_forwarding: outward,
@@ -156,8 +159,10 @@ export const TOOL_CATALOG: Record<string, CatalogEntry> = {
   ...group("domains", {
     list_domains: read,
     add_domain: write,
-    verify_domain: update,
-    route_domain: update,
+    // A failed check counts toward lapsing a verified domain: not safe to repeat.
+    verify_domain: { destructive: true },
+    // Replaces the routing; a missing catch-all refuses mail.
+    route_domain: replace,
     remove_domain: remove,
   }),
   ...group("sheets", {
