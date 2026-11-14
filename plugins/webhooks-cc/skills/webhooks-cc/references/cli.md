@@ -45,7 +45,9 @@ them): `whk api endpoints/<slug>/alerts`,
 what you pass. Give a header's token as a variable in double quotes: the
 shell stores the variable's name in its history, not the token. A file
 drop's password or key comes from `WHK_DROP_SECRET` (never a flag), so the
-person sets it in their own environment. `whk destinations preview` is a dry run; `test`,
+person sets it in their own environment; a key from its file,
+`WHK_DROP_SECRET="$(cat ~/.ssh/drop_key)"`. `@file` reads a flag from a
+file; `@@` starts a value with a literal `@`. `whk destinations preview` is a dry run; `test`,
 `secret --rotate`, `rm` and `whk deliveries redeliver` need `--yes`.
 `whk deliveries ls` rows carry the request id and the destination id;
 `whk deliveries redeliver <request-id> --destination <destination-id> --yes`

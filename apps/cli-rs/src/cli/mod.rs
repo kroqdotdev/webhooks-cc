@@ -1303,8 +1303,8 @@ pub enum DeliveriesAction {
         #[arg(required_unless_present = "request")]
         slug: Option<String>,
 
-        /// One captured request's deliveries instead, with each try
-        #[arg(long, conflicts_with_all = ["status", "destination", "limit", "before"])]
+        /// One captured request's deliveries instead, with each try (without a slug: the request id names its endpoint)
+        #[arg(long, conflicts_with_all = ["slug", "status", "destination", "limit", "before"])]
         request: Option<String>,
 
         /// Only these: pending (queued or retrying), failed, or skipped (turned down by the filter)
@@ -1987,6 +1987,10 @@ mod tests {
         }
         assert!(parse(&["ls"]).is_err(), "a slug or a request is needed");
         assert!(parse(&["ls", "--request", "r1", "--status", "failed"]).is_err());
+        assert!(
+            parse(&["ls", "acme", "--request", "r1"]).is_err(),
+            "a slug would be ignored beside --request, so it is refused"
+        );
         assert!(parse(&["ls", "acme", "--limit", "0"]).is_err());
         assert!(parse(&["ls", "acme", "--status", "succeeded"]).is_err());
         match parse(&["redeliver", "r1", "--destination", "d1", "--yes"])

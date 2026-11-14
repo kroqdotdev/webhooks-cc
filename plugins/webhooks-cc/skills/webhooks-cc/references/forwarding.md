@@ -95,7 +95,8 @@ S3-compatible server, a file per email or per batch. A drop holds a server
 password, so the MCP tools do not create one: the person adds it with the
 SDK (`format: "file_drop"`, `config` and `dropSecret`) or
 `whk destinations add <slug> --format file_drop --config @drop.json`, which
-reads the secret from `WHK_DROP_SECRET` or their terminal, never a flag.
+reads the secret from `WHK_DROP_SECRET` or their terminal, never a flag
+(an SFTP key as `WHK_DROP_SECRET="$(cat ~/.ssh/drop_key)"`).
 
 ## Zapier and Make
 
