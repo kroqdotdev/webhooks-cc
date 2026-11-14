@@ -32,8 +32,8 @@ const RELEASE = release as { version: string | null; entries: ChangelogEntry[] }
 export const APP_VERSION: string = RELEASE.version ?? "dev";
 export const CLI_VERSION = "1.18.0";
 export const SDK_VERSION = "1.28.0";
-export const PYTHON_SDK_VERSION = "0.7.0";
-export const GO_SDK_VERSION = "0.7.0";
+export const PYTHON_SDK_VERSION = "0.8.0";
+export const GO_SDK_VERSION = "0.8.0";
 export const MCP_VERSION = "1.24.0";
 
 export const CHANGELOG: ChangelogEntry[] = [
@@ -2952,6 +2952,16 @@ export const CHANGELOG: ChangelogEntry[] = [
 
   // ─── Python SDK ─────────────────────────────────────────────────────
   {
+    version: "0.8.0",
+    date: "2026-11-14",
+    title: "Search That Continues",
+    track: "python",
+    items: [
+      "`requests.search()` and `requests.count()` follow the server's search cursor themselves until they have `limit` matches (or an exact count), the whole range was read, or 25 seconds passed, so a rare term on a long history no longer comes back short without saying so; a busy answer is waited out within that time",
+      "`requests.search_page()` and `requests.count_page()` make one request and return a `SearchPage` or `CountPage` (`complete`, `searched_until`, `cursor`) to continue by hand; a cursor the server did not issue raises `InvalidCursorError`",
+    ],
+  },
+  {
     version: "0.7.0",
     date: "2026-11-11",
     title: "All Usage in One Place",
@@ -3062,6 +3072,16 @@ export const CHANGELOG: ChangelogEntry[] = [
   },
 
   // ─── Go SDK ─────────────────────────────────────────────────────────
+  {
+    version: "0.8.0",
+    date: "2026-11-14",
+    title: "Search That Continues",
+    track: "go",
+    items: [
+      "`Requests.Search` and `Requests.Count` follow the server's search cursor themselves until they have `Limit` matches (or an exact count), the whole range was read, or 25 seconds passed; a busy answer is waited out within that time, and errors after the first page are returned rather than dropped",
+      "`Requests.SearchPage` and `Requests.CountPage` make one request and return a `SearchPage` or `CountPage` (`Complete`, `SearchedUntil`, `Cursor`) to continue by hand; a cursor the server did not issue matches `ErrInvalidCursor`",
+    ],
+  },
   {
     version: "0.7.0",
     date: "2026-11-11",
