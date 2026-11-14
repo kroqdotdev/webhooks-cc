@@ -86,17 +86,59 @@ function isWebUrl(url: string): boolean {
 }
 
 /** An Open button for an http(s) link, when the host opens links; never opened on its own. */
-function openButton(abilities: Abilities, url: string): HTMLButtonElement | null {
+function openButton(
+  abilities: Abilities,
+  url: string,
+  label = "Open",
+  title?: string
+): HTMLButtonElement | null {
   const open = abilities.openLink;
   if (!open || !isWebUrl(url)) return null;
-  const control = button("Open", async () => {
+  const control = button(label, async () => {
     try {
       await open(url);
     } catch {
+      // A host may ask the person first and answer late: the label comes
+      // back so the button can be tried again.
       control.textContent = "Not opened";
+      window.setTimeout(() => {
+        control.textContent = label;
+      }, 2400);
     }
   });
+  if (title) control.title = title;
   return control;
+}
+
+/**
+ * The HTML part's line: its size and, when the server gave the email's page
+ * in the dashboard and the host opens links, a button to it. The HTML is
+ * never rendered here: only the dashboard's sandboxed frame does that.
+ */
+function htmlPartLine(view: EmailView, abilities: Abilities): HTMLElement | null {
+  if (view.htmlSize <= 0) return null;
+  const size = bytes(view.htmlSize);
+  // dashboardUrlOf() let only a valid http(s) URL through.
+  const site = view.dashboardUrl ? new URL(view.dashboardUrl).hostname : null;
+  const open =
+    view.dashboardUrl && site
+      ? openButton(
+          abilities,
+          view.dashboardUrl,
+          `Open in ${site}`,
+          `Opens this email in the ${site} dashboard, which shows the HTML part`
+        )
+      : null;
+  return el(
+    "div",
+    { class: "ask" },
+    el(
+      "span",
+      { class: "note" },
+      open ? `HTML part, ${size}` : `HTML part, ${size}, not shown here.`
+    ),
+    open
+  );
 }
 
 function section(title: string, aside: Child[], ...body: Child[]): HTMLElement {
@@ -505,8 +547,7 @@ export function emailPanel(view: EmailView, abilities: Abilities, full: FullEmai
   const textNotes: Child[] = [];
   if (view.textTruncated || textCut)
     textNotes.push(note("The text part was cut to fit the tool output."));
-  if (view.htmlSize > 0)
-    textNotes.push(note(`HTML part not shown here (${bytes(view.htmlSize)}).`));
+  textNotes.push(htmlPartLine(view, abilities));
 
   const total = view.attachmentsTotal ?? view.attachments.length;
 
@@ -541,7 +582,8 @@ export function emailPanel(view: EmailView, abilities: Abilities, full: FullEmai
         )
       : null,
     section(
-      "Text",
+      // HTML-only mail: the receiver made the text from the HTML part, as text.
+      view.textFromHtml && text ? "Text from the HTML part" : "Text",
       [text ? copyButton(abilities, () => text) : null],
       text
         ? el(

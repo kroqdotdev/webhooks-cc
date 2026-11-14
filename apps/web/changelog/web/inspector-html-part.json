@@ -1,0 +1,7 @@
+{
+  "title": "Email HTML in the request inspector",
+  "items": [
+    "The MCP request inspector shows an email's HTML part by size, with a button that opens the email in the dashboard, which renders it in a sandboxed frame; the inspector itself never renders it",
+    "An email sent only as HTML shows the text made from its HTML part, and get_email says so with textFromHtml"
+  ]
+}

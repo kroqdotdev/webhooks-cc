@@ -249,6 +249,7 @@ const ESSENTIAL_EMAIL_FIELDS = [
   "date",
   "text",
   "textTruncated",
+  "textFromHtml",
   "htmlSize",
   "spam",
 ];

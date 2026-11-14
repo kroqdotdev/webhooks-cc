@@ -14,6 +14,7 @@ import {
 } from "@webhooks-cc/mcp/tools";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { publicEnv, serverEnv } from "@/lib/env";
+import { mailhooksOrigin, webhooksOrigin } from "@/lib/site";
 import { sendOptions } from "@/lib/forwarding/config";
 import { sendForward } from "@/lib/forwarding/send";
 import { APP_VERSION } from "@/lib/changelog";
@@ -241,6 +242,8 @@ export function buildServer(caller: CallerAuth | undefined): McpServer {
     remote: true,
     groups: caller?.groups ?? new Set<ToolGroup>(["core"]),
     readOnly: caller?.readOnly ?? false,
+    // The inspector's links into the dashboard, on the site that lists the endpoint.
+    dashboard: { webhooks: webhooksOrigin(), mailhooks: mailhooksOrigin() },
   });
   return server;
 }

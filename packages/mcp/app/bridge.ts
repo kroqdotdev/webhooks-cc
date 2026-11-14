@@ -43,6 +43,8 @@ export interface ToolResultParams {
   content?: Array<{ type: string; text?: string }>;
   structuredContent?: unknown;
   isError?: boolean;
+  /** For the view only: hosts keep it out of the model's context. */
+  _meta?: unknown;
 }
 
 /** The host notifications the inspector handles (MCP Apps 2026-01-26). */

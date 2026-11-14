@@ -11,7 +11,7 @@ import {
 } from "@webhooks-cc/sdk";
 import { TOOL_GROUP_NAMES, toolAnnotations, toolTitle } from "./catalog";
 import { compactRequest } from "./compact";
-import { appToolMeta } from "./app";
+import { appToolMeta, localDashboardOrigins } from "./app";
 import {
   asToolServer,
   localToolGroups,
@@ -219,7 +219,9 @@ export function registerSandboxTools(server: McpServer, options: SandboxToolOpti
     options.credentialsFile
   );
   const target = asToolServer(server);
-  const groups = options.toolGroups ?? localToolGroups(server, toolSelection(options));
+  const groups =
+    options.toolGroups ??
+    localToolGroups(server, toolSelection(options), localDashboardOrigins(baseUrl));
   let handles: RegisteredToolHandle[] = [];
   // Which tool set is on display; a revocation only counts for its own.
   let shown = 0;
