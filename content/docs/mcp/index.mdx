@@ -255,7 +255,7 @@ For provider templates in `send_webhook`, `secret` is required for every signed 
 
 The inspector calls tools only when you click: it loads codes and links and the recent requests through your client with `list_requests`, `get_request` and `get_email` (and `list_endpoints`, only when a request does not name its endpoint), as your agent would, so they count like your agent's own calls. Those buttons appear only in clients that let the view call tools.
 
-The inspector never renders an email's HTML part: it shows its size and, in clients that open links, an Open in webhooks.cc button (mailhooks.cc for an endpoint listed only there) to the email's page in the dashboard, which renders it in a sandboxed frame. `get_email` with `includeHtml` returns the HTML to your agent. The link reaches the view in the result's `_meta`, which the MCP Apps spec marks as not meant for the model.
+The inspector never renders an email's HTML part: it shows its size and, in clients that open links, an Open in webhooks.cc button to the email's page in the dashboard (from `get_email` and `wait_for_email`, mailhooks.cc for an endpoint listed only there), which renders it in a sandboxed frame. `get_email` with `includeHtml` returns the HTML to your agent. The link reaches the view in the result's `_meta`, which the MCP Apps spec marks as not meant for the model.
 
 The inspector reaches nothing on the network itself, opens a link only when you click Open, and shows every captured value as text. Copy buttons appear when your client lets the view use the clipboard.
 

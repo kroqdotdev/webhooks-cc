@@ -98,7 +98,12 @@ function openButton(
     try {
       await open(url);
     } catch {
+      // A host may ask the person first and answer late: the label comes
+      // back so the button can be tried again.
       control.textContent = "Not opened";
+      window.setTimeout(() => {
+        control.textContent = label;
+      }, 2400);
     }
   });
   if (title) control.title = title;
