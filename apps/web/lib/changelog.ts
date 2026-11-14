@@ -30,11 +30,11 @@ export const TRACK_LABELS: Record<ChangelogTrack, string> = {
 const RELEASE = release as { version: string | null; entries: ChangelogEntry[] };
 
 export const APP_VERSION: string = RELEASE.version ?? "dev";
-export const CLI_VERSION = "1.17.0";
-export const SDK_VERSION = "1.27.0";
+export const CLI_VERSION = "1.18.0";
+export const SDK_VERSION = "1.28.0";
 export const PYTHON_SDK_VERSION = "0.7.0";
 export const GO_SDK_VERSION = "0.7.0";
-export const MCP_VERSION = "1.23.0";
+export const MCP_VERSION = "1.24.0";
 
 export const CHANGELOG: ChangelogEntry[] = [
   ...RELEASE.entries,
@@ -2145,6 +2145,19 @@ export const CHANGELOG: ChangelogEntry[] = [
 
   // ─── CLI ────────────────────────────────────────────────────────────
   {
+    version: "1.18.0",
+    date: "2026-11-14",
+    title: "Teams And Layouts",
+    track: "cli",
+    items: [
+      "`whk teams create`, `rename`, `remove`, `leave`, `withdraw` and `quote`; members and invites can be named by email",
+      "`whk teams delete` and `whk teams invite` ask the team's owner to approve when run with an API key, and print the result once approved",
+      "`whk layouts templates <slug>` and `whk layouts add-template <slug> <template>` list and add the ready-made email layouts",
+      "`whk fields preview <slug>` tries named email fields on a captured email without saving them",
+      "`whk requests search` follows the server's search cursor, takes `--cursor` and `--kind`, and prints the command that continues a search cut short",
+    ],
+  },
+  {
     version: "1.17.0",
     date: "2026-11-14",
     title: "Google Sheets And AI Setup",
@@ -2489,6 +2502,18 @@ export const CHANGELOG: ChangelogEntry[] = [
   },
 
   // ─── SDK ────────────────────────────────────────────────────────────
+  {
+    version: "1.28.0",
+    date: "2026-11-14",
+    title: "Teams And Layouts",
+    track: "sdk",
+    items: [
+      "`client.teams.create()`, `rename()`, `delete()`, `removeMember()`, `leave()` and `withdrawInvite()`; `delete()` returns a pending approval when called with an API key",
+      "`client.teams.invite()` now returns a pending approval: with an API key the owner approves each invite, and `wait()` resolves with the invite (a signed-in session gets it at once)",
+      "`client.endpoints.layoutTemplates()`, `addLayoutTemplate()` and `previewEmailFields()`",
+      "`client.requests.searchPage()` and `countPage()` read one bounded page with a cursor; `search()` and `count()` follow the cursor themselves within one deadline",
+    ],
+  },
   {
     version: "1.27.0",
     date: "2026-11-14",
@@ -3126,6 +3151,18 @@ export const CHANGELOG: ChangelogEntry[] = [
   },
 
   // ─── MCP ────────────────────────────────────────────────────────────
+  {
+    version: "1.24.0",
+    date: "2026-11-14",
+    title: "Teams And Layouts",
+    track: "mcp",
+    items: [
+      "`create_team`, `rename_team`, `delete_team`, `remove_team_member`, `leave_team`, `withdraw_invite` and `quote_team_change`; deleting a team waits for the owner's approval",
+      "`invite_to_team` (approved by the team's owner), `list_invites` and `answer_invite`",
+      "`list_layout_templates`, `add_layout_template` and `preview_email_fields`",
+      "The search tools take a cursor and say how far they searched; large requests are cut to fit as valid JSON",
+    ],
+  },
   {
     version: "1.23.0",
     date: "2026-11-14",
