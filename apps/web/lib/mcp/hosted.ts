@@ -8,6 +8,7 @@ import {
   sdkToolResult,
   toolCallFrom,
   attachSkill,
+  attachInspector,
   type ToolGroup,
   type ToolServer,
 } from "@webhooks-cc/mcp/tools";
@@ -108,10 +109,16 @@ const running = new Map<string, number>();
 /** registerTools' view of the v2 server, with the per-account cap. */
 function toolServer(server: McpServer, account: string): ToolServer {
   return {
-    tool(name, description, shape, handler, annotations) {
+    tool(name, description, shape, handler, annotations, meta) {
       return server.registerTool(
         name,
-        { title: annotations?.title, description, inputSchema: z.object(shape), annotations },
+        {
+          title: annotations?.title,
+          description,
+          inputSchema: z.object(shape),
+          annotations,
+          ...(meta ? { _meta: meta } : {}),
+        },
         async (args: unknown, ctx: ServerContext) => {
           const busy = running.get(account) ?? 0;
           if (busy >= MAX_RUNNING_TOOLS_PER_ACCOUNT) {
@@ -203,7 +210,8 @@ export async function registrationClientName(id: string | null): Promise<string 
   return name;
 }
 
-function buildServer(caller: CallerAuth | undefined): McpServer {
+/** A fresh server for one request: the caller's tools, the skill and the request inspector. */
+export function buildServer(caller: CallerAuth | undefined): McpServer {
   const server = new McpServer(
     { name: "webhooks-cc", title: "webhooks.cc", version: APP_VERSION },
     {
@@ -227,6 +235,8 @@ function buildServer(caller: CallerAuth | undefined): McpServer {
   });
   // The agent skill, for clients that read skills from their servers.
   attachSkill(server);
+  // The request inspector (an MCP App) that get_request and get_email name.
+  attachInspector(server);
   registerTools(toolServer(server, caller?.userId ?? "anonymous"), client, {
     remote: true,
     groups: caller?.groups ?? new Set<ToolGroup>(["core"]),

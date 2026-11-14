@@ -56,6 +56,7 @@ import {
   TEXT_FLOOR,
 } from "./compact";
 import { TOOL_CATALOG, toolAnnotations, type ToolGroup } from "./catalog";
+import { appToolHandler, appToolMeta } from "./app";
 
 const MAX_BODY_SIZE = MAX_OUTPUT;
 const HTTP_METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"] as const;
@@ -526,6 +527,11 @@ type TextContent = { type: "text"; text: string };
 export type ToolResult = {
   content: TextContent[];
   isError?: boolean;
+  /**
+   * The text's JSON as an object, for the tools with the request inspector
+   * (app.ts), which reads it. Always the same data as the text.
+   */
+  structuredContent?: Record<string, unknown>;
   /**
    * An approval the person opens: a server whose client can open a URL for
    * the person (URL elicitation) asks it to, and the retried call finishes
@@ -1261,7 +1267,9 @@ export interface ToolServer {
     shape: Shape,
     handler: (args: z.infer<z.ZodObject<Shape>>, call?: ToolCall) => Promise<ToolResult>,
     /** MCP tool annotations (catalog.ts), set by registerTools for every tool. */
-    annotations?: ToolAnnotationsHint
+    annotations?: ToolAnnotationsHint,
+    /** The tool's _meta (the request inspector, app.ts), for the adapter to pass on. */
+    meta?: Record<string, unknown>
   ): RegisteredToolHandle;
 }
 
@@ -1397,7 +1405,14 @@ function toolTarget(
             return handler(bounded as unknown as typeof args, call);
           }
         : handler;
-      const handle = target.tool(name, description, shape, wrapped, toolAnnotations(name));
+      const handle = target.tool(
+        name,
+        description,
+        shape,
+        appToolHandler(name, wrapped),
+        toolAnnotations(name),
+        appToolMeta(name)
+      );
       handles.push(handle);
       return handle;
     },
@@ -3705,3 +3720,4 @@ export {
 
 export { sdkToolResult, toolCallFrom } from "./sdk-call";
 export { attachSkill } from "./skills";
+export { attachInspector, INSPECTOR_URI, APP_MIME_TYPE } from "./app";

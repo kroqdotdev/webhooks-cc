@@ -1,0 +1,827 @@
+/*
+ * The request inspector in webhooks.cc's paper and ink: the host's own
+ * variables first (MCP Apps style variables), our palette when a host gives
+ * none. Fonts are named, never loaded.
+ */
+
+:root {
+  --wh-paper: hsl(216 24% 97.5%);
+  --wh-surface: hsl(0 0% 100%);
+  --wh-ink: hsl(218 18% 11%);
+  --wh-muted: hsl(218 10% 42%);
+  --wh-line: hsl(216 16% 88%);
+  --wh-wash: hsl(216 20% 94.5%);
+  --wh-pine: hsl(164 76% 24%);
+  --wh-selected: hsl(164 45% 91%);
+  --wh-selected-ink: hsl(164 80% 17%);
+  --wh-bad: hsl(2 70% 42%);
+  --wh-bad-wash: hsl(2 70% 96%);
+  --wh-ok-wash: hsl(164 45% 94%);
+  --wh-key: hsl(164 76% 24%);
+  --wh-string: hsl(28 80% 36%);
+  --wh-number: hsl(262 60% 48%);
+  --wh-post: hsl(28 85% 30%);
+  --wh-put: hsl(262 60% 48%);
+  --wh-mail: hsl(222 70% 45%);
+  color-scheme: light;
+}
+
+:root[data-theme="dark"] {
+  --wh-paper: hsl(222 18% 7%);
+  --wh-surface: hsl(222 16% 10%);
+  --wh-ink: hsl(216 16% 92%);
+  --wh-muted: hsl(218 10% 64%);
+  --wh-line: hsl(222 12% 18%);
+  --wh-wash: hsl(222 12% 13%);
+  --wh-pine: hsl(160 60% 52%);
+  --wh-selected: hsl(162 40% 16%);
+  --wh-selected-ink: hsl(160 60% 72%);
+  --wh-bad: hsl(2 80% 68%);
+  --wh-bad-wash: hsl(2 40% 14%);
+  --wh-ok-wash: hsl(162 40% 13%);
+  --wh-key: hsl(160 60% 52%);
+  --wh-string: hsl(40 85% 62%);
+  --wh-number: hsl(258 85% 76%);
+  --wh-post: hsl(38 85% 60%);
+  --wh-put: hsl(258 85% 76%);
+  --wh-mail: hsl(213 90% 70%);
+  color-scheme: dark;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) {
+    --wh-paper: hsl(222 18% 7%);
+    --wh-surface: hsl(222 16% 10%);
+    --wh-ink: hsl(216 16% 92%);
+    --wh-muted: hsl(218 10% 64%);
+    --wh-line: hsl(222 12% 18%);
+    --wh-wash: hsl(222 12% 13%);
+    --wh-pine: hsl(160 60% 52%);
+    --wh-selected: hsl(162 40% 16%);
+    --wh-selected-ink: hsl(160 60% 72%);
+    --wh-bad: hsl(2 80% 68%);
+    --wh-bad-wash: hsl(2 40% 14%);
+    --wh-ok-wash: hsl(162 40% 13%);
+    --wh-key: hsl(160 60% 52%);
+    --wh-string: hsl(40 85% 62%);
+    --wh-number: hsl(258 85% 76%);
+    --wh-post: hsl(38 85% 60%);
+    --wh-put: hsl(258 85% 76%);
+    --wh-mail: hsl(213 90% 70%);
+    color-scheme: dark;
+  }
+}
+
+:root {
+  --bg: var(--color-background-primary, var(--wh-paper));
+  --well: var(--color-background-secondary, var(--wh-wash));
+  --ink: var(--color-text-primary, var(--wh-ink));
+  --muted: var(--color-text-secondary, var(--wh-muted));
+  --line: var(--color-border-secondary, var(--wh-line));
+  --bad: var(--color-text-danger, var(--wh-bad));
+  --sans: var(
+    --font-sans,
+    "IBM Plex Sans",
+    ui-sans-serif,
+    system-ui,
+    -apple-system,
+    "Segoe UI",
+    sans-serif
+  );
+  --mono: var(
+    --font-mono,
+    "IBM Plex Mono",
+    ui-monospace,
+    "SFMono-Regular",
+    Menlo,
+    Consolas,
+    monospace
+  );
+  --radius: var(--border-radius-md, 6px);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--sans);
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+#app {
+  padding: 16px 16px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+}
+
+.main,
+.banner,
+.recent-slot {
+  min-width: 0;
+}
+
+.banner:empty,
+.recent-slot:empty {
+  display: none;
+}
+
+.mono,
+.method,
+.target,
+.code,
+.status,
+.code-value,
+.kv th,
+.hv-text {
+  font-family: var(--mono);
+}
+
+h1,
+h2,
+p {
+  margin: 0;
+}
+
+/* The exchange: the request line as it came in, the answer that went out. */
+
+.head {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.wire {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  min-width: 0;
+}
+
+.wire-dir {
+  color: var(--muted);
+  font-family: var(--mono);
+  width: 1ch;
+  flex: none;
+}
+
+.method {
+  flex: none;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  padding: 1px 6px;
+  border-radius: 4px;
+  border: 1px solid currentColor;
+  line-height: 1.5;
+}
+
+.m-get,
+.m-other {
+  color: var(--wh-pine);
+}
+.m-post {
+  color: var(--wh-post);
+}
+.m-put,
+.m-patch {
+  color: var(--wh-put);
+}
+.m-delete {
+  color: var(--wh-bad);
+}
+.m-mail {
+  color: var(--wh-mail);
+}
+
+.target {
+  font-size: 17px;
+  font-weight: 500;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+
+.query {
+  color: var(--muted);
+  font-weight: 400;
+}
+
+.status {
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.wire-why {
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+.addr {
+  color: var(--muted);
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+.subject {
+  font-size: 18px;
+  font-weight: 600;
+  line-height: 1.3;
+  letter-spacing: -0.01em;
+  overflow-wrap: anywhere;
+}
+
+.people {
+  display: grid;
+  gap: 2px;
+}
+
+.who {
+  display: flex;
+  gap: 8px;
+  min-width: 0;
+}
+
+.who-k {
+  color: var(--muted);
+  width: 3em;
+  flex: none;
+}
+
+.who-v {
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+
+.facts {
+  display: flex;
+  flex-wrap: wrap;
+  column-gap: 16px;
+  row-gap: 2px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.facts .mono {
+  font-size: 12px;
+}
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 2px;
+}
+
+.chip {
+  font-size: 12px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  color: var(--ink);
+}
+
+.chip-ok {
+  background: var(--wh-ok-wash);
+  border-color: transparent;
+  color: var(--wh-selected-ink);
+}
+
+.chip-bad {
+  background: var(--wh-bad-wash);
+  border-color: transparent;
+  color: var(--bad);
+}
+
+/* Sections: hairline rules, no boxes. */
+
+.panel {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.sec {
+  border-top: 1px solid var(--line);
+  padding-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.sec-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 28px;
+}
+
+.sec-head h2 {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.sec-aside {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.count {
+  color: var(--muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.note {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+/* Controls */
+
+.btn,
+.seg {
+  font: inherit;
+  font-size: 12px;
+  line-height: 1;
+  color: var(--ink);
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 6px 9px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.btn:hover,
+.seg:hover {
+  border-color: var(--muted);
+}
+
+.btn:active,
+.seg:active {
+  transform: translateY(1px);
+}
+
+.btn:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+.btn-quiet {
+  border-color: transparent;
+  color: var(--muted);
+}
+
+.btn-quiet:hover {
+  color: var(--ink);
+  border-color: var(--line);
+}
+
+.segs {
+  display: inline-flex;
+}
+
+.seg {
+  border-radius: 0;
+}
+
+.seg:first-child {
+  border-radius: var(--radius) 0 0 var(--radius);
+}
+
+.seg:last-child {
+  border-radius: 0 var(--radius) var(--radius) 0;
+  margin-left: -1px;
+}
+
+.seg[aria-pressed="true"] {
+  background: var(--wh-selected);
+  color: var(--wh-selected-ink);
+  border-color: var(--wh-selected);
+  position: relative;
+}
+
+button:focus-visible {
+  outline: 2px solid var(--wh-pine);
+  outline-offset: 1px;
+}
+
+/* Headers and fields */
+
+.table-wrap {
+  overflow-x: auto;
+}
+
+.kv {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12.5px;
+}
+
+.kv th {
+  text-align: left;
+  font-weight: 500;
+  color: var(--muted);
+  vertical-align: top;
+  padding: 3px 16px 3px 0;
+  white-space: nowrap;
+  width: 1%;
+}
+
+.kv td {
+  padding: 3px 0;
+  vertical-align: top;
+}
+
+.hv {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  justify-content: space-between;
+}
+
+.hv-text {
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+
+.hv-tools {
+  display: inline-flex;
+  gap: 4px;
+  flex: none;
+  margin-top: -3px;
+}
+
+.hv-tools .btn {
+  padding: 4px 7px;
+}
+
+/* Row tools wait for the pointer (or focus), so a long table stays quiet. */
+@media (hover: hover) {
+  .kv .hv-tools {
+    opacity: 0;
+  }
+
+  .kv tr:hover .hv-tools,
+  .kv tr:focus-within .hv-tools {
+    opacity: 1;
+  }
+}
+
+/* Code: the body, the text part. */
+
+.code-frame {
+  background: var(--well);
+  border-radius: var(--radius);
+  max-height: 440px;
+  overflow: auto;
+}
+
+.code {
+  margin: 0;
+  padding: 10px 12px;
+  font-size: 12.5px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.code.prose {
+  font-family: var(--sans);
+  font-size: 13.5px;
+}
+
+.j-tree {
+  padding: 10px 12px;
+  font-family: var(--mono);
+  font-size: 12.5px;
+  line-height: 1.55;
+}
+
+.j-children {
+  padding-left: 2ch;
+  border-left: 1px solid var(--line);
+  margin-left: 0.5ch;
+}
+
+.j-node > summary {
+  cursor: pointer;
+  list-style: none;
+}
+
+.j-node > summary::-webkit-details-marker {
+  display: none;
+}
+
+.j-node > summary::before {
+  content: "\25B8";
+  display: inline-block;
+  width: 1.5ch;
+  margin-left: -1.5ch;
+  color: var(--muted);
+}
+
+.j-node[open] > summary::before {
+  content: "\25BE";
+}
+
+.j-node:not([open]) > .j-close {
+  display: none;
+}
+
+.j-count {
+  color: var(--muted);
+  margin-left: 1ch;
+  font-family: var(--sans);
+  font-size: 11.5px;
+}
+
+.j-count {
+  margin-right: 1ch;
+}
+
+.j-node[open] > summary .j-count,
+.j-node[open] > summary .j-tail {
+  display: none;
+}
+
+.j-row {
+  overflow-wrap: anywhere;
+}
+
+.j-key {
+  color: var(--wh-key);
+}
+.j-str {
+  color: var(--wh-string);
+}
+.j-num,
+.j-bool {
+  color: var(--wh-number);
+}
+.j-null,
+.j-punct {
+  color: var(--muted);
+}
+
+/* The one thing people look for in an email: its code. */
+
+.code-hero {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  column-gap: 12px;
+  padding: 12px 14px;
+  border-radius: var(--radius);
+  background: var(--wh-selected);
+  color: var(--wh-selected-ink);
+}
+
+.code-label {
+  grid-column: 1 / -1;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.code-value {
+  font-size: 28px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+}
+
+.code-tools .btn {
+  color: inherit;
+  border-color: currentColor;
+}
+
+.code-more {
+  grid-column: 1 / -1;
+  font-size: 12.5px;
+  margin-top: 4px;
+}
+
+.links,
+.files,
+.recent-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.links li {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 6px 0;
+}
+
+.links li + li {
+  border-top: 1px solid var(--line);
+}
+
+.link-text {
+  min-width: 0;
+}
+
+.link-label {
+  font-weight: 500;
+}
+
+.link-url {
+  color: var(--muted);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.link-tools {
+  display: inline-flex;
+  gap: 4px;
+  flex: none;
+}
+
+.files li {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 3px 0;
+}
+
+.file-name {
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+
+.file-meta {
+  color: var(--muted);
+  font-size: 12px;
+  white-space: pre;
+  flex: none;
+}
+
+/* Recent requests: a strip along the bottom. */
+
+.recent {
+  border-top: 1px solid var(--line);
+  padding-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.recent .sec-head h2 {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.recent-list {
+  display: grid;
+  gap: 2px;
+}
+
+.recent-item {
+  width: 100%;
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: baseline;
+  gap: 10px;
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  color: var(--ink);
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius);
+  padding: 5px 8px;
+  cursor: pointer;
+}
+
+.recent-item:hover {
+  background: var(--well);
+}
+
+.recent-item.is-current {
+  background: var(--wh-selected);
+  color: var(--wh-selected-ink);
+  cursor: default;
+}
+
+.recent-item.is-loading {
+  opacity: 0.6;
+}
+
+.recent-item .method {
+  font-size: 11px;
+  padding: 0 5px;
+}
+
+.recent-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+  font-family: var(--mono);
+  font-size: 12.5px;
+}
+
+.recent-label.is-subject {
+  font-family: var(--sans);
+  font-size: 13px;
+}
+
+.recent-time {
+  color: var(--muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.is-current .recent-time {
+  color: inherit;
+}
+
+/* States */
+
+.problem {
+  border-radius: var(--radius);
+  background: var(--wh-bad-wash);
+  color: var(--bad);
+  padding: 10px 12px;
+  font-size: 13px;
+}
+
+.problem p {
+  margin-top: 4px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: var(--ink);
+}
+
+.skeleton {
+  gap: 10px;
+}
+
+.sk {
+  background: var(--well);
+  border-radius: var(--radius);
+}
+
+.sk-line {
+  height: 14px;
+}
+
+.w60 {
+  width: 60%;
+}
+
+.w35 {
+  width: 35%;
+}
+
+.sk-block {
+  height: 96px;
+}
+
+.sk-block.short {
+  height: 48px;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .sk {
+    animation: breathe 1.4s ease-in-out infinite;
+  }
+
+  @keyframes breathe {
+    50% {
+      opacity: 0.55;
+    }
+  }
+}
+
+@media (max-width: 420px) {
+  #app {
+    padding: 12px;
+  }
+
+  .code-value {
+    font-size: 22px;
+  }
+
+  .links li {
+    flex-direction: column;
+    gap: 4px;
+  }
+}

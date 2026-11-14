@@ -28,7 +28,8 @@
   "scripts": {
     "build": "tsup",
     "dev": "tsup --watch",
-    "typecheck": "tsc --noEmit",
+    "build:app": "node scripts/build-app.mjs",
+    "typecheck": "tsc --noEmit && tsc -p app",
     "test": "vitest run",
     "prepublishOnly": "npm run build"
   },

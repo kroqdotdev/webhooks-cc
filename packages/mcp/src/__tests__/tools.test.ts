@@ -17,6 +17,7 @@ import {
 } from "@webhooks-cc/sdk";
 import { registerResources } from "../resources";
 import { registerTools, toolWords, type ToolServer } from "../tools";
+import { INSPECTOR_URI } from "../app";
 
 const EXPECTED_TOOLS = [
   "create_endpoint",
@@ -118,9 +119,12 @@ const EXPECTED_TOOLS = [
 type RegisteredTool = {
   description: string;
   schema: unknown;
-  handler: (
-    args: unknown
-  ) => Promise<{ content: Array<{ type: "text"; text: string }>; isError?: boolean }>;
+  handler: (args: unknown) => Promise<{
+    content: Array<{ type: "text"; text: string }>;
+    isError?: boolean;
+    structuredContent?: Record<string, unknown>;
+  }>;
+  meta?: Record<string, unknown>;
 };
 
 function makeRequest(overrides: Partial<Request> = {}): Request {
@@ -274,8 +278,8 @@ function getRegisteredTools(
 ): Record<string, RegisteredTool> {
   const tools: Record<string, RegisteredTool> = {};
   const server: ToolServer = {
-    tool(name, description, schema, handler) {
-      tools[name] = { description, schema, handler: handler as RegisteredTool["handler"] };
+    tool(name, description, schema, handler, _annotations, meta) {
+      tools[name] = { description, schema, handler: handler as RegisteredTool["handler"], meta };
       return { remove() {} };
     },
   };
@@ -3261,5 +3265,57 @@ describe("a request larger than the tool output", () => {
     expect(parseJsonResult(await tools.get_request.handler({ requestId: "req_123" }))).toEqual(
       makeRequest()
     );
+  });
+});
+
+describe("the request inspector's tools", () => {
+  it("get_request returns its JSON as structuredContent too, cut the same way", async () => {
+    const big = makeRequest({ id: "req_big", body: "x".repeat(100_000) });
+    const tools = getRegisteredTools(
+      createMockClient({
+        requests: {
+          get: vi.fn(async (id: string) => (id === "req_big" ? big : makeRequest())),
+        } as unknown as WebhooksCC["requests"],
+      })
+    );
+    expect(tools.get_request.meta).toEqual({
+      ui: { resourceUri: INSPECTOR_URI },
+      "ui/resourceUri": INSPECTOR_URI,
+    });
+    expect(tools.list_requests.meta).toBeUndefined();
+    for (const id of ["req_123", "req_big"]) {
+      const result = await tools.get_request.handler({ requestId: id });
+      expect(result.structuredContent).toEqual(JSON.parse(result.content[0].text));
+    }
+    const cut = await tools.get_request.handler({ requestId: "req_big" });
+    expect(cut.structuredContent).toMatchObject({ bodyTruncated: true, bodySize: 100_000 });
+  });
+
+  it("get_email returns its JSON as structuredContent too", async () => {
+    const tools = getRegisteredTools(
+      emailClient({ emails: { get: vi.fn(async () => makeEmail("e1")) } as never })
+    );
+    expect(tools.get_email.meta).toEqual({
+      ui: { resourceUri: INSPECTOR_URI },
+      "ui/resourceUri": INSPECTOR_URI,
+    });
+    const result = await tools.get_email.handler({ requestId: "e1", includeHtml: false });
+    expect(result.structuredContent).toEqual(JSON.parse(result.content[0].text));
+    expect(result.structuredContent).toHaveProperty("subject", "Confirm your email");
+  });
+
+  it("leaves errors without structuredContent", async () => {
+    const tools = getRegisteredTools(
+      createMockClient({
+        requests: {
+          get: vi.fn(async () => {
+            throw new NotFoundError("Request not found");
+          }),
+        } as unknown as WebhooksCC["requests"],
+      })
+    );
+    const result = await tools.get_request.handler({ requestId: "nope" });
+    expect(result.isError).toBe(true);
+    expect(result).not.toHaveProperty("structuredContent");
   });
 });
