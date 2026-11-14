@@ -1,4 +1,5 @@
 pub mod account;
+pub mod alerts;
 pub mod billing;
 pub mod client;
 pub mod destinations;

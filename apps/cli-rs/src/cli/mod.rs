@@ -1,4 +1,5 @@
 pub mod account;
+pub mod alerts;
 pub mod api;
 pub mod auth;
 pub mod billing;
@@ -7,12 +8,15 @@ mod capabilities;
 pub mod confirm;
 pub mod deliveries;
 pub mod destinations;
+pub mod download;
 pub mod endpoints;
 pub mod google;
 pub mod keys;
 pub mod layouts;
 pub mod listen;
 pub mod output;
+pub mod previews;
+pub mod redeliver;
 pub mod replay;
 pub mod requests;
 pub mod sandbox;
@@ -370,6 +374,21 @@ deletion) refuse API keys.")]
         data: Option<String>,
     },
 
+    /// Have webhooks.cc deliver a sample email (a 6-digit code and a link) to an endpoint; it counts as one request and skips SMTP, so sender checks do not run on it
+    #[command(name = "send-email")]
+    SendEmail {
+        /// Endpoint slug
+        slug: String,
+
+        /// Deliver to {slug}+{tag}@ instead of the plain address, so a test can wait for its own email
+        #[arg(long)]
+        tag: Option<String>,
+
+        /// Send a ready-made layout's sample email instead (an id from `whk layouts templates`)
+        #[arg(long)]
+        template: Option<String>,
+    },
+
     /// Send a webhook to an arbitrary URL
     #[command(name = "send-to")]
     SendTo {
@@ -401,7 +420,19 @@ deletion) refuse API keys.")]
         action: TeamsAction,
     },
 
-    /// An endpoint's email layouts: the ready-made ones there are to add
+    /// An endpoint's mock response and response rules: a dry run of what a sender gets back
+    Mock {
+        #[command(subcommand)]
+        action: MockAction,
+    },
+
+    /// An endpoint's alerts: when one opens (missing fields, silence, failed deliveries) and who is told (owner only)
+    Alerts {
+        #[command(subcommand)]
+        action: AlertsAction,
+    },
+
+    /// An endpoint's email layouts: the ready-made ones there are to add, and a dry run of what they read
     Layouts {
         #[command(subcommand)]
         action: LayoutsAction,
@@ -1136,6 +1167,59 @@ pub enum LayoutsAction {
         /// The template's id, from `whk layouts templates`
         template: String,
     },
+
+    /// Dry run: which layout a captured email matches and the fields, line items and attachments it reads (nothing is saved, no pages are used; owner only)
+    Preview {
+        /// The endpoint's slug
+        slug: String,
+
+        /// An email's request id (default: the endpoint's newest email)
+        #[arg(long)]
+        request: Option<String>,
+
+        /// Try these layouts instead of the saved ones: a JSON list, or @file
+        #[arg(long, value_name = "JSON")]
+        layouts: Option<String>,
+    },
+}
+
+#[derive(Subcommand, Debug)]
+pub enum MockAction {
+    /// Dry run: which response rule answers a captured request, and the response with its {{ placeholders }} filled in, as the receiver would send it (nothing is sent)
+    Preview {
+        /// The endpoint's slug
+        slug: String,
+
+        /// A captured request's id (default: the endpoint's newest HTTP request, or a sample)
+        #[arg(long)]
+        request: Option<String>,
+
+        /// Try this default response instead of the saved one: {"status", "body", "headers"} as JSON, @file, or null for none
+        #[arg(long, value_name = "JSON")]
+        mock_response: Option<String>,
+
+        /// Try these response rules instead of the saved ones: a JSON list, @file, or null for none
+        #[arg(long, value_name = "JSON")]
+        response_rules: Option<String>,
+    },
+}
+
+#[derive(Subcommand, Debug)]
+pub enum AlertsAction {
+    /// Show the alert settings and the recent alerts, open ones first
+    Get {
+        /// The endpoint's slug
+        slug: String,
+    },
+
+    /// Change the alert settings; what you leave out stays as it is (checks start within a minute)
+    Set {
+        /// The endpoint's slug
+        slug: String,
+
+        #[command(flatten)]
+        fields: alerts::AlertFields,
+    },
 }
 
 #[derive(Subcommand, Debug)]
@@ -1494,6 +1578,60 @@ pub enum RequestsAction {
         /// Output file (stdout if omitted)
         #[arg(short, long)]
         output: Option<String>,
+    },
+
+    /// Save a captured email's exact message (.eml), or one of its decoded attachments, to the file -o names
+    ///
+    /// The file name is only ever the one given: an attachment's own name
+    /// came from its sender. Without -o the bytes go to stdout, which must
+    /// then be a pipe or a file, never the terminal.
+    Download {
+        /// The email's request id
+        id: String,
+
+        /// The exact message as received (the default)
+        #[arg(long)]
+        raw: bool,
+
+        /// One decoded attachment instead, by its position from 0 (as `whk requests get` lists them)
+        #[arg(long, value_name = "N", conflicts_with = "raw", value_parser = clap::value_parser!(u32).range(0..=99))]
+        attachment: Option<u32>,
+
+        /// The file to write (replaced if it exists)
+        #[arg(short, long, value_name = "FILE")]
+        output: Option<String>,
+    },
+
+    /// Run a captured request through its endpoint again on the server: layouts parse an email again, then every destination that takes it gets it (owner only; `whk replay --to` sends one from this machine instead)
+    Replay {
+        /// The request's id
+        id: String,
+
+        /// Go ahead without asking (needed without a terminal)
+        #[arg(short = 'y', long = "yes", visible_alias = "force", short_alias = 'f')]
+        yes: bool,
+    },
+
+    /// Run an endpoint's requests from a time range through it again, oldest first, at most 500 a call (owner only)
+    ReplayRange {
+        /// The endpoint's slug
+        slug: String,
+
+        /// From this time: epoch milliseconds, or a duration back from now such as 2h
+        #[arg(long, value_name = "TIME")]
+        since: Option<String>,
+
+        /// Up to this time: epoch milliseconds, or a duration back from now
+        #[arg(long, value_name = "TIME")]
+        until: Option<String>,
+
+        /// Only HTTP requests or only emails
+        #[arg(long, value_parser = ["http", "email"])]
+        kind: Option<String>,
+
+        /// Go ahead without asking (needed without a terminal)
+        #[arg(short = 'y', long = "yes", visible_alias = "force", short_alias = 'f')]
+        yes: bool,
     },
 }
 

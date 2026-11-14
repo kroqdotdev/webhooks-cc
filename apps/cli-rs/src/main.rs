@@ -5,10 +5,10 @@ use clap::Parser;
 
 use whk::api::ApiClient;
 use whk::cli::{
-    self, AccountAction, AgentsAction, AiAction, ApprovalsAction, AuthAction, Cli, Command,
-    DeliveriesAction, DestinationsAction, DomainsAction, FieldsAction, GoogleAction, KeysAction,
-    LayoutsAction, NamesAction, RequestsAction, SandboxAction, ShareLinksAction, SharesAction,
-    TeamsAction,
+    self, AccountAction, AgentsAction, AiAction, AlertsAction, ApprovalsAction, AuthAction, Cli,
+    Command, DeliveriesAction, DestinationsAction, DomainsAction, FieldsAction, GoogleAction,
+    KeysAction, LayoutsAction, MockAction, NamesAction, RequestsAction, SandboxAction,
+    ShareLinksAction, SharesAction, TeamsAction,
 };
 use whk::error::{classify, error_json};
 
@@ -308,6 +308,21 @@ async fn run(args: Cli) -> Result<()> {
             .await?;
         }
 
+        Some(Command::SendEmail {
+            slug,
+            tag,
+            template,
+        }) => {
+            cli::send::send_test_email(
+                &client,
+                &slug,
+                tag.as_deref(),
+                template.as_deref(),
+                args.json,
+            )
+            .await?;
+        }
+
         Some(Command::SendTo {
             url,
             method,
@@ -409,6 +424,39 @@ async fn run(args: Cli) -> Result<()> {
                     limit,
                     since,
                     output.as_deref(),
+                    args.json,
+                )
+                .await?;
+            }
+            RequestsAction::Download {
+                id,
+                raw: _,
+                attachment,
+                output,
+            } => {
+                let what = match attachment {
+                    Some(index) => cli::download::Download::Attachment(index),
+                    None => cli::download::Download::Raw,
+                };
+                cli::download::run(&client, &id, what, output.as_deref(), args.json).await?;
+            }
+            RequestsAction::Replay { id, yes } => {
+                cli::redeliver::one(&client, &id, yes, args.json).await?;
+            }
+            RequestsAction::ReplayRange {
+                slug,
+                since,
+                until,
+                kind,
+                yes,
+            } => {
+                cli::redeliver::range(
+                    &client,
+                    &slug,
+                    since.as_deref(),
+                    until.as_deref(),
+                    kind.as_deref(),
+                    yes,
                     args.json,
                 )
                 .await?;
@@ -766,6 +814,46 @@ async fn run(args: Cli) -> Result<()> {
             }
             LayoutsAction::AddTemplate { slug, template } => {
                 cli::layouts::add_template(&client, &slug, &template, args.json).await?
+            }
+            LayoutsAction::Preview {
+                slug,
+                request,
+                layouts,
+            } => {
+                cli::previews::layouts(
+                    &client,
+                    &slug,
+                    request.as_deref(),
+                    layouts.as_deref(),
+                    args.json,
+                )
+                .await?
+            }
+        },
+
+        Some(Command::Mock { action }) => match action {
+            MockAction::Preview {
+                slug,
+                request,
+                mock_response,
+                response_rules,
+            } => {
+                cli::previews::response(
+                    &client,
+                    &slug,
+                    request.as_deref(),
+                    mock_response.as_deref(),
+                    response_rules.as_deref(),
+                    args.json,
+                )
+                .await?
+            }
+        },
+
+        Some(Command::Alerts { action }) => match action {
+            AlertsAction::Get { slug } => cli::alerts::get(&client, &slug, args.json).await?,
+            AlertsAction::Set { slug, fields } => {
+                cli::alerts::set(&client, &slug, &fields, args.json).await?
             }
         },
 

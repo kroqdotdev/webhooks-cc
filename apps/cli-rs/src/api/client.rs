@@ -115,6 +115,49 @@ impl ApiClient {
         read_response(resp).await
     }
 
+    /// A GET whose answer is a file (a stored email, an attachment): its
+    /// bytes and headers, or the usual error for a failing status. It may
+    /// take `timeout` rather than the client's own request timeout, since a
+    /// large file on a slow link takes longer than an answer.
+    pub async fn get_file(&self, path: &str, timeout: Duration) -> Result<RawResponse> {
+        let none = HeaderMap::new();
+        let mut resp = self
+            .send_once_with(&Method::GET, path, &None, false, &none, Some(timeout))
+            .await?;
+        if resp.status() == StatusCode::UNAUTHORIZED && self.can_refresh() {
+            resp = self
+                .send_once_with(&Method::GET, path, &None, true, &none, Some(timeout))
+                .await?;
+        }
+        let status = resp.status();
+        let headers = resp.headers().clone();
+        if status.is_client_error() || status.is_server_error() {
+            let retry_after = retry_after(&headers);
+            let body = resp.text().await.unwrap_or_default();
+            let mut error = api_error(status, &body, retry_after);
+            // These routes answer a code and a sentence (`not_kept` and why);
+            // the sentence says more.
+            if let Some(message) = serde_json::from_str::<Value>(&body)
+                .ok()
+                .and_then(|v| v.get("message")?.as_str().map(str::to_string))
+                .filter(|m| !m.trim().is_empty())
+            {
+                error.message = message;
+            }
+            return Err(error.into());
+        }
+        let body = resp
+            .bytes()
+            .await
+            .context("failed to read the download")?
+            .to_vec();
+        Ok(RawResponse {
+            status,
+            headers,
+            body,
+        })
+    }
+
     /// Perform a POST request with a JSON body.
     pub async fn post(&self, path: &str, body: &impl serde::Serialize) -> Result<ApiResponse> {
         let body = serde_json::to_vec(body).context("failed to encode request body")?;

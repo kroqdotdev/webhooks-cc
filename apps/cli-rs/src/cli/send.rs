@@ -138,3 +138,95 @@ fn parse_headers(headers: &[String]) -> Result<HashMap<String, String>> {
     }
     Ok(map)
 }
+
+/// The body for `whk send-email`.
+pub fn test_email_body(slug: &str, tag: Option<&str>, template: Option<&str>) -> serde_json::Value {
+    let mut body = serde_json::json!({ "slug": slug.trim() });
+    if let Some(tag) = tag {
+        body["tag"] = serde_json::json!(tag.trim());
+    }
+    if let Some(template) = template {
+        body["template"] = serde_json::json!(template.trim());
+    }
+    body
+}
+
+/// Has the server deliver a sample email (a 6-digit code and a link, or a
+/// ready-made layout's sample) to an endpoint. It counts as one request and
+/// skips SMTP, so sender checks do not run on it.
+pub async fn send_test_email(
+    client: &ApiClient,
+    slug: &str,
+    tag: Option<&str>,
+    template: Option<&str>,
+    json_output: bool,
+) -> Result<()> {
+    let answer = client
+        .send_test_email(&test_email_body(slug, tag, template))
+        .await?;
+    if json_output {
+        println!("{}", serde_json::to_string_pretty(&answer.json())?);
+        return Ok(());
+    }
+    let to = match tag {
+        Some(tag) => format!("{}+{}", slug.trim(), tag.trim()),
+        None => slug.trim().to_string(),
+    };
+    let id = answer
+        .value
+        .get("requestId")
+        .and_then(serde_json::Value::as_str);
+    println!(
+        "  {} Sent a test email to {}",
+        green("✓"),
+        bold(&crate::cli::output::sanitize_line(&to))
+    );
+    if let Some(id) = id {
+        println!(
+            "  {} whk requests get {}",
+            dim("See it:"),
+            crate::cli::output::sanitize_line(id)
+        );
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod test_email_tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn sends_only_what_was_given() {
+        assert_eq!(
+            test_email_body("acme", None, None),
+            json!({ "slug": "acme" })
+        );
+        assert_eq!(
+            test_email_body(" acme ", Some("run-1"), Some("shopify-order")),
+            json!({ "slug": "acme", "tag": "run-1", "template": "shopify-order" })
+        );
+    }
+
+    #[tokio::test]
+    async fn posts_to_the_test_email_route() {
+        let app = axum::Router::new().route(
+            "/api/send-test-email",
+            axum::routing::post(
+                |axum::Json(body): axum::Json<serde_json::Value>| async move {
+                    assert_eq!(body, json!({ "slug": "acme", "tag": "t1" }));
+                    axum::Json(json!({ "status": "captured", "requestId": "r1" }))
+                },
+            ),
+        );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let base = format!("http://127.0.0.1:{}", listener.local_addr().unwrap().port());
+        tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        let client =
+            ApiClient::with_credentials(Some(&base), Some(&base), Some("whcc_test".into()), None)
+                .unwrap();
+        send_test_email(&client, "acme", Some("t1"), None, true)
+            .await
+            .unwrap();
+    }
+}
