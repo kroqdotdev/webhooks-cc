@@ -3,7 +3,7 @@ title: "Webhook MCP Server (@webhooks-cc/mcp)"
 description: "Test webhooks and inbound email from Claude Code, Cursor, Codex, claude.ai and ChatGPT. 94 MCP tools, a remote server at webhooks.cc/mcp with one-click OAuth, a zero-key sandbox, and a Claude Code plugin."
 section: mcp
 order: 1
-lastUpdated: 2026-11-10
+lastUpdated: 2026-11-14
 schema: faq
 keywords:
   [
@@ -30,7 +30,13 @@ There are two ways to connect an agent. Start with the [remote server](#remote-s
 
 ### Add it to your client
 
-Client menus change, so treat these paths as a guide.
+With the [CLI](/docs/cli) installed, one command adds the server to every coding agent on your machine, with the [agent skill](/docs/mcp/skills):
+
+```bash
+whk setup agent
+```
+
+It finds Claude Code, Codex, Cursor, VS Code, Claude Desktop and Devin Desktop, writes no key anywhere, and `--dry-run` shows what it would change first. [`whk setup agent`](/docs/cli/commands#setup-agent) has the details. To add the server by hand instead, client menus change, so treat these paths as a guide.
 
 **Claude Code:**
 
@@ -100,7 +106,7 @@ To get everything else, the agent connects to your account: `connect_account` wi
 
 The sandbox and the connection are saved in the [agent credential file](/docs/agents#the-agent-credential-file) (`~/.config/whk/agent.json` on Linux; `WHK_AGENT_FILE` moves it), which the server shares with the [CLI](/docs/cli/commands#sandbox) and the SDKs. A new session starts where the last one stopped, so you approve the agent once. The connection lasts 90 days; when you disconnect the agent under Account, Connected agents, the sandbox tools come back. Sandbox endpoints from an earlier session cannot move into your account, because only the process that registered holds the claim token: `connect_account` then connects through a new registration and says so, and those endpoints stay in the sandbox until they expire.
 
-Setup works without a key too. `npx @webhooks-cc/mcp setup cursor` (or `claude-code`, `vscode`, `codex`, `devin` for Devin Desktop, formerly Windsurf, `claude-desktop`) writes the config without `WHK_API_KEY`; add `--api-key whcc_...` to start with your account's tools.
+`whk setup agent --local` adds the local server to every agent it finds, without a key and with the agent skill. Setup works without a key from npm too. `npx @webhooks-cc/mcp setup cursor` (or `claude-code`, `vscode`, `codex`, `devin` for Devin Desktop, formerly Windsurf, `claude-desktop`) writes the config without `WHK_API_KEY`; add `--api-key whcc_...` to start with your account's tools.
 
 ## Registry and client support
 
