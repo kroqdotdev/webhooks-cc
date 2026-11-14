@@ -109,6 +109,13 @@ export async function s3Put(
   signed.headers.forEach((value, name) => {
     headers[name] = value;
   });
+  // The Host that was signed: url.host, without a default port. Node writes
+  // its own from the agent's default port, and with our own socket
+  // (createConnection) there is no https agent, so it would say ":80" for
+  // any endpoint without an explicit port. A store that signs the Host it
+  // receives, Amazon S3 among them, then refuses the signature
+  // (SignatureDoesNotMatch).
+  headers.host = url.host;
 
   const port = url.port ? Number(url.port) : url.protocol === "https:" ? 443 : 80;
   const { socket: raw } = await openDropSocket(url.hostname, port, {
