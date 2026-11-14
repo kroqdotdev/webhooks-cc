@@ -276,12 +276,12 @@ Captured [emails](/docs/email-capture) are listed with an `EMAIL` method, the ad
 A search reads the newest requests first and keeps reading until it has `--limit` matches, reached the end, or 25 seconds have passed. When it stops before the end it says so on stderr, with the command that continues it:
 
 ```
-Searched back to 2026-10-08 16:47:20; older requests were not searched. Continue with: whk requests search --slug abc123 -q invoice --from 1759934840000 --cursor <cursor>
+Searched back to 2026-10-08 16:47:20; older requests were not searched. Continue with: whk requests search --slug=abc123 -q=invoice --from=1759934840000 --cursor=<cursor>
 ```
 
-`--cursor` continues a search with the same filters and order (it cannot be combined with `--offset`); the printed command carries `--from` and `--to` as the times the first run used. `--json` prints the matches as one JSON array, as before; when the search stopped early, stderr carries one JSON line instead: `{"search":{"complete":false,"searchedUntil":...,"cursor":"...","continue":"whk requests search ..."}}`.
+`--cursor` continues a search with the same filters and order (it cannot be combined with `--offset`); the printed command carries `--from` and `--to` as the times the first run used, and `--api-url` when the first run was given one. `--json` prints the matches as one JSON array, as before; when the search stopped early, stderr carries one JSON line instead: `{"search":{"complete":false,"searchedUntil":...,"cursor":"...","continue":"whk requests search ..."}}`.
 
-`whk requests count` is exact without `-q` and `--method`. With either it counts for up to 25 seconds and prints `Count: 42` when it counted everything, or `Count: at least 42 (searched back to <time>)` with the command that counts the rest, whose result you add to this one. `--json` prints `{ "count", "exact", "searchedUntil", "cursor" }`.
+`whk requests count` is exact without `-q` and `--method`. With either it counts for up to 25 seconds and prints `Count: 42` when it counted everything, or `Count: at least 42 (searched back to <time>)` with the command that counts the rest, whose result you add to this one. `--json` prints `{ "count", "exact", "searchedUntil", "cursor", "from", "to" }`: `from` and `to` are the window this run counted, in milliseconds (`null` without one), so pass them with `--cursor` to count the same window on rather than a duration, which would start from the later time. When the count is not exact, stderr carries one JSON line with the command that does that: `{"count":{"exact":false,"searchedUntil":...,"cursor":"...","continue":"whk requests count ..."}}`.
 
 `whk requests get` on a request a [live tunnel](/docs/live-tunnel) relayed adds the **Live Response**: the status the sender got and why, the first few headers and the start of the body (`--json` has the whole record as `liveResponse`).
 

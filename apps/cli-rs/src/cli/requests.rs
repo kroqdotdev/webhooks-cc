@@ -73,6 +73,7 @@ pub async fn get(client: &ApiClient, id: &str, json: bool) -> Result<()> {
 /// `whk requests search`: follows the cursor until it has `limit` matches,
 /// the whole range was read, or the deadline passed. `--json` prints the
 /// matches as one array; how far the search read goes to stderr.
+#[allow(clippy::too_many_arguments)]
 pub async fn search(
     client: &ApiClient,
     filters: &SearchFilters<'_>,
@@ -80,6 +81,7 @@ pub async fn search(
     offset: u32,
     order: &str,
     cursor: Option<&str>,
+    api_url: Option<&str>,
     json: bool,
 ) -> Result<()> {
     let limit = limit.max(1);
@@ -97,7 +99,7 @@ pub async fn search(
             result
                 .cursor
                 .as_deref()
-                .map(|c| continue_command("search", filters, Some((limit, order)), c))
+                .map(|c| continue_command("search", filters, Some((limit, order)), c, api_url))
         })
         .flatten();
 
@@ -204,15 +206,30 @@ fn search_progress_line(searched_until: Option<i64>, order: &str, next: Option<&
     line
 }
 
-/// The command that goes on from `cursor`, with the same filters.
+/// Whether `--api-url` was given on the command line: the value is not the
+/// one `WHK_API_URL` holds (clap reads both into the same argument). A
+/// command printed for later then has to name the server itself.
+pub fn api_url_was_given(value: Option<&str>, env: Option<&str>) -> bool {
+    match value {
+        Some(value) => env != Some(value),
+        None => false,
+    }
+}
+
+/// The command that goes on from `cursor`, with the same filters, and with
+/// `--api-url` when this run was given one, so the cursor goes back to the
+/// server that made it. Values are attached with `=`, so one that starts
+/// with a hyphen is still read as a value.
 fn continue_command(
     action: &str,
     filters: &SearchFilters<'_>,
     page: Option<(u32, &str)>,
     cursor: &str,
+    api_url: Option<&str>,
 ) -> String {
     let mut parts = vec![format!("whk requests {action}")];
     for (flag, value) in [
+        ("--api-url", api_url),
         ("--slug", filters.slug),
         ("--method", filters.method),
         ("--kind", filters.kind),
@@ -221,18 +238,18 @@ fn continue_command(
         ("--to", filters.to),
     ] {
         if let Some(v) = value {
-            parts.push(format!("{flag} {}", shell_word(v)));
+            parts.push(format!("{flag}={}", shell_word(v)));
         }
     }
     if let Some((limit, order)) = page {
         if limit != 50 {
-            parts.push(format!("--limit {limit}"));
+            parts.push(format!("--limit={limit}"));
         }
         if order != "desc" {
-            parts.push(format!("--order {}", shell_word(order)));
+            parts.push(format!("--order={}", shell_word(order)));
         }
     }
-    parts.push(format!("--cursor {}", shell_word(cursor)));
+    parts.push(format!("--cursor={}", shell_word(cursor)));
     parts.join(" ")
 }
 
@@ -254,6 +271,7 @@ pub async fn count(
     client: &ApiClient,
     filters: &SearchFilters<'_>,
     cursor: Option<&str>,
+    api_url: Option<&str>,
     json: bool,
 ) -> Result<()> {
     let (from, to) = resolve_times(filters, now_ms());
@@ -265,29 +283,58 @@ pub async fn count(
     let result = client
         .count_requests(filters, cursor, SEARCH_DEADLINE)
         .await?;
+    let next = (!result.exact)
+        .then(|| {
+            result
+                .cursor
+                .as_deref()
+                .map(|c| continue_command("count", filters, None, c, api_url))
+        })
+        .flatten();
 
     if json {
-        println!("{}", count_json(&result));
+        println!("{}", count_json(&result, filters));
+        if !result.exact {
+            eprintln!("{}", count_progress_json(&result, next.as_deref()));
+        }
         return Ok(());
     }
     println!("  {}", count_line(&result));
-    if !result.exact
-        && let Some(c) = result.cursor.as_deref()
-    {
-        eprintln!(
-            "  Count the rest (add it to this) with: {}",
-            continue_command("count", filters, None, c)
-        );
+    if let Some(next) = next {
+        eprintln!("  Count the rest (add it to this) with: {next}");
     }
     Ok(())
 }
 
-fn count_json(result: &CountResult) -> serde_json::Value {
+/// What `count --json` prints: the count, and the window it counted as the
+/// times this run used (`--from 1h` is an hour before it started), so a
+/// later run can count the same window on.
+fn count_json(result: &CountResult, filters: &SearchFilters<'_>) -> serde_json::Value {
     serde_json::json!({
         "count": result.count,
         "exact": result.exact,
         "searchedUntil": result.searched_until,
         "cursor": result.cursor,
+        "from": filters.from.and_then(time_ms),
+        "to": filters.to.and_then(time_ms),
+    })
+}
+
+/// A resolved `--from` or `--to` as epoch ms.
+fn time_ms(value: &str) -> Option<i64> {
+    let ms: f64 = value.trim().parse().ok()?;
+    (ms.is_finite() && ms >= 0.0).then(|| ms.floor() as i64)
+}
+
+/// What `--json` writes to stderr when a count stopped before the end.
+fn count_progress_json(result: &CountResult, next: Option<&str>) -> serde_json::Value {
+    serde_json::json!({
+        "count": {
+            "exact": result.exact,
+            "searchedUntil": result.searched_until,
+            "cursor": result.cursor,
+            "continue": next,
+        }
     })
 }
 
@@ -475,17 +522,52 @@ mod search_output_tests {
     #[test]
     fn the_continue_command_repeats_the_filters() {
         assert_eq!(
-            continue_command("search", &filters(), Some((50, "desc")), "abc.def"),
-            r"whk requests search --slug abc -q 'it'\''s paid' --from 7d --cursor abc.def"
+            continue_command("search", &filters(), Some((50, "desc")), "abc.def", None),
+            r"whk requests search --slug=abc -q='it'\''s paid' --from=7d --cursor=abc.def"
         );
         assert_eq!(
-            continue_command("search", &SearchFilters::default(), Some((20, "asc")), "c"),
-            "whk requests search --limit 20 --order asc --cursor c"
+            continue_command(
+                "search",
+                &SearchFilters::default(),
+                Some((20, "asc")),
+                "c",
+                None
+            ),
+            "whk requests search --limit=20 --order=asc --cursor=c"
         );
         assert_eq!(
-            continue_command("count", &filters(), None, "c"),
-            r"whk requests count --slug abc -q 'it'\''s paid' --from 7d --cursor c"
+            continue_command("count", &filters(), None, "c", None),
+            r"whk requests count --slug=abc -q='it'\''s paid' --from=7d --cursor=c"
         );
+        // A value that starts with a hyphen stays a value.
+        let dashed = SearchFilters {
+            query: Some("--boundary"),
+            ..SearchFilters::default()
+        };
+        assert_eq!(
+            continue_command("search", &dashed, Some((50, "desc")), "-c", None),
+            "whk requests search -q=--boundary --cursor=-c"
+        );
+    }
+
+    #[test]
+    fn the_continue_command_names_a_server_given_by_flag() {
+        assert_eq!(
+            continue_command(
+                "count",
+                &SearchFilters::default(),
+                None,
+                "c",
+                Some("http://localhost:3110")
+            ),
+            "whk requests count --api-url=http://localhost:3110 --cursor=c"
+        );
+        assert!(api_url_was_given(Some("http://a"), None));
+        assert!(api_url_was_given(Some("http://a"), Some("http://b")));
+        // From the environment, or not at all: the next run finds it again.
+        assert!(!api_url_was_given(Some("http://a"), Some("http://a")));
+        assert!(!api_url_was_given(None, Some("http://a")));
+        assert!(!api_url_was_given(None, None));
     }
 
     #[test]
@@ -525,8 +607,8 @@ mod search_output_tests {
             ..filters
         };
         assert_eq!(
-            continue_command("search", &resolved, Some((500, "desc")), "c"),
-            "whk requests search --from 1699395200000 --to 1700000000000 --limit 500 --cursor c"
+            continue_command("search", &resolved, Some((500, "desc")), "c", None),
+            "whk requests search --from=1699395200000 --to=1700000000000 --limit=500 --cursor=c"
         );
     }
 
@@ -569,8 +651,9 @@ mod search_output_tests {
         };
         assert_eq!(count_line(&result), "Count: 7");
         assert_eq!(
-            count_json(&result),
-            json!({"count": 7, "exact": true, "searchedUntil": null, "cursor": null})
+            count_json(&result, &SearchFilters::default()),
+            json!({"count": 7, "exact": true, "searchedUntil": null, "cursor": null,
+                "from": null, "to": null})
         );
 
         result.exact = false;
@@ -584,8 +667,21 @@ mod search_output_tests {
             )
         );
         assert_eq!(
-            count_json(&result),
-            json!({"count": 7, "exact": false, "searchedUntil": 1_700_000_000_000_i64, "cursor": "c"})
+            count_json(
+                &result,
+                &SearchFilters {
+                    from: Some("1699395200000"),
+                    to: Some("nonsense"),
+                    ..SearchFilters::default()
+                }
+            ),
+            json!({"count": 7, "exact": false, "searchedUntil": 1_700_000_000_000_i64, "cursor": "c",
+                "from": 1_699_395_200_000_i64, "to": null})
+        );
+        assert_eq!(
+            count_progress_json(&result, Some("whk x")),
+            json!({"count": {"exact": false, "searchedUntil": 1_700_000_000_000_i64,
+                "cursor": "c", "continue": "whk x"}})
         );
     }
 }

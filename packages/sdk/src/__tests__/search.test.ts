@@ -424,6 +424,34 @@ describe("search with a cursor", () => {
       expect(await settledAfter(pending, 200)).toBeInstanceOf(TimeoutError);
     });
 
+    it("search() keeps the page's timer running while the body is read", async () => {
+      let call = 0;
+      globalThis.fetch = vi
+        .fn()
+        .mockImplementation((_url: string, init: { signal: AbortSignal }) => {
+          if (call++ === 0) {
+            return Promise.resolve(
+              answer({ body: [hit("r1")], headers: more("c1"), takesMs: 24_000 })
+            );
+          }
+          // The head arrives; the body never does, until the request is aborted.
+          return Promise.resolve({
+            ...answer({ body: [], headers: more("c2") }),
+            json: () =>
+              new Promise((_, reject) => {
+                init.signal.addEventListener("abort", () => {
+                  reject(Object.assign(new Error("aborted"), { name: "AbortError" }));
+                });
+              }),
+          });
+        });
+
+      const pending = createClient().requests.search({ q: "needle" });
+      expect(await settledAfter(pending, 5_900)).toBe("pending");
+      const outcome = await settledAfter(pending, 200);
+      expect((outcome as Array<{ id: string }>).map((r) => r.id)).toEqual(["r1"]);
+    });
+
     it("searchPage() and countPage() keep the client's timeout", async () => {
       const fetchMock = mockThenHang({ body: [hit("r1")], headers: more("c1"), takesMs: 24_000 });
       globalThis.fetch = fetchMock;
@@ -436,6 +464,107 @@ describe("search with a cursor", () => {
       expect(await settledAfter(count, 0)).toBe("pending");
       expect(await settledAfter(page, 200)).toBeInstanceOf(TimeoutError);
       expect(await settledAfter(count, 0)).toBeInstanceOf(TimeoutError);
+    });
+  });
+
+  describe("with retries turned on", () => {
+    const retrying = () => createClient({ maxAttempts: 3, backoffMs: 10 });
+    const later = (body: unknown): Answer => ({
+      status: 429,
+      body,
+      headers: { "Retry-After": "60" },
+    });
+
+    it("search() does not wait out a busy answer longer than the time left", async () => {
+      const fetchMock = mockPages(
+        { body: [hit("r1")], headers: more("c1") },
+        later({ error: "search_busy" })
+      );
+      globalThis.fetch = fetchMock;
+
+      // No timer is advanced: the answer comes without any wait.
+      const results = await retrying().requests.search({ q: "needle" });
+
+      expect(results.map((r) => r.id)).toEqual(["r1"]);
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+    });
+
+    it("count() returns the sum so far the same way", async () => {
+      const fetchMock = mockPages(
+        { body: { count: 4, exact: false, searchedUntil: 3, cursor: "c1" } },
+        later({ error: "search_busy" })
+      );
+      globalThis.fetch = fetchMock;
+
+      expect(await retrying().requests.count({ q: "needle" })).toBe(4);
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+    });
+
+    it("search() fails at once on a rate limit that lasts longer than the time left", async () => {
+      const fetchMock = mockPages(
+        { body: [hit("r1")], headers: more("c1") },
+        later({ error: "Too many requests" })
+      );
+      globalThis.fetch = fetchMock;
+
+      await expect(retrying().requests.search({ q: "needle" })).rejects.toBeInstanceOf(
+        RateLimitError
+      );
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+    });
+
+    it("search() fails at once when the first page is busy for longer than the time left", async () => {
+      const fetchMock = mockPages(later({ error: "search_busy" }));
+      globalThis.fetch = fetchMock;
+
+      await expect(retrying().requests.search({ q: "needle" })).rejects.toMatchObject({
+        code: "search_busy",
+      });
+      expect(fetchMock).toHaveBeenCalledOnce();
+    });
+
+    it("search() still retries a wait that fits", async () => {
+      const fetchMock = mockPages(
+        { status: 429, body: { error: "Too many requests" }, headers: { "Retry-After": "3" } },
+        { body: [hit("r1")], headers: done }
+      );
+      globalThis.fetch = fetchMock;
+
+      const pending = retrying().requests.search({ q: "needle" });
+      await vi.advanceTimersByTimeAsync(3_000);
+
+      expect((await pending).map((r) => r.id)).toEqual(["r1"]);
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+    });
+
+    it("search() takes no backoff that would pass its time", async () => {
+      // A server error 5 ms before the end, with a 10 ms backoff.
+      const fetchMock = mockPages(
+        { body: [hit("r1")], headers: more("c1"), takesMs: 24_000 },
+        { status: 503, body: { error: "unavailable" }, takesMs: 5_995 }
+      );
+      globalThis.fetch = fetchMock;
+
+      await expect(retrying().requests.search({ q: "needle" })).rejects.toMatchObject({
+        statusCode: 503,
+      });
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+    });
+
+    it("searchPage() waits as long as the server asks, as before", async () => {
+      const fetchMock = mockPages(later({ error: "search_busy" }), {
+        body: [hit("r1")],
+        headers: done,
+      });
+      globalThis.fetch = fetchMock;
+
+      const pending = retrying().requests.searchPage({ q: "needle" });
+      await vi.advanceTimersByTimeAsync(59_000);
+      expect(fetchMock).toHaveBeenCalledOnce();
+      await vi.advanceTimersByTimeAsync(1_000);
+
+      expect((await pending).requests).toHaveLength(1);
+      expect(fetchMock).toHaveBeenCalledTimes(2);
     });
   });
 

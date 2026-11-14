@@ -2314,7 +2314,7 @@ def test_a_page_near_the_deadline_gets_a_shorter_timeout(monkeypatch: pytest.Mon
     monkeypatch.setattr("webhooks_cc.client._SEARCH_DEADLINE_MS", 0)
     client.requests.search(q="x")
     client.requests.count(q="x")
-    assert timeouts == [5.0, 5.0]
+    assert all(4.5 < timeout <= 5.0 for timeout in timeouts) and len(timeouts) == 2
     timeouts.clear()
     # The page calls keep the client's timeout.
     client.requests.search_page(q="x")
@@ -2330,7 +2330,7 @@ def test_a_page_that_times_out_says_how_long_it_had(monkeypatch: pytest.MonkeyPa
 
     with pytest.raises(errors.TimeoutError) as caught:
         make_client(handler, timeout="30s").requests.search(q="x")
-    assert caught.value.timeout_ms == 5000
+    assert 4500 < caught.value.timeout_ms <= 5000
 
 
 def test_a_later_page_cut_short_by_the_deadline_ends_the_search(
@@ -2357,3 +2357,74 @@ def test_a_later_page_cut_short_by_the_deadline_ends_the_search(
     assert caught.value.timeout_ms == 500
     with pytest.raises(errors.TimeoutError):
         own.requests.count(q="x")
+
+
+def test_search_page_takes_an_empty_cursor_as_none() -> None:
+    seen: list[dict[str, str]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(dict(request.url.params))
+        if request.url.path.endswith("/count"):
+            return httpx.Response(200, json={"count": 1, "exact": True})
+        return search_response([], complete=True)
+
+    client = make_client(handler)
+    client.requests.search_page(q="x", offset=5, cursor="")
+    client.requests.count_page(q="x", cursor="")
+    assert seen == [{"q": "x", "offset": "5", "paged": "true"}, {"q": "x", "paged": "true"}]
+
+
+def test_retries_inside_a_search_stay_within_its_deadline(monkeypatch: pytest.MonkeyPatch) -> None:
+    slept: list[float] = []
+    monkeypatch.setattr("webhooks_cc.client._sleep_ms", slept.append)
+    retry = RetryOptions(max_attempts=5, backoff=1)
+
+    def limited_later(code: str) -> Handler:
+        def handler(request: httpx.Request) -> httpx.Response:
+            if "cursor" in request.url.params or code.startswith("first:"):
+                return httpx.Response(
+                    429, json={"error": code.removeprefix("first:")}, headers={"retry-after": "60"}
+                )
+            if request.url.path.endswith("/count"):
+                return httpx.Response(200, json={"count": 2, "exact": False, "cursor": "c1"})
+            return search_response(["r1"], complete=False, cursor="c1")
+
+        return handler
+
+    # A wait of 60 s does not fit the 30 s a search has at most: it is never slept.
+    # Busy after a page: what was found. An ordinary limit, or a first page: the error.
+    busy = make_client(limited_later("search_busy"), retry=retry)
+    assert [r.id for r in busy.requests.search(q="x")] == ["r1"]
+    assert busy.requests.count(q="x") == 2
+    for code in ("Too many requests", "first:search_busy"):
+        client = make_client(limited_later(code), retry=retry)
+        with pytest.raises(errors.RateLimitError) as caught:
+            client.requests.search(q="x")
+        assert caught.value.retry_after == 60
+        with pytest.raises(errors.RateLimitError):
+            client.requests.count(q="x")
+    assert slept == []
+    # The page calls, like every other call, wait as the retry options say.
+    with pytest.raises(errors.RateLimitError):
+        busy.requests.search_page(q="x", cursor="c1")
+    assert slept == [60_000] * 4
+
+
+def test_timeout_retries_inside_a_search_get_the_time_that_is_left(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("webhooks_cc.client._SEARCH_DEADLINE_MS", 0)
+    monkeypatch.setattr("webhooks_cc.client._SEARCH_DEADLINE_GRACE_MS", 400)
+    timeouts: list[float] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        timeouts.append(request.extensions["timeout"]["read"])
+        time.sleep(0.15)
+        raise httpx.ReadTimeout("slow", request=request)
+
+    client = make_client(handler, timeout="30s", retry=RetryOptions(max_attempts=10, backoff=100))
+    with pytest.raises(errors.TimeoutError):
+        client.requests.search(q="x")
+    # Each try had only what was left of the 400 ms, and no try began after them.
+    assert timeouts == sorted(timeouts, reverse=True) and timeouts[0] <= 0.4
+    assert 1 < len(timeouts) < 4

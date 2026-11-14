@@ -303,7 +303,7 @@ func (c *Client) call(ctx context.Context, method, path string, query url.Values
 			if ctx.Err() != nil {
 				return nil, ctx.Err()
 			}
-			if more && repeatable {
+			if more && repeatable && mayRetryAfter(ctx, backoff) {
 				if err := sleep(ctx, backoff); err != nil {
 					return nil, err
 				}
@@ -326,10 +326,12 @@ func (c *Client) call(ctx context.Context, method, path string, query url.Values
 				if apiErr.RetryAfter > 0 {
 					wait = apiErr.RetryAfter
 				}
-				if err := sleep(ctx, wait); err != nil {
-					return nil, err
+				if mayRetryAfter(ctx, wait) {
+					if err := sleep(ctx, wait); err != nil {
+						return nil, err
+					}
+					continue
 				}
-				continue
 			}
 			if c.sandbox && response.status != http.StatusTooManyRequests {
 				refusal := sandboxErrorFromResponse(response)
@@ -345,14 +347,24 @@ func (c *Client) call(ctx context.Context, method, path string, query url.Values
 	}
 }
 
-// callTimeoutKey carries a timeout for each try of an API call that is
-// shorter than the client's (see withCallTimeout).
-type callTimeoutKey struct{}
+// callDeadlineKey carries the time an API call must end by (see
+// withCallDeadline).
+type callDeadlineKey struct{}
 
-// withCallTimeout makes API calls on the context time out after timeout,
-// when that is less than the client's own.
-func withCallTimeout(ctx context.Context, timeout time.Duration) context.Context {
-	return context.WithValue(ctx, callTimeoutKey{}, timeout)
+// withCallDeadline makes API calls on the context end by deadline: each try
+// times out at the deadline when that is sooner than the client's timeout,
+// and a retry whose wait would end after it is not made, so the error goes to
+// the caller instead. Unlike a context deadline, a try it cuts short is a
+// *TimeoutError.
+func withCallDeadline(ctx context.Context, deadline time.Time) context.Context {
+	return context.WithValue(ctx, callDeadlineKey{}, deadline)
+}
+
+// mayRetryAfter reports whether a retry after wait still fits the context's
+// call deadline, if it has one.
+func mayRetryAfter(ctx context.Context, wait time.Duration) bool {
+	deadline, ok := ctx.Value(callDeadlineKey{}).(time.Time)
+	return !ok || time.Now().Add(wait).Before(deadline)
 }
 
 type apiResponse struct {
@@ -363,8 +375,8 @@ type apiResponse struct {
 
 func (c *Client) apiOnce(ctx context.Context, method, endpoint string, payload []byte, bearer string) (*apiResponse, error) {
 	timeout := c.timeout
-	if shorter, ok := ctx.Value(callTimeoutKey{}).(time.Duration); ok && shorter < timeout {
-		timeout = shorter
+	if deadline, ok := ctx.Value(callDeadlineKey{}).(time.Time); ok {
+		timeout = min(timeout, max(time.Until(deadline), time.Millisecond))
 	}
 	callCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()

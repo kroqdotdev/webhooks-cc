@@ -669,6 +669,72 @@ function searchStoppedNote(
   return hasCursor ? `${reached} Call search_requests again with cursor to continue.` : reached;
 }
 
+const SEARCH_SHORTENED_NOTE =
+  "Some requests were shortened to fit the output (bodyTruncated with bodySize, or shortened: true for a summary); get_request with the id returns a request in full.";
+
+/** A string cut to `max` characters, for a summary. */
+function clip(value: unknown, max: number): string | undefined {
+  return typeof value === "string" ? sliceText(value, max) : undefined;
+}
+
+/** The size of one request as an item of the `requests` list in the output. */
+function listedSize(request: unknown): number {
+  // Its lines indented two levels, plus the comma and line break after it.
+  return jsonSize([[request]]) - 8;
+}
+
+/**
+ * The requests of one search page, shortened so the list takes at most
+ * `room` characters: every request stays listed, because the page's cursor
+ * continues after all of them. Each gets an equal share; one that is larger
+ * loses the end of its body, then everything but a summary, and a page that
+ * cannot hold the summaries lists ids and times.
+ */
+function fitSearchRequests(requests: unknown[], room: number): unknown[] {
+  const share = Math.floor(room / Math.max(1, requests.length));
+  const fitted = requests.map((request) => shortenSearchRequest(request as JsonRecord, share));
+  if (fitted.every((request) => listedSize(request) <= share)) return fitted;
+  return requests.map((request) => {
+    const { id, receivedAt } = request as JsonRecord;
+    return { id, receivedAt, shortened: true };
+  });
+}
+
+type JsonRecord = Record<string, unknown>;
+
+function shortenSearchRequest(request: JsonRecord, share: number): JsonRecord {
+  if (listedSize(request) <= share) return request;
+  if (typeof request.body === "string") {
+    const body = request.body;
+    // Escaping can make a body longer in JSON than it is, so cut until it fits.
+    let keep = body.length - (listedSize(request) - share) - 96;
+    while (keep > 0) {
+      const cut = {
+        ...request,
+        body: sliceText(body, keep),
+        bodyTruncated: true,
+        bodySize: body.length,
+      };
+      if (listedSize(cut) <= share) return cut;
+      keep = Math.floor(keep / 2);
+    }
+  }
+  const email = request.email as JsonRecord | null | undefined;
+  const summary: JsonRecord = {
+    id: request.id,
+    slug: clip(request.slug, 64),
+    method: clip(request.method, 16),
+    path: clip(request.path, 200),
+    contentType: clip(request.contentType, 100),
+    size: request.size,
+    receivedAt: request.receivedAt,
+    kind: request.kind,
+    ...(email ? { subject: clip(email.subject, 200) } : {}),
+    shortened: true,
+  };
+  return summary;
+}
+
 export function jsonContent(value: unknown): ToolResult {
   return textContent(serializeJson(value));
 }
@@ -1774,31 +1840,28 @@ export function registerTools(
         { cursor }
       );
       const searchedUntil = isoTime(page.searchedUntil);
-      const result = (cutNote?: string) => {
+      const envelope = (requests: unknown[], shortened: boolean) => {
         const notes = [
           ...(page.complete ? [] : [searchStoppedNote(searchedUntil, order, Boolean(page.cursor))]),
-          ...(cutNote ? [cutNote] : []),
+          ...(shortened ? [SEARCH_SHORTENED_NOTE] : []),
         ];
-        return fitArrayField(
-          {
-            requests: page.requests.map(compactRequest),
-            complete: page.complete,
-            searchedUntil,
-            cursor: page.cursor,
-            ...(notes.length > 0 ? { note: notes.join(" ") } : {}),
-          },
-          "requests"
-        );
+        return {
+          requests,
+          complete: page.complete,
+          searchedUntil,
+          cursor: page.cursor,
+          ...(notes.length > 0 ? { note: notes.join(" ") } : {}),
+        };
       };
-      const fitted = result();
-      // The cursor reads on after every match of this page, shown or not.
-      return jsonContent(
-        fitted.truncated
-          ? result(
-              "Not every match of this page fit the output (see returned), and the cursor continues after all of them: search again with a smaller limit to see the rest."
-            )
-          : fitted
-      );
+      // The cursor reads on after every match of this page, so every match
+      // is listed, shortened where the output would not hold it.
+      const requests = page.requests.map(compactRequest);
+      if (jsonSize(envelope(requests, false)) <= MAX_BODY_SIZE) {
+        return jsonContent(envelope(requests, false));
+      }
+      // 8: what the brackets of a list with items take over an empty one's.
+      const room = MAX_BODY_SIZE - jsonSize(envelope([], true)) - 8;
+      return jsonContent(envelope(fitSearchRequests(requests, room), true));
     })
   );
 

@@ -93,6 +93,13 @@ async fn run(args: Cli) -> Result<()> {
     }
 
     let mut client = ApiClient::new(args.api_url.as_deref(), args.webhook_url.as_deref())?;
+    // Set when --api-url was typed, not read from WHK_API_URL: a command
+    // printed for a later run then names the server.
+    let api_url_flag = cli::requests::api_url_was_given(
+        args.api_url.as_deref(),
+        std::env::var("WHK_API_URL").ok().as_deref(),
+    )
+    .then(|| client.base_url.clone());
 
     match args.command {
         None => unreachable!("handled above"),
@@ -352,6 +359,7 @@ async fn run(args: Cli) -> Result<()> {
                     offset,
                     &order,
                     cursor.as_deref(),
+                    api_url_flag.as_deref(),
                     args.json,
                 )
                 .await?;
@@ -373,7 +381,14 @@ async fn run(args: Cli) -> Result<()> {
                     from: from.as_deref(),
                     to: to.as_deref(),
                 };
-                cli::requests::count(&client, &filters, cursor.as_deref(), args.json).await?;
+                cli::requests::count(
+                    &client,
+                    &filters,
+                    cursor.as_deref(),
+                    api_url_flag.as_deref(),
+                    args.json,
+                )
+                .await?;
             }
             RequestsAction::Clear {
                 slug,

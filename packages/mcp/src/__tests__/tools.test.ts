@@ -2817,11 +2817,61 @@ describe("search_requests and count_requests", () => {
     );
   });
 
-  it("keeps the output inside its budget and says the cursor skips what was cut", async () => {
+  it("keeps a request larger than the output, with its body cut and marked", async () => {
     const searchPage = vi.fn(async () => ({
-      requests: Array.from({ length: 50 }, (_, i) =>
-        makeRequest({ id: `r${i}`, body: "x".repeat(4_000) })
-      ),
+      requests: [makeRequest({ id: "big", body: "x".repeat(40_000) })],
+      complete: true,
+      searchedUntil: null,
+      cursor: null,
+    }));
+    const tools = getRegisteredTools(searchClient({ searchPage }));
+
+    const output = await tools.search_requests.handler({ q: "x" });
+    expect(output.content[0].text.length).toBeLessThanOrEqual(32_768);
+    const result = JSON.parse(output.content[0].text);
+    expect(result.requests).toHaveLength(1);
+    expect(result.requests[0]).toMatchObject({
+      id: "big",
+      method: "POST",
+      bodyTruncated: true,
+      bodySize: 40_000,
+    });
+    // Nearly all of the budget goes to the body.
+    expect(result.requests[0].body.length).toBeGreaterThan(30_000);
+    expect(result.complete).toBe(true);
+    expect(result.note).toContain("get_request");
+    expect(result).not.toHaveProperty("truncated");
+  });
+
+  it("cuts a body that grows when escaped", async () => {
+    const searchPage = vi.fn(async () => ({
+      requests: [makeRequest({ id: "quotes", body: '"\n'.repeat(15_000) })],
+      complete: true,
+      searchedUntil: null,
+      cursor: null,
+    }));
+    const tools = getRegisteredTools(searchClient({ searchPage }));
+
+    const output = await tools.search_requests.handler({ q: "x" });
+    expect(output.content[0].text.length).toBeLessThanOrEqual(32_768);
+    const result = JSON.parse(output.content[0].text);
+    expect(result.requests[0]).toMatchObject({
+      id: "quotes",
+      bodyTruncated: true,
+      bodySize: 30_000,
+    });
+  });
+
+  it("lists every match of a page that does not fit, since the cursor skips none", async () => {
+    const searchPage = vi.fn(async () => ({
+      requests: [
+        makeRequest({ id: "small", body: "needle" }),
+        ...Array.from({ length: 48 }, (_, i) =>
+          makeRequest({ id: `r${i}`, body: "x".repeat(4_000) })
+        ),
+        // Too large even without its body: only a summary is left.
+        makeRequest({ id: "headers", headers: { "x-big": "h".repeat(5_000) } }),
+      ],
       complete: false,
       searchedUntil: 1_700_000_000_000,
       cursor: "c1",
@@ -2831,12 +2881,47 @@ describe("search_requests and count_requests", () => {
     const output = await tools.search_requests.handler({ q: "x" });
     expect(output.content[0].text.length).toBeLessThanOrEqual(32_768);
     const result = JSON.parse(output.content[0].text);
-    expect(result.truncated).toBe(true);
-    expect(result.returned).toBe(result.requests.length);
-    expect(result.requests.length).toBeLessThan(50);
+    expect(result.requests).toHaveLength(50);
+    expect(result.requests[0]).toEqual(makeRequest({ id: "small", body: "needle" }));
+    expect(result.requests[1]).toMatchObject({ id: "r0", bodyTruncated: true, bodySize: 4_000 });
+    expect(result.requests[49]).toEqual({
+      id: "headers",
+      method: "POST",
+      path: "/webhooks/github",
+      contentType: "application/json",
+      size: 42,
+      receivedAt: 1700000000000,
+      shortened: true,
+    });
     expect(result.cursor).toBe("c1");
     expect(result.note).toContain("Call search_requests again with cursor to continue.");
-    expect(result.note).toContain("search again with a smaller limit");
+    expect(result.note).toContain("get_request");
+  });
+
+  it("falls back to ids when even summaries do not fit", async () => {
+    const searchPage = vi.fn(async () => ({
+      requests: Array.from({ length: 200 }, (_, i) =>
+        makeRequest({
+          id: `00000000-0000-4000-8000-${String(i).padStart(12, "0")}`,
+          path: "/" + "p".repeat(300),
+          headers: { "x-big": "h".repeat(2_000) },
+        })
+      ),
+      complete: true,
+      searchedUntil: null,
+      cursor: null,
+    }));
+    const tools = getRegisteredTools(searchClient({ searchPage }));
+
+    const output = await tools.search_requests.handler({ q: "x", limit: 200 });
+    expect(output.content[0].text.length).toBeLessThanOrEqual(32_768);
+    const result = JSON.parse(output.content[0].text);
+    expect(result.requests).toHaveLength(200);
+    expect(result.requests[199]).toEqual({
+      id: "00000000-0000-4000-8000-000000000199",
+      receivedAt: 1700000000000,
+      shortened: true,
+    });
   });
 
   it("counts one page and says when the count is a lower bound", async () => {

@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -394,11 +395,8 @@ func TestAContextCancelledMidSearchEndsIt(t *testing.T) {
 // it; the page calls keep the client's timeout.
 func TestAPageNearTheDeadlineGetsAShorterTimeout(t *testing.T) {
 	deadline := time.Now().Add(time.Hour)
-	if got, _ := pageContext(context.Background(), deadline).Value(callTimeoutKey{}).(time.Duration); got < time.Hour {
-		t.Errorf("far from the deadline: %s", got)
-	}
-	if got, _ := pageContext(context.Background(), time.Now().Add(-time.Minute)).Value(callTimeoutKey{}).(time.Duration); got != searchDeadlineGrace {
-		t.Errorf("past the deadline: %s", got)
+	if got, _ := pageContext(context.Background(), deadline).Value(callDeadlineKey{}).(time.Time); !got.Equal(deadline.Add(searchDeadlineGrace)) {
+		t.Errorf("a page must end by %s", got)
 	}
 
 	previous, previousGrace := searchDeadline, searchDeadlineGrace
@@ -490,5 +488,101 @@ func TestALaterPageCutShortByTheDeadlineEndsTheSearch(t *testing.T) {
 	}
 	if count, err := own.Requests.Count(ctx, SearchOptions{Query: "x"}); count != 0 || !errors.Is(err, ErrTimeout) {
 		t.Errorf("own timeout: count = %d, %v", count, err)
+	}
+}
+
+// With retries on, a wait that does not fit what a search has left is never
+// slept: the error goes to Search and Count, which apply their own rules.
+func TestRetriesInsideASearchStayWithinItsDeadline(t *testing.T) {
+	ctx := context.Background()
+	retry := WithRetry(RetryOptions{MaxAttempts: 5, Backoff: time.Millisecond})
+	serve := func(first bool, code string) (*Client, *int) {
+		calls := new(int)
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			*calls++
+			w.Header().Set("Content-Type", "application/json")
+			if first || r.URL.Query().Get("cursor") != "" {
+				w.Header().Set("Retry-After", "60")
+				w.WriteHeader(http.StatusTooManyRequests)
+				fmt.Fprintf(w, `{"error":%q}`, code)
+				return
+			}
+			if strings.HasSuffix(r.URL.Path, "/count") {
+				fmt.Fprint(w, `{"count":2,"exact":false,"cursor":"c1"}`)
+				return
+			}
+			w.Header().Set("X-Search-Complete", "false")
+			w.Header().Set("X-Search-Cursor", "c1")
+			fmt.Fprint(w, `[{"id":"r1"}]`)
+		}))
+		t.Cleanup(server.Close)
+		client, err := New(WithAPIKey("whcc_test"), WithBaseURL(server.URL), retry)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return client, calls
+	}
+	started := time.Now()
+
+	// Busy after a page: what was found, after one try of the busy page.
+	client, calls := serve(false, "search_busy")
+	if found, err := client.Requests.Search(ctx, SearchOptions{Query: "x"}); err != nil || len(found) != 1 {
+		t.Errorf("busy later: search = %+v, %v", found, err)
+	}
+	if count, err := client.Requests.Count(ctx, SearchOptions{Query: "x"}); err != nil || count != 2 {
+		t.Errorf("busy later: count = %d, %v", count, err)
+	}
+	if *calls != 4 {
+		t.Errorf("busy later: %d calls", *calls)
+	}
+	// An ordinary limit after a page, and a busy first page: the error.
+	for _, c := range []struct {
+		first bool
+		code  string
+	}{{false, "Too many requests"}, {true, "search_busy"}} {
+		client, _ := serve(c.first, c.code)
+		var apiErr *Error
+		if found, err := client.Requests.Search(ctx, SearchOptions{Query: "x"}); found != nil || !errors.As(err, &apiErr) || apiErr.RetryAfter != time.Minute {
+			t.Errorf("%v %s: search = %+v, %v", c.first, c.code, found, err)
+		}
+		if count, err := client.Requests.Count(ctx, SearchOptions{Query: "x"}); count != 0 || !errors.Is(err, ErrRateLimited) {
+			t.Errorf("%v %s: count = %d, %v", c.first, c.code, count, err)
+		}
+	}
+	if took := time.Since(started); took > 5*time.Second {
+		t.Errorf("a 60 s wait was slept: %s", took)
+	}
+}
+
+// A try that timed out inside Search is tried again with only the time that
+// is left, and not at all once that is gone.
+func TestTimeoutRetriesInsideASearchGetTheTimeThatIsLeft(t *testing.T) {
+	previous, previousGrace := searchDeadline, searchDeadlineGrace
+	searchDeadline, searchDeadlineGrace = 0, 400*time.Millisecond
+	defer func() { searchDeadline, searchDeadlineGrace = previous, previousGrace }()
+	release := make(chan struct{})
+	var calls atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		select {
+		case <-release:
+		case <-r.Context().Done():
+		}
+	}))
+	defer server.Close()
+	defer close(release)
+	client, err := New(WithAPIKey("whcc_test"), WithBaseURL(server.URL), WithTimeout(250*time.Millisecond),
+		WithRetry(RetryOptions{MaxAttempts: 10, Backoff: 50 * time.Millisecond}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	started := time.Now()
+	var timeout *TimeoutError
+	if _, err := client.Requests.Search(context.Background(), SearchOptions{Query: "x"}); !errors.As(err, &timeout) || timeout.After >= 250*time.Millisecond {
+		t.Errorf("search: %v", err)
+	}
+	// 250 ms, a 50 ms wait, then the 100 ms that were left: ten tries would take seconds.
+	if took := time.Since(started); took > 800*time.Millisecond || calls.Load() != 2 {
+		t.Errorf("%d tries in %s", calls.Load(), took)
 	}
 }

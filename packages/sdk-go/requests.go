@@ -371,15 +371,15 @@ var searchDeadline = 25 * time.Second
 
 const defaultSearchLimit = 50
 
-// searchDeadlineGrace is what a page of Search or Count may run past their
-// deadline before it times out.
+// searchDeadlineGrace is what a page of Search or Count, its retries
+// included, may run past their deadline.
 var searchDeadlineGrace = 5 * time.Second
 
-// pageContext gives one page of Search or Count the client's timeout, or
-// less when the deadline is near, so a page started just before it cannot
-// run long past it.
+// pageContext makes one page of Search or Count, its retries included, end
+// soon after their deadline, so a page started just before it cannot run long
+// past it.
 func pageContext(ctx context.Context, deadline time.Time) context.Context {
-	return withCallTimeout(ctx, max(0, time.Until(deadline))+searchDeadlineGrace)
+	return withCallDeadline(ctx, deadline.Add(searchDeadlineGrace))
 }
 
 // cutShortByDeadline reports whether err is the timeout of a page that had
