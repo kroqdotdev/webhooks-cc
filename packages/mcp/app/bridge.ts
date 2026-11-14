@@ -45,6 +45,16 @@ export interface ToolResultParams {
   isError?: boolean;
 }
 
+/** The host notifications the inspector handles (MCP Apps 2026-01-26). */
+const HOST_NOTIFICATIONS = [
+  "ui/notifications/tool-input",
+  "ui/notifications/tool-result",
+  "ui/notifications/tool-cancelled",
+  "ui/notifications/host-context-changed",
+  "ui/resource-teardown",
+] as const;
+type HostNotification = (typeof HOST_NOTIFICATIONS)[number];
+
 export class HostBridge {
   private nextId = 1;
   private readonly pending = new Map<number, Pending>();
@@ -55,7 +65,7 @@ export class HostBridge {
   }
 
   /** Handles a notification from the host. Set handlers before initialize. */
-  on(method: string, handler: (params: Params) => void): void {
+  on(method: HostNotification, handler: (params: Params) => void): void {
     this.handlers.set(method, handler);
   }
 
@@ -118,10 +128,14 @@ export class HostBridge {
               error: { code: -32601, message: `${message.method} is not supported` },
             }
       );
-      if (message.method === "ui/resource-teardown") this.handlers.get(message.method)?.({});
+      if (message.method === "ui/resource-teardown")
+        this.handlers.get("ui/resource-teardown")?.({});
       return;
     }
 
-    this.handlers.get(message.method)?.(message.params ?? {});
+    // Only the notifications the inspector listens for: a host's method name
+    // never picks what runs beyond that list.
+    const method = HOST_NOTIFICATIONS.find((name) => name === message.method);
+    if (method) this.handlers.get(method)?.(message.params ?? {});
   }
 }
