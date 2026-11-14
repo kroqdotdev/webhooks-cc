@@ -112,18 +112,25 @@
       "mcp": "no tool yet"
     },
     {
+      "id": "endpoint.layout-assist.status",
+      "does": "Read whether AI setup is offered and how many assists are left",
+      "routes": ["GET /api/endpoints/[slug]/layouts/assist"],
+      "sdk": ["ai.status"],
+      "python": "testing-focused SDK: added on demand",
+      "go": "testing-focused SDK: added on demand",
+      "cli": ["ai status"],
+      "mcp": ["ai_setup_status"]
+    },
+    {
       "id": "endpoint.layout-assist",
-      "does": "Have AI propose email layout patterns from chosen emails",
-      "routes": [
-        "GET /api/endpoints/[slug]/layouts/assist",
-        "POST /api/endpoints/[slug]/layouts/assist"
-      ],
-      "sessionOnly": "a person consents to sending the emails to the model; planned: the agent asks, a person approves",
-      "sdk": "session only",
-      "python": "session only",
-      "go": "session only",
-      "cli": "session only",
-      "mcp": "session only"
+      "does": "Have AI propose email fields or a layout from chosen emails",
+      "routes": ["POST /api/endpoints/[slug]/layouts/assist"],
+      "approval": "it sends the chosen emails to Anthropic, so the account's owner sees which ones and approves each ask",
+      "sdk": ["ai.setup"],
+      "python": "testing-focused SDK: added on demand",
+      "go": "testing-focused SDK: added on demand",
+      "cli": ["ai setup"],
+      "mcp": ["ai_setup"]
     },
     {
       "id": "endpoint.alerts",
@@ -608,30 +615,45 @@
     },
     {
       "id": "google.connections",
-      "does": "List the connected Google accounts",
-      "routes": ["GET /api/integrations/google/connections"],
-      "sdk": "no method yet",
+      "does": "List and disconnect the connected Google accounts, read a spreadsheet's tabs, and create a spreadsheet",
+      "routes": [
+        "GET /api/integrations/google/connections",
+        "DELETE /api/integrations/google/connections/[id]",
+        "GET /api/integrations/google/spreadsheets",
+        "POST /api/integrations/google/spreadsheets"
+      ],
+      "sdk": ["google.connections", "google.disconnect", "google.tabs", "google.createSpreadsheet"],
       "python": "testing-focused SDK: added on demand",
       "go": "testing-focused SDK: added on demand",
-      "cli": "no command yet: `whk api` reaches it",
-      "mcp": "no tool yet"
+      "cli": ["google list", "google disconnect", "google tabs", "google create-sheet"],
+      "mcp": [
+        "list_google_connections",
+        "disconnect_google",
+        "list_sheet_tabs",
+        "create_spreadsheet"
+      ]
     },
     {
       "id": "google.connect",
-      "does": "Connect a Google account for Sheets destinations, pick spreadsheets, disconnect",
-      "routes": [
-        "POST /api/integrations/google/start",
-        "POST /api/integrations/google/pick",
-        "GET /api/integrations/google/spreadsheets",
-        "POST /api/integrations/google/spreadsheets",
-        "DELETE /api/integrations/google/connections/[id]"
-      ],
-      "sessionOnly": "Google's consent runs in a browser; planned: the agent asks, a person approves",
-      "sdk": "session only",
-      "python": "session only",
-      "go": "session only",
-      "cli": "session only",
-      "mcp": "session only"
+      "does": "Connect a Google account for Sheets destinations",
+      "routes": ["POST /api/integrations/google/start"],
+      "approval": "connecting gives webhooks.cc access to the person's Drive files, so the account's owner approves it and chooses the Google account at Google",
+      "sdk": ["google.connect"],
+      "python": "testing-focused SDK: added on demand",
+      "go": "testing-focused SDK: added on demand",
+      "cli": ["google connect"],
+      "mcp": ["connect_google"]
+    },
+    {
+      "id": "google.pick",
+      "does": "Choose an existing spreadsheet from Drive for Sheets destinations",
+      "routes": ["POST /api/integrations/google/pick"],
+      "approval": "picking a file is what grants access to it, so the account's owner chooses it in Google's picker on the approval page",
+      "sdk": ["google.pick"],
+      "python": "testing-focused SDK: added on demand",
+      "go": "testing-focused SDK: added on demand",
+      "cli": ["google pick"],
+      "mcp": ["pick_spreadsheet"]
     },
     {
       "id": "request.share-link.list",

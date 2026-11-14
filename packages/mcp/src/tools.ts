@@ -539,6 +539,16 @@ function keyText(key: { key?: string; name?: string; expiresAt?: string }): stri
 /** What an approved action handed back, for the agent to tell the person. */
 function approvalResultText(result: Record<string, unknown>): string {
   if (typeof result.key === "string") return keyText(result);
+  if (typeof result.spreadsheetId === "string") {
+    const tabs = Array.isArray(result.tabs) ? result.tabs.join(", ") : "";
+    return `Approved. The chosen spreadsheet is ${String(result.spreadsheetId)} (${String(result.url)}), on connection ${String(result.connectionId)}${tabs ? `; its tabs: ${tabs}` : ""}. Use them in a Sheets destination's config.`;
+  }
+  if (Array.isArray(result.fields)) {
+    return `Approved. AI setup proposed (nothing is saved until you apply it):\n${JSON.stringify(result, null, 2)}`;
+  }
+  if (typeof result.connectionId === "string") {
+    return `Approved. The Google account ${result.email ? `${String(result.email)} ` : ""}is connected as ${result.connectionId}.`;
+  }
   if (typeof result.url === "string") {
     return `Approved. The share link is ${result.url} (anyone with it can read the copy until ${String(result.expiresAt)}).`;
   }
@@ -2772,7 +2782,7 @@ export function registerTools(
 
   server.tool(
     "wait_for_approval",
-    "Wait for the account's owner to answer an approval (from create_api_key, create_share_link, remove_domain or rename_account) and collect what it grants or did, such as the new API key or the share link. If they have not answered yet, call it again.",
+    "Wait for the account's owner to answer an approval (from create_api_key, create_share_link, remove_domain, rename_account, connect_google, pick_spreadsheet or ai_setup) and collect what it grants or did, such as the new API key, the share link or AI setup's proposals. If they have not answered yet, call it again.",
     {
       id: z.string().describe("The approval id"),
       timeout: durationOrTimestampSchema
@@ -2977,6 +2987,125 @@ export function registerTools(
       if (!pending.id) return textContent(`Removed the domain ${id}.`);
       return textContent(approvalAskText(pending));
     })
+  );
+
+  server.tool(
+    "list_google_connections",
+    "List the Google accounts connected for Google Sheets destinations (id, email, when connected), and whether Google Sheets is set up on this server.",
+    {},
+    withErrorHandling(async () => jsonContent(await client.google.connections()))
+  );
+
+  server.tool(
+    "connect_google",
+    "Connect a Google account for Google Sheets destinations. The account's owner must approve it: this returns a link and a code to show them, and approving takes them to Google to choose the account. Then call wait_for_approval for the new connection's id.",
+    {},
+    withErrorHandling(async () => textContent(approvalAskText(await client.google.connect())))
+  );
+
+  server.tool(
+    "pick_spreadsheet",
+    "Have the account's owner choose an existing spreadsheet from Google Drive with a connected account (to add rows to it from a Sheets destination). Returns a link and a code to show them; the page opens Google's picker. Then call wait_for_approval for the spreadsheet's id and tabs. To use a new spreadsheet instead, call create_spreadsheet.",
+    {
+      connectionId: z.string().describe("The Google connection's id, from list_google_connections"),
+    },
+    withErrorHandling(async ({ connectionId }) =>
+      textContent(approvalAskText(await client.google.pick(connectionId)))
+    )
+  );
+
+  server.tool(
+    "create_spreadsheet",
+    "Create a new spreadsheet with a header row in a connected Google account, for a Sheets destination. Needs no approval: the app reaches only spreadsheets it created or that were chosen for it.",
+    {
+      connectionId: z.string().describe("The Google connection's id, from list_google_connections"),
+      title: z.string().max(200).optional().describe("The spreadsheet's title"),
+      sheet: z.string().max(100).optional().describe('The tab rows go to (default "Sheet1")'),
+      headers: z.array(z.string().max(200)).max(50).describe("The header row, one per column"),
+    },
+    withErrorHandling(async ({ connectionId, title, sheet, headers }) =>
+      jsonContent(await client.google.createSpreadsheet({ connectionId, title, sheet, headers }))
+    )
+  );
+
+  server.tool(
+    "list_sheet_tabs",
+    "List a spreadsheet's tabs (one created by the app or chosen with pick_spreadsheet), to choose the one a Sheets destination writes to.",
+    {
+      connectionId: z.string().describe("The Google connection's id"),
+      spreadsheetId: z.string().describe("The spreadsheet's id"),
+    },
+    withErrorHandling(async ({ connectionId, spreadsheetId }) =>
+      jsonContent({ tabs: await client.google.tabs(connectionId, spreadsheetId) })
+    )
+  );
+
+  server.tool(
+    "disconnect_google",
+    "Disconnect a Google account (id from list_google_connections) and revoke its access at Google. Sheets destinations using it fail until another account is chosen.",
+    {
+      connectionId: z.string().describe("The Google connection's id"),
+    },
+    withErrorHandling(async ({ connectionId }) => {
+      await client.google.disconnect(connectionId);
+      return textContent(`Disconnected the Google account ${connectionId}.`);
+    })
+  );
+
+  server.tool(
+    "ai_setup_status",
+    "Whether AI setup is offered for an endpoint, and how many AI assists the plan has left in a rolling 30 days.",
+    {
+      slug: z.string().describe("The endpoint's slug"),
+    },
+    withErrorHandling(async ({ slug }) => jsonContent(await client.ai.status(slug)))
+  );
+
+  server.tool(
+    "ai_setup",
+    "Have AI propose email fields (or a layout, or a repaired field) from 1 to 5 of an endpoint's captured emails. It sends those emails (subject, sender, recipients, text, headers; never attachments) to Anthropic's model, so the account's owner must approve it: this returns a link and a code to show them, and the page lists the emails. Then call wait_for_approval for the proposals, each with the value it found in every email. Nothing is saved: apply the fields with update_endpoint. Uses one AI assist.",
+    {
+      slug: z.string().describe("The endpoint's slug"),
+      requestIds: z
+        .array(z.string())
+        .min(1)
+        .max(5)
+        .describe("1 to 5 of the endpoint's email request ids, from list_emails"),
+      ask: z
+        .union([
+          z.object({
+            kind: z.literal("field"),
+            name: z.string().describe("The field's name: letters, digits and _"),
+            description: z.string().describe('What the field is, such as "the order number"'),
+          }),
+          z.object({
+            kind: z.literal("layout"),
+            description: z.string().optional().describe("What these emails are"),
+          }),
+          z.object({
+            kind: z.literal("repair"),
+            field: z
+              .object({
+                name: z.string(),
+                from: z.string(),
+                header: z.string().optional(),
+                pattern: z.string(),
+              })
+              .describe("The field to repair, as the endpoint has it"),
+          }),
+        ])
+        .describe("What to propose"),
+    },
+    withErrorHandling(async ({ slug, requestIds, ask }) =>
+      textContent(
+        approvalAskText(
+          await client.ai.setup(slug, {
+            requestIds,
+            ask: ask as Parameters<typeof client.ai.setup>[1]["ask"],
+          })
+        )
+      )
+    )
   );
 
   server.tool(

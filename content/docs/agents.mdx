@@ -189,7 +189,7 @@ auth.md also lets an agent present a signed statement from an identity provider 
 
 ## Approvals
 
-Some things only you should allow, even when an agent or an API key asks for them: a new API key, a new [share link](/docs/dashboard-features#share-a-request) (it publishes a request to anyone with the link), removing a [custom domain](/docs/email-capture#your-own-domain) (getting it back means verifying it again) and renaming the account. The route answers such a request with `202` and an approval instead of acting:
+Some things only you should allow, even when an agent or an API key asks for them: a new API key, a new [share link](/docs/dashboard-features#share-a-request) (it publishes a request to anyone with the link), removing a [custom domain](/docs/email-capture#your-own-domain) (getting it back means verifying it again) and renaming the account, connecting a Google account or choosing a spreadsheet from Drive for [Sheets destinations](/docs/forwarding#google-sheets), and [AI setup](/docs/layouts#set-it-up-with-ai), which sends the emails you see listed to Anthropic. The route answers such a request with `202` and an approval instead of acting:
 
 ```json
 {

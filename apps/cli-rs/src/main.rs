@@ -5,9 +5,9 @@ use clap::Parser;
 
 use whk::api::ApiClient;
 use whk::cli::{
-    self, AccountAction, AgentsAction, ApprovalsAction, AuthAction, Cli, Command, DomainsAction,
-    KeysAction, NamesAction, RequestsAction, SandboxAction, ShareLinksAction, SharesAction,
-    TeamsAction,
+    self, AccountAction, AgentsAction, AiAction, ApprovalsAction, AuthAction, Cli, Command,
+    DomainsAction, GoogleAction, KeysAction, NamesAction, RequestsAction, SandboxAction,
+    ShareLinksAction, SharesAction, TeamsAction,
 };
 use whk::error::{classify, error_json};
 
@@ -495,6 +495,61 @@ async fn run(args: Cli) -> Result<()> {
                     args.json,
                 )
                 .await?
+            }
+        },
+
+        Some(Command::Google { action }) => match action {
+            GoogleAction::List => cli::google::list(&client, args.json).await?,
+            GoogleAction::Connect { approval } => {
+                cli::google::connect(&client, approval.into(), args.json).await?
+            }
+            GoogleAction::Pick {
+                connection,
+                approval,
+            } => cli::google::pick(&client, &connection, approval.into(), args.json).await?,
+            GoogleAction::Tabs {
+                connection,
+                spreadsheet,
+            } => cli::google::tabs(&client, &connection, &spreadsheet, args.json).await?,
+            GoogleAction::CreateSheet {
+                connection,
+                headers,
+                title,
+                spreadsheet,
+                sheet,
+            } => {
+                let opts = cli::google::SheetOptions {
+                    title,
+                    spreadsheet_id: spreadsheet,
+                    sheet,
+                    headers,
+                };
+                cli::google::create_sheet(&client, &connection, opts, args.json).await?
+            }
+            GoogleAction::Disconnect { connection, yes } => {
+                cli::google::disconnect(&client, &connection, yes, args.json).await?
+            }
+        },
+
+        Some(Command::Ai { action }) => match action {
+            AiAction::Status { slug } => cli::google::ai_status(&client, &slug, args.json).await?,
+            AiAction::Setup {
+                slug,
+                requests,
+                field,
+                description,
+                layout,
+                repair,
+                approval,
+            } => {
+                let setup = cli::google::SetupAsk {
+                    field,
+                    description,
+                    layout,
+                    repair,
+                };
+                cli::google::ai_setup(&client, &slug, &requests, setup, approval.into(), args.json)
+                    .await?
             }
         },
 

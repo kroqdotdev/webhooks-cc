@@ -19,6 +19,23 @@ import { createRequestShare } from "@/lib/supabase/request-shares";
 import { SHARE_EXPIRY_DAYS, type ShareExpiryDays } from "@/lib/request-share";
 import { TeamBillingError } from "@/lib/supabase/team-billing";
 import { isUuid } from "@/lib/uuid";
+import {
+  AssistRefusal,
+  assistSamples,
+  assistsLeft,
+  parseAssistInput,
+  runEndpointAssist,
+  type AssistInput,
+} from "@/lib/ai/endpoint-assist";
+import { aiOffered } from "@/lib/ai/model";
+import {
+  accessToken,
+  googleConfig,
+  GoogleError,
+  sheetTitles,
+  spreadsheetUrl,
+} from "@/lib/integrations/google";
+import { googleRefreshToken, listGoogleConnections } from "@/lib/supabase/google-connections";
 
 /**
  * What an approval can ask for. Each action checks its parameters when the
@@ -30,10 +47,20 @@ import { isUuid } from "@/lib/uuid";
  *   when the owner withdrew while it ran.
  * - "approve": the moment the person approves, with its result (never a
  *   secret) kept for the asker to read. Nothing to withdraw afterwards, so
- *   an action that cannot be undone (removing a domain) runs this way.
+ *   an action that cannot be undone (removing a domain) runs this way. The
+ *   page may hand it what the person chose there (`input`: a picked file).
+ * - "browser": approving sends the person's browser somewhere to finish it
+ *   (Google's consent page), and what comes back there completes it
+ *   (completeBrowserApproval), result kept like "approve".
  */
 export type ApprovalAction =
-  "api_keys.create" | "request_shares.create" | "domains.remove" | "account.rename";
+  | "api_keys.create"
+  | "request_shares.create"
+  | "domains.remove"
+  | "account.rename"
+  | "google.connect"
+  | "google.pick"
+  | "ai.assist";
 
 export interface ActionDetail {
   label: string;
@@ -54,13 +81,23 @@ export class ActionError extends Error {
 type Parsed<P> = { ok: true; params: P } | { ok: false; error: string; status?: number };
 
 interface ActionSpec<P> {
-  runAt: "collect" | "approve";
+  runAt: "collect" | "approve" | "browser";
   /** Checks the request for the account it is for (`userId`, its owner). */
   parse(input: unknown, userId: string): Promise<Parsed<P>>;
   summary(params: P): string;
-  details(params: P): ActionDetail[];
-  /** What the asker gets (may hold a secret on "collect") and what the row keeps (never one). */
-  run(userId: string, params: P): Promise<{ result: Record<string, unknown>; stored: Json }>;
+  /** The facts the page lists, read when the page loads (they may look things up). */
+  details(params: P, userId: string): ActionDetail[] | Promise<ActionDetail[]>;
+  /** What the page itself needs to answer (never shown as a fact): the connection a pick is for. */
+  page?(params: P): Record<string, unknown>;
+  /**
+   * What the asker gets (may hold a secret on "collect") and what the row
+   * keeps (never one). `input` is what the person chose on the page.
+   */
+  run(
+    userId: string,
+    params: P,
+    input?: unknown
+  ): Promise<{ result: Record<string, unknown>; stored: Json }>;
   /** Takes back what `run` did, when the owner withdrew while it ran ("collect" only). */
   undo?(userId: string, stored: Json): Promise<void>;
 }
@@ -322,6 +359,175 @@ const renameAccount: ActionSpec<RenameParams> = {
   },
 };
 
+// ---------------------------------------------------------------------------
+// Connecting a Google account (for Sheets destinations)
+// ---------------------------------------------------------------------------
+
+const GOOGLE_ACCESS =
+  "Spreadsheets webhooks.cc creates, and ones you choose for it; nothing else in your Drive";
+
+const connectGoogle: ActionSpec<Record<string, never>> = {
+  runAt: "browser",
+  async parse() {
+    if (!googleConfig()) {
+      return { ok: false, error: "Google Sheets is not set up on this server.", status: 503 };
+    }
+    return { ok: true, params: {} };
+  },
+  summary: () => "Connect a Google account for Google Sheets destinations.",
+  details: () => [
+    { label: "Next", value: "Google asks you to choose the account and allow access" },
+    { label: "Access", value: GOOGLE_ACCESS },
+  ],
+  async run() {
+    // Finished by the Google callback (completeBrowserApproval), never here.
+    throw new ActionError(400, "This finishes at Google.");
+  },
+};
+
+// ---------------------------------------------------------------------------
+// Choosing an existing spreadsheet from Drive
+// ---------------------------------------------------------------------------
+
+const SPREADSHEET_ID = /^[A-Za-z0-9_-]{20,100}$/;
+
+interface PickParams {
+  connectionId: string;
+  email: string | null;
+}
+
+async function ownConnection(userId: string, connectionId: unknown) {
+  if (typeof connectionId !== "string" || !isUuid(connectionId)) return null;
+  return (await listGoogleConnections(userId)).find((c) => c.id === connectionId) ?? null;
+}
+
+const pickSpreadsheet: ActionSpec<PickParams> = {
+  runAt: "approve",
+  async parse(input, userId) {
+    if (!googleConfig()) {
+      return { ok: false, error: "Google Sheets is not set up on this server.", status: 503 };
+    }
+    const connection = await ownConnection(
+      userId,
+      ((input ?? {}) as Record<string, unknown>).connectionId
+    );
+    if (!connection) return { ok: false, error: "Connect a Google account first.", status: 404 };
+    return { ok: true, params: { connectionId: connection.id, email: connection.email } };
+  },
+  summary: ({ email }) =>
+    `Choose a spreadsheet in ${email ?? "your Google account"} for Google Sheets destinations.`,
+  details: ({ email }) => [
+    { label: "Google account", value: email ?? "Google account" },
+    { label: "Next", value: "Google's Drive picker opens: choose one spreadsheet" },
+    { label: "Access", value: "Only the spreadsheet you choose" },
+  ],
+  page: ({ connectionId }) => ({ connectionId }),
+  async run(userId, { connectionId }, input) {
+    const file = ((input ?? {}) as Record<string, unknown>).file;
+    if (typeof file !== "string" || !SPREADSHEET_ID.test(file)) {
+      throw new ActionError(400, "Choose a spreadsheet in Google's window first.");
+    }
+    const config = googleConfig();
+    if (!config) throw new ActionError(503, "Google Sheets is not set up on this server.");
+    const refreshToken = await googleRefreshToken(userId, connectionId);
+    if (!refreshToken) throw new ActionError(404, "Connect a Google account first.");
+    let tabs: string[];
+    try {
+      tabs = await sheetTitles(await accessToken(config, refreshToken), file);
+    } catch (error) {
+      if (error instanceof GoogleError) {
+        throw new ActionError(
+          error.reconnect ? 409 : 400,
+          error.reconnect
+            ? "Google no longer accepts this connection. Connect it again."
+            : error.message
+        );
+      }
+      // Reading the tabs changes nothing, so any failure gives the approval
+      // back to try again rather than ending it without a result.
+      throw new ActionError(503, "Google could not be reached. Try again in a moment.");
+    }
+    const result = { connectionId, spreadsheetId: file, url: spreadsheetUrl(file), tabs };
+    return { result, stored: result };
+  },
+};
+
+// ---------------------------------------------------------------------------
+// AI setup: sending picked emails to the model
+// ---------------------------------------------------------------------------
+
+interface AssistParams extends AssistInput {
+  slug: string;
+}
+
+function askLabel(ask: AssistInput["ask"]): string {
+  if (ask.kind === "field") return `Find a field "${ask.name}": ${ask.description}`;
+  if (ask.kind === "repair") return `Repair the field "${ask.field.name}"`;
+  return ask.description ? `Suggest a layout: ${ask.description}` : "Suggest a layout";
+}
+
+const aiAssist: ActionSpec<AssistParams> = {
+  runAt: "approve",
+  async parse(input, userId) {
+    if (!aiOffered()) {
+      return { ok: false, error: "AI setup is not available on this server.", status: 404 };
+    }
+    const body = (input ?? {}) as Record<string, unknown>;
+    if (typeof body.slug !== "string")
+      return { ok: false, error: "Endpoint not found", status: 404 };
+    const parsed = parseAssistInput(body);
+    if (typeof parsed === "string") return { ok: false, error: parsed };
+    try {
+      const { endpointId } = await assistSamples(userId, body.slug, parsed.requestIds);
+      const left = await assistsLeft(endpointId);
+      if (left.used >= left.allowed) {
+        return {
+          ok: false,
+          error: `No AI assists left: your plan has ${left.allowed} in 30 days.`,
+          status: 429,
+        };
+      }
+    } catch (error) {
+      if (error instanceof AssistRefusal) {
+        return { ok: false, error: error.message, status: error.status };
+      }
+      throw error;
+    }
+    return { ok: true, params: { slug: body.slug, ...parsed } };
+  },
+  summary: ({ requestIds, slug }) =>
+    `Send ${requestIds.length === 1 ? "1 email" : `${requestIds.length} emails`} of the endpoint ${slug} to Anthropic's AI to suggest fields. Nothing is saved until they are applied.`,
+  async details({ slug, ask, requestIds }, userId) {
+    const facts: ActionDetail[] = [{ label: "Asks", value: askLabel(ask).slice(0, 200) }];
+    try {
+      const { requests } = await assistSamples(userId, slug, requestIds);
+      requests.forEach((request, i) => {
+        const email = request.email;
+        const subject = email?.subject?.trim() || "(no subject)";
+        const from = email?.from?.[0]?.address ?? "unknown sender";
+        facts.push({ label: `Email ${i + 1}`, value: `${subject.slice(0, 120)}, from ${from}` });
+      });
+    } catch {
+      facts.push({ label: "Emails", value: "Some are no longer kept; approving will fail" });
+    }
+    facts.push(
+      { label: "Sent to", value: "Anthropic (subject, sender, recipients, text, headers)" },
+      { label: "Never sent", value: "Attachments" },
+      { label: "Uses", value: "One AI assist" }
+    );
+    return facts;
+  },
+  async run(userId, { slug, ask, requestIds }) {
+    try {
+      const result = await runEndpointAssist(userId, slug, { ask, requestIds });
+      return { result: { ...result }, stored: result as unknown as Json };
+    } catch (error) {
+      if (error instanceof AssistRefusal) throw new ActionError(error.status, error.message);
+      throw error;
+    }
+  },
+};
+
 function days(count: number): string {
   if (count === 1) return "1 day";
   if (count % 365 === 0) return count === 365 ? "1 year" : `${count / 365} years`;
@@ -333,6 +539,9 @@ const ACTIONS: Record<ApprovalAction, ActionSpec<unknown>> = {
   "request_shares.create": createShareLink as ActionSpec<unknown>,
   "domains.remove": removeDomain as ActionSpec<unknown>,
   "account.rename": renameAccount as ActionSpec<unknown>,
+  "google.connect": connectGoogle as ActionSpec<unknown>,
+  "google.pick": pickSpreadsheet as ActionSpec<unknown>,
+  "ai.assist": aiAssist as ActionSpec<unknown>,
 };
 
 export function actionSpec(action: ApprovalAction): ActionSpec<unknown> {

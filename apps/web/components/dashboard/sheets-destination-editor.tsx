@@ -23,6 +23,7 @@ import {
   googleReturnPath,
   type GoogleOutcome,
 } from "@/lib/integrations/google-return";
+import { DRIVE_PICK_CHANNEL, pickNonce } from "@/lib/integrations/drive-pick";
 import { Field, Segmented, SwitchRow } from "./settings-primitives";
 import { useReportDirty } from "./dirty-sections";
 import { Button } from "@/components/ui/button";
@@ -41,17 +42,6 @@ function defaultColumns(emailFieldNames: string[]): Column[] {
 
 function spreadsheetUrl(id: string): string {
   return `https://docs.google.com/spreadsheets/d/${id}/edit`;
-}
-
-/** Where the picked page (app/api/integrations/google/picked) posts the pick. */
-const DRIVE_PICK_CHANNEL = "whcc-drive-pick";
-
-function pickNonce(): string {
-  const bytes = crypto.getRandomValues(new Uint8Array(32));
-  return btoa(String.fromCharCode(...bytes))
-    .replace(/\+/g, "-")
-    .replace(/\//g, "_")
-    .replace(/=+$/, "");
 }
 
 /**

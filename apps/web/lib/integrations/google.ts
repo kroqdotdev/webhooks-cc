@@ -90,6 +90,11 @@ export interface OAuthState {
    * connection is saved on mailhooks.cc only for the browser holding it.
    */
   handoff?: string;
+  /**
+   * Started from an approval an agent asked for (lib/approvals,
+   * google.connect): the approval the connection completes.
+   */
+  approval?: string;
 }
 
 /** The cookie that ties a callback to the browser that started it. */
@@ -262,7 +267,8 @@ export function authorizationUrl(
   userId: string,
   returnTo: string,
   site: "webhooks" | "mailhooks" = "webhooks",
-  handoff?: string
+  handoff?: string,
+  approval?: string
 ): { url: string; browserNonce: string } {
   const verifier = randomBase64Url(32);
   const challenge = createHash("sha256").update(verifier).digest("base64url");
@@ -275,6 +281,7 @@ export function authorizationUrl(
     browser: browserHash(browserNonce),
     site,
     ...(handoff ? { handoff } : {}),
+    ...(approval ? { approval } : {}),
   });
   const url = new URL(urls().auth);
   url.searchParams.set("client_id", config.clientId);

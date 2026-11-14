@@ -15,7 +15,7 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("@/lib/api-auth", () => ({
-  authenticateSessionRequest: mocks.authenticateSessionRequest,
+  authenticateRequestRequireUser: mocks.authenticateSessionRequest,
 }));
 vi.mock("@/lib/rate-limit", () => ({
   checkRateLimitWithInfo: vi.fn(async () => ({ response: null })),

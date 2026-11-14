@@ -6,6 +6,7 @@ pub mod billing;
 mod capabilities;
 pub mod confirm;
 pub mod endpoints;
+pub mod google;
 pub mod keys;
 pub mod listen;
 pub mod output;
@@ -430,6 +431,18 @@ deletion) refuse API keys.")]
         action: DomainsAction,
     },
 
+    /// Google accounts for Google Sheets destinations (connecting one, or choosing a spreadsheet from Drive, needs the account's owner)
+    Google {
+        #[command(subcommand)]
+        action: GoogleAction,
+    },
+
+    /// AI setup: have AI propose email fields from an endpoint's emails (the account's owner approves sending them)
+    Ai {
+        #[command(subcommand)]
+        action: AiAction,
+    },
+
     /// Follow an approval asked for with --no-wait (`whk keys create`, `whk share-links create` and the like)
     Approvals {
         #[command(subcommand)]
@@ -822,6 +835,106 @@ pub enum DomainsAction {
         /// A Team Business team's id (its owner only)
         #[arg(long)]
         team: Option<String>,
+
+        #[command(flatten)]
+        approval: ApprovalArgs,
+    },
+}
+
+#[derive(Subcommand, Debug)]
+pub enum GoogleAction {
+    /// List the connected Google accounts
+    List,
+
+    /// Ask to connect a Google account: prints a link; approving takes the owner to Google
+    Connect {
+        #[command(flatten)]
+        approval: ApprovalArgs,
+    },
+
+    /// Ask the owner to choose an existing spreadsheet from Drive: the approval page opens Google's picker
+    Pick {
+        /// The Google connection's id, from `whk google list`
+        connection: String,
+
+        #[command(flatten)]
+        approval: ApprovalArgs,
+    },
+
+    /// List a spreadsheet's tabs
+    Tabs {
+        /// The Google connection's id
+        connection: String,
+
+        /// The spreadsheet's id
+        spreadsheet: String,
+    },
+
+    /// Create a spreadsheet with a header row (or, with --spreadsheet, write the header row of an empty one)
+    CreateSheet {
+        /// The Google connection's id
+        connection: String,
+
+        /// A header, once per column, in order
+        #[arg(long = "header", required = true)]
+        headers: Vec<String>,
+
+        /// The spreadsheet's title
+        #[arg(long)]
+        title: Option<String>,
+
+        /// Write the header row of this existing spreadsheet instead (left alone when its first row is not empty)
+        #[arg(long)]
+        spreadsheet: Option<String>,
+
+        /// The tab (default "Sheet1")
+        #[arg(long)]
+        sheet: Option<String>,
+    },
+
+    /// Disconnect a Google account; Sheets destinations using it fail until another is chosen
+    Disconnect {
+        /// The Google connection's id
+        connection: String,
+
+        /// Disconnect without asking (needed without a terminal)
+        #[arg(short = 'y', long = "yes", visible_alias = "force", short_alias = 'f')]
+        yes: bool,
+    },
+}
+
+#[derive(Subcommand, Debug)]
+pub enum AiAction {
+    /// Whether AI setup is offered for an endpoint, and how many assists are left
+    Status {
+        /// The endpoint's slug
+        slug: String,
+    },
+
+    /// Ask for AI setup on 1 to 5 of an endpoint's emails: the owner sees which and approves; prints the proposals
+    Setup {
+        /// The endpoint's slug
+        slug: String,
+
+        /// An email's request id; repeat for up to 5
+        #[arg(long = "request", required = true)]
+        requests: Vec<String>,
+
+        /// Propose a field with this name
+        #[arg(long)]
+        field: Option<String>,
+
+        /// What the field is (with --field), or what these emails are (with --layout)
+        #[arg(long)]
+        description: Option<String>,
+
+        /// Propose a layout instead of one field
+        #[arg(long)]
+        layout: bool,
+
+        /// Repair a field: the field as JSON, {"name", "from", "pattern"}
+        #[arg(long)]
+        repair: Option<String>,
 
         #[command(flatten)]
         approval: ApprovalArgs,

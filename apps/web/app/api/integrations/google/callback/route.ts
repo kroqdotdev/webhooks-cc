@@ -12,6 +12,7 @@ import {
   pickedFileId,
   sealFinishTicket,
 } from "@/lib/integrations/google";
+import { completeBrowserApproval, reopenBrowserApproval } from "@/lib/approvals/store";
 import { reportError } from "@/lib/observability";
 import { siteOrigin } from "@/lib/site";
 import { saveGoogleConnection } from "@/lib/supabase/google-connections";
@@ -48,9 +49,16 @@ export async function GET(request: Request) {
     state?.site === "mailhooks" ? siteOrigin("mailhooks") : publicEnv().NEXT_PUBLIC_APP_URL
   ).replace(/\/+$/, "");
   const secure = url.protocol === "https:";
-  const back = (path: string, outcome: string) => {
+  const back = async (path: string, outcome: string) => {
     // One line per attempt, so failed ones are seen too (never who, or which account).
     console.info(`[google] connect ${outcome}`);
+    // An approval an agent asked for waits again when it did not finish,
+    // so the person can try once more from its page.
+    if (state?.approval && outcome !== "connected" && outcome !== "late") {
+      await reopenBrowserApproval(state.approval, state.userId).catch((error) =>
+        reportError("Reopening a Google approval failed", error)
+      );
+    }
     const target = new URL(path, `${appUrl}/`);
     target.searchParams.set("google", outcome);
     return new Response(null, {
@@ -58,15 +66,15 @@ export async function GET(request: Request) {
       headers: { location: target.toString(), "set-cookie": clearBrowserCookie(secure) },
     });
   };
-  if (!state) return back("/dashboard", "expired");
+  if (!state) return await back("/dashboard", "expired");
   // The browser that finishes must be the one that started (a consent URL
   // someone else made would otherwise link your Google account to theirs).
   const nonce = browserNonceOf(request);
-  if (!nonce || browserHash(nonce) !== state.browser) return back(state.returnTo, "expired");
-  if (url.searchParams.get("error")) return back(state.returnTo, "cancelled");
+  if (!nonce || browserHash(nonce) !== state.browser) return await back(state.returnTo, "expired");
+  if (url.searchParams.get("error")) return await back(state.returnTo, "cancelled");
   const code = url.searchParams.get("code");
   const config = googleConfig();
-  if (!code || !config) return back(state.returnTo, "failed");
+  if (!code || !config) return await back(state.returnTo, "failed");
   if (state.site === "mailhooks" && state.handoff) {
     // Saved on mailhooks.cc, for the browser that started there only.
     const finish = new URL("/api/integrations/google/finish", siteOrigin("mailhooks"));
@@ -87,12 +95,25 @@ export async function GET(request: Request) {
     await auditUserAction(request, state.userId, {
       action: "integration.google_connected",
       status: 200,
-      metadata: { connectionId: connection.id },
+      metadata: {
+        connectionId: connection.id,
+        ...(state.approval ? { approvalId: state.approval } : {}),
+      },
     });
-    return back(state.returnTo, "connected");
+    // Asked for by an agent: it reads the connection from the approval.
+    if (state.approval) {
+      const completed = await completeBrowserApproval(state.approval, state.userId, {
+        connectionId: connection.id,
+        email: connection.email,
+      });
+      // Connected, but the approval ended meanwhile (refused or expired):
+      // the asker never gets it, so the page says so.
+      if (!completed) return await back(state.returnTo, "late");
+    }
+    return await back(state.returnTo, "connected");
   } catch (error) {
     if (!(error instanceof GoogleError)) reportError("Google connection failed", error);
-    return back(
+    return await back(
       state.returnTo,
       error instanceof GoogleError && error.message.startsWith("Allow") ? "scope" : "failed"
     );

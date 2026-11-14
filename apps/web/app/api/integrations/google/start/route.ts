@@ -1,4 +1,5 @@
-import { authenticateSessionRequest } from "@/lib/api-auth";
+import { authenticateRequestRequireUser } from "@/lib/api-auth";
+import { requestApproval } from "@/lib/approvals/request";
 import {
   authorizationUrl,
   browserCookie,
@@ -16,12 +17,21 @@ import { applyRateLimitHeaders, checkRateLimitWithInfo } from "@/lib/rate-limit"
 /**
  * POST /api/integrations/google/start {returnTo}: the Google consent URL to
  * send the browser to, for connecting a Google account to Sheets
- * destinations. A session, not an API key: connecting grants access to the
- * person's Google Drive files.
+ * destinations. Connecting grants access to the person's Google Drive
+ * files, so an API key or agent token gets an approval instead
+ * (`google.connect`): approving it sends the owner's browser to Google.
  */
 export async function POST(request: Request) {
-  const auth = await authenticateSessionRequest(request);
+  const auth = await authenticateRequestRequireUser(request);
   if (!auth.success) return auth.response;
+  if (auth.keyId) {
+    return requestApproval(
+      request,
+      { userId: auth.userId, keyId: auth.keyId, agentRegistrationId: auth.agentRegistrationId },
+      "google.connect",
+      {}
+    );
+  }
   const rateLimit = await checkRateLimitWithInfo(request, "google-connect", 20);
   if (rateLimit.response) return rateLimit.response;
   const reply = (body: unknown, status = 200) =>

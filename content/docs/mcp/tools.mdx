@@ -749,6 +749,50 @@ Replace a domain's routing: `routes` (`[{ localPart, endpointId }]`) send mail b
 
 Ask to remove a domain (`id`). Its mail is refused from then on, so the person approves it first: returns an approval to show them, then call `wait_for_approval`.
 
+## Google Sheets
+
+Google accounts for [Google Sheets destinations](/docs/forwarding#google-sheets).
+
+### list_google_connections
+
+The connected accounts (id, email, when connected), and whether Google Sheets is set up on the server.
+
+### connect_google
+
+Ask to connect an account. Returns an approval to show the person; approving takes them to Google to choose the account. `wait_for_approval` then returns the connection's id and email.
+
+### pick_spreadsheet
+
+Ask the person to choose an existing spreadsheet (`connectionId`). The approval page opens Google's Drive picker; `wait_for_approval` returns the spreadsheet's id, link and tabs.
+
+### create_spreadsheet
+
+Create a spreadsheet with a header row in a connected account (`connectionId`, `headers`, optional `title` and `sheet`). Needs no approval: the app reaches only spreadsheets it created or that were chosen for it.
+
+### list_sheet_tabs
+
+A spreadsheet's tabs (`connectionId`, `spreadsheetId`), to choose the one rows go to.
+
+### disconnect_google
+
+Disconnect an account (`connectionId`) and revoke its access at Google.
+
+## AI setup
+
+### ai_setup_status
+
+Whether [AI setup](/docs/layouts#set-it-up-with-ai) is offered for an endpoint (`slug`), and how many assists are left.
+
+### ai_setup
+
+Ask for proposals from 1 to 5 of an endpoint's emails. The emails go to Anthropic, so the person approves: the page lists each one by subject and sender. `wait_for_approval` returns the proposed fields, each with the value it found in every email; apply them with `update_endpoint`.
+
+| Parameter    | Type       | Required | Description                                                                              |
+| ------------ | ---------- | -------- | ---------------------------------------------------------------------------------------- |
+| `slug`       | `string`   | yes      | The endpoint                                                                             |
+| `requestIds` | `string[]` | yes      | 1 to 5 of its email request ids                                                          |
+| `ask`        | `object`   | yes      | `{ kind: "field", name, description }`, `{ kind: "layout", description? }` or `{ kind: "repair", field }` |
+
 ## Utilities
 
 ### get_usage

@@ -1938,6 +1938,72 @@ export interface RemovedDomain {
   domainId: string;
 }
 
+/** A Google account connected for Google Sheets destinations. */
+export interface GoogleConnection {
+  id: string;
+  email: string | null;
+  /** Milliseconds since the epoch. */
+  createdAt: number;
+}
+
+export interface GoogleConnections {
+  /** Google Sheets is set up on this server. */
+  available: boolean;
+  connections: GoogleConnection[];
+}
+
+/** A Google account connected through an approval. */
+export interface ConnectedGoogleAccount {
+  connectionId: string;
+  email: string | null;
+}
+
+/** A spreadsheet the account's owner chose from Drive through an approval. */
+export interface PickedSpreadsheet {
+  connectionId: string;
+  spreadsheetId: string;
+  url: string;
+  /** Its tabs, for choosing the one rows go to. */
+  tabs: string[];
+}
+
+/** A new spreadsheet, or the header row written into an existing one. */
+export interface SpreadsheetWrite {
+  id: string;
+  url?: string;
+  /** For an existing spreadsheet: false when its first row held something else and was left as it was. */
+  headerWritten?: boolean;
+}
+
+/** What AI setup is asked to do with the chosen emails. */
+export type AiSetupAsk =
+  | { kind: "field"; name: string; description: string }
+  | { kind: "layout"; description?: string }
+  | { kind: "repair"; field: EmailField };
+
+export interface AiSetupStatus {
+  /** AI setup is offered on this server. */
+  offered: boolean;
+  /** Assists the plan allows in a rolling 30 days, and how many were used. */
+  allowed: number;
+  used: number;
+  /** When the oldest counted assist stops counting. */
+  nextAt: string | null;
+}
+
+/** What AI setup proposed: nothing is saved until the fields or layout are applied. */
+export interface AiSetupResult {
+  /** Each proposed field, with the value it found in each email, in order. */
+  fields: { field: EmailField; values: string[] }[];
+  /** For a layout: a condition every email meets, to pick the layout. */
+  match: Condition | null;
+  layoutName: string | null;
+  /** Proposals dropped because they did not compile or missed an email. */
+  dropped: number;
+  allowed: number;
+  used: number;
+}
+
 /** An add-on's state for one account or team (extra requests, parsed pages or domains). */
 export type CapacityResource = "requests" | "pages" | "domains";
 

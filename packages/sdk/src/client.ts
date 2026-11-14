@@ -29,6 +29,13 @@ import type {
   InboundDomainRoute,
   RemovedDomain,
   ShareLink,
+  GoogleConnections,
+  ConnectedGoogleAccount,
+  PickedSpreadsheet,
+  SpreadsheetWrite,
+  AiSetupAsk,
+  AiSetupStatus,
+  AiSetupResult,
   Approval,
   CreatedApiKey,
   PendingApproval,
@@ -2312,6 +2319,138 @@ export class WebhooksCC {
         removed: "",
         domainId: id,
       }));
+    },
+  };
+
+  /**
+   * Google accounts for Google Sheets destinations. Listing, disconnecting,
+   * reading a spreadsheet's tabs and creating a spreadsheet work with any
+   * key: the app reaches only spreadsheets it created or that were chosen
+   * for it. Connecting an account and choosing an existing spreadsheet are
+   * the owner's: with an API key they return a pending approval whose page
+   * takes them to Google.
+   */
+  google = {
+    /** The connected Google accounts, and whether Google Sheets is set up here. */
+    connections: async (): Promise<GoogleConnections> => {
+      return this.request<GoogleConnections>("GET", "/integrations/google/connections");
+    },
+
+    /**
+     * Ask to connect a Google account. Show the person `url`: approving takes
+     * them to Google to choose the account. `wait()` resolves with it.
+     */
+    connect: async (): Promise<PendingApproval<ConnectedGoogleAccount>> => {
+      const answer = await this.request<{ approval?: Approval; url?: string }>(
+        "POST",
+        "/integrations/google/start",
+        {},
+        { repeatable: false }
+      );
+      if (!answer.approval) {
+        throw new WebhooksCCError(
+          400,
+          `A browser session connects by going to Google directly: ${answer.url ?? ""}`
+        );
+      }
+      return this.pendingOr<ConnectedGoogleAccount>(answer, "google.connect", "", () => {
+        throw new Error("unreachable");
+      });
+    },
+
+    /**
+     * Ask the person to choose an existing spreadsheet from Drive with a
+     * connected account. Show them `url`: the page opens Google's picker.
+     * `wait()` resolves with the spreadsheet and its tabs.
+     */
+    pick: async (connectionId: string): Promise<PendingApproval<PickedSpreadsheet>> => {
+      validatePathSegment(connectionId, "connectionId");
+      const answer = await this.request<{ approval?: Approval }>(
+        "POST",
+        "/integrations/google/pick",
+        { connectionId },
+        { repeatable: false }
+      );
+      if (!answer.approval) {
+        throw new WebhooksCCError(
+          400,
+          "Choosing from Drive in a browser session uses the picker directly."
+        );
+      }
+      return this.pendingOr<PickedSpreadsheet>(answer, "google.pick", "", () => {
+        throw new Error("unreachable");
+      });
+    },
+
+    /** A spreadsheet's tabs (the account must reach it: created by the app, or chosen). */
+    tabs: async (connectionId: string, spreadsheetId: string): Promise<string[]> => {
+      const query = `connectionId=${encodeURIComponent(connectionId)}&spreadsheetId=${encodeURIComponent(spreadsheetId)}`;
+      const answer = await this.request<{ tabs: string[] }>(
+        "GET",
+        `/integrations/google/spreadsheets?${query}`
+      );
+      return answer.tabs;
+    },
+
+    /**
+     * Create a spreadsheet with a header row in a connected account, or, with
+     * `spreadsheetId`, write the header row of one it reaches (only when its
+     * first row is empty: anything there is left as it is).
+     */
+    createSpreadsheet: async (options: {
+      connectionId: string;
+      title?: string;
+      spreadsheetId?: string;
+      sheet?: string;
+      headers: string[];
+    }): Promise<SpreadsheetWrite> => {
+      return this.request<SpreadsheetWrite>("POST", "/integrations/google/spreadsheets", options, {
+        repeatable: false,
+      });
+    },
+
+    /** Disconnect a Google account; Sheets destinations using it fail until another is chosen. */
+    disconnect: async (connectionId: string): Promise<void> => {
+      validatePathSegment(connectionId, "connectionId");
+      await this.request("DELETE", `/integrations/google/connections/${connectionId}`);
+    },
+  };
+
+  /**
+   * AI setup for an endpoint's email fields and layouts: chosen emails go to
+   * Anthropic's model, which proposes patterns checked against every email.
+   * Nothing is saved until the proposals are applied. Sending the emails is
+   * the owner's to allow, so with an API key it is a pending approval whose
+   * page lists the emails; it runs when they approve.
+   */
+  ai = {
+    /** Whether AI setup is offered, and how many assists are left in 30 days. */
+    status: async (slug: string): Promise<AiSetupStatus> => {
+      validatePathSegment(slug, "slug");
+      return this.request<AiSetupStatus>("GET", `/endpoints/${slug}/layouts/assist`);
+    },
+
+    /**
+     * Ask for AI setup on 1 to 5 of the endpoint's emails (`requestIds`).
+     * Show the person `url`, then `await approval.wait()` for the proposals.
+     */
+    setup: async (
+      slug: string,
+      options: { ask: AiSetupAsk; requestIds: string[] }
+    ): Promise<PendingApproval<AiSetupResult>> => {
+      validatePathSegment(slug, "slug");
+      const answer = await this.request<{ approval?: Approval } & Partial<AiSetupResult>>(
+        "POST",
+        `/endpoints/${slug}/layouts/assist`,
+        options,
+        { repeatable: false }
+      );
+      return this.pendingOr<AiSetupResult>(
+        answer,
+        "ai.assist",
+        "AI setup ran.",
+        () => answer as AiSetupResult
+      );
     },
   };
 

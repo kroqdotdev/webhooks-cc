@@ -9,6 +9,9 @@ import { runForwardingBatch } from "@/lib/forwarding/worker";
 import { authorizationUrl, googleConfig } from "@/lib/integrations/google";
 import { GET as callbackRoute } from "@/app/api/integrations/google/callback/route";
 import { POST as spreadsheetsRoute } from "@/app/api/integrations/google/spreadsheets/route";
+import { createApproval, decideApproval, pollApproval } from "@/lib/approvals/store";
+import { actionSpec } from "@/lib/approvals/actions";
+import { generateApiKey, hashApiKey } from "@/lib/supabase/api-keys";
 
 /**
  * The Google Sheets destination (migration 00068) against a local fake of
@@ -377,6 +380,123 @@ describe("connecting a Google account", () => {
       )
     );
     expect(new URL(forged.headers.get("location")!).searchParams.get("google")).toBe("expired");
+  });
+
+  async function askingKey(): Promise<string> {
+    const raw = generateApiKey();
+    const { data, error } = await admin
+      .from("api_keys")
+      .insert({
+        user_id: userId,
+        name: "agent",
+        key_hash: hashApiKey(raw),
+        key_prefix: raw.slice(0, 12),
+      })
+      .select("id")
+      .single();
+    if (error) throw error;
+    return data.id as string;
+  }
+  const requester = { client: "whk test", country: null, network: null, remote: false };
+
+  it("connects an account through an approval an API key asked for", async () => {
+    const keyId = await askingKey();
+    const asked = await createApproval({
+      asker: { userId, keyId },
+      action: "google.connect",
+      params: {},
+      requester,
+    });
+    const decided = await decideApproval(asked.approval.code, userId, true);
+    expect(decided).toMatchObject({ browser: true, done: false });
+    // The person is at Google: the asker keeps waiting, and nothing runs on a poll.
+    expect((await pollApproval(asked.approval.id, { userId, keyId }))?.approval.status).toBe(
+      "approved"
+    );
+
+    // The browser never came back (closed, or Back from Google): the page
+    // answers it again rather than leaving it stuck as approved.
+    expect(await decideApproval(asked.approval.code, userId, true)).toMatchObject({
+      browser: true,
+    });
+
+    const back = `/approve?code=${asked.approval.code}`;
+    const config = googleConfig()!;
+    const cancelled = authorizationUrl(
+      config,
+      userId,
+      back,
+      "webhooks",
+      undefined,
+      asked.approval.id
+    );
+    const cancel = await callbackRoute(
+      new Request(
+        `http://localhost:3000/api/integrations/google/callback?error=access_denied&state=${new URL(cancelled.url).searchParams.get("state")}`,
+        { headers: { cookie: `whcc_google_oauth=${cancelled.browserNonce}` } }
+      )
+    );
+    expect(new URL(cancel.headers.get("location")!).searchParams.get("google")).toBe("cancelled");
+    // Cancelled at Google: it waits for the person again.
+    expect((await pollApproval(asked.approval.id, { userId, keyId }))?.approval.status).toBe(
+      "pending"
+    );
+
+    await decideApproval(asked.approval.code, userId, true);
+    const started = authorizationUrl(
+      config,
+      userId,
+      back,
+      "webhooks",
+      undefined,
+      asked.approval.id
+    );
+    const response = await callbackRoute(
+      new Request(
+        `http://localhost:3000/api/integrations/google/callback?code=abc&state=${new URL(started.url).searchParams.get("state")}`,
+        { headers: { cookie: `whcc_google_oauth=${started.browserNonce}` } }
+      )
+    );
+    const location = new URL(response.headers.get("location")!);
+    expect(location.pathname).toBe("/approve");
+    expect(location.searchParams.get("code")).toBe(asked.approval.code);
+    expect(location.searchParams.get("google")).toBe("connected");
+    const polled = await pollApproval(asked.approval.id, { userId, keyId });
+    expect(polled?.approval.status).toBe("completed");
+    const result = polled?.result as { connectionId: string; email: string };
+    expect(result.email).toBe("owner@acme.example");
+    expect((await listGoogleConnections(userId)).map((c) => c.id)).toContain(result.connectionId);
+  });
+
+  it("hands the asker the spreadsheet the owner picked on the approval page", async () => {
+    const keyId = await askingKey();
+    const connection = (await listGoogleConnections(userId))[0];
+    const parsed = await actionSpec("google.pick").parse({ connectionId: connection.id }, userId);
+    if (!parsed.ok) throw new Error(parsed.error);
+    // Another account's connection is not found.
+    await expect(
+      actionSpec("google.pick").parse({ connectionId: crypto.randomUUID() }, userId)
+    ).resolves.toMatchObject({ ok: false, status: 404 });
+    const asked = await createApproval({
+      asker: { userId, keyId },
+      action: "google.pick",
+      params: parsed.params,
+      requester,
+    });
+    // Approving without a picked file runs nothing and waits again.
+    await expect(decideApproval(asked.approval.code, userId, true)).rejects.toMatchObject({
+      status: 400,
+    });
+    const file = "1AbCdEfGhIjKlMnOpQrStUvWxYz0123456789";
+    expect(await decideApproval(asked.approval.code, userId, true, { file })).toMatchObject({
+      done: true,
+    });
+    expect((await pollApproval(asked.approval.id, { userId, keyId }))?.result).toEqual({
+      connectionId: connection.id,
+      spreadsheetId: file,
+      url: `https://docs.google.com/spreadsheets/d/${file}/edit`,
+      tabs: ["Orders"],
+    });
   });
 
   it("writes a header row only over an empty row or its own earlier headers", async () => {
