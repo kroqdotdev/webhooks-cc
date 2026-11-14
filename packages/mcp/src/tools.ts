@@ -625,6 +625,18 @@ async function waitForApprovalText(client: WebhooksCC, id: string, ms: number): 
 
 /** An approval id as it comes back from a client: untrusted, so only its shape is taken. */
 const APPROVAL_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+/** The tools that ask the account's owner to approve: the only ones a retry finishes. */
+const APPROVAL_TOOLS = new Set([
+  "create_api_key",
+  "create_share_link",
+  "remove_domain",
+  "rename_account",
+  "delete_team",
+  "invite_to_team",
+  "connect_google",
+  "pick_spreadsheet",
+  "ai_setup",
+]);
 /** How long a retried call waits for the person, within the hosted server's cap. */
 const APPROVAL_RETRY_WAIT_MS = 45_000;
 
@@ -1319,7 +1331,7 @@ function toolTarget(
       // carrying its id: finish it rather than ask again. Otherwise a new
       // approval is asked of a client that can open links as a URL request.
       const handler: typeof inner = async (args, call) => {
-        if (call?.requestState !== undefined) {
+        if (call?.requestState !== undefined && APPROVAL_TOOLS.has(name)) {
           const id = call.requestState;
           if (!APPROVAL_ID.test(id)) {
             return {

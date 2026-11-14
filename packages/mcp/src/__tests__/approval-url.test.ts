@@ -81,6 +81,18 @@ describe("approvals opened by the client (URL elicitation)", () => {
     expect(wait).not.toHaveBeenCalled();
   });
 
+  it("finishes approvals only for the tools that ask for them", async () => {
+    const wait = vi.fn();
+    const remove = vi.fn(async () => undefined);
+    const handlers = tools({
+      approvals: { wait } as unknown as WebhooksCC["approvals"],
+      endpoints: { delete: remove } as unknown as WebhooksCC["endpoints"],
+    });
+    await handlers.delete_endpoint({ slug: "abc" }, { urlElicitation: true, requestState: ID });
+    expect(wait).not.toHaveBeenCalled();
+    expect(remove).toHaveBeenCalledWith("abc");
+  });
+
   it("passes plain answers through untouched", () => {
     const plain = { content: [{ type: "text" as const, text: "ok" }] };
     expect(sdkToolResult(plain)).toEqual(plain);
