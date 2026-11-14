@@ -601,17 +601,18 @@ class WebhooksCC:
     def _timeout_s(self) -> float:
         return self._timeout_ms / 1000
 
-    def _bearer(self, force_refresh: bool = False) -> str:
-        """The API key, or an agent's access token. A token that cannot be had is a 401."""
+    def _bearer(self, force_refresh: bool = False, timeout_ms: float | None = None) -> str:
+        """The API key, or an agent's access token. A token that cannot be had is a 401;
+        one that took longer than ``timeout_ms`` (when given) is a ``TimeoutError``."""
         if self._tokens is None:
             return self._api_key or ""
         try:
-            return self._tokens.get(force_refresh)
+            return self._tokens.get(force_refresh, timeout_ms)
         except AgentAuthError as error:
             raise UnauthorizedError(f"Could not get an access token: {error}") from error
 
-    def _auth(self) -> dict[str, str]:
-        return {"Authorization": f"Bearer {self._bearer()}"}
+    def _auth(self, timeout_ms: float | None = None) -> dict[str, str]:
+        return {"Authorization": f"Bearer {self._bearer(timeout_ms=timeout_ms)}"}
 
     def _agent_file(self) -> str | None:
         """The credential file of the connected agent this client acts for, if any, so
@@ -681,9 +682,15 @@ class WebhooksCC:
         With ``deadline_ms`` (a time on the monotonic clock, in ms) the call ends by
         then: each try times out at the deadline when that is sooner than the
         client's timeout, and a retry whose wait would end after it is not made, so
-        the error goes to the caller instead.
+        the error goes to the caller instead. Getting an agent's access token is
+        bounded the same way.
         """
         timeout_ms = self._timeout_ms
+
+        def time_left() -> float:
+            """What a try, or a token exchange, may take: no longer than the deadline."""
+            assert deadline_ms is not None
+            return min(self._timeout_ms, max(deadline_ms - time.monotonic() * 1000, 1.0))
 
         def may_retry_after(wait_ms: float) -> bool:
             return deadline_ms is None or time.monotonic() * 1000 + wait_ms < deadline_ms
@@ -698,8 +705,7 @@ class WebhooksCC:
             attempt += 1
             backoff = self._backoff_ms * 2 ** (attempt - 1)
             if deadline_ms is not None:
-                left = deadline_ms - time.monotonic() * 1000
-                timeout_ms = min(self._timeout_ms, max(left, 1.0))
+                timeout_ms = time_left()
             try:
                 # Never followed, even with an http_client configured to: the API does
                 # not redirect, the token stays with the host named, and a download
@@ -709,8 +715,11 @@ class WebhooksCC:
                     url,
                     params=params,
                     content=json.dumps(body) if body is not None else None,
-                    headers={**self._auth(), "Content-Type": "application/json"},
-                    timeout=timeout_ms / 1000,
+                    headers={
+                        **self._auth(timeout_ms if deadline_ms is not None else None),
+                        "Content-Type": "application/json",
+                    },
+                    timeout=(time_left() if deadline_ms is not None else timeout_ms) / 1000,
                     follow_redirects=False,
                 )
             except httpx.TimeoutException:
@@ -727,7 +736,10 @@ class WebhooksCC:
             # An agent's token that expired or was revoked: exchange once more and retry.
             if response.status_code == 401 and self._tokens is not None and not refreshed:
                 refreshed = True
-                self._bearer(force_refresh=True)
+                self._bearer(
+                    force_refresh=True,
+                    timeout_ms=time_left() if deadline_ms is not None else None,
+                )
                 attempt -= 1
                 continue
 

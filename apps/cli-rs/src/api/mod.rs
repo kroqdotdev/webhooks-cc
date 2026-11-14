@@ -119,6 +119,19 @@ fn auth_mode() -> AuthMode {
     }
 }
 
+/// The API base URL in use: the override (`--api-url`), else `WHK_API_URL`,
+/// else webhooks.cc, without a trailing slash.
+fn effective_base_url(flag: Option<&str>, env: Option<&str>) -> String {
+    flag.or(env)
+        .unwrap_or(DEFAULT_BASE_URL)
+        .trim_end_matches('/')
+        .to_string()
+}
+
+fn custom_base_url(base_url: &str) -> Option<&str> {
+    (base_url != DEFAULT_BASE_URL).then_some(base_url)
+}
+
 /// What to tell someone who is not logged in but has `WHK_API_KEY` set
 /// without `WHK_AUTH=key`: the key is there, and ignored on purpose.
 pub const IGNORED_KEY_HINT: &str = "WHK_API_KEY is set, but whk uses it only with WHK_AUTH=key (so a key kept for the SDKs never changes which account whk acts as). Run with WHK_AUTH=key to use it, or log in with `whk auth login`.";
@@ -179,12 +192,10 @@ impl ApiClient {
         token: Option<String>,
         agents: Option<CredentialStore>,
     ) -> Result<Self> {
-        let base_url = base_url_override
-            .map(String::from)
-            .or_else(|| std::env::var("WHK_API_URL").ok())
-            .unwrap_or_else(|| DEFAULT_BASE_URL.to_string())
-            .trim_end_matches('/')
-            .to_string();
+        let base_url = effective_base_url(
+            base_url_override,
+            std::env::var("WHK_API_URL").ok().as_deref(),
+        );
 
         let webhook_url = webhook_url_override
             .map(String::from)
@@ -314,6 +325,13 @@ impl ApiClient {
         format!("{}{}", self.base_url, path)
     }
 
+    /// The API base URL when it is not webhooks.cc's own, whether it came
+    /// from `--api-url` or `WHK_API_URL`: a command printed for a later run
+    /// names it, since that run may not have the same environment.
+    pub fn custom_base_url(&self) -> Option<&str> {
+        custom_base_url(&self.base_url)
+    }
+
     /// Full webhook URL for a slug.
     pub fn webhook_url_for(&self, slug: &str) -> String {
         format!("{}/w/{}", self.webhook_url, slug)
@@ -392,6 +410,33 @@ mod tests {
         assert_eq!(token_source(None, AuthMode::Key), TokenSource::Login);
         assert_eq!(token_source(None, AuthMode::Agent), TokenSource::Agent);
         assert_eq!(token_source(None, AuthMode::Default), TokenSource::Login);
+    }
+
+    #[test]
+    fn a_base_url_other_than_the_default_is_named_whatever_its_source() {
+        let dev = "http://localhost:3110";
+        // The flag alone, the flag equal to the environment, the
+        // environment alone, and the flag over another environment.
+        for (flag, env) in [
+            (Some(dev), None),
+            (Some(dev), Some(dev)),
+            (None, Some(dev)),
+            (Some(dev), Some("http://localhost:9")),
+            (Some("http://localhost:3110/"), None),
+        ] {
+            let url = effective_base_url(flag, env);
+            assert_eq!(custom_base_url(&url), Some(dev), "{flag:?} {env:?}");
+        }
+        // The default is not named, however it was arrived at.
+        for (flag, env) in [
+            (None, None),
+            (Some("https://webhooks.cc"), None),
+            (None, Some("https://webhooks.cc/")),
+        ] {
+            assert_eq!(custom_base_url(&effective_base_url(flag, env)), None);
+        }
+        let client = ApiClient::with_credentials(Some(dev), None, None, None).unwrap();
+        assert_eq!(client.custom_base_url(), Some(dev));
     }
 
     #[test]

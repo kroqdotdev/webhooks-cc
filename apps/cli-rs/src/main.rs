@@ -93,13 +93,9 @@ async fn run(args: Cli) -> Result<()> {
     }
 
     let mut client = ApiClient::new(args.api_url.as_deref(), args.webhook_url.as_deref())?;
-    // Set when --api-url was typed, not read from WHK_API_URL: a command
-    // printed for a later run then names the server.
-    let api_url_flag = cli::requests::api_url_was_given(
-        args.api_url.as_deref(),
-        std::env::var("WHK_API_URL").ok().as_deref(),
-    )
-    .then(|| client.base_url.clone());
+    // A server other than the default, by flag or by WHK_API_URL: a command
+    // printed for a later run names it.
+    let api_url_flag = client.custom_base_url().map(String::from);
 
     match args.command {
         None => unreachable!("handled above"),

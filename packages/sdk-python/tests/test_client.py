@@ -2428,3 +2428,53 @@ def test_timeout_retries_inside_a_search_get_the_time_that_is_left(
     # Each try had only what was left of the 400 ms, and no try began after them.
     assert timeouts == sorted(timeouts, reverse=True) and timeouts[0] <= 0.4
     assert 1 < len(timeouts) < 4
+
+
+def test_a_slow_token_refresh_inside_a_search_ends_at_its_deadline(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("webhooks_cc.client._SEARCH_DEADLINE_MS", 1000)
+    monkeypatch.setattr("webhooks_cc.client._SEARCH_DEADLINE_GRACE_MS", 0)
+    exchanges: list[float] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/api/oauth2/token":
+            exchanges.append(request.extensions["timeout"]["read"])
+            if len(exchanges) % 2 == 1:
+                return httpx.Response(200, json={"access_token": "whcc_a", "expires_in": 3600})
+            # The refresh a later page asked for never answers.
+            raise httpx.ReadTimeout("slow", request=request)
+        if "cursor" in request.url.params:
+            return httpx.Response(401, json={"error": "Invalid token"})
+        if request.url.path.endswith("/count"):
+            return httpx.Response(200, json={"count": 2, "exact": False, "cursor": "c1"})
+        return search_response(["r1"], complete=False, cursor="c1")
+
+    def agent_client(timeout: str) -> WebhooksCC:
+        return WebhooksCC._for_agent(
+            assertion="assertion",
+            token=None,
+            binding=None,
+            base_url="https://api.test",
+            timeout=timeout,
+            http_client=httpx.Client(transport=httpx.MockTransport(handler)),
+        )
+
+    # The refresh had what was left of the search, not the client's 30 s, and running
+    # out of it ends the search with what it has.
+    client = agent_client("30s")
+    assert [r.id for r in client.requests.search(q="x")] == ["r1"]
+    assert exchanges[0] <= 1.0 and exchanges[1] <= 1.0
+    client._tokens.drop()  # type: ignore[union-attr]
+    assert client.requests.count(q="x") == 2
+    assert exchanges[3] <= 1.0
+    # Outside a search, and when the client's own timeout is the shorter, it is an error.
+    client._tokens.drop()  # type: ignore[union-attr]
+    exchanges.clear()
+    with pytest.raises(errors.TimeoutError) as caught:
+        client.requests.search_page(q="x", cursor="c1")
+    assert (exchanges, caught.value.timeout_ms) == ([30.0, 30.0], 30_000)
+    own = agent_client("500ms")
+    with pytest.raises(errors.TimeoutError) as caught:
+        own.requests.search(q="x")
+    assert caught.value.timeout_ms == 500

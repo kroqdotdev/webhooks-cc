@@ -6,10 +6,13 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"webhooks.cc/go/internal/agentfile"
 )
 
 func TestBackoffDelayDoublesUpToACap(t *testing.T) {
@@ -584,5 +587,71 @@ func TestTimeoutRetriesInsideASearchGetTheTimeThatIsLeft(t *testing.T) {
 	// 250 ms, a 50 ms wait, then the 100 ms that were left: ten tries would take seconds.
 	if took := time.Since(started); took > 800*time.Millisecond || calls.Load() != 2 {
 		t.Errorf("%d tries in %s", calls.Load(), took)
+	}
+}
+
+// An agent's token refresh inside Search or Count is bounded by their
+// deadline: one that hangs ends them with what they have after a page.
+func TestASlowTokenRefreshInsideASearchEndsAtItsDeadline(t *testing.T) {
+	previous, previousGrace := searchDeadline, searchDeadlineGrace
+	searchDeadline, searchDeadlineGrace = 300*time.Millisecond, 100*time.Millisecond
+	defer func() { searchDeadline, searchDeadlineGrace = previous, previousGrace }()
+	release := make(chan struct{})
+	var exchanges atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case r.URL.Path == "/api/oauth2/token":
+			if exchanges.Add(1)%2 == 1 {
+				fmt.Fprintf(w, `{"access_token":"whcc_%d","expires_in":3600}`, exchanges.Load())
+				return
+			}
+			// The refresh a later page asked for never answers.
+			select {
+			case <-release:
+			case <-r.Context().Done():
+			}
+		case r.URL.Query().Get("cursor") != "":
+			w.WriteHeader(http.StatusUnauthorized)
+			fmt.Fprint(w, `{"error":"Invalid token"}`)
+		case strings.HasSuffix(r.URL.Path, "/count"):
+			fmt.Fprint(w, `{"count":2,"exact":false,"cursor":"c1"}`)
+		default:
+			w.Header().Set("X-Search-Complete", "false")
+			w.Header().Set("X-Search-Cursor", "c1")
+			fmt.Fprint(w, `[{"id":"r1"}]`)
+		}
+	}))
+	defer server.Close()
+	defer close(release)
+	agentClient := func(timeout time.Duration) *Client {
+		client, err := New(WithAPIKey("unused"), WithBaseURL(server.URL), WithTimeout(timeout),
+			WithAgentFile(filepath.Join(t.TempDir(), "agent.json")))
+		if err != nil {
+			t.Fatal(err)
+		}
+		client.tokens = client.newTokenSource(agentfile.Claimed, agentfile.Slot{RegistrationID: "reg_1", IdentityAssertion: "assertion"})
+		return client
+	}
+	ctx := context.Background()
+
+	started := time.Now()
+	if found, err := agentClient(5*time.Second).Requests.Search(ctx, SearchOptions{Query: "x"}); err != nil || len(found) != 1 || found[0].ID != "r1" {
+		t.Errorf("search = %+v, %v", found, err)
+	}
+	if count, err := agentClient(5*time.Second).Requests.Count(ctx, SearchOptions{Query: "x"}); err != nil || count != 2 {
+		t.Errorf("count = %d, %v", count, err)
+	}
+	// Each ended at its 400 ms, not after the client's 5 s.
+	if took := time.Since(started); took > 2*time.Second {
+		t.Errorf("a hanging refresh held two searches for %s", took)
+	}
+	// The client's own timeout running out first is an error.
+	searchDeadline = time.Hour
+	if found, err := agentClient(100*time.Millisecond).Requests.Search(ctx, SearchOptions{Query: "x"}); found != nil || err == nil {
+		t.Errorf("own timeout: search = %+v, %v", found, err)
+	}
+	if count, err := agentClient(100*time.Millisecond).Requests.Count(ctx, SearchOptions{Query: "x"}); count != 0 || err == nil {
+		t.Errorf("own timeout: count = %d, %v", count, err)
 	}
 }

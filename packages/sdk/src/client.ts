@@ -1077,6 +1077,13 @@ export class WebhooksCC {
     // token, a renewal after a 401, every attempt and reading the body.
     const deadline = timeoutMs === undefined ? undefined : Date.now() + timeoutMs;
 
+    // The token and its renewal are outside the attempt's timer, so the
+    // call's own budget bounds them, or else the time a search must end by.
+    const tokenInTime = (token: Promise<string>): Promise<string> =>
+      deadline !== undefined || stopAt === undefined
+        ? withinDeadline(token, deadline, timeoutMs)
+        : beforeSearchStop(token, stopAt);
+
     while (true) {
       attempt++;
       const controller = new AbortController();
@@ -1105,7 +1112,7 @@ export class WebhooksCC {
 
       try {
         const headers = {
-          ...this.apiHeaders(await withinDeadline(this.bearer(), deadline, timeoutMs)),
+          ...this.apiHeaders(await tokenInTime(this.bearer())),
           "Content-Type": "application/json",
         };
         // Never start a request past the deadline (a slow token or renewal
@@ -1125,7 +1132,7 @@ export class WebhooksCC {
         // An expiring token: renew it once and retry right away.
         if (response.status === 401 && this.getAccessToken && !refreshed) {
           refreshed = true;
-          await withinDeadline(this.bearer(true), deadline, timeoutMs);
+          await tokenInTime(this.bearer(true));
           attempt--;
           continue;
         }
@@ -4196,6 +4203,21 @@ function withinDeadline<T>(
     timer = setTimeout(
       () => reject(new TimeoutError(budgetMs ?? 0)),
       Math.max(0, deadline - Date.now())
+    );
+  });
+  return Promise.race([promise, late]).finally(() => clearTimeout(timer));
+}
+
+/**
+ * `promise`, or a deadline timeout (see deadlineTimeout) once `stopAt` has
+ * come: a search's wait for an access token must not outlast the search.
+ */
+function beforeSearchStop<T>(promise: Promise<T>, stopAt: number): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const late = new Promise<never>((_, reject) => {
+    timer = setTimeout(
+      () => reject(deadlineTimeout(new TimeoutError(0, "The search's time ran out"))),
+      Math.max(0, stopAt - Date.now())
     );
   });
   return Promise.race([promise, late]).finally(() => clearTimeout(timer));

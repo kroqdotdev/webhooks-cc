@@ -669,8 +669,13 @@ function searchStoppedNote(
   return hasCursor ? `${reached} Call search_requests again with cursor to continue.` : reached;
 }
 
-const SEARCH_SHORTENED_NOTE =
-  "Some requests were shortened to fit the output (bodyTruncated with bodySize, or shortened: true for a summary); get_request with the id returns a request in full.";
+// Tool output has a size limit, so no tool can promise a large request whole.
+const FULL_REQUEST_HINT =
+  "The full request is available from the API (GET /api/requests/{id}), the SDKs (requests.get(id)) or the CLI (whk requests get <id>).";
+
+const SEARCH_SHORTENED_NOTE = `Some requests were shortened to fit the output (bodyTruncated with bodySize, or shortened: true for a summary); get_request with the id returns as much of one request as fits. ${FULL_REQUEST_HINT}`;
+
+const REQUEST_SHORTENED_NOTE = `This request was cut to fit the output: its body (bodyTruncated, with bodySize), or everything but a summary (shortened: true). ${FULL_REQUEST_HINT}`;
 
 /** A string cut to `max` characters, for a summary. */
 function clip(value: unknown, max: number): string | undefined {
@@ -692,7 +697,9 @@ function listedSize(request: unknown): number {
  */
 function fitSearchRequests(requests: unknown[], room: number): unknown[] {
   const share = Math.floor(room / Math.max(1, requests.length));
-  const fitted = requests.map((request) => shortenSearchRequest(request as JsonRecord, share));
+  const fitted = requests.map((request) =>
+    shortenRequest(request as JsonRecord, share, listedSize)
+  );
   if (fitted.every((request) => listedSize(request) <= share)) return fitted;
   return requests.map((request) => {
     const { id, receivedAt } = request as JsonRecord;
@@ -702,12 +709,21 @@ function fitSearchRequests(requests: unknown[], room: number): unknown[] {
 
 type JsonRecord = Record<string, unknown>;
 
-function shortenSearchRequest(request: JsonRecord, share: number): JsonRecord {
-  if (listedSize(request) <= share) return request;
+/**
+ * `request` in at most `share` characters as `sizeOf` measures it: as it is
+ * when it fits, else with the end of its body cut, else as a summary. A
+ * `note` on it is kept.
+ */
+function shortenRequest(
+  request: JsonRecord,
+  share: number,
+  sizeOf: (value: unknown) => number
+): JsonRecord {
+  if (sizeOf(request) <= share) return request;
   if (typeof request.body === "string") {
     const body = request.body;
     // Escaping can make a body longer in JSON than it is, so cut until it fits.
-    let keep = body.length - (listedSize(request) - share) - 96;
+    let keep = body.length - (sizeOf(request) - share) - 96;
     while (keep > 0) {
       const cut = {
         ...request,
@@ -715,7 +731,7 @@ function shortenSearchRequest(request: JsonRecord, share: number): JsonRecord {
         bodyTruncated: true,
         bodySize: body.length,
       };
-      if (listedSize(cut) <= share) return cut;
+      if (sizeOf(cut) <= share) return cut;
       keep = Math.floor(keep / 2);
     }
   }
@@ -731,8 +747,22 @@ function shortenSearchRequest(request: JsonRecord, share: number): JsonRecord {
     kind: request.kind,
     ...(email ? { subject: clip(email.subject, 200) } : {}),
     shortened: true,
+    ...(typeof request.note === "string" ? { note: request.note } : {}),
   };
   return summary;
+}
+
+/**
+ * One request as a tool's whole output: always valid JSON, so a request
+ * larger than the output is cut the way a search page's requests are and
+ * says where the whole of it can be had.
+ */
+function requestContent(request: Parameters<typeof compactRequest>[0]): ToolResult {
+  const compact = compactRequest(request) as unknown as JsonRecord;
+  if (jsonSize(compact) <= MAX_BODY_SIZE) return jsonContent(compact);
+  return jsonContent(
+    shortenRequest({ ...compact, note: REQUEST_SHORTENED_NOTE }, MAX_BODY_SIZE, jsonSize)
+  );
 }
 
 export function jsonContent(value: unknown): ToolResult {
@@ -1920,11 +1950,11 @@ export function registerTools(
 
   server.tool(
     "get_request",
-    "Get full details for a specific captured request by ID.",
+    "Get the details of a captured request by ID: method, path, headers and body. A request larger than the tool output has its body cut (bodyTruncated, bodySize) and a note saying where the whole request is available.",
     getRequestShape,
     withErrorHandling(async ({ requestId }) => {
       const request = await client.requests.get(requestId);
-      return jsonContent(compactRequest(request));
+      return requestContent(request);
     })
   );
 
@@ -1934,7 +1964,7 @@ export function registerTools(
     waitForRequestShape,
     withErrorHandling(async ({ endpointSlug, timeout, pollInterval }) => {
       const request = await client.requests.waitFor(endpointSlug, { timeout, pollInterval });
-      return jsonContent(compactRequest(request));
+      return requestContent(request);
     })
   );
 

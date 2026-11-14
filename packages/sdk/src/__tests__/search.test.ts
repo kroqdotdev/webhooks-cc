@@ -568,6 +568,92 @@ describe("search with a cursor", () => {
     });
   });
 
+  describe("a slow access token", () => {
+    /** A client whose token comes at once for the first `quick` asks, then never. */
+    function tokenClient(quick: number) {
+      let asked = 0;
+      const getAccessToken = vi.fn(() =>
+        asked++ < quick ? Promise.resolve("whcc_token") : new Promise<string>(() => {})
+      );
+      return {
+        client: new WebhooksCC({ getAccessToken, baseUrl: BASE_URL }),
+        getAccessToken,
+      };
+    }
+
+    async function settledAfter(pending: Promise<unknown>, ms: number): Promise<unknown> {
+      let outcome: unknown = "pending";
+      void pending.then(
+        (value) => (outcome = value),
+        (error: unknown) => (outcome = error)
+      );
+      await vi.advanceTimersByTimeAsync(ms);
+      return outcome;
+    }
+
+    it("on a later page ends search() at its time with what it found", async () => {
+      const fetchMock = mockPages({ body: [hit("r1")], headers: more("c1") });
+      globalThis.fetch = fetchMock;
+      const { client } = tokenClient(1);
+
+      const pending = client.requests.search({ q: "needle" });
+      expect(await settledAfter(pending, 29_900)).toBe("pending");
+      const outcome = await settledAfter(pending, 200);
+
+      expect((outcome as Array<{ id: string }>).map((r) => r.id)).toEqual(["r1"]);
+      expect(fetchMock).toHaveBeenCalledOnce();
+    });
+
+    it("on a later page ends count() with the sum so far", async () => {
+      globalThis.fetch = mockPages({
+        body: { count: 4, exact: false, searchedUntil: 3, cursor: "c1" },
+      });
+      const { client } = tokenClient(1);
+
+      const pending = client.requests.count({ q: "needle" });
+      expect(await settledAfter(pending, 29_900)).toBe("pending");
+      expect(await settledAfter(pending, 200)).toBe(4);
+    });
+
+    it("on the first page fails search() and count() at their time", async () => {
+      const fetchMock = mockPages({ body: [hit("r1")], headers: done });
+      globalThis.fetch = fetchMock;
+      const { client } = tokenClient(0);
+
+      const search = client.requests.search({ q: "needle" });
+      const count = client.requests.count({ q: "needle" }).catch((e: unknown) => e);
+      expect(await settledAfter(search, 29_900)).toBe("pending");
+      expect(await settledAfter(search, 200)).toBeInstanceOf(TimeoutError);
+      expect(await count).toBeInstanceOf(TimeoutError);
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
+
+    it("renewing after a 401 on a later page ends search() the same way", async () => {
+      const fetchMock = mockPages(
+        { body: [hit("r1")], headers: more("c1") },
+        { status: 401, body: { error: "Invalid token" } }
+      );
+      globalThis.fetch = fetchMock;
+      // Page one's token, page two's token, then the renewal never comes.
+      const { client, getAccessToken } = tokenClient(2);
+
+      const pending = client.requests.search({ q: "needle" });
+      expect(await settledAfter(pending, 29_900)).toBe("pending");
+      const outcome = await settledAfter(pending, 200);
+
+      expect((outcome as Array<{ id: string }>).map((r) => r.id)).toEqual(["r1"]);
+      expect(getAccessToken).toHaveBeenLastCalledWith({ forceRefresh: true });
+    });
+
+    it("leaves searchPage() waiting for its token, as before", async () => {
+      globalThis.fetch = mockPages({ body: [hit("r1")], headers: done });
+      const { client } = tokenClient(0);
+
+      const pending = client.requests.searchPage({ q: "needle" });
+      expect(await settledAfter(pending, 120_000)).toBe("pending");
+    });
+  });
+
   describe("requests.countPage", () => {
     it("returns one page of a count and sends the cursor", async () => {
       const fetchMock = mockPages({

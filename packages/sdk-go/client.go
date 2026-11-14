@@ -251,6 +251,24 @@ func (c *Client) bearer(ctx context.Context) (string, error) {
 	return c.tokens.token(ctx)
 }
 
+// bearerByDeadline is bearer, bounded by the context's call deadline when it
+// has one (see withCallDeadline): an agent's token exchange that the deadline
+// cut short is a *TimeoutError, like a try it cut short.
+func (c *Client) bearerByDeadline(ctx context.Context) (string, error) {
+	deadline, ok := ctx.Value(callDeadlineKey{}).(time.Time)
+	if !ok || c.tokens == nil {
+		return c.bearer(ctx)
+	}
+	left := max(time.Until(deadline), time.Millisecond)
+	tokenCtx, cancel := context.WithTimeout(ctx, left)
+	defer cancel()
+	bearer, err := c.bearer(tokenCtx)
+	if err != nil && ctx.Err() == nil && errors.Is(tokenCtx.Err(), context.DeadlineExceeded) {
+		return "", &TimeoutError{After: left}
+	}
+	return bearer, err
+}
+
 // api calls an API route and decodes the JSON response into out (when not nil).
 func (c *Client) api(ctx context.Context, method, path string, query url.Values, body, out any) error {
 	return c.apiRetrying(ctx, method, path, query, body, out, idempotentMethods[method])
@@ -294,7 +312,7 @@ func (c *Client) call(ctx context.Context, method, path string, query url.Values
 		backoff := backoffDelay(c.retry.Backoff, attempt)
 		more := attempt < c.retry.MaxAttempts
 		// An agent token that cannot be had is never retried as a network error.
-		bearer, err := c.bearer(ctx)
+		bearer, err := c.bearerByDeadline(ctx)
 		if err != nil {
 			return nil, err
 		}

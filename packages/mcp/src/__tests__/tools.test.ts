@@ -2924,6 +2924,22 @@ describe("search_requests and count_requests", () => {
     });
   });
 
+  it("says where a shortened request is available in full", async () => {
+    const searchPage = vi.fn(async () => ({
+      requests: [makeRequest({ id: "big", body: "x".repeat(40_000) })],
+      complete: true,
+      searchedUntil: null,
+      cursor: null,
+    }));
+    const tools = getRegisteredTools(searchClient({ searchPage }));
+
+    const result = parseJsonResult(await tools.search_requests.handler({ q: "x" }));
+    expect(result.note).toBe(
+      "Some requests were shortened to fit the output (bodyTruncated with bodySize, or shortened: true for a summary); get_request with the id returns as much of one request as fits. The full request is available from the API (GET /api/requests/{id}), the SDKs (requests.get(id)) or the CLI (whk requests get <id>)."
+    );
+    expect(result.note).not.toContain("in full");
+  });
+
   it("counts one page and says when the count is a lower bound", async () => {
     const countPage = vi.fn(async () => ({
       count: 12,
@@ -2993,5 +3009,71 @@ describe("search_requests and count_requests", () => {
       expect(description).toContain("decoded email fields");
       expect(description).not.toContain("full-text");
     }
+  });
+});
+
+describe("a request larger than the tool output", () => {
+  const big = () => makeRequest({ id: "big", body: "x".repeat(40_000) });
+  const NOTE =
+    "This request was cut to fit the output: its body (bodyTruncated, with bodySize), or everything but a summary (shortened: true). The full request is available from the API (GET /api/requests/{id}), the SDKs (requests.get(id)) or the CLI (whk requests get <id>).";
+
+  function requestsClient(requests: Record<string, unknown>) {
+    return createMockClient({ requests: requests as unknown as WebhooksCC["requests"] });
+  }
+
+  it("get_request returns valid JSON with the body cut and a note", async () => {
+    const tools = getRegisteredTools(requestsClient({ get: vi.fn(async () => big()) }));
+
+    const output = await tools.get_request.handler({ requestId: "big" });
+    expect(output.content[0].text.length).toBeLessThanOrEqual(32_768);
+    const result = parseJsonResult(output);
+    expect(result).toMatchObject({
+      id: "big",
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      bodyTruncated: true,
+      bodySize: 40_000,
+      note: NOTE,
+    });
+    expect(result.body.length).toBeGreaterThan(30_000);
+    expect("x".repeat(40_000).startsWith(result.body)).toBe(true);
+  });
+
+  it("wait_for_request does the same", async () => {
+    const tools = getRegisteredTools(requestsClient({ waitFor: vi.fn(async () => big()) }));
+
+    const output = await tools.wait_for_request.handler({ endpointSlug: "acme" });
+    expect(output.content[0].text.length).toBeLessThanOrEqual(32_768);
+    expect(parseJsonResult(output)).toMatchObject({
+      id: "big",
+      bodyTruncated: true,
+      bodySize: 40_000,
+      note: NOTE,
+    });
+  });
+
+  it("get_request keeps a summary when the headers alone are too large", async () => {
+    const get = vi.fn(async () =>
+      makeRequest({ id: "headers", headers: { "x-big": "h".repeat(40_000) } })
+    );
+    const tools = getRegisteredTools(requestsClient({ get }));
+
+    expect(parseJsonResult(await tools.get_request.handler({ requestId: "headers" }))).toEqual({
+      id: "headers",
+      method: "POST",
+      path: "/webhooks/github",
+      contentType: "application/json",
+      size: 42,
+      receivedAt: 1700000000000,
+      shortened: true,
+      note: NOTE,
+    });
+  });
+
+  it("get_request leaves a request that fits as it is", async () => {
+    const tools = getRegisteredTools(requestsClient({ get: vi.fn(async () => makeRequest()) }));
+    expect(parseJsonResult(await tools.get_request.handler({ requestId: "req_123" }))).toEqual(
+      makeRequest()
+    );
   });
 });

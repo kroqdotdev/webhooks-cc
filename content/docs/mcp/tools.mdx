@@ -222,11 +222,13 @@ List captured requests for an endpoint, newest first. Emails come back with `kin
 
 ### get_request
 
-Get full details of a captured request, including headers and body.
+Get the details of a captured request, including headers and body.
 
 | Parameter   | Type     | Required | Description |
 | ----------- | -------- | -------- | ----------- |
 | `requestId` | `string` | yes      | Request ID  |
+
+Tool output is capped at 32 KB. A request larger than that comes back with its body cut (`bodyTruncated: true`, with `bodySize`) and a `note`; `wait_for_request` does the same. The whole request is available from the API (`GET /api/requests/{id}`), the SDKs (`requests.get(id)`) or the CLI (`whk requests get <id>`).
 
 ### wait_for_request
 
@@ -279,7 +281,7 @@ The result is an object:
 | `cursor`        | Pass as `cursor` to continue, or `null` when the search is complete                                           |
 | `note`          | Present when the search is not complete: how far it searched and that calling again with the cursor continues |
 
-Every match of a call is listed, since the cursor continues after all of them. Tool output is capped at 32 KB, so on a page too large to fit, large bodies are cut (`bodyTruncated: true`, with `bodySize`), then requests are shortened to a summary (`shortened: true`), and as a last resort to their `id` and `receivedAt`; `get_request` returns any of them in full.
+Every match of a call is listed, since the cursor continues after all of them. Tool output is capped at 32 KB, so on a page too large to fit, large bodies are cut (`bodyTruncated: true`, with `bodySize`), then requests are shortened to a summary (`shortened: true`), and as a last resort to their `id` and `receivedAt`; `get_request` returns as much of one request as fits its own output, and the whole request is available from the API (`GET /api/requests/{id}`), the SDKs (`requests.get(id)`) or the CLI (`whk requests get <id>`).
 
 ### count_requests
 

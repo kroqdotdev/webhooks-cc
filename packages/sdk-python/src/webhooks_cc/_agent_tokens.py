@@ -11,6 +11,7 @@ import httpx
 
 from .agent import AccessToken, AgentAuthError, exchange
 from .credentials import AgentCredentialStore, AgentSlot, SlotName, parse_timestamp
+from .errors import TimeoutError
 
 # Exchange again this long before a token expires.
 _REFRESH_MARGIN_S = 60
@@ -76,32 +77,48 @@ class AgentTokens:
         self._lock = threading.Lock()
         self.revoked = False
 
-    def get(self, force_refresh: bool = False) -> str:
-        with self._lock:
-            current = self._token
-            if (
-                not force_refresh
-                and current is not None
-                and current.expires_at.timestamp() - time.time() > _REFRESH_MARGIN_S
-            ):
-                return current.access_token
-            try:
-                token = exchange(
-                    self._assertion,
-                    base_url=self._base_url,
-                    timeout=self._timeout_ms,
-                    http_client=self._http,
-                )
-            except AgentAuthError as error:
-                if error.code == "invalid_grant":
-                    self._token = None
-                    self.revoked = True
-                    self._forget_slot()
-                raise
-            self._token = token
-            if self._binding is not None:
-                self._binding.save_token(token)
-            return token.access_token
+    def get(self, force_refresh: bool = False, timeout_ms: float | None = None) -> str:
+        """The access token, exchanged first when needed. ``timeout_ms`` bounds the
+        whole wait (for another thread's exchange and for this one's) when it is
+        less than the client's timeout; running out of it is a ``TimeoutError``."""
+        left_ms = self._timeout_ms
+        if timeout_ms is None or timeout_ms >= self._timeout_ms:
+            self._lock.acquire()
+        else:
+            started = time.monotonic()
+            if not self._lock.acquire(timeout=max(timeout_ms, 0) / 1000):
+                raise TimeoutError(timeout_ms)
+            left_ms = max(timeout_ms - (time.monotonic() - started) * 1000, 1.0)
+        try:
+            return self._get_locked(force_refresh, left_ms)
+        finally:
+            self._lock.release()
+
+    def _get_locked(self, force_refresh: bool, timeout_ms: float) -> str:
+        current = self._token
+        if (
+            not force_refresh
+            and current is not None
+            and current.expires_at.timestamp() - time.time() > _REFRESH_MARGIN_S
+        ):
+            return current.access_token
+        try:
+            token = exchange(
+                self._assertion,
+                base_url=self._base_url,
+                timeout=timeout_ms,
+                http_client=self._http,
+            )
+        except AgentAuthError as error:
+            if error.code == "invalid_grant":
+                self._token = None
+                self.revoked = True
+                self._forget_slot()
+            raise
+        self._token = token
+        if self._binding is not None:
+            self._binding.save_token(token)
+        return token.access_token
 
     def peek(self) -> str | None:
         """The current token, without exchanging."""

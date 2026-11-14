@@ -206,19 +206,9 @@ fn search_progress_line(searched_until: Option<i64>, order: &str, next: Option<&
     line
 }
 
-/// Whether `--api-url` was given on the command line: the value is not the
-/// one `WHK_API_URL` holds (clap reads both into the same argument). A
-/// command printed for later then has to name the server itself.
-pub fn api_url_was_given(value: Option<&str>, env: Option<&str>) -> bool {
-    match value {
-        Some(value) => env != Some(value),
-        None => false,
-    }
-}
-
 /// The command that goes on from `cursor`, with the same filters, and with
-/// `--api-url` when this run was given one, so the cursor goes back to the
-/// server that made it. Values are attached with `=`, so one that starts
+/// `--api-url` when this run used a server other than the default (by flag
+/// or by `WHK_API_URL`), so the cursor goes back to the server that made it. Values are attached with `=`, so one that starts
 /// with a hyphen is still read as a value.
 fn continue_command(
     action: &str,
@@ -562,12 +552,6 @@ mod search_output_tests {
             ),
             "whk requests count --api-url=http://localhost:3110 --cursor=c"
         );
-        assert!(api_url_was_given(Some("http://a"), None));
-        assert!(api_url_was_given(Some("http://a"), Some("http://b")));
-        // From the environment, or not at all: the next run finds it again.
-        assert!(!api_url_was_given(Some("http://a"), Some("http://a")));
-        assert!(!api_url_was_given(None, Some("http://a")));
-        assert!(!api_url_was_given(None, None));
     }
 
     #[test]
