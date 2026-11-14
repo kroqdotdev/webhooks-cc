@@ -1,0 +1,6 @@
+{
+  "title": "Package releases for search",
+  "items": [
+    "The changelog lists Python SDK 0.8.0 and Go SDK 0.8.0, whose search and count follow the server's search cursor and add page-level calls to continue by hand"
+  ]
+}
