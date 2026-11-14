@@ -2,6 +2,8 @@ import { beforeEach, describe, expect, test, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   authenticateSessionRequest: vi.fn(),
+  authenticateRequestRequireUser: vi.fn(),
+  requestApproval: vi.fn(),
   checkRateLimitByKeyWithInfo: vi.fn(),
   updateDisplayName: vi.fn(),
   auditUserAction: vi.fn(),
@@ -10,6 +12,11 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("@/lib/api-auth", () => ({
   authenticateSessionRequest: mocks.authenticateSessionRequest,
+  authenticateRequestRequireUser: mocks.authenticateRequestRequireUser,
+}));
+
+vi.mock("@/lib/approvals/request", () => ({
+  requestApproval: mocks.requestApproval,
 }));
 
 vi.mock("@/lib/rate-limit", () => ({
@@ -48,6 +55,8 @@ describe("PATCH /api/account", () => {
     vi.resetModules();
     vi.clearAllMocks();
     mocks.authenticateSessionRequest.mockResolvedValue({ success: true, userId: "user_1" });
+    // A browser session: no keyId.
+    mocks.authenticateRequestRequireUser.mockResolvedValue({ success: true, userId: "user_1" });
     mocks.checkRateLimitByKeyWithInfo.mockResolvedValue({ allowed: true });
     mocks.updateDisplayName.mockImplementation(async (_userId: string, name: string | null) => {
       return name ?? "Provider Name";
@@ -122,20 +131,53 @@ describe("PATCH /api/account", () => {
     expect(mocks.updateDisplayName).not.toHaveBeenCalled();
   });
 
-  test("passes through an auth failure, such as an API key or agent token", async () => {
-    mocks.authenticateSessionRequest.mockResolvedValue({
+  test("passes through an auth failure", async () => {
+    mocks.authenticateRequestRequireUser.mockResolvedValue({
       success: false,
-      response: Response.json(
-        { error: "API keys are not allowed for this operation. Use a session token." },
-        { status: 403 }
-      ),
+      response: Response.json({ error: "Invalid or missing API key" }, { status: 401 }),
     });
 
     const { PATCH } = await import("./route");
     const response = await PATCH(patchRequest({ name: "Ada" }));
 
-    expect(response.status).toBe(403);
+    expect(response.status).toBe(401);
     expect(mocks.updateDisplayName).not.toHaveBeenCalled();
+  });
+
+  test("turns a rename asked with an API key into an approval", async () => {
+    mocks.authenticateRequestRequireUser.mockResolvedValue({
+      success: true,
+      userId: "user_1",
+      keyId: "key_1",
+      agentRegistrationId: null,
+    });
+    mocks.requestApproval.mockResolvedValue(Response.json({ approval: {} }, { status: 202 }));
+
+    const { PATCH } = await import("./route");
+    const response = await PATCH(patchRequest({ name: "Ada" }));
+
+    expect(response.status).toBe(202);
+    expect(mocks.requestApproval).toHaveBeenCalledWith(
+      expect.any(Request),
+      { userId: "user_1", keyId: "key_1", agentRegistrationId: null },
+      "account.rename",
+      { name: "Ada" }
+    );
+    expect(mocks.updateDisplayName).not.toHaveBeenCalled();
+  });
+
+  test("refuses the approval-email setting with an API key", async () => {
+    mocks.authenticateRequestRequireUser.mockResolvedValue({
+      success: true,
+      userId: "user_1",
+      keyId: "key_1",
+    });
+
+    const { PATCH } = await import("./route");
+    const response = await PATCH(patchRequest({ approvalEmails: false }));
+
+    expect(response.status).toBe(403);
+    expect(mocks.requestApproval).not.toHaveBeenCalled();
   });
 
   test("returns the rate limit response when limited", async () => {

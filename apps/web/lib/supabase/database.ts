@@ -413,7 +413,7 @@ export interface Database {
         Row: {
           id: string;
           user_id: string;
-          action: "api_keys.create";
+          action: "api_keys.create" | "request_shares.create" | "domains.remove" | "account.rename";
           params: Json;
           summary: string;
           user_code: string;
@@ -433,7 +433,7 @@ export interface Database {
         Insert: {
           id?: string;
           user_id: string;
-          action: "api_keys.create";
+          action: "api_keys.create" | "request_shares.create" | "domains.remove" | "account.rename";
           params?: Json;
           summary: string;
           user_code: string;
@@ -453,7 +453,8 @@ export interface Database {
         Update: {
           id?: string;
           user_id?: string;
-          action?: "api_keys.create";
+          action?:
+            "api_keys.create" | "request_shares.create" | "domains.remove" | "account.rename";
           params?: Json;
           summary?: string;
           user_code?: string;

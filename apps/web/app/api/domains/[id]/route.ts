@@ -1,3 +1,4 @@
+import { requestApproval } from "@/lib/approvals/request";
 import { auditDomain, domainAccount, domainErrorResponse } from "@/lib/domain-route";
 import { checkRateLimitByKeyWithInfo } from "@/lib/rate-limit";
 import { deleteDomain, setDomainRouting, type DomainRoute } from "@/lib/supabase/inbound-domains";
@@ -68,6 +69,22 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ i
   if (!isUuid(id)) return Response.json({ error: "Domain not found" }, { status: 404 });
   const limited = await checkRateLimitByKeyWithInfo(`user:domains-change:${context.userId}`, 60);
   if (limited.response) return limited.response;
+  // An API key or agent token: the owner approves the removal first.
+  if (context.keyId) {
+    return requestApproval(
+      request,
+      {
+        userId: context.userId,
+        keyId: context.keyId,
+        agentRegistrationId: context.agentRegistrationId,
+      },
+      "domains.remove",
+      {
+        domainId: id,
+        teamId: context.account.kind === "team" ? context.account.teamId : null,
+      }
+    );
+  }
   try {
     await deleteDomain(context.account, id);
     await auditDomain(request, context.userId, context.account, "domain.deleted", 204, { id });

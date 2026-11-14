@@ -82,6 +82,14 @@ tags:
       Agent registration (auth.md v0.6, documented at https://webhooks.cc/auth.md) and the agent
       sandbox. An agent registers without a human, works in a small sandbox with a pre-claim token,
       and is later claimed into a human's account, after which it uses the normal API.
+  - name: Account
+    description: |
+      The account's API keys, connected agents, share links to requests, custom inbound domains
+      and display name. Reads and revokes act at once. A new API key, a new share link, removing
+      a domain and a rename are only for the account's owner to allow: with an API key or agent
+      token the route answers 202 with an approval, the owner approves it on the page at its
+      `url`, and the asker polls `GET /api/approvals/{id}` for the result. See
+      https://webhooks.cc/docs/agents#approvals.
   - name: OAuth
     description: |
       OAuth 2.1 token, revocation and dynamic client registration endpoints. Server metadata is
@@ -3964,6 +3972,462 @@ paths:
 
   # -- Public ------------------------------------------------------------------
 
+  /api/approvals/{id}:
+    get:
+      operationId: getApproval
+      tags: [Account]
+      summary: Poll an approval
+      description: >-
+        Only the API key that asked (or any token of the same connected agent) may poll. Once the
+        owner approves a new API key, the next poll creates it and carries it in `result`, once:
+        later polls answer `completed` without it. Other actions run when the owner approves
+        them, and every later poll carries their `result`. Poll every two seconds at most.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: The approval, and its result once there is one
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [approval]
+                properties:
+                  approval:
+                    $ref: "#/components/schemas/Approval"
+                  result:
+                    type: object
+                    additionalProperties: true
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/api-keys:
+    get:
+      operationId: listApiKeys
+      tags: [Account]
+      summary: List API keys
+      description: The account's API keys, newest first. Agent tokens are not listed, and a key is never shown again.
+      responses:
+        "200":
+          description: The keys
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id:
+                      type: string
+                    name:
+                      type: string
+                    key_prefix:
+                      type: string
+                    created_at:
+                      type: string
+                      format: date-time
+                    expires_at:
+                      type: [string, "null"]
+                      format: date-time
+                    last_used_at:
+                      type: [string, "null"]
+                      format: date-time
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    post:
+      operationId: createApiKey
+      tags: [Account]
+      summary: Ask for a new API key
+      description: >-
+        With an API key or agent token, answers 202 with an approval; once the owner approves,
+        the asker's next poll of `GET /api/approvals/{id}` carries the key, once.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name:
+                  type: string
+                  minLength: 1
+                  maxLength: 64
+                expiresInDays:
+                  type: integer
+                  minimum: 1
+                  maximum: 365
+                  default: 90
+      responses:
+        "202":
+          $ref: "#/components/responses/ApprovalAsked"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+    delete:
+      operationId: revokeApiKey
+      tags: [Account]
+      summary: Revoke an API key
+      parameters:
+        - name: id
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Revoked (also when no key matched)
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/account:
+    patch:
+      operationId: renameAccount
+      tags: [Account]
+      summary: Set the display name
+      description: >-
+        With an API key or agent token, a new `name` answers 202 with an approval, and the name
+        changes when the owner approves it. `approvalEmails` takes a browser session (403 with a
+        key).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: [string, "null"]
+                  description: The new display name, or null to clear it
+      responses:
+        "202":
+          $ref: "#/components/responses/ApprovalAsked"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/agent/registrations:
+    get:
+      operationId: listConnectedAgents
+      tags: [Account]
+      summary: List connected agents
+      responses:
+        "200":
+          description: Connected agents, most recently connected first
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id:
+                      type: string
+                    clientName:
+                      type: [string, "null"]
+                    kind:
+                      type: string
+                    connectedAt:
+                      type: integer
+                    lastUsedAt:
+                      type: [integer, "null"]
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/agent/registrations/{id}:
+    delete:
+      operationId: disconnectAgent
+      tags: [Account]
+      summary: Disconnect an agent
+      description: Its tokens stop working at once; endpoints it brought stay in the account.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "204":
+          description: Disconnected
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/request-shares:
+    get:
+      operationId: listShareLinks
+      tags: [Account]
+      summary: List share links
+      description: Every live public link to a frozen copy of a request, newest first. A link's page is `/s/{token}`.
+      responses:
+        "200":
+          description: The links
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  allOf:
+                    - $ref: "#/components/schemas/ShareLink"
+                    - type: object
+                      properties:
+                        method:
+                          type: string
+                        path:
+                          type: string
+                        detectedProvider:
+                          type: [string, "null"]
+                        detectedEvent:
+                          type: [string, "null"]
+                        requestId:
+                          type: [string, "null"]
+                        endpointSlug:
+                          type: [string, "null"]
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/request-shares/{id}:
+    delete:
+      operationId: revokeShareLink
+      tags: [Account]
+      summary: Revoke a share link
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "204":
+          description: Revoked; the page answers 404 from now on
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/requests/{id}/shares:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      operationId: listRequestShareLinks
+      tags: [Account]
+      summary: List a request's share links
+      responses:
+        "200":
+          description: The request's live links
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ShareLink"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    post:
+      operationId: createShareLink
+      tags: [Account]
+      summary: Ask for a share link
+      description: >-
+        A link publishes a read-only copy of the request (never an email) to anyone who holds it,
+        so with an API key or agent token this answers 202 with an approval. The link is made
+        when the owner approves, and every later poll carries `{ id, url, expiresAt,
+        redactedHeaders }`. Credential headers are always left out; `hideSensitive` also leaves
+        out signature and token headers. Only the endpoint's owner can share.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [expiresInDays]
+              properties:
+                expiresInDays:
+                  type: integer
+                  enum: [1, 7, 30]
+                hideSensitive:
+                  type: boolean
+                  default: true
+      responses:
+        "202":
+          $ref: "#/components/responses/ApprovalAsked"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: Not the endpoint's owner
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/domains:
+    parameters:
+      - $ref: "#/components/parameters/DomainTeam"
+    get:
+      operationId: listDomains
+      tags: [Account]
+      summary: List custom inbound domains
+      responses:
+        "200":
+          description: The domains
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  domains:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/InboundDomain"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    post:
+      operationId: addDomain
+      tags: [Account]
+      summary: Add a custom inbound domain
+      description: Business (or Team Business). Publish the TXT and MX records in `records`, then verify.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [domain]
+              properties:
+                domain:
+                  type: string
+      responses:
+        "201":
+          description: Added
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  domain:
+                    $ref: "#/components/schemas/InboundDomain"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/domains/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - $ref: "#/components/parameters/DomainTeam"
+    patch:
+      operationId: routeDomain
+      tags: [Account]
+      summary: Set a domain's routing
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [catchAllEndpointId, routes]
+              properties:
+                catchAllEndpointId:
+                  type: [string, "null"]
+                  format: uuid
+                routes:
+                  type: array
+                  maxItems: 100
+                  items:
+                    $ref: "#/components/schemas/InboundDomainRoute"
+      responses:
+        "200":
+          description: The domain with its new routing
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  domain:
+                    $ref: "#/components/schemas/InboundDomain"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      operationId: removeDomain
+      tags: [Account]
+      summary: Ask to remove a domain
+      description: >-
+        Mail to a removed domain is refused, so with an API key or agent token this answers 202
+        with an approval. The domain is removed when the owner approves, and every later poll
+        carries `{ removed, domainId }`.
+      responses:
+        "202":
+          $ref: "#/components/responses/ApprovalAsked"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/domains/{id}/verify:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - $ref: "#/components/parameters/DomainTeam"
+    post:
+      operationId: verifyDomain
+      tags: [Account]
+      summary: Check a domain's DNS records now
+      responses:
+        "200":
+          description: What the lookup found
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  domain:
+                    $ref: "#/components/schemas/InboundDomain"
+                  records:
+                    type: object
+                    properties:
+                      txt:
+                        type: boolean
+                      mx:
+                        type: boolean
+                  tookOver:
+                    type: boolean
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
   /api/stats:
     get:
       operationId: getStats
@@ -4082,6 +4546,14 @@ components:
               anonymous agent registrations, never by this flow.
 
   parameters:
+    DomainTeam:
+      name: team
+      in: query
+      required: false
+      description: A Team Business team's id, for its domains (the team's owner only)
+      schema:
+        type: string
+        format: uuid
     extracts:
       name: extracts
       in: query
@@ -4151,6 +4623,88 @@ components:
         type: integer
 
   schemas:
+    Approval:
+      type: object
+      required: [id, status, action, summary, code, url, expiresAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [pending, approved, denied, completed, expired]
+        action:
+          type: string
+          enum: [api_keys.create, request_shares.create, domains.remove, account.rename]
+        summary:
+          type: string
+          description: One sentence saying what the owner is asked to allow
+        code:
+          type: string
+          description: Shown on the approval page too, for the owner to compare
+        url:
+          type: string
+          format: uri
+          description: The approval page, for the account's owner to open
+        expiresAt:
+          type: string
+          format: date-time
+    ShareLink:
+      type: object
+      properties:
+        id:
+          type: string
+        token:
+          type: string
+        createdAt:
+          type: integer
+        expiresAt:
+          type: integer
+        redactedHeaders:
+          type: array
+          items:
+            type: string
+    InboundDomainRoute:
+      type: object
+      required: [localPart, endpointId]
+      properties:
+        localPart:
+          type: string
+          maxLength: 64
+        endpointId:
+          type: string
+          format: uuid
+    InboundDomain:
+      type: object
+      properties:
+        id:
+          type: string
+        domain:
+          type: string
+        status:
+          type: string
+          enum: [pending, verified, lapsed]
+        verifiedAt:
+          type: [string, "null"]
+          format: date-time
+        lastCheckedAt:
+          type: [string, "null"]
+          format: date-time
+        failedChecks:
+          type: integer
+        catchAllEndpointId:
+          type: [string, "null"]
+        routes:
+          type: array
+          items:
+            $ref: "#/components/schemas/InboundDomainRoute"
+        records:
+          type: object
+          description: The TXT and MX records to publish ({ name, value } each)
+          additionalProperties: true
+        active:
+          type: boolean
+          description: Receives mail now
     AlertSettings:
       type: object
       properties:
@@ -7258,6 +7812,19 @@ components:
               description: Unix timestamp (seconds) when the id was issued
 
   responses:
+    ApprovalAsked:
+      description: >-
+        Asked by an API key or agent token: the account's owner approves it at `url` (the page
+        shows `code` to compare); poll `GET /api/approvals/{id}`.
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [approval]
+            properties:
+              approval:
+                $ref: "#/components/schemas/Approval"
+
     BadRequest:
       description: Validation error
       content:

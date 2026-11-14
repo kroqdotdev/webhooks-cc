@@ -67,6 +67,8 @@ Business includes one domain, and Team Business one per team. Each extra domain 
 
 An address at a verified domain cannot be used to sign up for an account, because its mail can be read here.
 
+Domains work without the dashboard too: `whk domains add`, `verify`, `route` and `list`, the SDK's `client.domains`, or the MCP tools (`add_domain`, `verify_domain`, `route_domain`). Removing a domain gives it up, and getting it back means verifying it again, so when an agent or an API key asks for it you [approve it](/docs/agents#approvals) in the browser first. Routing is not an approval: a key can change where the mail goes, or refuse it.
+
 The records and the routing at a glance: [Your own domain](https://mailhooks.cc/custom-domains) on mailhooks.cc.
 
 ## Send a test email

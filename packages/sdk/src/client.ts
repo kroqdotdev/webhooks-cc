@@ -20,7 +20,15 @@ import type {
   CapacityState,
   TeamPlanQuote,
   TeamSeatQuote,
+  AccountShareLink,
   ApiKey,
+  ConnectedAgent,
+  CreatedShareLink,
+  DomainVerification,
+  InboundDomain,
+  InboundDomainRoute,
+  RemovedDomain,
+  ShareLink,
   Approval,
   CreatedApiKey,
   PendingApproval,
@@ -2110,6 +2118,208 @@ export class WebhooksCC {
       );
     },
   };
+
+  /**
+   * An answer that is either an approval (an API key or agent asked) or what
+   * a browser session got at once.
+   */
+  private pendingOr<T>(
+    answer: { approval?: Approval } | undefined,
+    action: string,
+    summary: string,
+    immediate: () => T
+  ): PendingApproval<T> {
+    if (answer?.approval) {
+      const approval = answer.approval;
+      return {
+        ...approval,
+        wait: (waitOptions) => this.approvals.wait<T>(approval.id, waitOptions),
+      };
+    }
+    const done = immediate();
+    return {
+      id: "",
+      status: "completed",
+      action,
+      summary,
+      code: "",
+      url: "",
+      expiresAt: new Date().toISOString(),
+      wait: async () => done,
+    };
+  }
+
+  /** The account itself. */
+  account = {
+    /**
+     * Set the account's display name (null clears it). With an API key the
+     * account's owner approves it first: show them `url`, then `wait()`.
+     */
+    rename: async (name: string | null): Promise<PendingApproval<{ name: string | null }>> => {
+      const answer = await this.request<{ approval?: Approval; name?: string | null }>(
+        "PATCH",
+        "/account",
+        { name },
+        { repeatable: false }
+      );
+      return this.pendingOr(answer, "account.rename", "Renamed the account.", () => ({
+        name: answer?.name ?? null,
+      }));
+    },
+  };
+
+  /**
+   * Agents connected to the account. Any key of the account may list them
+   * or disconnect one, since that only takes access away (an agent may
+   * disconnect itself).
+   */
+  agents = {
+    /** Connected agents, most recently connected first. */
+    list: async (): Promise<ConnectedAgent[]> => {
+      return this.request<ConnectedAgent[]>("GET", "/agent/registrations");
+    },
+
+    /** Disconnect an agent: its tokens stop working at once. Its endpoints stay. */
+    disconnect: async (id: string): Promise<void> => {
+      validatePathSegment(id, "id");
+      await this.request("DELETE", `/agent/registrations/${id}`);
+    },
+  };
+
+  /**
+   * Public links to a frozen copy of a request (`/s/{token}`). Listing and
+   * revoking work with any key; making one publishes data to whoever holds
+   * the link, so with an API key the account's owner approves it first.
+   */
+  shareLinks = {
+    /** Every live link of the account, newest first. */
+    list: async (): Promise<AccountShareLink[]> => {
+      return this.request<AccountShareLink[]>("GET", "/request-shares");
+    },
+
+    /** The live links to one request. */
+    forRequest: async (requestId: string): Promise<ShareLink[]> => {
+      validatePathSegment(requestId, "requestId");
+      return this.request<ShareLink[]>("GET", `/requests/${requestId}/shares`);
+    },
+
+    /**
+     * Ask for a link to a request (not an email). `expiresInDays` is 1, 7 or
+     * 30 (default 7); `hideSensitive` (default true) also leaves out
+     * signature and token headers, while credentials are always left out.
+     * Show the person `url`, then `await approval.wait()` for the link.
+     */
+    create: async (
+      requestId: string,
+      options: { expiresInDays?: 1 | 7 | 30; hideSensitive?: boolean } = {}
+    ): Promise<PendingApproval<CreatedShareLink>> => {
+      validatePathSegment(requestId, "requestId");
+      const answer = await this.request<{ approval?: Approval } & Partial<ShareLink>>(
+        "POST",
+        `/requests/${requestId}/shares`,
+        {
+          expiresInDays: options.expiresInDays ?? 7,
+          hideSensitive: options.hideSensitive ?? true,
+        },
+        { repeatable: false }
+      );
+      return this.pendingOr(answer, "request_shares.create", "Created a share link.", () => ({
+        id: answer.id ?? "",
+        url: `${this.baseUrl}/s/${answer.token ?? ""}`,
+        expiresAt: new Date(answer.expiresAt ?? Date.now()).toISOString(),
+        redactedHeaders: answer.redactedHeaders ?? [],
+      }));
+    },
+
+    /** Revoke a link: its page answers 404 from then on. */
+    revoke: async (id: string): Promise<void> => {
+      validatePathSegment(id, "id");
+      await this.request("DELETE", `/request-shares/${id}`);
+    },
+  };
+
+  /**
+   * Custom inbound domains (Business, or a Team Business team with
+   * `teamId`, owner only). Listing, adding, checking DNS and routing work
+   * with any key; removing one gives it up (getting it back means
+   * verifying it again), so with an API key the account's owner approves it
+   * first.
+   */
+  domains = {
+    /** The account's domains, or a team's. */
+    list: async (options: { teamId?: string } = {}): Promise<InboundDomain[]> => {
+      const answer = await this.request<{ domains: InboundDomain[] }>(
+        "GET",
+        `/domains${this.teamQuery(options.teamId)}`
+      );
+      return answer.domains;
+    },
+
+    /** Add a domain; publish the DNS records in `records`, then `verify()`. */
+    add: async (domain: string, options: { teamId?: string } = {}): Promise<InboundDomain> => {
+      const answer = await this.request<{ domain: InboundDomain }>(
+        "POST",
+        `/domains${this.teamQuery(options.teamId)}`,
+        { domain },
+        { repeatable: false }
+      );
+      return answer.domain;
+    },
+
+    /** Look the domain's TXT and MX records up now. */
+    verify: async (id: string, options: { teamId?: string } = {}): Promise<DomainVerification> => {
+      validatePathSegment(id, "id");
+      return this.request<DomainVerification>(
+        "POST",
+        `/domains/${id}/verify${this.teamQuery(options.teamId)}`
+      );
+    },
+
+    /**
+     * Set where the domain's mail goes: `routes` by local part, everything
+     * else to `catchAllEndpointId` (null refuses it). Replaces the routing.
+     */
+    route: async (
+      id: string,
+      routing: { catchAllEndpointId: string | null; routes: InboundDomainRoute[] },
+      options: { teamId?: string } = {}
+    ): Promise<InboundDomain> => {
+      validatePathSegment(id, "id");
+      const answer = await this.request<{ domain: InboundDomain }>(
+        "PATCH",
+        `/domains/${id}${this.teamQuery(options.teamId)}`,
+        routing
+      );
+      return answer.domain;
+    },
+
+    /**
+     * Ask to remove a domain: mail to it is refused from then on. Show the
+     * person `url`, then `await approval.wait()`.
+     */
+    remove: async (
+      id: string,
+      options: { teamId?: string } = {}
+    ): Promise<PendingApproval<RemovedDomain>> => {
+      validatePathSegment(id, "id");
+      const answer = await this.request<{ approval?: Approval } | undefined>(
+        "DELETE",
+        `/domains/${id}${this.teamQuery(options.teamId)}`,
+        undefined,
+        { repeatable: false }
+      );
+      return this.pendingOr(answer, "domains.remove", "Removed the domain.", () => ({
+        removed: "",
+        domainId: id,
+      }));
+    },
+  };
+
+  private teamQuery(teamId: string | undefined): string {
+    if (teamId === undefined) return "";
+    validatePathSegment(teamId, "teamId");
+    return `?team=${encodeURIComponent(teamId)}`;
+  }
 
   /** Approvals asked for by this key or agent (see `apiKeys.create`). */
   approvals = {

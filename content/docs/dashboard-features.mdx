@@ -178,7 +178,7 @@ Click **Share** above a request to publish a read-only copy at a link like `http
 - **Lifetime.** A link lasts 1, 7, or 30 days. It is a copy, so it keeps working after the request itself is deleted by retention or cleared, and it shows exactly what it showed when you made it.
 - **Revoking.** The share dialog lists the request's live links, and **Account → Share links** lists all of them, including those whose request is gone; revoking one makes it answer 404 at once. Deleting the endpoint or your account deletes its links. Each account can have 100 live links.
 
-Only an endpoint's owner can share its requests: team members see shared endpoints but cannot publish them. Share links need a signed-in session; API keys cannot create them. Emails cannot be shared.
+Only an endpoint's owner can share its requests: team members see shared endpoints but cannot publish them. Emails cannot be shared. An agent or an API key can list and revoke links, and can ask for one: you [approve it](/docs/agents#approvals) in the browser before anything is published (`whk share-links create`, the `create_share_link` tool).
 
 ## Replay & send
 

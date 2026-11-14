@@ -536,6 +536,39 @@ function keyText(key: { key?: string; name?: string; expiresAt?: string }): stri
     .join("\n");
 }
 
+/** What an approved action handed back, for the agent to tell the person. */
+function approvalResultText(result: Record<string, unknown>): string {
+  if (typeof result.key === "string") return keyText(result);
+  if (typeof result.url === "string") {
+    return `Approved. The share link is ${result.url} (anyone with it can read the copy until ${String(result.expiresAt)}).`;
+  }
+  if (typeof result.removed === "string") {
+    return `Approved. The domain ${result.removed} was removed; mail to it is refused now.`;
+  }
+  if ("name" in result) {
+    return result.name === null
+      ? "Approved. The account's display name was cleared."
+      : `Approved. The account's display name is now "${String(result.name)}".`;
+  }
+  return `Approved and done: ${JSON.stringify(result)}`;
+}
+
+/** The answer for an action the account's owner must approve first. */
+function approvalAskText(pending: {
+  summary: string;
+  url: string;
+  code: string;
+  id: string;
+  expiresAt: string;
+}): string {
+  return [
+    `Asked for approval: ${pending.summary}`,
+    `Show the person this link: ${pending.url}`,
+    `The page shows the code ${pending.code}; ask them to approve only if it matches.`,
+    `Then call wait_for_approval with id ${pending.id}. The request expires at ${pending.expiresAt}.`,
+  ].join("\n");
+}
+
 export function textContent(text: string): ToolResult {
   return { content: [{ type: "text", text }] };
 }
@@ -2733,20 +2766,13 @@ export function registerTools(
         const key = await pending.wait();
         return textContent(keyText(key));
       }
-      return textContent(
-        [
-          `Asked for approval: ${pending.summary}`,
-          `Show the person this link: ${pending.url}`,
-          `The page shows the code ${pending.code}; ask them to approve only if it matches.`,
-          `Then call wait_for_approval with id ${pending.id}. The request expires at ${pending.expiresAt}.`,
-        ].join("\n")
-      );
+      return textContent(approvalAskText(pending));
     })
   );
 
   server.tool(
     "wait_for_approval",
-    "Wait for the account's owner to answer an approval (from create_api_key) and collect what it grants, such as the new API key. If they have not answered yet, call it again.",
+    "Wait for the account's owner to answer an approval (from create_api_key, create_share_link, remove_domain or rename_account) and collect what it grants or did, such as the new API key or the share link. If they have not answered yet, call it again.",
     {
       id: z.string().describe("The approval id"),
       timeout: durationOrTimestampSchema
@@ -2756,12 +2782,10 @@ export function registerTools(
     withErrorHandling(async ({ id, timeout }) => {
       const ms = durationMs(timeout) ?? 45_000;
       try {
-        const result = await client.approvals.wait<{
-          key?: string;
-          name?: string;
-          expiresAt?: string;
-        }>(id, { timeout: ms });
-        return textContent(keyText(result));
+        const result = await client.approvals.wait<Record<string, unknown>>(id, {
+          timeout: ms,
+        });
+        return textContent(approvalResultText(result));
       } catch (error) {
         if (error instanceof ApprovalDeniedError) {
           return textContent(
@@ -2790,6 +2814,168 @@ export function registerTools(
     withErrorHandling(async ({ id }) => {
       await client.apiKeys.revoke(id);
       return textContent(`Revoked the API key ${id}, if the account had it.`);
+    })
+  );
+
+  server.tool(
+    "rename_account",
+    "Set the account's display name, or clear it with null. The account's owner must approve it: this returns a link and a code to show them, then call wait_for_approval.",
+    {
+      name: z
+        .string()
+        .min(1)
+        .max(100)
+        .nullable()
+        .describe("The new display name, or null to clear it"),
+    },
+    withErrorHandling(async ({ name }) => {
+      const pending = await client.account.rename(name);
+      if (!pending.id) return textContent(approvalResultText(await pending.wait()));
+      return textContent(approvalAskText(pending));
+    })
+  );
+
+  server.tool(
+    "list_connected_agents",
+    "List the agents connected to the account (claimed agents and OAuth sign-ins such as hosted MCP clients): id, client name, when each connected and was last used.",
+    {},
+    withErrorHandling(async () => jsonContent(await client.agents.list()))
+  );
+
+  server.tool(
+    "disconnect_agent",
+    "Disconnect an agent by its id (from list_connected_agents): its tokens stop working at once. The endpoints it made stay in the account. Disconnecting the agent you are running as ends your own access.",
+    {
+      id: z.string().describe("The agent's id, from list_connected_agents"),
+    },
+    withErrorHandling(async ({ id }) => {
+      await client.agents.disconnect(id);
+      return textContent(`Disconnected the agent ${id}.`);
+    })
+  );
+
+  server.tool(
+    "list_share_links",
+    "List live public links to frozen copies of requests (/s/<token>), the account's or one request's. Not the same as list_shares, which lists port previews and live tunnels.",
+    {
+      requestId: z.string().optional().describe("Only the links to this request"),
+    },
+    withErrorHandling(async ({ requestId }) => {
+      const links = requestId
+        ? await client.shareLinks.forRequest(requestId)
+        : await client.shareLinks.list();
+      return jsonContent(links);
+    })
+  );
+
+  server.tool(
+    "create_share_link",
+    "Make a public link to a read-only copy of one HTTP request (not an email), for a teammate or a bug report. Anyone with the link can read it, so the account's owner must approve: this returns a link and a code to show them, then call wait_for_approval for the share link.",
+    {
+      requestId: z.string().describe("The request's id"),
+      expiresInDays: z
+        .union([z.literal(1), z.literal(7), z.literal(30)])
+        .optional()
+        .describe("How long the link works: 1, 7 or 30 days (default 7)"),
+      hideSensitive: z
+        .boolean()
+        .optional()
+        .describe(
+          "Also leave out signature and token headers (default true). Credentials are always left out."
+        ),
+    },
+    withErrorHandling(async ({ requestId, expiresInDays, hideSensitive }) => {
+      const pending = await client.shareLinks.create(requestId, { expiresInDays, hideSensitive });
+      if (!pending.id) return textContent(approvalResultText({ ...(await pending.wait()) }));
+      return textContent(approvalAskText(pending));
+    })
+  );
+
+  server.tool(
+    "revoke_share_link",
+    "Revoke a share link by its id (from list_share_links): its page answers 404 from then on.",
+    {
+      id: z.string().describe("The link's id, from list_share_links"),
+    },
+    withErrorHandling(async ({ id }) => {
+      await client.shareLinks.revoke(id);
+      return textContent(`Revoked the share link ${id}.`);
+    })
+  );
+
+  const teamIdSchema = z
+    .string()
+    .optional()
+    .describe("A Team Business team's id (its owner only); leave out for your own account");
+
+  server.tool(
+    "list_domains",
+    "List custom inbound domains (Business): each one's status, DNS records to publish, routes and catch-all endpoint.",
+    { teamId: teamIdSchema },
+    withErrorHandling(async ({ teamId }) => jsonContent(await client.domains.list({ teamId })))
+  );
+
+  server.tool(
+    "add_domain",
+    "Add a custom inbound domain (Business) so mail to it is captured. Returns the TXT and MX records to publish; then call verify_domain.",
+    {
+      domain: z.string().min(1).max(253).describe("The domain, such as mail.example.com"),
+      teamId: teamIdSchema,
+    },
+    withErrorHandling(async ({ domain, teamId }) =>
+      jsonContent(await client.domains.add(domain, { teamId }))
+    )
+  );
+
+  server.tool(
+    "verify_domain",
+    "Look a custom domain's TXT and MX records up now. It receives mail once both are found.",
+    {
+      id: z.string().describe("The domain's id, from list_domains"),
+      teamId: teamIdSchema,
+    },
+    withErrorHandling(async ({ id, teamId }) =>
+      jsonContent(await client.domains.verify(id, { teamId }))
+    )
+  );
+
+  server.tool(
+    "route_domain",
+    "Set where a custom domain's mail goes: routes by local part (the part before @) to endpoints, everything else to a catch-all endpoint, or refused when the catch-all is null. Replaces the domain's routing.",
+    {
+      id: z.string().describe("The domain's id, from list_domains"),
+      catchAllEndpointId: z
+        .string()
+        .nullable()
+        .describe("The endpoint id for mail no route matches, or null to refuse it"),
+      routes: z
+        .array(
+          z.object({
+            localPart: z.string().max(64).describe("The part before @"),
+            endpointId: z.string().describe("The endpoint's id"),
+          })
+        )
+        .max(100)
+        .default([])
+        .describe("Routes by local part"),
+      teamId: teamIdSchema,
+    },
+    withErrorHandling(async ({ id, catchAllEndpointId, routes, teamId }) =>
+      jsonContent(await client.domains.route(id, { catchAllEndpointId, routes }, { teamId }))
+    )
+  );
+
+  server.tool(
+    "remove_domain",
+    "Remove a custom inbound domain: mail to it is refused from then on. The account's owner must approve it: this returns a link and a code to show them, then call wait_for_approval.",
+    {
+      id: z.string().describe("The domain's id, from list_domains"),
+      teamId: teamIdSchema,
+    },
+    withErrorHandling(async ({ id, teamId }) => {
+      const pending = await client.domains.remove(id, { teamId });
+      if (!pending.id) return textContent(`Removed the domain ${id}.`);
+      return textContent(approvalAskText(pending));
     })
   );
 

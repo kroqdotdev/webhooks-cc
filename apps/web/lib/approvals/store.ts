@@ -1,8 +1,9 @@
 import { userCodePart } from "@/lib/ids";
+import { reportError } from "@/lib/observability";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { Json } from "@/lib/supabase/database";
 import { compareNetworks, type DeviceRequester, type NetworkMatch } from "@/lib/device-requester";
-import { actionSpec, type ActionDetail, type ApprovalAction } from "./actions";
+import { ActionError, actionSpec, type ActionDetail, type ApprovalAction } from "./actions";
 
 /** How long a person has to answer, and then the asker to collect. */
 export const APPROVAL_TTL_MS = 15 * 60_000;
@@ -54,13 +55,21 @@ type Row = {
   network: string | null;
   created_at: string;
   expires_at: string;
+  result: Json | null;
 };
 
 const COLUMNS =
-  "id, user_id, action, params, summary, user_code, status, requested_by_key, requested_by_agent, requester, client, country, network, created_at, expires_at";
+  "id, user_id, action, params, summary, user_code, status, requested_by_key, requested_by_agent, requester, client, country, network, created_at, expires_at, result";
 
 function appUrl(): string {
   return process.env.NEXT_PUBLIC_APP_URL || "https://webhooks.cc";
+}
+
+/** approvals.summary holds at most this many characters (migration 00097). */
+const MAX_SUMMARY = 300;
+
+function clip(text: string, max: number): string {
+  return text.length <= max ? text : `${text.slice(0, max - 3)}...`;
 }
 
 function statusOf(row: Pick<Row, "status" | "expires_at">): ApprovalStatus {
@@ -138,7 +147,7 @@ export async function createApproval(input: {
         user_id: input.asker.userId,
         action: input.action,
         params: input.params as Json,
-        summary: spec.summary(input.params),
+        summary: clip(spec.summary(input.params), MAX_SUMMARY),
         user_code: `${userCodePart()}-${userCodePart()}`,
         requested_by_key: input.asker.agentRegistrationId ? null : (input.asker.keyId ?? null),
         requested_by_agent: input.asker.agentRegistrationId ?? null,
@@ -228,6 +237,11 @@ export async function withdrawApproval(
   const row = data as Row | null;
   if (!row) throw new ApprovalError(400, "This code has expired or was already answered.");
   if (row.user_id !== userId) throw new ApprovalError(403, OTHER_ACCOUNT);
+  // An action that runs on approval is done once approved: nothing to take back.
+  if (actionSpec(row.action).runAt === "approve") {
+    if (row.status === "completed") return { id: row.id, action: row.action, collected: true };
+    throw new ApprovalError(400, "Only an approved request can be withdrawn.");
+  }
   // Collected for good once its result is recorded. A completed row
   // without one is still being collected: withdrawing it then makes that
   // collection undo itself (pollApproval).
@@ -248,27 +262,45 @@ export async function withdrawApproval(
   return { id: row.id, action: row.action, collected: false };
 }
 
-/** The person's answer. Approving starts the asker's window to collect. */
+/**
+ * The person's answer. Approving starts the asker's window to collect, or,
+ * for an action that runs on approval, runs it now (its result is kept for
+ * the asker to read). A failed run leaves the approval pending, so the person
+ * can try again or refuse it.
+ */
 export async function decideApproval(
   code: string,
   userId: string,
   approve: boolean
-): Promise<{ id: string; action: ApprovalAction }> {
+): Promise<{
+  id: string;
+  action: ApprovalAction;
+  done: boolean;
+  /** For an action that ran on approval: what it did, and its parameters. */
+  result?: Json;
+  params?: unknown;
+}> {
   const row = await pendingByCode(code);
   if (!row) throw new ApprovalError(400, "This code has expired or was already answered.");
   if (row.user_id !== userId) throw new ApprovalError(403, OTHER_ACCOUNT);
   const admin = createAdminClient();
   const now = new Date();
+  const spec = actionSpec(row.action);
+  const runsNow = approve && spec.runAt === "approve";
+  const expiresAt = new Date(now.getTime() + APPROVAL_TTL_MS).toISOString();
   const { data, error } = await admin
     .from("approvals")
     .update(
-      approve
-        ? {
-            status: "approved",
-            decided_at: now.toISOString(),
-            expires_at: new Date(now.getTime() + APPROVAL_TTL_MS).toISOString(),
-          }
-        : { status: "denied", decided_at: now.toISOString() }
+      !approve
+        ? { status: "denied", decided_at: now.toISOString() }
+        : runsNow
+          ? {
+              status: "completed",
+              decided_at: now.toISOString(),
+              completed_at: now.toISOString(),
+              expires_at: expiresAt,
+            }
+          : { status: "approved", decided_at: now.toISOString(), expires_at: expiresAt }
     )
     .eq("id", row.id)
     .eq("status", "pending")
@@ -276,7 +308,46 @@ export async function decideApproval(
     .maybeSingle();
   if (error) throw error;
   if (!data) throw new ApprovalError(400, "This code has expired or was already answered.");
-  return { id: row.id, action: row.action };
+  if (!runsNow) return { id: row.id, action: row.action, done: false };
+
+  let stored: Json;
+  try {
+    ({ stored } = await spec.run(row.user_id, row.params));
+  } catch (err) {
+    // Only a clean refusal (ActionError: checked, nothing done) gives the
+    // approval back to approve again. Anything else may have failed after
+    // the action took effect (a timeout once the write landed), and
+    // approving again would run it twice: the row stays completed without
+    // a result, and the asker's poll ends at expiry.
+    if (!(err instanceof ActionError)) throw err;
+    await admin
+      .from("approvals")
+      .update({
+        status: "pending",
+        decided_at: null,
+        completed_at: null,
+        expires_at: row.expires_at,
+      })
+      .eq("id", row.id)
+      .eq("status", "completed");
+    throw new ApprovalError(err.status, err.message);
+  }
+  // The action is done whatever happens next, so the row never goes back
+  // to pending from here: approving again would run it twice (a second
+  // share link). A result that cannot be recorded leaves the asker's poll
+  // at "approved" until the row expires, then "expired".
+  let recordError: unknown = null;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    ({ error: recordError } = await admin
+      .from("approvals")
+      .update({ result: stored })
+      .eq("id", row.id));
+    if (!recordError) break;
+  }
+  // Done all the same: the person is told so and the trail records it; only
+  // the asker misses the result (its poll ends at expiry).
+  if (recordError) reportError("Recording an approval's result failed", recordError);
+  return { id: row.id, action: row.action, done: true, result: stored, params: row.params };
 }
 
 /**
@@ -304,6 +375,17 @@ export async function pollApproval(
     : row.requested_by_key !== null && row.requested_by_key === asker.keyId;
   if (!mine) return null;
 
+  // An action that ran on approval: its result is kept, and read as often
+  // as asked until the row expires.
+  if (row.status === "completed" && actionSpec(row.action).runAt === "approve") {
+    if (row.result !== null) {
+      return { approval: view(row), result: row.result as Record<string, unknown> };
+    }
+    // Still running, or it ran and its result was never recorded (a crash):
+    // the asker stops waiting when the row expires.
+    const expired = new Date(row.expires_at).getTime() <= Date.now();
+    return { approval: { ...view(row), status: expired ? "expired" : "approved" } };
+  }
   if (statusOf(row) !== "approved") return { approval: view(row) };
 
   // Claim the collection, so two polls at once cannot both run the action.
@@ -342,7 +424,7 @@ export async function pollApproval(
     .select("id")
     .maybeSingle();
   if (recordError || !recorded) {
-    await spec.undo(row.user_id, ran.stored);
+    await spec.undo?.(row.user_id, ran.stored);
     if (recordError) throw recordError;
     throw new ApprovalError(410, "The account's owner withdrew this approval.");
   }

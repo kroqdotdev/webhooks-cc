@@ -48,6 +48,7 @@ type Phase =
   | { kind: "loading" }
   | { kind: "review"; review: Review }
   | { kind: "approved"; code: string }
+  | { kind: "done"; summary: string }
   | { kind: "withdrawn" }
   | { kind: "collected" }
   | { kind: "denied" }
@@ -103,7 +104,7 @@ function ApproveContent() {
     else setPhase({ kind: "enter" });
   }, [isAuthenticated, code, load]);
 
-  const decide = async (userCode: string, approve: boolean) => {
+  const decide = async (userCode: string, approve: boolean, summary: string) => {
     setSubmitting(true);
     setProblem(null);
     try {
@@ -112,9 +113,13 @@ function ApproveContent() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ code: userCode, decision: approve ? "approve" : "deny" }),
       });
-      const result = (await response.json()) as { error?: string };
+      const result = (await response.json()) as { status?: string; error?: string };
       if (!response.ok) throw new Error(result.error || "That did not work. Try again.");
-      setPhase(approve ? { kind: "approved", code: userCode } : { kind: "denied" });
+      if (!approve) setPhase({ kind: "denied" });
+      // "done": it ran on approval (a share link, a domain removed); else the
+      // asker collects it (a new key) and it can still be withdrawn.
+      else if (result.status === "done") setPhase({ kind: "done", summary });
+      else setPhase({ kind: "approved", code: userCode });
     } catch (err) {
       setProblem(err instanceof Error ? err.message : "That did not work. Try again.");
     } finally {
@@ -163,8 +168,8 @@ function ApproveContent() {
               email={user?.email ?? null}
               problem={problem}
               submitting={submitting}
-              onApprove={() => void decide(phase.review.code, true)}
-              onDeny={() => void decide(phase.review.code, false)}
+              onApprove={() => void decide(phase.review.code, true, phase.review.summary)}
+              onDeny={() => void decide(phase.review.code, false, phase.review.summary)}
             />
           )}
 
@@ -188,6 +193,13 @@ function ApproveContent() {
                 Withdraw
               </Button>
             </div>
+          )}
+
+          {phase.kind === "done" && (
+            <Notice title="Done">
+              You approved this, and it is done: {phase.summary} Whoever asked can see the result
+              now. You can close this page.
+            </Notice>
           )}
 
           {phase.kind === "withdrawn" && (

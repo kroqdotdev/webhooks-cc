@@ -10,7 +10,7 @@ import {
   withdrawApproval,
 } from "@/lib/approvals/store";
 import { generateApiKey, hashApiKey } from "@/lib/supabase/api-keys";
-import { actionSpec } from "@/lib/approvals/actions";
+import { actionSpec, type ApprovalAction } from "@/lib/approvals/actions";
 
 if (!process.env.SUPABASE_URL) throw new Error("SUPABASE_URL env var required");
 const admin = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY!, {
@@ -197,6 +197,128 @@ describe("approvals", () => {
       "denied"
     );
     spy.mockRestore();
+  });
+
+  async function askFor(action: ApprovalAction, input: unknown) {
+    const parsed = await actionSpec(action).parse(input, owner);
+    if (!parsed.ok) throw new Error(parsed.error);
+    return (
+      await createApproval({
+        asker: { userId: owner, keyId },
+        action,
+        params: parsed.params,
+        requester,
+      })
+    ).approval;
+  }
+
+  it("runs an approve-time action when the person approves, and keeps its result", async () => {
+    const approval = await askFor("account.rename", { name: "Acme Ops" });
+    expect(approval.summary).toContain('"Acme Ops"');
+    // Nothing happens before the approval.
+    const { data: before } = await admin.from("users").select("name").eq("id", owner).single();
+    expect(before?.name).not.toBe("Acme Ops");
+
+    expect(await decideApproval(approval.code, owner, true)).toMatchObject({ done: true });
+    const { data: after } = await admin.from("users").select("name").eq("id", owner).single();
+    expect(after?.name).toBe("Acme Ops");
+
+    // Every poll reads the result, and there is nothing left to withdraw.
+    for (let i = 0; i < 2; i++) {
+      const polled = await pollApproval(approval.id, { userId: owner, keyId });
+      expect(polled?.approval.status).toBe("completed");
+      expect(polled?.result).toEqual({ name: "Acme Ops" });
+    }
+    expect(await withdrawApproval(approval.code, owner)).toMatchObject({ collected: true });
+  });
+
+  it("removes a domain only once approved", async () => {
+    const name = `approvals-${Date.now()}.example.com`;
+    const { data: domain, error } = await admin
+      .from("inbound_domains")
+      .insert({ user_id: owner, domain: name })
+      .select("id")
+      .single();
+    if (error) throw error;
+    await expect(
+      actionSpec("domains.remove").parse({ domainId: domain.id }, other)
+    ).resolves.toMatchObject({ ok: false, status: 404 });
+
+    const approval = await askFor("domains.remove", { domainId: domain.id });
+    expect(approval.summary).toContain(name);
+    const exists = async () =>
+      (
+        await admin
+          .from("inbound_domains")
+          .select("id", { count: "exact", head: true })
+          .eq("id", domain.id)
+      ).count;
+    expect(await exists()).toBe(1);
+    await decideApproval(approval.code, owner, true);
+    expect(await exists()).toBe(0);
+    expect((await pollApproval(approval.id, { userId: owner, keyId }))?.result).toEqual({
+      removed: name,
+      domainId: domain.id,
+    });
+  });
+
+  it("leaves the approval waiting when the action fails as it is approved", async () => {
+    const name = `approvals-gone-${Date.now()}.example.com`;
+    const { data: domain, error } = await admin
+      .from("inbound_domains")
+      .insert({ user_id: owner, domain: name })
+      .select("id")
+      .single();
+    if (error) throw error;
+    const approval = await askFor("domains.remove", { domainId: domain.id });
+    // Removed some other way before the person answered.
+    await admin.from("inbound_domains").delete().eq("id", domain.id);
+    await expect(decideApproval(approval.code, owner, true)).rejects.toMatchObject({
+      status: 404,
+    });
+    expect((await pollApproval(approval.id, { userId: owner, keyId }))?.approval.status).toBe(
+      "pending"
+    );
+    await decideApproval(approval.code, owner, false);
+  });
+
+  it("asks for a domain with a long name, its summary clipped", async () => {
+    // 248 characters: near the 253 a domain may have, past what fits in a summary.
+    const label = "a".repeat(63);
+    const name = `${label}.${label}.${label}.${"b".repeat(30)}.${Date.now()}.example.com`;
+    const { data: domain, error } = await admin
+      .from("inbound_domains")
+      .insert({ user_id: owner, domain: name })
+      .select("id")
+      .single();
+    if (error) throw error;
+    const approval = await askFor("domains.remove", { domainId: domain.id });
+    expect(approval.summary.length).toBeLessThanOrEqual(300);
+    expect(approval.summary.endsWith("...")).toBe(true);
+    await decideApproval(approval.code, owner, false);
+    await admin.from("inbound_domains").delete().eq("id", domain.id);
+  });
+
+  it("withdraws nothing that runs on approval, and ends one whose result never came", async () => {
+    const waiting = await askFor("account.rename", { name: "Not yet" });
+    await expect(withdrawApproval(waiting.code, owner)).rejects.toMatchObject({ status: 400 });
+
+    // Ran, but its result was never recorded (a crash): "approved" until
+    // the row expires, then "expired", never stuck.
+    await admin
+      .from("approvals")
+      .update({ status: "completed", decided_at: new Date().toISOString() })
+      .eq("id", waiting.id);
+    expect((await pollApproval(waiting.id, { userId: owner, keyId }))?.approval.status).toBe(
+      "approved"
+    );
+    await admin
+      .from("approvals")
+      .update({ expires_at: new Date(Date.now() - 1000).toISOString() })
+      .eq("id", waiting.id);
+    expect((await pollApproval(waiting.id, { userId: owner, keyId }))?.approval.status).toBe(
+      "expired"
+    );
   });
 
   it("caps the approvals an account may have waiting", async () => {
