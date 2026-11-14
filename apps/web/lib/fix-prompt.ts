@@ -144,6 +144,6 @@ export const T3_CODE_ORIGIN = "https://app.t3.codes";
 export function t3CodeLink(prompt: string, repo?: string | null): string {
   const params = [`prompt=${encodeURIComponent(prompt)}`];
   if (repo && isAgentRepo(repo))
-    params.push(`repo=${encodeURIComponent(repo).replace("%2F", "/")}`);
+    params.push(`repo=${encodeURIComponent(repo).replaceAll("%2F", "/")}`);
   return `${T3_CODE_ORIGIN}/new?${params.join("&")}`;
 }

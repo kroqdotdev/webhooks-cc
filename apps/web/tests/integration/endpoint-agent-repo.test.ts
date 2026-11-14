@@ -1,4 +1,5 @@
-import { createHash, randomBytes } from "node:crypto";
+import { randomBytes } from "node:crypto";
+import { hashApiKey } from "@/lib/supabase/api-keys";
 import { afterAll, describe, expect, it } from "vitest";
 import { createClient } from "@supabase/supabase-js";
 
@@ -38,7 +39,7 @@ async function account(): Promise<{ userId: string; apiKey: string }> {
   const apiKey = `whcc_${randomBytes(24).toString("hex")}`;
   const { error: keyError } = await admin.from("api_keys").insert({
     user_id: userId,
-    key_hash: createHash("sha256").update(apiKey).digest("hex"),
+    key_hash: hashApiKey(apiKey),
     key_prefix: apiKey.slice(0, 12),
     name: "Agent repo test",
   });
