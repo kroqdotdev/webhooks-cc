@@ -102,25 +102,32 @@ whk tunnel 3000 --endpoint <shared-slug>
 whk requests search -q invoice    # covers shared endpoints too
 ```
 
-**Manage sharing and membership without the browser.** `whk teams` mirrors the team page; the SDK exposes the same operations under `client.teams`; the MCP server exposes `list_teams`, `list_team_members`, `share_endpoint`, and `unshare_endpoint`.
+**Manage teams without the browser.** `whk teams` mirrors the team page; the SDK exposes the same operations under `client.teams`. The MCP server has tools for all of it: `list_teams`, `list_team_members`, `create_team`, `rename_team`, `delete_team`, `remove_team_member`, `leave_team`, `invite_to_team`, `withdraw_invite`, `list_invites`, `answer_invite`, `share_endpoint`, `unshare_endpoint` and `quote_team_change`.
 
 ```bash
 whk teams list                              # seats, pooled usage, status
+whk teams create Payments
+whk teams rename Payments "Payments team"
 whk teams members Payments
 whk teams share my-stripe --team Payments   # owner only; needs an active team
 whk teams unshare my-stripe --team Payments
-whk teams invite Payments dev@example.com   # sends an email; acceptance claims a seat
+whk teams invite Payments dev@example.com   # with an API key: waits for your approval
+whk teams withdraw Payments dev@example.com # takes back an invite not yet answered
+whk teams remove Payments dev@example.com   # their endpoints stop being shared
 whk teams invites                           # invites waiting for you
 whk teams accept <invite-id>
+whk teams leave Payments
+whk teams delete Payments                   # with an API key: waits for your approval
 ```
 
 ```ts
-const teams = await client.teams.list();
-await client.teams.share(teams[0].id, "my-stripe");
-const shared = await client.endpoints.list({ team: teams[0].name });
+const team = await client.teams.create("Payments"); // subscribe it in the browser before sharing
+const [active] = (await client.teams.list()).filter((t) => !t.suspended);
+await client.teams.share(active.id, "my-stripe");
+const shared = await client.endpoints.list({ team: active.name });
 ```
 
-Invites are deliberately not exposed as MCP tools: accepting one claims a paid seat and inviting sends real email, so those stay with people. Creating, renaming, or deleting teams, removing members, and billing remain dashboard actions; billing routes reject API keys.
+Deleting a team ends its subscription at once and cannot be undone, so when an API key or agent asks for it, you [approve it](/docs/agents#approvals) first; with your own signed-in session it happens at once. An invite emails the address the asker names, so one asked for with an API key or agent token (from the CLI, the SDK or the MCP server's `invite_to_team`) also waits for your approval. Accepting an invite claims one of the team's paid seats. Subscribing a team, changing its plan or seats, and paying stay in the browser; billing routes reject API keys. `whk teams quote` and `quote_team_change` price a change first.
 
 **Quota.** `whk usage` and the MCP `get_usage` tool show each subscribed team's pool under your personal plan. In the SDK, `teams.list()` returns `requestsUsed`, `requestLimit`, `seats`, and `periodEnd` per team.
 

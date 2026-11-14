@@ -15,7 +15,7 @@ const FAQ_ITEMS = [
   {
     question: "webhooks.cc vs Svix Play and Svix Ingest: how do they compare for webhook testing?",
     answer:
-      "Svix Play is Svix's free browser-based request bin for viewing incoming HTTP requests, while Svix Ingest is production ingestion infrastructure that receives third-party webhooks (such as Stripe or GitHub) and forwards them into your backend. webhooks.cc focuses on developer and CI testing: it combines an instant capture URL with CLI tunneling to localhost (whk tunnel), 32-provider signature generation and verification, inbound email capture (@mailhooks.cc), SDKs with waitFor() matchers for Vitest, Jest, Playwright, pytest and go test, and an MCP server for AI coding agents (remote with OAuth, or the local package with 57 tools).",
+      "Svix Play is Svix's free browser-based request bin for viewing incoming HTTP requests, while Svix Ingest is production ingestion infrastructure that receives third-party webhooks (such as Stripe or GitHub) and forwards them into your backend. webhooks.cc focuses on developer and CI testing: it combines an instant capture URL with CLI tunneling to localhost (whk tunnel), 32-provider signature generation and verification, inbound email capture (@mailhooks.cc), SDKs with waitFor() matchers for Vitest, Jest, Playwright, pytest and go test, and an MCP server for AI coding agents (remote with OAuth, or the local package with 94 tools).",
   },
   {
     question: "Can webhooks.cc verify Svix and Standard Webhooks signatures?",
@@ -66,7 +66,7 @@ const ROWS = [
   ["Inbound email capture", "Yes ({slug}@mailhooks.cc + OTP extraction)", "No"],
   [
     "MCP server for AI agents",
-    "Yes, for testing: remote (OAuth) or local (57 tools)",
+    "Yes, for testing: remote (OAuth) or local (94 tools)",
     "App Portal MCP for your customers' endpoints",
   ],
   ["Outbound customer portal", "No", "Yes (core Svix feature)"],
@@ -159,7 +159,7 @@ export default function CompareSvixPage() {
             <p className="text-muted-foreground">
               Every webhooks.cc endpoint also receives email at{" "}
               <InlineCode>{"{slug}"}@mailhooks.cc</InlineCode> with automatic OTP and magic-link
-              extraction, and the <InlineCode>@webhooks-cc/mcp</InlineCode> server exposes 57
+              extraction, and the <InlineCode>@webhooks-cc/mcp</InlineCode> server exposes 94
               testing tools to Claude Code, Cursor, and Codex (creating endpoints, sending signed
               provider templates, waiting for deliveries, and replaying to localhost), and the
               remote server at webhooks.cc/mcp connects with one OAuth approval. Svix offers an App

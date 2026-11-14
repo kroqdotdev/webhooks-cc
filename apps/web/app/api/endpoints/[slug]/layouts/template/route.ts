@@ -2,11 +2,32 @@ import { auditUserAction } from "@/lib/audit";
 import { authenticateRequestRequireUser } from "@/lib/api-auth";
 import { jsonObject, ownedEndpoint } from "@/lib/forwarding/destination-routes";
 import { withTemplateLayout } from "@/lib/layout-template-import";
+import { LAYOUT_TEMPLATES } from "@/lib/layout-templates";
 import { layoutsProblems } from "@/lib/parsing/layouts";
 import { reportError } from "@/lib/observability";
 import { checkRateLimitByKeyWithInfo } from "@/lib/rate-limit";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { Json } from "@/lib/supabase/database";
+
+/**
+ * GET /api/endpoints/{slug}/layouts/template: the ready-made layouts there
+ * are to add, with the fields each reads. The same list for every endpoint;
+ * the endpoint is named so the route sits beside the one that adds them.
+ */
+export async function GET(request: Request) {
+  const auth = await authenticateRequestRequireUser(request);
+  if (!auth.success) return auth.response;
+  return Response.json({
+    templates: LAYOUT_TEMPLATES.map((template) => ({
+      id: template.id,
+      sender: template.sender,
+      kind: template.kind,
+      description: template.description,
+      fields: Object.keys(template.result.fields),
+      lineItems: template.result.lineItems.length > 0,
+    })),
+  });
+}
 
 /**
  * POST /api/endpoints/{slug}/layouts/template { template }: adds one of the

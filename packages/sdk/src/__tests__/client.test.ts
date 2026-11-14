@@ -672,8 +672,10 @@ describe("WebhooksCC", () => {
       );
       expect(fetchMock).not.toHaveBeenCalled();
 
+      // A signed-in session gets the invite at once; a key gets an approval to wait on.
       const result = await client.teams.invite("t1", "a@b.co");
-      expect(result).toEqual(invite);
+      expect(result.status).toBe("completed");
+      expect(await result.wait()).toEqual(invite);
       const [url, opts] = fetchMock.mock.calls[0];
       expect(url).toBe(`${BASE_URL}/api/teams/t1/invite`);
       expect(JSON.parse(opts.body)).toEqual({ email: "a@b.co" });
@@ -1811,7 +1813,7 @@ describe("WebhooksCC", () => {
       expect(description.endpoints.previewLayouts.params.requestId).toContain("newest");
       expect(description.endpoints.update.params.layouts).toContain("Layout[]");
       expect(description.endpoints.list.params.team).toContain("team id or unique name");
-      expect(Object.keys(description.teams)).toHaveLength(8);
+      expect(Object.keys(description.teams)).toHaveLength(14);
       expect(description.teams.share.params).toEqual({ teamId: "string", slug: "string" });
       expect(Object.keys(description.emails)).toHaveLength(10);
       expect(Object.keys(description.forwarding)).toHaveLength(9);

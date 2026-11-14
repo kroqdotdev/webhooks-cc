@@ -552,6 +552,17 @@ function approvalResultText(result: Record<string, unknown>): string {
   if (typeof result.url === "string") {
     return `Approved. The share link is ${result.url} (anyone with it can read the copy until ${String(result.expiresAt)}).`;
   }
+  if (typeof result.invitedEmail === "string") {
+    const team = typeof result.teamName === "string" ? ` to "${result.teamName}"` : "";
+    const warning =
+      typeof result.warning === "string"
+        ? ` ${result.warning} Tell them to sign up with that address and accept from their Teams page.`
+        : " They get an email; accepting claims one of the team's seats.";
+    return `Approved. Invited ${result.invitedEmail}${team} (invite ${String(result.id)}).${warning}`;
+  }
+  if (typeof result.deleted === "string" && typeof result.teamId === "string") {
+    return `Approved. The team ${result.deleted ? `"${result.deleted}" ` : ""}was deleted; its subscription has ended.`;
+  }
   if (typeof result.removed === "string") {
     return `Approved. The domain ${result.removed} was removed; mail to it is refused now.`;
   }
@@ -1519,6 +1530,145 @@ export function registerTools(
   );
 
   server.tool(
+    "create_team",
+    "Create a team you own, to share endpoints with its members under a pooled quota. It does nothing until it has a subscription, which the person starts in the browser (Account > Teams); until then it is suspended.",
+    { name: z.string().trim().min(1).max(100).describe("The team's name") },
+    withErrorHandling(async ({ name }) => jsonContent(await client.teams.create(name)))
+  );
+
+  server.tool(
+    "rename_team",
+    "Rename a team you own.",
+    {
+      teamId: z.string().min(1).describe("Team id (from list_teams)"),
+      name: z.string().trim().min(1).max(100).describe("The new name"),
+    },
+    withErrorHandling(async ({ teamId, name }) => {
+      await client.teams.rename(teamId, name);
+      return jsonContent({ renamed: true, teamId, name });
+    })
+  );
+
+  server.tool(
+    "delete_team",
+    "Delete a team you own: its subscription ends at once, every member loses the endpoints shared with it, and it cannot be undone. Only when the person asks for it. The team's owner must approve it: this returns a link and a code to show them, then call wait_for_approval.",
+    { teamId: z.string().min(1).describe("Team id (from list_teams)") },
+    withErrorHandling(async ({ teamId }) => {
+      const pending = await client.teams.delete(teamId);
+      if (!pending.id) return textContent(`Deleted the team ${teamId}.`);
+      return textContent(approvalAskText(pending));
+    })
+  );
+
+  server.tool(
+    "remove_team_member",
+    "Remove a member from a team you own: the endpoints they shared with the team stop being shared, and their seat is free for someone else. Only when the person asks for it.",
+    {
+      teamId: z.string().min(1).describe("Team id (from list_teams)"),
+      userId: z.string().min(1).describe("The member's userId (from list_team_members)"),
+    },
+    withErrorHandling(async ({ teamId, userId }) => {
+      await client.teams.removeMember(teamId, userId);
+      return jsonContent({ removed: true, teamId, userId });
+    })
+  );
+
+  server.tool(
+    "leave_team",
+    "Leave a team you belong to: the endpoints you shared with it stop being shared, and you lose access to the ones shared with you through it. An owner cannot leave; they delete the team instead (delete_team). Only when the person asks for it.",
+    { teamId: z.string().min(1).describe("Team id (from list_teams)") },
+    withErrorHandling(async ({ teamId }) => {
+      await client.teams.leave(teamId);
+      return jsonContent({ left: true, teamId });
+    })
+  );
+
+  server.tool(
+    "invite_to_team",
+    "Invite an email address to a team you own. It emails that address, so the team's owner must approve it: this returns a link and a code to show them, then call wait_for_approval, which returns the invite. Accepting the invite claims one of the team's paid seats. Only when the person asks for it.",
+    {
+      teamId: z.string().min(1).describe("Team id (from list_teams)"),
+      email: z.string().trim().email().describe("The address to invite"),
+    },
+    withErrorHandling(async ({ teamId, email }) => {
+      const pending = await client.teams.invite(teamId, email);
+      if (!pending.id) return textContent(approvalResultText({ ...(await pending.wait()) }));
+      return textContent(approvalAskText(pending));
+    })
+  );
+
+  server.tool(
+    "list_invites",
+    "List the team invites waiting for you to answer: team, who invited you, when, and the invite id for answer_invite.",
+    {},
+    withErrorHandling(async () => jsonContent(await client.teams.invites.list()))
+  );
+
+  server.tool(
+    "answer_invite",
+    "Accept or decline a team invite waiting for you (from list_invites). Accepting claims one of the team's paid seats and you join the team, seeing the endpoints shared with it; it fails when the team is full or suspended. Only when the person says which.",
+    {
+      inviteId: z.string().min(1).describe("The invite's id, from list_invites"),
+      answer: z
+        .enum(["accept", "decline"])
+        .describe("accept joins the team; decline turns it down"),
+    },
+    withErrorHandling(async ({ inviteId, answer }) => {
+      if (answer === "accept") {
+        await client.teams.invites.accept(inviteId);
+        return jsonContent({ accepted: true, inviteId });
+      }
+      await client.teams.invites.decline(inviteId);
+      return jsonContent({ declined: true, inviteId });
+    })
+  );
+
+  server.tool(
+    "withdraw_invite",
+    "Withdraw an invite to a team you own before it is answered (pending invites and their ids are in list_team_members). The invite link stops working.",
+    {
+      teamId: z.string().min(1).describe("Team id (from list_teams)"),
+      inviteId: z
+        .string()
+        .min(1)
+        .describe("The invite's id (from list_team_members' pendingInvites)"),
+    },
+    withErrorHandling(async ({ teamId, inviteId }) => {
+      await client.teams.withdrawInvite(teamId, inviteId);
+      return jsonContent({ withdrawn: true, teamId, inviteId });
+    })
+  );
+
+  server.tool(
+    "quote_team_change",
+    "What changing a team's seat count or plan would cost, read only (owner only): what is due now, any credit, and the price from the renewal. Give seats, or plan (with interval). The change itself is made by the person in the browser.",
+    {
+      teamId: z.string().min(1).describe("Team id (from list_teams)"),
+      seats: z.number().int().min(1).optional().describe("Price this seat count"),
+      plan: z
+        .enum(["team", "team_business"])
+        .optional()
+        .describe("Price a move to this plan: team (Teams) or team_business (Team Business)"),
+      interval: z
+        .enum(["month", "year"])
+        .optional()
+        .describe("Billing interval for plan (default month; Teams is monthly only)"),
+    },
+    withErrorHandling(async ({ teamId, seats, plan, interval }) => {
+      if ((seats === undefined) === (plan === undefined)) {
+        throw new Error("Give seats or plan, not both.");
+      }
+      if (seats !== undefined) {
+        if (interval !== undefined) throw new Error("interval goes with plan, not seats.");
+        return jsonContent(await client.billing.quoteTeamSeats(teamId, seats));
+      }
+      return jsonContent(
+        await client.billing.quoteTeamPlan(teamId, plan as "team" | "team_business", interval)
+      );
+    })
+  );
+
+  server.tool(
     "get_endpoint",
     "Get details for a specific webhook endpoint by slug.",
     getEndpointShape,
@@ -1658,6 +1808,45 @@ export function registerTools(
       shrinkToFit(holder, MAX_BODY_SIZE, [() => trimParsed(holder)]);
       return jsonContent(holder);
     })
+  );
+
+  server.tool(
+    "list_layout_templates",
+    "List the ready-made email layouts (order emails from Shopify, WooCommerce, Etsy and more, payments, bookings, attachments): each with its id, sender, kind, description, the fields it reads and whether it reads line items. Add one with add_layout_template.",
+    { slug: z.string().describe("The endpoint slug") },
+    withErrorHandling(async ({ slug }) => jsonContent(await client.endpoints.layoutTemplates(slug)))
+  );
+
+  server.tool(
+    "add_layout_template",
+    "Add a ready-made layout (an id from list_layout_templates) to the end of an endpoint's layouts. Emails it matches are parsed from the next one on; check it on a captured email with preview_layouts. Owner only.",
+    {
+      slug: z.string().describe("The endpoint slug"),
+      template: z.string().min(1).describe("The template's id, from list_layout_templates"),
+    },
+    withErrorHandling(async ({ slug, template }) =>
+      jsonContent(await client.endpoints.addLayoutTemplate(slug, template))
+    )
+  );
+
+  server.tool(
+    "preview_email_fields",
+    "Dry run of an endpoint's named email fields on a captured email: each field's value (null where it finds nothing), and problems with fields you pass. Nothing is saved. Pass emailFields to try fields before saving them with update_endpoint. Owner only.",
+    {
+      slug: z.string().describe("The endpoint slug"),
+      requestId: z
+        .string()
+        .optional()
+        .describe("A captured email on the endpoint (default: the newest)"),
+      emailFields: z
+        .array(emailFieldSchema)
+        .max(20)
+        .optional()
+        .describe("Unsaved fields to try instead of the saved ones"),
+    },
+    withErrorHandling(async ({ slug, requestId, emailFields }) =>
+      jsonContent(await client.endpoints.previewEmailFields(slug, { requestId, emailFields }))
+    )
   );
 
   server.tool(
@@ -2976,7 +3165,7 @@ export function registerTools(
 
   server.tool(
     "wait_for_approval",
-    "Wait for the account's owner to answer an approval (from create_api_key, create_share_link, remove_domain, rename_account, connect_google, pick_spreadsheet or ai_setup) and collect what it grants or did, such as the new API key, the share link or AI setup's proposals. If they have not answered yet, call it again.",
+    "Wait for the account's owner to answer an approval (from create_api_key, create_share_link, remove_domain, rename_account, delete_team, invite_to_team, connect_google, pick_spreadsheet or ai_setup) and collect what it grants or did, such as the new API key, the share link or AI setup's proposals. If they have not answered yet, call it again.",
     {
       id: z.string().describe("The approval id"),
       timeout: durationOrTimestampSchema

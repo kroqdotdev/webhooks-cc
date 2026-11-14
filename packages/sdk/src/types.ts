@@ -1842,6 +1842,44 @@ export interface LayoutsPreview {
   parsed: ParsedEmail | null;
 }
 
+/** A ready-made email layout (`endpoints.layoutTemplates()`). */
+export interface LayoutTemplateInfo {
+  /** What `endpoints.addLayoutTemplate()` takes */
+  id: string;
+  /** Who sends the emails it reads */
+  sender: string;
+  /** What kind of email: "order notifications" */
+  kind: string;
+  description: string;
+  /** The fields it picks out */
+  fields: string[];
+  /** Whether it also reads line items */
+  lineItems: boolean;
+}
+
+/** Options for `endpoints.previewEmailFields()`. */
+export interface PreviewEmailFieldsOptions {
+  /** Try these instead of the saved fields */
+  emailFields?: EmailField[];
+  /** A captured email (default: the endpoint's newest) */
+  requestId?: string;
+}
+
+/** What named email fields find in a captured email. Nothing is saved. */
+export interface EmailFieldsPreview {
+  /** What is wrong with `emailFields`, if given; a field with a problem is left out */
+  problems: string[];
+  request: { id: string; subject: string | null; receivedAt: number } | null;
+  /** Each field's value, null where it found nothing; null without an email */
+  values: Record<string, string | null> | null;
+}
+
+/** A team deleted through an approval. */
+export interface DeletedTeam {
+  deleted: string;
+  teamId: string;
+}
+
 /** An API key of the account, as the API lists it (the key itself is never listed). */
 export interface ApiKey {
   id: string;

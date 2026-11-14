@@ -149,3 +149,91 @@ describe("apiKeys and approvals", () => {
     expect(fetchMock.mock.calls[1][1].method).toBe("DELETE");
   });
 });
+
+describe("teams and layouts without the dashboard", () => {
+  const originalFetch = globalThis.fetch;
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
+  });
+  const TEAM = "7c9e6679-7425-40de-944b-e07fc1f90ae7";
+
+  it("asks to delete a team, then reports it once the owner approves", async () => {
+    const asked = { ...approval("pending"), action: "teams.delete" };
+    const done = { ...approval("completed"), action: "teams.delete" };
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(answer({ approval: asked }, 202))
+      .mockResolvedValueOnce(answer({ approval: done, result: { deleted: "Acme", teamId: TEAM } }));
+    globalThis.fetch = fetchMock;
+
+    const pending = await client().teams.delete(TEAM);
+    expect(pending.action).toBe("teams.delete");
+    expect(await pending.wait({ pollInterval: 1_000 })).toEqual({ deleted: "Acme", teamId: TEAM });
+    expect(fetchMock.mock.calls[0][0]).toBe(`${BASE_URL}/api/teams/${TEAM}`);
+    expect(fetchMock.mock.calls[0][1].method).toBe("DELETE");
+  });
+
+  it("deletes at once when the answer is not an approval", async () => {
+    globalThis.fetch = vi.fn().mockResolvedValueOnce({
+      ok: true,
+      status: 204,
+      headers: new Headers(),
+      json: () => Promise.reject(new Error("no body")),
+      text: () => Promise.resolve(""),
+    });
+    const pending = await client().teams.delete(TEAM);
+    expect(pending.status).toBe("completed");
+    expect(await pending.wait()).toEqual({ deleted: "", teamId: TEAM });
+  });
+
+  it("creates, renames, leaves, removes members and withdraws invites", async () => {
+    const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(answer({ id: TEAM })));
+    globalThis.fetch = fetchMock;
+    await client().teams.create("Acme");
+    await client().teams.rename(TEAM, "Acme Inc");
+    await client().teams.removeMember(TEAM, "u1");
+    await client().teams.leave(TEAM);
+    await client().teams.withdrawInvite(TEAM, "i1");
+    const calls = fetchMock.mock.calls.map(([url, opts]) => [
+      opts.method,
+      url.replace(BASE_URL, ""),
+      opts.body ? JSON.parse(opts.body) : undefined,
+    ]);
+    expect(calls).toEqual([
+      ["POST", "/api/teams", { name: "Acme" }],
+      ["PATCH", `/api/teams/${TEAM}`, { name: "Acme Inc" }],
+      ["DELETE", `/api/teams/${TEAM}/members/u1`, undefined],
+      ["POST", `/api/teams/${TEAM}/leave`, undefined],
+      ["DELETE", `/api/teams/${TEAM}/invites/i1`, undefined],
+    ]);
+    await expect(client().teams.create(" ")).rejects.toThrow("team name");
+  });
+
+  it("lists and adds layout templates, and previews email fields", async () => {
+    const templates = [
+      {
+        id: "shopify-orders",
+        sender: "Shopify",
+        kind: "order notifications",
+        description: "x",
+        fields: ["order"],
+        lineItems: true,
+      },
+    ];
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(answer({ templates }))
+      .mockResolvedValueOnce(answer({ layoutId: "shopify-orders" }, 201))
+      .mockResolvedValueOnce(answer({ problems: [], request: null, values: null }));
+    globalThis.fetch = fetchMock;
+    expect(await client().endpoints.layoutTemplates("abc")).toEqual(templates);
+    expect(await client().endpoints.addLayoutTemplate("abc", "shopify-orders")).toEqual({
+      layoutId: "shopify-orders",
+    });
+    await client().endpoints.previewEmailFields("abc", { requestId: ID });
+    expect(fetchMock.mock.calls[0][0]).toBe(`${BASE_URL}/api/endpoints/abc/layouts/template`);
+    expect(JSON.parse(fetchMock.mock.calls[1][1].body)).toEqual({ template: "shopify-orders" });
+    expect(fetchMock.mock.calls[2][0]).toBe(`${BASE_URL}/api/endpoints/abc/email-fields/preview`);
+    expect(JSON.parse(fetchMock.mock.calls[2][1].body)).toEqual({ requestId: ID });
+  });
+});

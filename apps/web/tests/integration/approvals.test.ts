@@ -11,6 +11,7 @@ import {
 } from "@/lib/approvals/store";
 import { generateApiKey, hashApiKey } from "@/lib/supabase/api-keys";
 import { actionSpec, type ApprovalAction } from "@/lib/approvals/actions";
+import { createTeam } from "@/lib/supabase/teams";
 
 if (!process.env.SUPABASE_URL) throw new Error("SUPABASE_URL env var required");
 const admin = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY!, {
@@ -260,6 +261,66 @@ describe("approvals", () => {
       removed: name,
       domainId: domain.id,
     });
+  });
+
+  it("deletes a team only once its owner approves", async () => {
+    const team = await createTeam(owner, `Approvals team ${Date.now()}`);
+    if ("error" in team) throw new Error(team.error);
+    await expect(
+      actionSpec("teams.delete").parse({ teamId: team.id }, other)
+    ).resolves.toMatchObject({ ok: false, status: 404 });
+
+    const approval = await askFor("teams.delete", { teamId: team.id });
+    expect(approval.summary).toContain(team.name);
+    const details = await actionSpec("teams.delete").details(
+      { teamId: team.id, name: "a name from before a rename" },
+      owner
+    );
+    expect(details).toContainEqual({ label: "Team", value: team.name });
+    expect(details).toContainEqual({ label: "Members", value: "Only you" });
+    expect(details).toContainEqual({ label: "Subscription", value: "None" });
+    const exists = async () =>
+      (await admin.from("teams").select("id", { count: "exact", head: true }).eq("id", team.id))
+        .count;
+    expect(await exists()).toBe(1);
+    await decideApproval(approval.code, owner, true);
+    expect(await exists()).toBe(0);
+    expect((await pollApproval(approval.id, { userId: owner, keyId }))?.result).toEqual({
+      deleted: team.name,
+      teamId: team.id,
+    });
+  });
+
+  it("sends a team invite only once the owner approves", async () => {
+    const team = await createTeam(owner, `Invite team ${Date.now()}`);
+    if ("error" in team) throw new Error(team.error);
+    await admin.from("teams").update({ subscription_status: "active", seats: 3 }).eq("id", team.id);
+    const email = `invitee-${Date.now()}@example.com`;
+    await expect(
+      actionSpec("teams.invite").parse({ teamId: team.id, email }, other)
+    ).resolves.toMatchObject({ ok: false, status: 404 });
+    await expect(
+      actionSpec("teams.invite").parse({ teamId: team.id, email: "not an address" }, owner)
+    ).resolves.toMatchObject({ ok: false });
+
+    const approval = await askFor("teams.invite", { teamId: team.id, email: email.toUpperCase() });
+    expect(approval.summary).toContain(email);
+    const invites = async () =>
+      (
+        await admin
+          .from("team_invites")
+          .select("id", { count: "exact", head: true })
+          .eq("team_id", team.id)
+      ).count;
+    expect(await invites()).toBe(0);
+    await decideApproval(approval.code, owner, true);
+    expect(await invites()).toBe(1);
+    const result = (await pollApproval(approval.id, { userId: owner, keyId }))?.result as {
+      invitedEmail?: string;
+      teamId?: string;
+    };
+    expect(result).toMatchObject({ invitedEmail: email, teamId: team.id });
+    await admin.from("teams").delete().eq("id", team.id);
   });
 
   it("leaves the approval waiting when the action fails as it is approved", async () => {

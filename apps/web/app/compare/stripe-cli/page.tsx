@@ -75,7 +75,7 @@ const ROWS = [
   ["SDKs for tests", "TypeScript, Python and Go", "Stripe API libraries"],
   [
     "MCP server for AI coding agents",
-    "Yes, remote (OAuth) or local (@webhooks-cc/mcp, 57 tools)",
+    "Yes, remote (OAuth) or local (@webhooks-cc/mcp, 94 tools)",
     "Stripe MCP (remote, Stripe API operations)",
   ],
   ["Open source", "Yes (AGPL + MIT)", "Yes (Apache 2.0 CLI)"],

@@ -8,6 +8,7 @@ pub mod confirm;
 pub mod endpoints;
 pub mod google;
 pub mod keys;
+pub mod layouts;
 pub mod listen;
 pub mod output;
 pub mod replay;
@@ -391,10 +392,22 @@ deletion) refuse API keys.")]
         action: RequestsAction,
     },
 
-    /// Manage teams: sharing, members, and invites
+    /// Manage teams: creating, sharing, members, invites and price quotes (deleting one needs the team's owner to approve it)
     Teams {
         #[command(subcommand)]
         action: TeamsAction,
+    },
+
+    /// An endpoint's email layouts: the ready-made ones there are to add
+    Layouts {
+        #[command(subcommand)]
+        action: LayoutsAction,
+    },
+
+    /// An endpoint's named email fields: try them on a captured email
+    Fields {
+        #[command(subcommand)]
+        action: FieldsAction,
     },
 
     /// What the account pays for: the plan, its subscription, add-ons, and every team's (read only)
@@ -985,13 +998,16 @@ pub enum TeamsAction {
         team: String,
     },
 
-    /// Invite an email address to a team you own (sends an email; acceptance claims a seat)
+    /// Invite an email address to a team you own: prints a link for the team's owner to approve (it sends an email), then waits; accepting claims a seat
     Invite {
         /// Team id or name
         team: String,
 
         /// Email address to invite
         email: String,
+
+        #[command(flatten)]
+        approval: ApprovalArgs,
     },
 
     /// List invites waiting for you
@@ -1007,6 +1023,120 @@ pub enum TeamsAction {
     Decline {
         /// Invite id (from `whk teams invites`)
         invite_id: String,
+    },
+
+    /// Create a team you own (it needs a subscription before endpoints can be shared or members invited)
+    Create {
+        /// The team's name
+        name: String,
+    },
+
+    /// Rename a team you own
+    Rename {
+        /// Team id or name
+        team: String,
+
+        /// The new name
+        name: String,
+    },
+
+    /// Ask to delete a team you own (its subscription ends at once): prints a link for the team's owner to approve, then waits
+    Delete {
+        /// Team id or name
+        team: String,
+
+        #[command(flatten)]
+        approval: ApprovalArgs,
+    },
+
+    /// Remove a member from a team you own (endpoints they shared with it stop being shared)
+    Remove {
+        /// Team id or name
+        team: String,
+
+        /// The member's user id or email (from `whk teams members`)
+        member: String,
+
+        /// Remove without asking (needed without a terminal)
+        #[arg(short = 'y', long = "yes", visible_alias = "force", short_alias = 'f')]
+        yes: bool,
+    },
+
+    /// Leave a team you belong to (an owner deletes the team instead)
+    Leave {
+        /// Team id or name
+        team: String,
+
+        /// Leave without asking (needed without a terminal)
+        #[arg(short = 'y', long = "yes", visible_alias = "force", short_alias = 'f')]
+        yes: bool,
+    },
+
+    /// Withdraw an invite to a team you own before it is answered
+    Withdraw {
+        /// Team id or name
+        team: String,
+
+        /// The invite's id or the invited email (from `whk teams members`)
+        invite: String,
+
+        /// Withdraw without asking (needed without a terminal)
+        #[arg(short = 'y', long = "yes", visible_alias = "force", short_alias = 'f')]
+        yes: bool,
+    },
+
+    /// What changing a team's seats or plan would cost (owner only; read only, changes are made in the browser)
+    #[command(group(clap::ArgGroup::new("change").required(true).args(["seats", "plan"])))]
+    Quote {
+        /// Team id or name
+        team: String,
+
+        /// Price this seat count
+        #[arg(long, value_parser = clap::value_parser!(u32).range(1..))]
+        seats: Option<u32>,
+
+        /// Price a move to this plan
+        #[arg(long, value_parser = ["team", "team_business"])]
+        plan: Option<String>,
+
+        /// Billing interval for --plan (default month)
+        #[arg(long, value_parser = ["month", "year"], requires = "plan", conflicts_with = "seats")]
+        interval: Option<String>,
+    },
+}
+
+#[derive(Subcommand, Debug)]
+pub enum LayoutsAction {
+    /// List the ready-made email layouts (Shopify, WooCommerce, Etsy orders and more) and the fields each reads
+    Templates {
+        /// The endpoint's slug
+        slug: String,
+    },
+
+    /// Add a ready-made layout to the end of an endpoint's layouts (owner only)
+    AddTemplate {
+        /// The endpoint's slug
+        slug: String,
+
+        /// The template's id, from `whk layouts templates`
+        template: String,
+    },
+}
+
+#[derive(Subcommand, Debug)]
+pub enum FieldsAction {
+    /// Dry run: what the endpoint's named email fields find in a captured email (nothing is saved)
+    Preview {
+        /// The endpoint's slug
+        slug: String,
+
+        /// An email's request id (default: the endpoint's newest email)
+        #[arg(long)]
+        request: Option<String>,
+
+        /// Try these fields instead of the saved ones: a JSON list, [{"name", "from", "pattern"}], or @file
+        #[arg(long)]
+        fields: Option<String>,
     },
 }
 
@@ -1360,5 +1490,83 @@ mod tests {
         assert!(parse(&["--no-email", "--email-format", "postmark"]).is_err());
         assert!(parse(&["--no-email", "--email-path", "/inbound"]).is_err());
         assert!(tunnel_flags(&["--no-email"]).3);
+    }
+
+    #[test]
+    fn teams_quote_takes_seats_or_a_plan() {
+        let parse = |args: &[&str]| {
+            Cli::try_parse_from(["whk", "teams", "quote", "Acme"].iter().chain(args))
+        };
+        match parse(&["--seats", "4"]).unwrap().command {
+            Some(Command::Teams {
+                action: TeamsAction::Quote { seats, plan, .. },
+            }) => assert_eq!((seats, plan), (Some(4), None)),
+            other => panic!("expected teams quote, got {other:?}"),
+        }
+        match parse(&["--plan", "team_business", "--interval", "year"])
+            .unwrap()
+            .command
+        {
+            Some(Command::Teams {
+                action: TeamsAction::Quote { plan, interval, .. },
+            }) => {
+                assert_eq!(plan.as_deref(), Some("team_business"));
+                assert_eq!(interval.as_deref(), Some("year"));
+            }
+            other => panic!("expected teams quote, got {other:?}"),
+        }
+        assert!(parse(&[]).is_err(), "seats or a plan is required");
+        assert!(parse(&["--seats", "4", "--plan", "team"]).is_err());
+        assert!(parse(&["--plan", "pro"]).is_err());
+        assert!(parse(&["--seats", "4", "--interval", "year"]).is_err());
+        assert!(parse(&["--seats", "0"]).is_err());
+    }
+
+    #[test]
+    fn teams_delete_takes_approval_flags() {
+        let cli = Cli::try_parse_from(["whk", "teams", "delete", "Acme", "--remote", "--no-wait"])
+            .unwrap();
+        match cli.command {
+            Some(Command::Teams {
+                action: TeamsAction::Delete { team, approval },
+            }) => {
+                assert_eq!(team, "Acme");
+                assert!(approval.remote && approval.no_wait);
+            }
+            other => panic!("expected teams delete, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn layouts_and_fields_have_their_subcommands() {
+        let parse = |args: &[&str]| {
+            Cli::try_parse_from(["whk"].iter().chain(args))
+                .unwrap()
+                .command
+        };
+        match parse(&["layouts", "add-template", "acme", "shopify-order"]) {
+            Some(Command::Layouts {
+                action: LayoutsAction::AddTemplate { slug, template },
+            }) => assert_eq!(
+                (slug.as_str(), template.as_str()),
+                ("acme", "shopify-order")
+            ),
+            other => panic!("expected layouts add-template, got {other:?}"),
+        }
+        match parse(&["fields", "preview", "acme", "--request", "r1"]) {
+            Some(Command::Fields {
+                action:
+                    FieldsAction::Preview {
+                        slug,
+                        request,
+                        fields,
+                    },
+            }) => {
+                assert_eq!(slug, "acme");
+                assert_eq!(request.as_deref(), Some("r1"));
+                assert!(fields.is_none());
+            }
+            other => panic!("expected fields preview, got {other:?}"),
+        }
     }
 }

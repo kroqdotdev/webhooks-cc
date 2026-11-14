@@ -255,6 +255,30 @@ fn print_result(result: &Value, approval: Option<&Value>, json: bool) {
                 format_timestamp_str(text("expiresAt"))
             ))
         );
+    } else if result.get("invitedEmail").is_some() {
+        println!(
+            "\n  {} Invited {} to {}.",
+            green("Approved."),
+            bold(&sanitize(text("invitedEmail"))),
+            bold(&sanitize(text("teamName")))
+        );
+        match result.get("warning").and_then(Value::as_str) {
+            Some(warning) => println!(
+                "  {} {} Tell them to sign up with that address and accept from their Teams page.",
+                red("!"),
+                sanitize(warning)
+            ),
+            None => println!(
+                "  {}",
+                dim("They get an email; accepting claims one of the team's seats.")
+            ),
+        }
+    } else if result.get("deleted").is_some() && result.get("teamId").is_some() {
+        println!(
+            "\n  {} Deleted team {}.",
+            green("Approved."),
+            bold(&sanitize(text("deleted")))
+        );
     } else if result.get("removed").is_some() {
         println!(
             "\n  {} Removed the domain {}; mail to it is refused now.",

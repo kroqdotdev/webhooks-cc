@@ -93,23 +93,26 @@
     },
     {
       "id": "endpoint.layout-template",
-      "does": "Add a ready-made email layout to an endpoint",
-      "routes": ["POST /api/endpoints/[slug]/layouts/template"],
-      "sdk": "no method yet",
+      "does": "List the ready-made email layouts, and add one to an endpoint",
+      "routes": [
+        "GET /api/endpoints/[slug]/layouts/template",
+        "POST /api/endpoints/[slug]/layouts/template"
+      ],
+      "sdk": ["endpoints.layoutTemplates", "endpoints.addLayoutTemplate"],
       "python": "testing-focused SDK: added on demand",
       "go": "testing-focused SDK: added on demand",
-      "cli": "no command yet: `whk api` reaches it",
-      "mcp": "no tool yet"
+      "cli": ["layouts templates", "layouts add-template"],
+      "mcp": ["list_layout_templates", "add_layout_template"]
     },
     {
       "id": "endpoint.preview-email-fields",
       "does": "Try named email field patterns on captured emails",
       "routes": ["POST /api/endpoints/[slug]/email-fields/preview"],
-      "sdk": "no method yet",
+      "sdk": ["endpoints.previewEmailFields"],
       "python": "testing-focused SDK: added on demand",
       "go": "testing-focused SDK: added on demand",
-      "cli": "no command yet: `whk api` reaches it",
-      "mcp": "no tool yet"
+      "cli": ["fields preview"],
+      "mcp": ["preview_email_fields"]
     },
     {
       "id": "endpoint.layout-assist.status",
@@ -789,21 +792,32 @@
       "id": "team.create",
       "does": "Create a team",
       "routes": ["POST /api/teams"],
-      "sdk": "no method yet",
+      "sdk": ["teams.create"],
       "python": "testing-focused SDK: added on demand",
       "go": "testing-focused SDK: added on demand",
-      "cli": "no command yet: `whk api` reaches it",
-      "mcp": "no tool yet"
+      "cli": ["teams create"],
+      "mcp": ["create_team"]
     },
     {
-      "id": "team.update",
-      "does": "Rename or delete a team",
-      "routes": ["PATCH /api/teams/[teamId]", "DELETE /api/teams/[teamId]"],
-      "sdk": "no method yet",
+      "id": "team.rename",
+      "does": "Rename a team",
+      "routes": ["PATCH /api/teams/[teamId]"],
+      "sdk": ["teams.rename"],
       "python": "testing-focused SDK: added on demand",
       "go": "testing-focused SDK: added on demand",
-      "cli": "no command yet: `whk api` reaches it",
-      "mcp": "no tool yet"
+      "cli": ["teams rename"],
+      "mcp": ["rename_team"]
+    },
+    {
+      "id": "team.delete",
+      "does": "Delete a team",
+      "routes": ["DELETE /api/teams/[teamId]"],
+      "approval": "deleting a team ends its subscription at once and takes its endpoints from every member, and cannot be undone, so the team's owner approves each deletion an API key or agent asks for",
+      "sdk": ["teams.delete"],
+      "python": "testing-focused SDK: added on demand",
+      "go": "testing-focused SDK: added on demand",
+      "cli": ["teams delete"],
+      "mcp": ["delete_team"]
     },
     {
       "id": "team.members",
@@ -819,11 +833,11 @@
       "id": "team.remove-member",
       "does": "Remove a member, or leave a team",
       "routes": ["DELETE /api/teams/[teamId]/members/[userId]", "POST /api/teams/[teamId]/leave"],
-      "sdk": "no method yet",
+      "sdk": ["teams.removeMember", "teams.leave"],
       "python": "testing-focused SDK: added on demand",
       "go": "testing-focused SDK: added on demand",
-      "cli": "no command yet: `whk api` reaches it",
-      "mcp": "no tool yet"
+      "cli": ["teams remove", "teams leave"],
+      "mcp": ["remove_team_member", "leave_team"]
     },
     {
       "id": "team.share",
@@ -852,21 +866,22 @@
       "id": "team.invite",
       "does": "Invite someone to a team",
       "routes": ["POST /api/teams/[teamId]/invite"],
+      "approval": "an invite sends email to an address the asker names and accepting it takes one of the team's paid seats, so the team's owner approves each invite an API key or agent asks for",
       "sdk": ["teams.invite"],
       "python": "testing-focused SDK: added on demand",
       "go": "testing-focused SDK: added on demand",
       "cli": ["teams invite"],
-      "mcp": "no tool yet"
+      "mcp": ["invite_to_team"]
     },
     {
       "id": "team.invite-withdraw",
       "does": "Withdraw an invite before it is answered",
       "routes": ["DELETE /api/teams/[teamId]/invites/[inviteId]"],
-      "sdk": "no method yet",
+      "sdk": ["teams.withdrawInvite"],
       "python": "testing-focused SDK: added on demand",
       "go": "testing-focused SDK: added on demand",
-      "cli": "no command yet: `whk api` reaches it",
-      "mcp": "no tool yet"
+      "cli": ["teams withdraw"],
+      "mcp": ["withdraw_invite"]
     },
     {
       "id": "team.invites",
@@ -880,7 +895,7 @@
       "python": "testing-focused SDK: added on demand",
       "go": "testing-focused SDK: added on demand",
       "cli": ["teams invites", "teams accept", "teams decline"],
-      "mcp": "no tool yet"
+      "mcp": ["list_invites", "answer_invite"]
     },
     {
       "id": "team.billing-quotes",
@@ -889,8 +904,8 @@
       "sdk": ["billing.quoteTeamPlan", "billing.quoteTeamSeats"],
       "python": "testing-focused SDK: added on demand",
       "go": "testing-focused SDK: added on demand",
-      "cli": "no command yet: `whk api` reaches it",
-      "mcp": "no tool yet"
+      "cli": ["teams quote"],
+      "mcp": ["quote_team_change"]
     },
     {
       "id": "team.billing",

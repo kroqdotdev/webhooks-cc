@@ -61,7 +61,7 @@ Every route an API key can call. Timestamps are Unix milliseconds unless a field
 | `POST /api/endpoints/:slug/responses/preview`                            | [What a sender would get back](#preview-a-response)                                            |
 | `POST /api/endpoints/:slug/email-fields/preview`                         | [Try email fields](#try-email-fields)                                                          |
 | `POST /api/endpoints/:slug/layouts/preview`                              | [Try layouts](#try-layouts)                                                                    |
-| `POST /api/endpoints/:slug/layouts/template`                             | [Add a ready-made layout](#add-a-ready-made-layout)                                            |
+| `GET`, `POST /api/endpoints/:slug/layouts/template`                      | [Add a ready-made layout](#add-a-ready-made-layout)                                            |
 | `GET` `PUT /api/endpoints/:slug/alerts`                                  | [Alerts](#alerts)                                                                              |
 | `GET` `POST /api/endpoints/:slug/destinations` and the routes under it   | [Destinations](#destinations)                                                                  |
 | `GET` `POST /api/endpoints/:slug/forwarding`, `POST .../forwarding/test` | The primary destination's [secret](#get-the-signing-secret) and [test](#send-a-test-delivery)  |
@@ -269,6 +269,13 @@ A dry run of [layouts](/docs/layouts): which one a captured email matches, and t
 To save layouts, send the whole list as `layouts` in an [endpoint update](#update-endpoint).
 
 ### Add a ready-made layout
+
+```bash
+curl https://webhooks.cc/api/endpoints/abc123/layouts/template \
+  -H "Authorization: Bearer whcc_..."
+```
+
+Lists the ready-made layouts as `{ "templates": [...] }`, each with `id`, `sender`, `kind` (what kind of email it reads), `description`, `fields` (the names of the fields it picks out) and `lineItems` (whether it reads line items too). The list is the same for every endpoint. To add one:
 
 ```bash
 curl -X POST https://webhooks.cc/api/endpoints/abc123/layouts/template \
@@ -993,14 +1000,14 @@ curl -X PATCH https://webhooks.cc/api/teams/TEAM_ID \
 
 ### Delete team
 
-Delete a team and remove all memberships. Only the team owner can delete.
+Delete a team and remove all memberships. Only the team owner can delete. The team's subscription ends at once, and every endpoint shared with it stops being shared (the endpoints stay with their owners).
 
 ```bash
 curl -X DELETE https://webhooks.cc/api/teams/TEAM_ID \
   -H "Authorization: Bearer whcc_..."
 ```
 
-Returns `204 No Content` on success.
+Returns `204 No Content` on success. With an API key or agent token it returns `202` with an [approval](/docs/agents#approvals) instead: the team is deleted once you approve, and the asker's poll then carries `{ "deleted": "<team name>", "teamId": "..." }`.
 
 ### Share endpoint with team
 
@@ -1045,6 +1052,8 @@ curl -X POST https://webhooks.cc/api/teams/TEAM_ID/invite \
   -H "Content-Type: application/json" \
   -d '{"email": "teammate@example.com"}'
 ```
+
+Sends the invite email and returns the invite. With an API key or agent token it returns `202` with an [approval](/docs/agents#approvals) instead, since an invite emails the address the asker names and accepting it takes one of the team's paid seats: the invite is sent once you approve, and the asker's poll then carries it.
 
 ### List members
 
@@ -1113,6 +1122,17 @@ Leave a team you are a member of. Owners cannot leave their own team; delete it 
 curl -X POST https://webhooks.cc/api/teams/TEAM_ID/leave \
   -H "Authorization: Bearer whcc_..."
 ```
+
+### Withdraw an invite
+
+Take back an invite the team's owner sent, before it is answered. Only the team owner can withdraw invites; the invite ids are in the team's `pendingInvites` from [list members](#list-members).
+
+```bash
+curl -X DELETE https://webhooks.cc/api/teams/TEAM_ID/invites/INVITE_ID \
+  -H "Authorization: Bearer whcc_..."
+```
+
+Returns `{ "revoked": true }`, or `404` when there is no such waiting invite.
 
 ## Invites
 

@@ -1,0 +1,8 @@
+{
+  "title": "Teams and ready-made layouts without the dashboard",
+  "items": [
+    "Teams can be created, renamed and deleted, members removed, invites withdrawn and team billing changes priced from the API, `whk`, the TypeScript SDK and the MCP server",
+    "Deleting a team or inviting someone to one with an API key or agent token waits for the owner's approval: deleting ends the team's subscription at once, and an invite emails the address the asker names",
+    "The ready-made email layouts can be listed with the API and added to an endpoint from `whk`, the SDK and the MCP server, and named email fields can be tried on a captured email from all three"
+  ]
+}

@@ -1,4 +1,5 @@
 import { auditUserAction } from "@/lib/audit";
+import { loggablePolarError } from "@/lib/polar";
 import { deviceApprover } from "@/lib/device-session";
 import {
   ApprovalError,
@@ -72,7 +73,8 @@ export async function POST(request: Request) {
     if (err instanceof ApprovalError) {
       return Response.json({ error: err.message }, { status: err.status });
     }
-    reportError("POST /api/approvals/decide failed", err);
+    // An action may call Polar, whose errors carry its response body.
+    reportError("POST /api/approvals/decide failed", loggablePolarError(err));
     return Response.json({ error: "Internal server error" }, { status: 500 });
   }
 }
@@ -102,6 +104,24 @@ async function auditDone(
       status: 204,
       teamId: typeof params.teamId === "string" ? params.teamId : null,
       metadata: { ...via, id: result.domainId },
+    });
+  } else if (decided.action === "teams.delete") {
+    await auditUserAction(request, userId, {
+      action: "team.deleted",
+      status: 204,
+      teamId: typeof params.teamId === "string" ? params.teamId : null,
+      metadata: via,
+    });
+  } else if (decided.action === "teams.invite") {
+    await auditUserAction(request, userId, {
+      action: "team.invite_sent",
+      status: 200,
+      teamId: typeof params.teamId === "string" ? params.teamId : null,
+      targetId: typeof result.id === "string" ? result.id : null,
+      metadata: {
+        ...via,
+        invited_email: typeof params.email === "string" ? params.email : null,
+      },
     });
   } else if (decided.action === "ai.assist") {
     const ask = params.ask as { kind?: string } | undefined;

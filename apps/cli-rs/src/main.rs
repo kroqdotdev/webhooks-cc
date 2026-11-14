@@ -6,8 +6,8 @@ use clap::Parser;
 use whk::api::ApiClient;
 use whk::cli::{
     self, AccountAction, AgentsAction, AiAction, ApprovalsAction, AuthAction, Cli, Command,
-    DomainsAction, GoogleAction, KeysAction, NamesAction, RequestsAction, SandboxAction,
-    ShareLinksAction, SharesAction, TeamsAction,
+    DomainsAction, FieldsAction, GoogleAction, KeysAction, LayoutsAction, NamesAction,
+    RequestsAction, SandboxAction, ShareLinksAction, SharesAction, TeamsAction,
 };
 use whk::error::{classify, error_json};
 
@@ -588,15 +588,75 @@ async fn run(args: Cli) -> Result<()> {
             TeamsAction::Unshare { slug, team } => {
                 cli::teams::unshare(&client, &slug, &team, args.json).await?
             }
-            TeamsAction::Invite { team, email } => {
-                cli::teams::invite(&client, &team, &email, args.json).await?
-            }
+            TeamsAction::Invite {
+                team,
+                email,
+                approval,
+            } => cli::teams::invite(&client, &team, &email, approval.into(), args.json).await?,
             TeamsAction::Invites => cli::teams::invites(&client, args.json).await?,
             TeamsAction::Accept { invite_id } => {
                 cli::teams::accept(&client, &invite_id, args.json).await?
             }
             TeamsAction::Decline { invite_id } => {
                 cli::teams::decline(&client, &invite_id, args.json).await?
+            }
+            TeamsAction::Create { name } => cli::teams::create(&client, &name, args.json).await?,
+            TeamsAction::Rename { team, name } => {
+                cli::teams::rename(&client, &team, &name, args.json).await?
+            }
+            TeamsAction::Delete { team, approval } => {
+                cli::teams::delete(&client, &team, approval.into(), args.json).await?
+            }
+            TeamsAction::Remove { team, member, yes } => {
+                cli::teams::remove(&client, &team, &member, yes, args.json).await?
+            }
+            TeamsAction::Leave { team, yes } => {
+                cli::teams::leave(&client, &team, yes, args.json).await?
+            }
+            TeamsAction::Withdraw { team, invite, yes } => {
+                cli::teams::withdraw(&client, &team, &invite, yes, args.json).await?
+            }
+            TeamsAction::Quote {
+                team,
+                seats,
+                plan,
+                interval,
+            } => {
+                let ask = match (seats, plan) {
+                    (Some(seats), _) => cli::teams::QuoteAsk::Seats(seats),
+                    (None, Some(plan)) => cli::teams::QuoteAsk::Plan {
+                        plan,
+                        interval: interval.unwrap_or_else(|| "month".into()),
+                    },
+                    (None, None) => unreachable!("clap requires --seats or --plan"),
+                };
+                cli::teams::quote(&client, &team, ask, args.json).await?
+            }
+        },
+
+        Some(Command::Layouts { action }) => match action {
+            LayoutsAction::Templates { slug } => {
+                cli::layouts::templates(&client, &slug, args.json).await?
+            }
+            LayoutsAction::AddTemplate { slug, template } => {
+                cli::layouts::add_template(&client, &slug, &template, args.json).await?
+            }
+        },
+
+        Some(Command::Fields { action }) => match action {
+            FieldsAction::Preview {
+                slug,
+                request,
+                fields,
+            } => {
+                cli::layouts::preview(
+                    &client,
+                    &slug,
+                    request.as_deref(),
+                    fields.as_deref(),
+                    args.json,
+                )
+                .await?
             }
         },
 

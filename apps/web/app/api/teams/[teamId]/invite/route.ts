@@ -1,3 +1,4 @@
+import { requestApproval } from "@/lib/approvals/request";
 import { auditUserAction } from "@/lib/audit";
 import { authenticateRequestRequireUser } from "@/lib/api-auth";
 import { checkRateLimitByKeyWithInfo, applyRateLimitHeaders } from "@/lib/rate-limit";
@@ -31,6 +32,24 @@ export async function POST(request: Request, { params }: { params: Promise<{ tea
   const email = typeof body.email === "string" ? body.email.trim() : "";
   if (!email || !email.includes("@")) {
     return Response.json({ error: "Valid email is required" }, { status: 400 });
+  }
+
+  // An API key or agent token: an invite sends email to an address the asker
+  // names, so the owner approves each one first.
+  if (auth.keyId) {
+    return applyRateLimitHeaders(
+      await requestApproval(
+        request,
+        {
+          userId: auth.userId,
+          keyId: auth.keyId,
+          agentRegistrationId: auth.agentRegistrationId ?? null,
+        },
+        "teams.invite",
+        { teamId, email }
+      ),
+      rateLimit
+    );
   }
 
   try {
