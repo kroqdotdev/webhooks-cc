@@ -1,6 +1,6 @@
-# Webhook tests with @webhooks-cc/sdk
+# Webhook tests with the SDKs
 
-Install the SDK as a dev dependency (`npm i -D @webhooks-cc/sdk`, or the
+TypeScript recipes first; Python and Go are at the end. Install the SDK as a dev dependency (`npm i -D @webhooks-cc/sdk`, or the
 project's package manager) and read the API key from `WHK_API_KEY`, which CI
 gets from a secret. Adapt the recipes to the project's test runner, routes and
 env var names.
@@ -115,3 +115,21 @@ const { code, samples } = generateRequestSchema(requests, {
   name: "InvoicePaidEvent",
 });
 ```
+
+## Python and Go
+
+- Python: `pip install pytest-webhooks-cc` brings the `webhooks-cc` SDK and
+  the `webhooks_cc` and `webhooks_cc_endpoint` fixtures (a client, and an
+  endpoint deleted after the test). Tests using them are skipped when
+  `WHK_API_KEY` is not set. `build_template_request` builds a provider-signed
+  request offline for your app's test client, and `verify_signature` checks
+  one; `webhooks_cc.requests.wait_for(slug, timeout="30s", match=...)` waits
+  for what the app sent.
+- Go: `go get webhooks.cc/go`. `whktest.Client(t)` (skips without
+  `WHK_API_KEY`) and `whktest.Endpoint(t, client)` (deleted in `t.Cleanup`);
+  `webhookscc.BuildRequest` with `SendOptions` (`Provider`, `Secret`, and
+  `Template` or `Body`) builds a signed request for `httptest`, and
+  `verify.Signature` checks one.
+
+Both pass the TypeScript SDK's signing vectors, so a signature built in one
+verifies in the others.

@@ -3704,3 +3704,4 @@ export {
 } from "./catalog";
 
 export { sdkToolResult, toolCallFrom } from "./sdk-call";
+export { attachSkill } from "./skills";

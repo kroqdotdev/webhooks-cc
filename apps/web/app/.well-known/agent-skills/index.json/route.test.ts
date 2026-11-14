@@ -20,7 +20,7 @@ describe("GET /.well-known/agent-skills/index.json", () => {
 
     const index = await response.json();
     expect(index.$schema).toBe("https://schemas.agentskills.io/discovery/0.2.0/schema.json");
-    expect(index.skills.map((skill: { name: string }) => skill.name)).toContain("webhook-testing");
+    expect(index.skills.map((skill: { name: string }) => skill.name)).toContain("webhooks-cc");
   });
 
   it("lists digests that match the bytes the file route serves", async () => {
@@ -39,31 +39,31 @@ describe("GET /.well-known/agent-skills/index.json", () => {
 
 describe("GET /.well-known/agent-skills/{name}/{path}", () => {
   it("serves SKILL.md as markdown", async () => {
-    const response = await fileRequest("webhook-testing", ["SKILL.md"]);
+    const response = await fileRequest("webhooks-cc", ["SKILL.md"]);
 
     expect(response.status).toBe(200);
     expect(response.headers.get("content-type")).toBe("text/markdown; charset=utf-8");
     expect(response.headers.get("access-control-allow-origin")).toBe("*");
-    expect(await response.text()).toMatch(/^---\nname: webhook-testing\n/);
+    expect(await response.text()).toMatch(/^---\nname: webhooks-cc\n/);
   });
 
   it("serves the reference files SKILL.md links to", async () => {
-    const response = await fileRequest("webhook-testing", ["references", "sdk-tests.md"]);
+    const response = await fileRequest("webhooks-cc", ["references", "sdk-tests.md"]);
     expect(response.status).toBe(200);
     expect(response.headers.get("content-type")).toBe("text/markdown; charset=utf-8");
   });
 
   it("answers 404 for files that are not there", async () => {
-    expect((await fileRequest("webhook-testing", ["nope.md"])).status).toBe(404);
-    expect((await fileRequest("webhook-testing", ["..", "SKILL.md"])).status).toBe(404);
+    expect((await fileRequest("webhooks-cc", ["nope.md"])).status).toBe(404);
+    expect((await fileRequest("webhooks-cc", ["..", "SKILL.md"])).status).toBe(404);
     expect((await fileRequest("unknown-skill", ["SKILL.md"])).status).toBe(404);
   });
 
   it("prerenders every file of every skill", async () => {
     const params = await generateStaticParams();
-    expect(params).toContainEqual({ name: "webhook-testing", path: ["SKILL.md"] });
+    expect(params).toContainEqual({ name: "webhooks-cc", path: ["SKILL.md"] });
     expect(params).toContainEqual({
-      name: "webhook-testing",
+      name: "webhooks-cc",
       path: ["references", "sdk-tests.md"],
     });
   });

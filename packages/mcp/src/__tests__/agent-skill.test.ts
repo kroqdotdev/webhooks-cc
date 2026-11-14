@@ -1,8 +1,9 @@
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { McpServer } from "@modelcontextprotocol/server";
 import { describe, expect, it, vi } from "vitest";
-import { CONDITION_FIELDS, type WebhooksCC } from "@webhooks-cc/sdk";
+import { CONDITION_FIELDS, CONDITION_OPS, type WebhooksCC } from "@webhooks-cc/sdk";
+import { ENABLE_TOOLS } from "../catalog";
 import { asToolServer } from "../local-tools";
 import { registerSandboxTools } from "../sandbox-tools";
 import { registerTools } from "../tools";
@@ -11,8 +12,10 @@ import { registerTools } from "../tools";
 // which of this server's tools to call, so a renamed tool must fail here.
 const repo = join(__dirname, "..", "..", "..", "..");
 const plugin = join(repo, "plugins", "webhooks-cc");
-const skillDir = join(plugin, "skills", "webhook-testing");
+const skillDir = join(plugin, "skills", "webhooks-cc");
+const referencesDir = join(skillDir, "references");
 const read = (path: string) => readFileSync(path, "utf-8");
+const words = (text: string) => text.split(/\s+/).filter(Boolean).length;
 
 function toolNames(register: (server: McpServer) => void): Set<string> {
   const server = new McpServer({ name: "test", version: "0.0.0" });
@@ -23,6 +26,11 @@ function toolNames(register: (server: McpServer) => void): Set<string> {
 
 const fullTools = toolNames((server) => registerTools(asToolServer(server), {} as WebhooksCC));
 const sandboxTools = toolNames((server) => registerSandboxTools(server, {}));
+// enable_tools is registered by the local server's group loader, not registerTools.
+const knownTools = new Set([...fullTools, ...sandboxTools, ENABLE_TOOLS]);
+
+// Backticked snake_case words in the skill that are SDK identifiers, not tools.
+const NOT_TOOLS = new Set(["webhooks_cc", "webhooks_cc_endpoint", "build_template_request"]);
 
 function frontmatter(markdown: string): Record<string, string> {
   const match = /^---\n([\s\S]*?)\n---\n/.exec(markdown);
@@ -35,37 +43,50 @@ function frontmatter(markdown: string): Record<string, string> {
   );
 }
 
-/** Backticked snake_case words, which in the skill are tool names unless they are condition fields. */
+/**
+ * Backticked snake_case words, which in the skill are tool names unless they
+ * are condition fields, condition operators or SDK identifiers.
+ */
 function mentionedTools(markdown: string): string[] {
+  const ops: readonly string[] = CONDITION_OPS;
   return [...new Set([...markdown.matchAll(/`([a-z]+(?:_[a-z]+)+)`/g)].map((m) => m[1]))].filter(
-    (name) => !(name in CONDITION_FIELDS)
+    (name) => !(name in CONDITION_FIELDS) && !ops.includes(name) && !NOT_TOOLS.has(name)
   );
 }
+
+const references = readdirSync(referencesDir)
+  .filter((file) => file.endsWith(".md"))
+  .sort();
 
 describe("agent skill", () => {
   const skill = read(join(skillDir, "SKILL.md"));
 
   it("has valid Agent Skills frontmatter", () => {
     const { name, description } = frontmatter(skill);
-    expect(name).toBe("webhook-testing");
+    expect(name).toBe("webhooks-cc");
     expect(name).toMatch(/^[a-z0-9-]{1,64}$/);
     expect(description.length).toBeGreaterThan(50);
-    expect(description.length).toBeLessThanOrEqual(1024);
+    expect(description.length).toBeLessThan(1024);
+  });
+
+  it("stays short enough to load into every session", () => {
+    expect(words(skill)).toBeLessThan(900);
   });
 
   it("only names tools the server has", () => {
     const named = mentionedTools(skill);
     expect(named.length).toBeGreaterThan(10);
-    expect(named.filter((name) => !fullTools.has(name) && !sandboxTools.has(name))).toEqual([]);
+    expect(named.filter((name) => !knownTools.has(name))).toEqual([]);
   });
 
   it("lists sandbox tools the sandbox really has", () => {
-    const sandboxParagraph = skill.slice(
-      skill.indexOf("Without an API key"),
-      skill.indexOf("## Workflows")
-    );
-    for (const name of mentionedTools(sandboxParagraph)) {
-      expect(sandboxTools.has(name), `${name} in the sandbox paragraph`).toBe(true);
+    const start = skill.indexOf("## Without an account");
+    expect(start).toBeGreaterThan(0);
+    const sandboxSection = skill.slice(start, skill.indexOf("\n## ", start + 1));
+    const named = mentionedTools(sandboxSection);
+    expect(named).toContain("connect_account");
+    for (const name of named) {
+      expect(sandboxTools.has(name), `${name} in the sandbox section`).toBe(true);
     }
   });
 
@@ -73,6 +94,27 @@ describe("agent skill", () => {
     for (const [, target] of skill.matchAll(/\]\(((?!https?:)[^)]+)\)/g)) {
       expect(() => read(join(skillDir, target)), target).not.toThrow();
     }
+  });
+
+  it("links every reference file from SKILL.md", () => {
+    expect(references.length).toBeGreaterThan(1);
+    for (const file of references) {
+      expect(skill, file).toContain(`](references/${file})`);
+    }
+  });
+
+  describe.each(references)("references/%s", (file) => {
+    const markdown = read(join(referencesDir, file));
+
+    it("only names tools the server has", () => {
+      expect(mentionedTools(markdown).filter((name) => !knownTools.has(name))).toEqual([]);
+    });
+
+    it("links only to files that exist", () => {
+      for (const [, target] of markdown.matchAll(/\]\(((?!https?:)[^)]+)\)/g)) {
+        expect(() => read(join(referencesDir, target)), target).not.toThrow();
+      }
+    });
   });
 });
 
@@ -86,7 +128,7 @@ describe("Claude Code plugin", () => {
     expect(marketplace.plugins[0]).toMatchObject({
       name: manifest.name,
       source: "./plugins/webhooks-cc",
-      skills: ["./skills/webhook-testing"],
+      skills: ["./skills/webhooks-cc"],
     });
   });
 
