@@ -132,7 +132,7 @@ function ApproveContent() {
       if (googleBack === "connected") {
         setPhase({
           kind: "done",
-          summary: "A Google account was connected for Google Sheets destinations.",
+          summary: "Connect a Google account for Google Sheets destinations.",
         });
       } else if (googleBack === "late") {
         setPhase({ kind: "gone", message: GOOGLE_LATE });
@@ -281,8 +281,11 @@ function ApproveContent() {
 
           {phase.kind === "done" && (
             <Notice title="Done">
-              You approved this, and it is done: {phase.summary} Whoever asked can see the result
-              now. You can close this page.
+              You approved this request, and it has been carried out:
+              <span className="block my-3 font-medium text-foreground ph-no-capture">
+                {phase.summary}
+              </span>
+              Whoever asked can see the result now. You can close this page.
             </Notice>
           )}
 
