@@ -330,22 +330,40 @@ describe("bounded request search", () => {
     expect(refs).toEqual(NEEDLE_AT.slice(2).map((i) => `${NEEDLE}-${i}`));
   });
 
-  it("keeps a crafted cursor inside the range it was asked for", async () => {
-    const from = Date.now() - 30 * 60_000;
+  it("takes only cursors it issued, to the account it issued them to", async () => {
+    // A made-up position, even a well-formed one, is refused: the database
+    // clamps positions to the range too (lab-tested), but a forged cursor
+    // must not reach it at all.
     const crafted = Buffer.from(
       "a|-infinity|00000000-0000-0000-0000-000000000000",
       "utf8"
     ).toString("base64url");
-    const { requests } = await searchAll({
-      userId: ownerId,
-      slug: bigSlug,
-      q: NEEDLE,
-      order: "asc",
-      from,
-      cursor: crafted,
-    });
-    expect(requests.length).toBeGreaterThan(0);
-    expect(requests.every((r) => r.receivedAt >= from)).toBe(true);
+    await expect(
+      searchRequestPage({
+        userId: ownerId,
+        slug: bigSlug,
+        q: NEEDLE,
+        order: "asc",
+        cursor: crafted,
+      })
+    ).rejects.toBeInstanceOf(InvalidSearchCursorError);
+
+    const page = await searchRequestPage({ userId: ownerId, slug: bigSlug, q: "filler", limit: 1 });
+    expect(page.cursor).toBeTruthy();
+    await expect(
+      searchRequestPage({ userId: otherId, slug: bigSlug, q: "filler", cursor: page.cursor! })
+    ).rejects.toBeInstanceOf(InvalidSearchCursorError);
+    // Tampering with the position breaks the signature.
+    const [position, mac] = page.cursor!.split(".");
+    const tampered = `${Buffer.from(
+      Buffer.from(position, "base64url")
+        .toString("utf8")
+        .replace(/^d\|[^|]+/, "d|infinity"),
+      "utf8"
+    ).toString("base64url")}.${mac}`;
+    await expect(
+      searchRequestPage({ userId: ownerId, slug: bigSlug, q: "filler", cursor: tampered })
+    ).rejects.toBeInstanceOf(InvalidSearchCursorError);
   });
 
   it("counts one kind of an endpoint exactly", async () => {

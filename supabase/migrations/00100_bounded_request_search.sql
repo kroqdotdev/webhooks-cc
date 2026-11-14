@@ -111,6 +111,11 @@ set max_parallel_workers_per_gather to 0
 set enable_bitmapscan to off
 set timezone to 'UTC'
 set datestyle to 'ISO, YMD'
+-- PostgREST connects as authenticator, whose 8 s statement_timeout would
+-- end a 10 s budget with an error instead of a partial page; PostgREST
+-- applies a function's own setting to its call. The budget is the real
+-- bound; this only leaves room for it and for building the page.
+set statement_timeout to '20s'
 as $$
 declare
   c_min_id constant uuid := '00000000-0000-0000-0000-000000000000';
@@ -675,10 +680,12 @@ begin
       exit;
     end if;
 
-    -- Size the next slice to take an eighth of the budget, or what is left
-    -- of it, at the rate the last one ran, growing at most 4x.
+    -- Size the next slice to take an eighth of the budget (never more than
+    -- 250 ms, so a slice slower than predicted, say on a cold cache,
+    -- overshoots little), or what is left of it, at the rate the last one
+    -- ran, growing at most 4x.
     v_slice_ms := greatest(extract(epoch from clock_timestamp() - v_slice_started) * 1000.0, 0.05);
-    v_factor := least(least(v_budget_ms / 8.0, v_budget_ms - v_elapsed) / v_slice_ms, c_max_growth);
+    v_factor := least(least(v_budget_ms / 8.0, 250.0, v_budget_ms - v_elapsed) / v_slice_ms, c_max_growth);
     v_n := least(greatest(floor(v_n * v_factor)::integer, c_min_slice), c_max_slice);
     if v_q is not null then
       v_bytes := least(greatest(floor(v_bytes * v_factor)::bigint, c_min_bytes), c_max_bytes);

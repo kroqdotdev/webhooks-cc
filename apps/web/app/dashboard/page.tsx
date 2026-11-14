@@ -1085,7 +1085,12 @@ export default function DashboardPage() {
       storeClickHouseResults(page.requests);
       searchResultsRef.current = mergeSearchResults(searchResultsRef.current, page.requests);
       setSearchResults((prev) => mergeSearchResults(prev, page.requests));
-      applySearchProgress(progressOf(page));
+      // An arrivals refresh may have moved the search's progress while this
+      // page was on its way (to read a gap it left); this page's deeper
+      // cursor must not skip that gap, so only move on from the cursor sent.
+      if (searchProgressRef.current.cursor === cursor) {
+        applySearchProgress(progressOf(page));
+      }
     } catch (err) {
       if (isAbortError(err) || requestSeq !== searchResultsRequestSeq.current) return;
       if (err instanceof Error && err.message === "invalid_cursor") {

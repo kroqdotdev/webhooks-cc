@@ -1,3 +1,4 @@
+import { createHmac, timingSafeEqual } from "node:crypto";
 import { createAdminClient } from "./admin";
 import type { Database, Json } from "./database";
 import { deriveWebhookDetection } from "@/lib/webhook-detection";
@@ -214,19 +215,36 @@ interface CountRpcResult {
   cancelled?: boolean;
 }
 
-// The database's cursor ("d|<time>|<id>") travels base64url-encoded, so
-// clients treat it as opaque and it survives a query string untouched.
-function encodeCursor(cursor: string | null | undefined): string | null {
-  return cursor ? Buffer.from(cursor, "utf8").toString("base64url") : null;
+// The database's cursor ("d|<time>|<id>[|<offset left>]") travels
+// base64url-encoded with a MAC over it and the account, so clients treat it
+// as opaque, it survives a query string untouched, and only a cursor this
+// server issued to this account is taken (a made-up one could otherwise
+// spend the larger continuation allowance on first pages).
+function cursorMac(userId: string, cursor: string): Buffer {
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!key) throw new Error("SUPABASE_SERVICE_ROLE_KEY is required");
+  return createHmac("sha256", key)
+    .update(`search-cursor:v1:${userId}:${cursor}`)
+    .digest()
+    .subarray(0, 16);
 }
 
-function decodeCursor(cursor: string | undefined): string | null {
+function encodeCursor(userId: string, cursor: string | null | undefined): string | null {
+  if (!cursor) return null;
+  return `${Buffer.from(cursor, "utf8").toString("base64url")}.${cursorMac(userId, cursor).toString("base64url")}`;
+}
+
+function decodeCursor(userId: string, cursor: string | undefined): string | null {
   const trimmed = cursor?.trim();
   if (!trimmed) return null;
-  if (!/^[A-Za-z0-9_-]+$/.test(trimmed) || trimmed.length > 200) {
+  const match = /^([A-Za-z0-9_-]{1,200})\.([A-Za-z0-9_-]{22})$/.exec(trimmed);
+  if (!match) throw new InvalidSearchCursorError();
+  const decoded = Buffer.from(match[1], "base64url").toString("utf8");
+  const given = Buffer.from(match[2], "base64url");
+  const expected = cursorMac(userId, decoded);
+  if (given.length !== expected.length || !timingSafeEqual(given, expected)) {
     throw new InvalidSearchCursorError();
   }
-  const decoded = Buffer.from(trimmed, "base64url").toString("utf8");
   if (!/^[ad]\|[^|]+\|[0-9a-f-]{36}(\|\d{1,5})?$/.test(decoded)) {
     throw new InvalidSearchCursorError();
   }
@@ -262,7 +280,7 @@ interface PageRpcArgs extends SearchRequestsInput, SearchRunOptions {
 async function callSearchPage(input: PageRpcArgs): Promise<unknown> {
   const admin = createAdminClient();
   const plan = await resolvePlan(input.userId, input.plan);
-  const cursor = decodeCursor(input.cursor);
+  const cursor = decodeCursor(input.userId, input.cursor);
 
   // No abort signal reaches the call: PostgREST does not cancel a running
   // statement when the client goes away. The search stops at its budget, or
@@ -304,7 +322,7 @@ export async function searchRequestPage(
     requests: (data?.requests ?? []).map(normalizeSearchRow),
     complete: data?.complete === true,
     searchedUntil: toMs(data?.searched_until),
-    cursor: encodeCursor(data?.cursor),
+    cursor: encodeCursor(input.userId, data?.cursor),
     slices: data?.slices ?? 0,
   };
 }
@@ -322,7 +340,7 @@ export async function countSearchRequests(
     count: toMs(data?.count) ?? 0,
     exact: data?.exact === true,
     searchedUntil: toMs(data?.searched_until),
-    cursor: encodeCursor(data?.cursor),
+    cursor: encodeCursor(input.userId, data?.cursor),
     slices: data?.slices ?? 0,
   };
 }
