@@ -1,4 +1,4 @@
-import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import { serveStdio } from "@modelcontextprotocol/server/stdio";
 import { createServer } from "../src/index";
 import { runSetup } from "../src/setup";
 
@@ -9,7 +9,7 @@ if (command === "setup") {
   runSetup(args.slice(1));
 } else if (command === "--help" || command === "-h") {
   console.log(`
-@webhooks-cc/mcp — MCP server for webhooks.cc
+@webhooks-cc/mcp: MCP server for webhooks.cc
 
 Usage:
   npx @webhooks-cc/mcp                    Start stdio MCP server
@@ -24,6 +24,11 @@ Environment:
                      ~/.config/whk/agent.json, shared with the whk CLI and SDKs)
   WHK_WEBHOOK_URL    Custom webhook receiver URL (optional)
   WHK_BASE_URL       Custom API base URL (optional)
+  WHK_MCP_TOOLS      Tool groups to list: all, or core plus any of forwarding,
+                     layouts, extras, teams, account, domains, sheets, names
+                     (default: core, and all for Claude Code, Codex and
+                     ChatGPT; enable_tools loads more during a session)
+  WHK_MCP_READ_ONLY  1 to list only the tools that change nothing
 
 Setup:
   npx @webhooks-cc/mcp setup claude-code
@@ -43,11 +48,10 @@ Get your API key at https://webhooks.cc/account/api-keys
   console.error(`Unknown command: "${command}". Run with --help for usage.`);
   process.exit(1);
 } else {
-  // Default: start stdio server
-  const server = createServer();
-  const transport = new StdioServerTransport();
-  server.connect(transport).catch((error) => {
-    console.error("Fatal:", error instanceof Error ? error.message : error);
-    process.exit(1);
+  // Default: serve stdio, to 2026-07-28 clients and to clients that still
+  // open with initialize: one server per connection, from the factory.
+  serveStdio(() => createServer(), {
+    // Out-of-band reports only, never what was sent; stdout is the protocol.
+    onerror: (error) => console.error(`webhooks-cc-mcp: ${error.message}`),
   });
 }

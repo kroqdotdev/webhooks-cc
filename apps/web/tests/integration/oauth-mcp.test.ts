@@ -413,7 +413,7 @@ describe("OAuth for remote MCP clients", () => {
       );
       const result = (await rpc(list)).result;
       expect(result.ttlMs).toBe(3_600_000);
-      expect(result.cacheScope).toBe("public");
+      expect(result.cacheScope).toBe("private");
       expect(result.tools.length).toBeGreaterThan(30);
 
       const call = await mcp(

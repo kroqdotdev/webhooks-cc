@@ -9,9 +9,12 @@ import {
   WebhooksCC,
   type PendingConnection,
 } from "@webhooks-cc/sdk";
+import { TOOL_CATALOG } from "../catalog";
 import { createServer } from "../index";
 
 const BASE_URL = "https://webhooks.test";
+const ALL_COUNT = Object.keys(TOOL_CATALOG).length;
+const CORE_COUNT = Object.values(TOOL_CATALOG).filter((entry) => entry.group === "core").length;
 const SANDBOX_TOOLS = [
   "about_sandbox",
   "connect_account",
@@ -86,9 +89,9 @@ function accountClient(token = "whcc_claimed"): WebhooksCC {
   return new WebhooksCC({ baseUrl: BASE_URL, getAccessToken: async () => token });
 }
 
-async function connect() {
+async function connect(clientName = "test") {
   const server = createServer({ baseUrl: BASE_URL });
-  const client = new Client({ name: "test", version: "1.0.0" }, { capabilities: {} });
+  const client = new Client({ name: clientName, version: "1.0.0" }, { capabilities: {} });
   const changes: number[] = [];
   client.setNotificationHandler(ToolListChangedNotificationSchema, () => {
     changes.push(Date.now());
@@ -322,11 +325,14 @@ describe("sandbox tools (no API key)", () => {
     expect(connected.body.message).toContain("now that account's endpoints");
 
     const after = await names();
-    expect(after).toHaveLength(94);
-    expect(after).toEqual(expect.arrayContaining(["send_webhook", "describe", "list_teams"]));
+    // The core tools and enable_tools, for a client that is not known to take long lists.
+    expect(after).toHaveLength(CORE_COUNT + 1);
+    expect(after).toEqual(expect.arrayContaining(["send_webhook", "describe", "enable_tools"]));
+    expect(after).not.toContain("list_teams");
     expect(after).not.toContain("connect_account");
     expect(after).not.toContain("about_sandbox");
-    // Debounced: removing eleven tools and adding 54 is one notification.
+    expect(connected.body.message).toContain("enable_tools");
+    // Debounced: removing eleven tools and adding the account's is one notification.
     await vi.waitFor(() => expect(changes.length).toBeGreaterThan(0));
     expect(changes).toHaveLength(1);
 
@@ -338,6 +344,51 @@ describe("sandbox tools (no API key)", () => {
     expect(listed.isError).toBe(false);
     const [, init] = fetchSpy.mock.calls[0];
     expect(new Headers(init?.headers).get("authorization")).toBe("Bearer whcc_claimed");
+  });
+
+  it("gives a client that takes long lists every group once the human connects", async () => {
+    const sandbox = fakeSandbox();
+    sandbox.waitForClaim.mockResolvedValue(accountClient());
+    vi.spyOn(WebhooksCC, "sandbox").mockResolvedValue(sandbox as unknown as SandboxClient);
+    const { call, names, changes } = await connect("claude-code");
+    // Before an account: the sandbox tools, whatever the client.
+    expect(await names()).toEqual(SANDBOX_TOOLS);
+    await call("create_endpoint");
+    await call("connect_account", { email: "dev@example.com" });
+    const connected = await call("wait_for_connection");
+    expect(connected.body.message).not.toContain("enable_tools");
+
+    const after = await names();
+    expect(after).toHaveLength(ALL_COUNT);
+    expect(after).toEqual(expect.arrayContaining(["list_teams", "add_domain", "list_names"]));
+    expect(after).not.toContain("enable_tools");
+    await vi.waitFor(() => expect(changes.length).toBeGreaterThan(0));
+    expect(changes).toHaveLength(1);
+  });
+
+  it("keeps only the tools that change nothing in read-only mode, and the connect tools", async () => {
+    process.env.WHK_MCP_READ_ONLY = "1";
+    try {
+      const { names, client } = await connect();
+      expect(await names()).toEqual(
+        [
+          "about_sandbox",
+          "connect_account",
+          "get_endpoint",
+          "get_request",
+          "list_endpoints",
+          "list_requests",
+          "wait_for_connection",
+          "wait_for_request",
+          "generate_payload_schema",
+        ].sort()
+      );
+      for (const tool of (await client.listTools()).tools) {
+        expect(tool.annotations, tool.name).toBeDefined();
+      }
+    } finally {
+      delete process.env.WHK_MCP_READ_ONLY;
+    }
   });
 
   it("starts with the full tools for a saved connection, and falls back when it is revoked", async () => {
@@ -352,7 +403,7 @@ describe("sandbox tools (no API key)", () => {
     });
     try {
       const { call, names } = await connect();
-      expect(await names()).toHaveLength(94);
+      expect(await names()).toHaveLength(CORE_COUNT + 1);
 
       // The human disconnects the agent: the token dies and the assertion is refused.
       vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {

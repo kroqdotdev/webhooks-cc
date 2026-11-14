@@ -1,0 +1,10 @@
+{
+  "title": "MCP tools in groups, with annotations",
+  "items": [
+    "The MCP servers load a core of 39 tools by default (36 on the remote server), so clients that cap how many tools they load, such as Cursor, keep every core tool; Claude Code, Codex, claude.ai and ChatGPT, which load tools on demand, get all of them",
+    "More tools load by group: `WHK_MCP_TOOLS=all` or groups such as `core,teams` on the local server, which also offers `enable_tools` mid-session, and `?tools=` on the remote server's address",
+    "A read-only mode (`WHK_MCP_READ_ONLY=1`, or `?readonly=1` on the remote server) lists only the tools that change nothing",
+    "Every tool carries MCP annotations: whether it only reads, whether a change can be undone, and whether it reaches past webhooks.cc",
+    "The local server now runs on version 2 of the MCP SDK, like the remote one, and serves the 2026-07-28 protocol revision as well as older clients"
+  ]
+}

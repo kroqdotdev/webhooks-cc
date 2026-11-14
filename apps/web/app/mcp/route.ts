@@ -2,7 +2,13 @@ import { extractBearerToken } from "@/lib/api-auth";
 import { publicEnv } from "@/lib/env";
 import { getClientIp, checkRateLimitByKeyWithInfo, checkRateLimitWithInfo } from "@/lib/rate-limit";
 import { POST_CLAIM_SCOPES } from "@/lib/agent/constants";
-import { mcpHandler } from "@/lib/mcp/hosted";
+import { CLIENT_INFO_META_KEY } from "@modelcontextprotocol/server";
+import {
+  mcpHandler,
+  registrationClientName,
+  requestClientName,
+  toolSelection,
+} from "@/lib/mcp/hosted";
 import { preflight, withCors } from "@/lib/oauth/cors";
 import { validateApiKeyWithMetadata } from "@/lib/supabase/api-keys";
 import { readBoundedBody } from "@/lib/agent/http";
@@ -114,6 +120,10 @@ async function handle(request: Request): Promise<Response> {
     }
   }
 
+  const tools = toolSelection(new URL(request.url), [
+    requestClientName(parsedBody, CLIENT_INFO_META_KEY),
+    await registrationClientName(validation.agentRegistrationId ?? null),
+  ]);
   const response = await mcpHandler.fetch(request, {
     parsedBody,
     authInfo: {
@@ -121,7 +131,12 @@ async function handle(request: Request): Promise<Response> {
       clientId: validation.agentRegistrationId ?? "api-key",
       scopes: POST_CLAIM_SCOPES,
       // Without a Cloudflare or proxy header (local runs) there is no address to pass on.
-      extra: { clientIp: clientIpOrNull(request), userId: validation.userId },
+      extra: {
+        clientIp: clientIpOrNull(request),
+        userId: validation.userId,
+        groups: tools.groups,
+        readOnly: tools.readOnly,
+      },
     },
   });
   return withCors(response);

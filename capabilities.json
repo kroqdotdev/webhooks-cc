@@ -1031,7 +1031,8 @@
       "sandbox/connect_account": "connects the agent to an account (/auth.md)",
       "sandbox/wait_for_connection": "connects the agent to an account (/auth.md)",
       "sandbox/about_sandbox": "describes the sandbox and its limits",
-      "sandbox/generate_payload_schema": "works on requests already read"
+      "sandbox/generate_payload_schema": "works on requests already read",
+      "enable_tools": "loads more tool groups into this session (the local server only)"
     }
   }
 }

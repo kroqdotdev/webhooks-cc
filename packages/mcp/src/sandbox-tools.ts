@@ -1,5 +1,5 @@
 import { z } from "zod";
-import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import type { McpServer } from "@modelcontextprotocol/server";
 import {
   AgentAuthError,
   AgentCredentialStore,
@@ -9,7 +9,15 @@ import {
   type Request,
   type SandboxClaimAttempt,
 } from "@webhooks-cc/sdk";
+import { TOOL_GROUP_NAMES, toolAnnotations, toolTitle } from "./catalog";
 import { compactRequest } from "./compact";
+import {
+  asToolServer,
+  localToolGroups,
+  toolSelection,
+  type LocalToolGroups,
+  type ToolSelectionOptions,
+} from "./local-tools";
 import { MCP_USER_AGENT } from "./version";
 import {
   createEndpointShape,
@@ -21,10 +29,10 @@ import {
   listRequestsShape,
   payloadSchemaResult,
   payloadSchemaShape,
-  registerTools,
   waitForRequestShape,
   withErrorHandling,
   type RegisteredToolHandle,
+  type ToolAnnotationsHint,
   type ToolServer,
 } from "./tools";
 
@@ -65,7 +73,7 @@ const ACCOUNT_ONLY_OPTIONS = [
   "signingHeader",
 ] as const;
 
-export interface SandboxToolOptions {
+export interface SandboxToolOptions extends ToolSelectionOptions {
   /** API base URL (default: WHK_BASE_URL or https://webhooks.cc). */
   baseUrl?: string;
   /** Webhook receiver URL (default: WHK_WEBHOOK_URL or https://go.webhooks.cc). */
@@ -80,6 +88,11 @@ export interface SandboxToolOptions {
   credentialsFile?: string | false;
   /** Called whenever the tools switch to a human's account, with a client for it. */
   onConnected?: (client: WebhooksCC) => void;
+  /**
+   * The account tools' groups, when the caller already made them for this
+   * server (createServer does); otherwise made from tools and readOnly.
+   */
+  toolGroups?: LocalToolGroups;
 }
 
 type PendingConnect =
@@ -204,6 +217,8 @@ export function registerSandboxTools(server: McpServer, options: SandboxToolOpti
     options.clientName ?? "webhooks-cc-mcp",
     options.credentialsFile
   );
+  const target = asToolServer(server);
+  const groups = options.toolGroups ?? localToolGroups(server, toolSelection(options));
   let handles: RegisteredToolHandle[] = [];
   // Which tool set is on display; a revocation only counts for its own.
   let shown = 0;
@@ -213,7 +228,10 @@ export function registerSandboxTools(server: McpServer, options: SandboxToolOpti
     for (const handle of handles) handle.remove();
     handles = register(id);
   };
-  const showSandbox = () => swap(() => sandboxToolSet(server, session, showAccount));
+  const showSandbox = () =>
+    swap(() =>
+      sandboxToolSet(sandboxTarget(target, groups.selection.readOnly), session, showAccount, groups)
+    );
   const savedAccount = (id: number) =>
     options.credentialsFile === false
       ? null
@@ -230,23 +248,65 @@ export function registerSandboxTools(server: McpServer, options: SandboxToolOpti
             }),
         });
   function showAccount(client: WebhooksCC): void {
-    swap((id) => registerTools(server, savedAccount(id) ?? client));
+    swap((id) => [groups.show(savedAccount(id) ?? client)]);
     options.onConnected?.(client);
   }
 
   const saved = savedAccount(1);
   if (saved) {
-    swap(() => registerTools(server, saved));
+    swap(() => [groups.show(saved)]);
     options.onConnected?.(saved);
   } else {
     showSandbox();
   }
 }
 
+/** What the sandbox-only tools do, as MCP annotations; the rest are in catalog.ts. */
+const SANDBOX_ONLY_TOOLS: Record<string, Omit<ToolAnnotationsHint, "title">> = {
+  // A new code each time.
+  connect_account: {
+    readOnlyHint: false,
+    destructiveHint: false,
+    idempotentHint: false,
+    openWorldHint: false,
+  },
+  // Changes this session's tools once the human has connected.
+  wait_for_connection: {
+    readOnlyHint: false,
+    destructiveHint: false,
+    idempotentHint: true,
+    openWorldHint: false,
+  },
+  about_sandbox: {
+    readOnlyHint: true,
+    destructiveHint: false,
+    idempotentHint: true,
+    openWorldHint: false,
+  },
+};
+
+/** The tools that connect an account, which a read-only server keeps too. */
+const CONNECT_TOOLS = new Set(["connect_account", "wait_for_connection"]);
+
+/** The sandbox tools' view of the server: annotations added, and read-only applied. */
+function sandboxTarget(target: ToolServer, readOnly: boolean): ToolServer {
+  return {
+    tool(name, description, shape, handler) {
+      const own = SANDBOX_ONLY_TOOLS[name];
+      const annotations = own ? { title: toolTitle(name), ...own } : toolAnnotations(name);
+      if (readOnly && !annotations.readOnlyHint && !CONNECT_TOOLS.has(name)) {
+        return { remove() {} };
+      }
+      return target.tool(name, description, shape, handler, annotations);
+    },
+  };
+}
+
 function sandboxToolSet(
   server: ToolServer,
   session: AgentSession,
-  showAccount: (client: WebhooksCC) => void
+  showAccount: (client: WebhooksCC) => void,
+  groups: LocalToolGroups
 ): RegisteredToolHandle[] {
   const tools: RegisteredToolHandle[] = [];
   const limits = `up to ${SANDBOX.maxEndpoints} endpoints at a time, ${SANDBOX.requestsPerEndpoint} captured requests each and ${SANDBOX.requests} in all, deleted ${SANDBOX.lifetimeHours} hours after the sandbox was created`;
@@ -494,7 +554,11 @@ function sandboxToolSet(
         return jsonContent({
           connected: true,
           email: pending.email,
-          message: `Connected to the webhooks.cc account of ${pending.email}. The full tool set has replaced the sandbox tools (the tool list changed; if your client does not pick that up, ask the user to restart it).${movedEndpoints ? " The sandbox endpoints are now that account's endpoints, with what they captured." : ""} ${
+          message: `Connected to the webhooks.cc account of ${pending.email}. The account's tools have replaced the sandbox tools (the tool list changed; if your client does not pick that up, ask the user to restart it).${
+            groups.loadedGroups().length < TOOL_GROUP_NAMES.length
+              ? " More tools load in groups: see enable_tools."
+              : ""
+          }${movedEndpoints ? " The sandbox endpoints are now that account's endpoints, with what they captured." : ""} ${
             file
               ? `The connection is saved in ${file}, so later sessions, the whk CLI and the SDKs start connected; it lasts 90 days, and the human can remove it under Account, Connected agents.`
               : "This connection lasts while this MCP server runs; for a lasting setup, the human can create an API key under Account and set WHK_API_KEY."

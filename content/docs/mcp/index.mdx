@@ -80,7 +80,8 @@ claude mcp add -s user --transport http webhooks-cc https://webhooks.cc/mcp --he
 
 ### What differs from the local server
 
-- **91 tools.** `send_to`, `replay_request` and `share_port` are left out: the first two post to a URL you name and `share_port` runs `whk` on your computer, and a hosted server cannot reach your machine. For the same reason `render_email` and `test_webhook_flow` refuse `targetUrl`. To send to localhost, use the local server or [`whk tunnel`](/docs/cli/tunnel).
+- **No `enable_tools`.** Choose the [tool groups](#tool-groups) in the server's address instead.
+- **Three tools fewer.** `send_to`, `replay_request` and `share_port` are left out: the first two post to a URL you name and `share_port` runs `whk` on your computer, and a hosted server cannot reach your machine. For the same reason `render_email` and `test_webhook_flow` refuse `targetUrl`. To send to localhost, use the local server or [`whk tunnel`](/docs/cli/tunnel).
 - **Waits are capped at 50 seconds.** `wait_for_request`, `wait_for_email` and the other tools with a `timeout` return by then; call them again to keep waiting.
 - **Tools only.** The prompts and resources below come with the local server.
 - **An account is required.** There is no sandbox on the remote server, and a sandbox token is refused.
@@ -114,7 +115,30 @@ Setup works without a key too. `npx @webhooks-cc/mcp setup cursor` (or `claude-c
 
 ## Available tools
 
-The local server exposes 94 tools your AI agent can call, and the remote server 91 of them. Without an API key or a saved connection, 11 sandbox tools are available (see above). The [agent skill](/docs/mcp/skills) tells your agent when to use them, and the [tool reference](/docs/mcp/tools) lists every argument.
+The local server has 94 tools in all, and the remote server 91 of them. Without an API key or a saved connection, 11 sandbox tools are available (see above). The [agent skill](/docs/mcp/skills) tells your agent when to use them, and the [tool reference](/docs/mcp/tools) lists every argument.
+
+### Tool groups
+
+Some clients stop loading tools past a limit: Cursor takes about 40 across all your MCP servers together, Devin Desktop (formerly Windsurf) 100, and VS Code 128 including its own. So the tools come in groups, and a server loads the **core** group unless told otherwise: endpoints, captured requests and emails, test webhooks, signatures, forwarding destinations and deliveries, previews of your local app and their logs, usage and approvals (39 tools, 36 on the remote server). Clients that load tools only when the model looks for them, or set no limit, get every group: Claude Code, Codex, claude.ai and ChatGPT.
+
+| Group        | What it adds                                                                                        |
+| ------------ | --------------------------------------------------------------------------------------------------- |
+| `forwarding` | Preview what a destination would send, the forwarding settings and signing secret, test deliveries |
+| `layouts`    | Try email layouts and fields on a captured email, add ready-made layouts, AI setup                 |
+| `extras`     | Bulk endpoint changes, favourites, request counts and payload schemas                               |
+| `teams`      | Teams, members, invites, sharing endpoints with a team, pricing team changes                        |
+| `account`    | Billing, API keys, connected agents, public share links, the display name                           |
+| `domains`    | Custom inbound email domains                                                                        |
+| `sheets`     | Google Sheets accounts, spreadsheets and tabs                                                       |
+| `names`      | Preview names: reserve, release and password-protect them                                           |
+
+To choose:
+
+- **Local server:** set `WHK_MCP_TOOLS` to `all`, or to groups such as `core,teams`. Mid-session, the agent calls `enable_tools` to load a group it needs; its description lists the groups, so an agent that misses a tool knows where to find it.
+- **Remote server:** add them to the address, as in `https://webhooks.cc/mcp?tools=all` or `?tools=core,teams`.
+- **Read-only:** `WHK_MCP_READ_ONLY=1` on the local server, or `?readonly=1` on the remote one, loads only the tools that change nothing.
+
+Every tool says what it does in its annotations: whether it only reads, whether a change can be undone, and whether it reaches past webhooks.cc (a URL you name, an inbox, Google, Anthropic). Clients use them to decide what to ask you about first.
 
 ### Endpoint management
 

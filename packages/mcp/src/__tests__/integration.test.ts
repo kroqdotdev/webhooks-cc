@@ -1,7 +1,6 @@
-import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { afterEach, beforeAll, describe, expect, it } from "vitest";
 import { WebhooksCC } from "@webhooks-cc/sdk";
-import { registerTools } from "../tools";
+import { registerTools, type ToolServer } from "../tools";
 
 const API_KEY = process.env.WHK_API_KEY;
 const BASE_URL = process.env.WHK_BASE_URL ?? "https://webhooks.cc";
@@ -19,14 +18,15 @@ function parseJsonResult(result: { content: Array<{ text: string }>; isError?: b
 }
 
 function getRegisteredHandlers(client: WebhooksCC): Record<string, ToolHandler> {
-  const server = new McpServer({ name: "test", version: "0.0.0" });
-  const toolSpy = vi.spyOn(server, "tool");
-
+  const handlers: Record<string, ToolHandler> = {};
+  const server: ToolServer = {
+    tool(name, _description, _shape, handler) {
+      handlers[name] = handler as ToolHandler;
+      return { remove() {} };
+    },
+  };
   registerTools(server, client);
-
-  return Object.fromEntries(
-    toolSpy.mock.calls.map((call) => [call[0] as string, call[3] as ToolHandler])
-  );
+  return handlers;
 }
 
 async function waitForRetainedSearch(fn: () => Promise<boolean>): Promise<void> {

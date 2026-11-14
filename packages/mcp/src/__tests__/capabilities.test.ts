@@ -1,10 +1,12 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { McpServer } from "@modelcontextprotocol/server";
 import { describe, expect, it, vi } from "vitest";
 import type { WebhooksCC } from "@webhooks-cc/sdk";
+import { asToolServer } from "../local-tools";
 import { registerSandboxTools } from "../sandbox-tools";
 import { LOCAL_ONLY_TOOLS, registerTools } from "../tools";
+import { ENABLE_TOOLS } from "../catalog";
 
 // capabilities.json at the repository root names, for each capability, the
 // MCP tools that reach it ("sandbox/<tool>" for the tools a server without
@@ -19,13 +21,15 @@ const manifest = JSON.parse(readFileSync(join(repo, "capabilities.json"), "utf-8
 
 function toolNames(register: (server: McpServer) => void): string[] {
   const server = new McpServer({ name: "test", version: "0.0.0" });
-  const spy = vi.spyOn(server, "tool");
+  const spy = vi.spyOn(server, "registerTool");
   register(server);
   return spy.mock.calls.map((call) => call[0] as string);
 }
 
 const tools = new Set([
-  ...toolNames((server) => registerTools(server, {} as WebhooksCC)),
+  ...toolNames((server) => registerTools(asToolServer(server), {} as WebhooksCC)),
+  // The local server's own tool for loading more groups (local-tools.ts).
+  ENABLE_TOOLS,
   // Without the saved connection, which would register the account's tools instead.
   ...toolNames((server) => registerSandboxTools(server, { credentialsFile: false })).map(
     (name) => `sandbox/${name}`
