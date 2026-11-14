@@ -7,6 +7,7 @@ import {
   registerTools,
   sdkToolResult,
   toolCallFrom,
+  attachSkill,
   type ToolGroup,
   type ToolServer,
 } from "@webhooks-cc/mcp/tools";
@@ -208,7 +209,7 @@ function buildServer(caller: CallerAuth | undefined): McpServer {
     {
       // The tool list never changes within a request: no listChanged, so a
       // subscriptions/listen stream completes at once instead of holding a slot.
-      capabilities: { tools: { listChanged: false } },
+      capabilities: { tools: { listChanged: false }, resources: { listChanged: false } },
       instructions: INSTRUCTIONS,
       // The list depends on the caller (its client, ?tools=, ?readonly=):
       // cached per caller, and it changes otherwise only with a deploy.
@@ -224,6 +225,8 @@ function buildServer(caller: CallerAuth | undefined): McpServer {
     // Tells the remote server's calls apart from the stdio server's in analytics.
     userAgent: `webhooks-cc-mcp-remote/${APP_VERSION}`,
   });
+  // The agent skill, for clients that read skills from their servers.
+  attachSkill(server);
   registerTools(toolServer(server, caller?.userId ?? "anonymous"), client, {
     remote: true,
     groups: caller?.groups ?? new Set<ToolGroup>(["core"]),

@@ -1,8 +1,8 @@
 {
   "name": "webhooks-cc",
   "displayName": "webhooks.cc",
-  "version": "1.0.0",
-  "description": "Test webhook handlers and signup emails with real, signed traffic: capture URLs, provider-signed payloads, types learned from captured requests, and the webhooks.cc MCP server.",
+  "version": "2.0.0",
+  "description": "Everything webhooks.cc does, for coding agents: capture URLs and inboxes, provider-signed test webhooks and signature checks, signup and code emails, mock responses, forwarding, email parsing, tunnels and preview links, and the webhooks.cc MCP server.",
   "author": {
     "name": "webhooks.cc",
     "url": "https://webhooks.cc"
@@ -10,7 +10,17 @@
   "homepage": "https://webhooks.cc/docs/mcp/skills",
   "repository": "https://github.com/kroqdotdev/webhooks-cc",
   "license": "MIT",
-  "keywords": ["webhooks", "testing", "stripe", "github", "signatures", "email", "mcp"],
+  "keywords": [
+    "webhooks",
+    "testing",
+    "stripe",
+    "github",
+    "signatures",
+    "email",
+    "forwarding",
+    "tunnel",
+    "mcp"
+  ],
   "userConfig": {
     "api_key": {
       "type": "string",

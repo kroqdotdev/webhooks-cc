@@ -31,7 +31,7 @@ const CALLOUT_LABELS: Record<string, string> = {
 // MDX puts it under its "Local server" heading, so it brings no heading.
 const MCP_INSTALL_GUIDE = `Replace \`whcc_...\` with an API key from https://webhooks.cc/account/api-keys.
 
-Claude Code plugin (the local MCP server plus the webhook testing skill):
+Claude Code plugin (the local MCP server plus the webhooks.cc skill):
 
 \`\`\`text
 /plugin install webhooks-cc --marketplace kroqdotdev/webhooks-cc

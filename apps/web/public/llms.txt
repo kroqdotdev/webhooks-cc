@@ -61,7 +61,7 @@ Requests are captured by a Rust receiver, written directly to Postgres via a sin
 - MCP server docs: https://webhooks.cc/docs/mcp
 - Remote MCP server: https://webhooks.cc/mcp (streamable HTTP, OAuth 2.1), setup at https://webhooks.cc/docs/mcp#remote-server
 - AI agents (start here, sandbox, connecting an account, OAuth apps, the credential file): https://webhooks.cc/docs/agents
-- Agent skill and Claude Code plugin: https://webhooks.cc/docs/mcp/skills, teaches coding agents to test webhook handlers with signed payloads and generate payload types from captures
+- Agent skill and Claude Code plugin: https://webhooks.cc/docs/mcp/skills, tells coding agents what webhooks.cc can do and which tool to use: signed test webhooks, signup emails, forwarding, email parsing, tunnels and preview links
 - Email capture: https://webhooks.cc/docs/email-capture
 - Forwarding and destinations: https://webhooks.cc/docs/forwarding
 - Layouts and attachment parsing: https://webhooks.cc/docs/layouts
@@ -84,7 +84,7 @@ Requests are captured by a Rust receiver, written directly to Postgres via a sin
 - REST API (endpoints, requests, destinations and deliveries, replay, alerts, layout and response previews, raw email and attachment downloads, teams): https://webhooks.cc/docs/api
 - OpenAPI spec (every route an API key can call, with request and response schemas): https://webhooks.cc/openapi.yaml
 - Agent registration (auth.md): https://webhooks.cc/auth.md, how AI agents get a sandbox and a credential without an account
-- Agent Skills discovery: https://webhooks.cc/.well-known/agent-skills/index.json, serving the webhook-testing skill
+- Agent Skills discovery: https://webhooks.cc/.well-known/agent-skills/index.json, serving the webhooks-cc skill
 - API catalog (RFC 9727): https://webhooks.cc/.well-known/api-catalog
 - OAuth metadata: https://webhooks.cc/.well-known/oauth-authorization-server and https://webhooks.cc/.well-known/oauth-protected-resource/mcp
 - Markdown versions: https://webhooks.cc/index.md and https://webhooks.cc/docs/<page>.md, or any of those pages with `Accept: text/markdown`
@@ -110,7 +110,7 @@ Take the first option that fits.
 Options 2 to 5 are the fallback, and they start in the sandbox. It needs nothing from your human: it is free, anonymous, isolated from every account, and deleted after 24 hours. It lacks more than 3 endpoints, mock responses, forwarding, signature checks and email. Pick it when nobody wants an account, for throwaway captures, in CI, or with no human present. Your human can still keep what you made there through the claim; the remote server does not move sandbox endpoints into the account.
 
 2. The local MCP server, for clients that run local (stdio) servers: `claude mcp add webhooks-cc -- npx -y @webhooks-cc/mcp`, or `npx -y @webhooks-cc/mcp setup cursor` (or `vscode`, `codex`, `devin` for Devin Desktop, formerly Windsurf, `claude-desktop`). No key needed: your first `create_endpoint` registers a sandbox; `connect_account` then `wait_for_connection` moves everything into your human's account. Connected to an account (an API key or a claim), the local server is also the one you need to send to localhost (`send_to`, `replay_request`, `targetUrl`) and for its prompts and resources, which the remote server lacks.
-3. Claude Code with plugins: `/plugin install webhooks-cc --marketplace kroqdotdev/webhooks-cc` (the local MCP server plus the webhook-testing skill).
+3. Claude Code with plugins: `/plugin install webhooks-cc --marketplace kroqdotdev/webhooks-cc` (the local MCP server plus the webhooks-cc skill).
 4. You can run code. Each of these registers, solves the proof of work and reuses the sandbox on the next run:
    - Python: `pip install webhooks-cc`, then `WebhooksCC.sandbox()`
    - Node: `npm i @webhooks-cc/sdk`, then `WebhooksCC.sandbox()`
@@ -240,7 +240,7 @@ The agent skill tells Cursor, Codex, Copilot and other agents when to use these 
 The local server, `@webhooks-cc/mcp`, is for sending to localhost, its prompts and resources, the keyless sandbox, and CI:
 
 ```bash
-# Claude Code: plugin with the local MCP server and the webhook testing skill
+# Claude Code: plugin with the local MCP server and the webhooks.cc skill
 /plugin install webhooks-cc --marketplace kroqdotdev/webhooks-cc
 
 # Claude Code, local MCP server only

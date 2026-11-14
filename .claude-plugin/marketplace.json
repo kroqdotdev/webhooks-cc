@@ -9,8 +9,8 @@
     {
       "name": "webhooks-cc",
       "source": "./plugins/webhooks-cc",
-      "description": "Test webhook handlers and signup emails with real, signed traffic, plus the webhooks.cc MCP server.",
-      "skills": ["./skills/webhook-testing"]
+      "description": "What webhooks.cc can do for a coding agent (webhooks, signatures, test email, forwarding, tunnels and previews), plus the webhooks.cc MCP server.",
+      "skills": ["./skills/webhooks-cc"]
     }
   ]
 }

@@ -343,7 +343,7 @@ does not move sandbox endpoints into the account.
    the remote server lacks.
 3. **You run Claude Code and can install plugins:**
    \`/plugin install webhooks-cc --marketplace kroqdotdev/webhooks-cc\` (the
-   local MCP server plus the webhook-testing skill).
+   local MCP server plus the webhooks-cc skill).
 4. **You can run code.** Each of these registers, solves the proof of work
    and reuses the sandbox on the next run:
    - Python: \`pip install webhooks-cc\`, then \`WebhooksCC.sandbox()\`

@@ -2,6 +2,7 @@ import { McpServer } from "@modelcontextprotocol/server";
 import { WebhooksCC } from "@webhooks-cc/sdk";
 import { localToolGroups, toolSelection, type ToolSelectionOptions } from "./local-tools";
 import { registerPrompts } from "./prompts";
+import { attachSkill } from "./skills";
 import { registerResources } from "./resources";
 import { registerSandboxTools } from "./sandbox-tools";
 import { MCP_USER_AGENT, VERSION } from "./version";
@@ -58,6 +59,8 @@ export function createServer(options: CreateServerOptions = {}): McpServer {
       debouncedNotificationMethods: ["notifications/tools/list_changed"],
     }
   );
+  // The agent skill, served to clients that read skills from their servers.
+  attachSkill(server);
   const groups = localToolGroups(server, toolSelection(options));
 
   // No API key: the account a human connected this agent to before (saved in

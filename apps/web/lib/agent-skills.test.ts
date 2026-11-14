@@ -14,21 +14,21 @@ import {
 
 const SKILL_PATH = path.resolve(
   process.cwd(),
-  "../../plugins/webhooks-cc/skills/webhook-testing/SKILL.md"
+  "../../plugins/webhooks-cc/skills/webhooks-cc/SKILL.md"
 );
 
 describe("agent skills discovery", () => {
-  it("lists the plugin's webhook-testing skill with a digest over the file's bytes", async () => {
+  it("lists the plugin's webhooks-cc skill with a digest over the file's bytes", async () => {
     const bytes = fs.readFileSync(SKILL_PATH);
     const { data } = parseFrontmatter(bytes.toString("utf8"));
     const index = await buildAgentSkillsIndex();
 
     expect(index.$schema).toBe(AGENT_SKILLS_SCHEMA);
     expect(index.skills).toContainEqual({
-      name: "webhook-testing",
+      name: "webhooks-cc",
       type: "skill-md",
       description: String(data.description).trim(),
-      url: "/.well-known/agent-skills/webhook-testing/SKILL.md",
+      url: "/.well-known/agent-skills/webhooks-cc/SKILL.md",
       digest: `sha256:${createHash("sha256").update(bytes).digest("hex")}`,
     });
   });
@@ -52,8 +52,8 @@ describe("agent skills discovery", () => {
   });
 
   it("serves SKILL.md and the markdown files it links to", async () => {
-    expect(await listSkillNames()).toContain("webhook-testing");
-    const files = await listSkillFiles("webhook-testing");
+    expect(await listSkillNames()).toContain("webhooks-cc");
+    const files = await listSkillFiles("webhooks-cc");
     expect(files[0]).toEqual(["SKILL.md"]);
     expect(files).toContainEqual(["references", "sdk-tests.md"]);
 
@@ -64,14 +64,14 @@ describe("agent skills discovery", () => {
   });
 
   it("refuses names and paths outside the skill directories", async () => {
-    expect(await readSkillFile("webhook-testing", ["SKILL.md"])).not.toBeNull();
-    expect(await readSkillFile("webhook-testing", ["..", "..", "plugin.json"])).toBeNull();
-    expect(await readSkillFile("webhook-testing", ["references", "..", "SKILL.md"])).toBeNull();
-    expect(await readSkillFile("..", ["skills", "webhook-testing", "SKILL.md"])).toBeNull();
-    expect(await readSkillFile("Webhook-Testing", ["SKILL.md"])).toBeNull();
-    expect(await readSkillFile("webhook-testing", ["references"])).toBeNull();
-    expect(await readSkillFile("webhook-testing", ["missing.md"])).toBeNull();
-    expect(await readSkillFile("webhook-testing", [])).toBeNull();
+    expect(await readSkillFile("webhooks-cc", ["SKILL.md"])).not.toBeNull();
+    expect(await readSkillFile("webhooks-cc", ["..", "..", "plugin.json"])).toBeNull();
+    expect(await readSkillFile("webhooks-cc", ["references", "..", "SKILL.md"])).toBeNull();
+    expect(await readSkillFile("..", ["skills", "webhooks-cc", "SKILL.md"])).toBeNull();
+    expect(await readSkillFile("Webhooks-CC", ["SKILL.md"])).toBeNull();
+    expect(await readSkillFile("webhooks-cc", ["references"])).toBeNull();
+    expect(await readSkillFile("webhooks-cc", ["missing.md"])).toBeNull();
+    expect(await readSkillFile("webhooks-cc", [])).toBeNull();
     expect(await readSkillFile("no-such-skill", ["SKILL.md"])).toBeNull();
   });
 });

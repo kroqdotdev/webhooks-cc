@@ -1,0 +1,8 @@
+{
+  "title": "One agent skill for all of webhooks.cc",
+  "items": [
+    "The agent skill is now called webhooks-cc and covers everything webhooks.cc does: signed test webhooks and signatures, signup emails, mock responses, forwarding, email parsing, tunnels and preview links, teams and approvals",
+    "It stays short, so it costs little context in every session, with one reference file per topic for the detail",
+    "The Agent skill docs describe the new skill and every way to install it; links to the old webhook-testing files redirect to the new ones"
+  ]
+}
