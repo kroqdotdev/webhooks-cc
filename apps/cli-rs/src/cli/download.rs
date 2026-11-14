@@ -83,6 +83,33 @@ fn content_type(headers: &HeaderMap) -> Option<String> {
         .map(str::to_string)
 }
 
+/// The routes answer some failures with a bare code; say what it means,
+/// keeping the status (and so the exit) the API gave.
+fn explain(error: anyhow::Error, request_id: &str, what: Download) -> anyhow::Error {
+    let mut api = match error.downcast::<crate::error::ApiError>() {
+        Ok(api) => api,
+        Err(error) => return error,
+    };
+    let id = sanitize_line(request_id);
+    match api.message.as_str() {
+        "not_found" => {
+            api.message = match what {
+                Download::Raw => format!("No captured request {id} you can read."),
+                Download::Attachment(index) => format!(
+                    "Request {id} has no attachment {index} (they count from 0), or is not an email you can read."
+                ),
+            }
+        }
+        "not_an_email" => {
+            api.message = format!(
+                "Request {id} is an HTTP request, not an email: `whk requests get {id} --json` has its body."
+            )
+        }
+        _ => {}
+    }
+    api.into()
+}
+
 pub async fn run(
     client: &ApiClient,
     request_id: &str,
@@ -93,9 +120,10 @@ pub async fn run(
     let sink = sink(output, json, std::io::stdout().is_terminal())?;
     let request_id = request_id.trim();
     let answer = match what {
-        Download::Raw => client.download_raw(request_id).await?,
-        Download::Attachment(index) => client.download_attachment(request_id, index).await?,
-    };
+        Download::Raw => client.download_raw(request_id).await,
+        Download::Attachment(index) => client.download_attachment(request_id, index).await,
+    }
+    .map_err(|error| explain(error, request_id, what))?;
     let name = served_name(&answer.headers);
     let kind = content_type(&answer.headers);
     let path = match sink {
@@ -122,19 +150,25 @@ pub async fn run(
         );
         return Ok(());
     }
-    let what = match what {
+    let label = match what {
         Download::Raw => "the message".to_string(),
         Download::Attachment(index) => format!("attachment {index}"),
     };
     println!(
-        "{} Saved {what} ({}) to {}",
+        "{} Saved {label} ({}) to {}",
         green("✓"),
         format_bytes(answer.body.len()),
         bold(&sanitize_line(&path))
     );
     let mut about = Vec::new();
-    if let Some(name) = name {
-        about.push(format!("named \"{}\" by its sender", sanitize_line(&name)));
+    match (name, what) {
+        (Some(name), Download::Attachment(_)) => {
+            about.push(format!("named \"{}\" by its sender", sanitize_line(&name)))
+        }
+        (Some(name), Download::Raw) => {
+            about.push(format!("served as \"{}\"", sanitize_line(&name)))
+        }
+        (None, _) => {}
     }
     if let Some(kind) = kind {
         about.push(sanitize_line(&kind));
@@ -252,6 +286,32 @@ mod tests {
         assert!(!dir.parent().unwrap().join("evil.pdf").exists());
         assert_eq!(std::fs::read_dir(&dir).unwrap().count(), 1);
         std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn bare_codes_are_put_in_words() {
+        let api = |message: &str, status| {
+            anyhow::Error::new(crate::error::ApiError {
+                status,
+                message: message.into(),
+                retry_after: None,
+            })
+        };
+        let error = explain(api("not_found", 404), "r1", Download::Attachment(3));
+        assert!(error.to_string().contains("no attachment 3"), "{error}");
+        assert_eq!(classify(&error).code, "not_found");
+        let error = explain(api("not_an_email", 400), "r1", Download::Raw);
+        assert!(error.to_string().contains("HTTP request"), "{error}");
+        assert_eq!(classify(&error).code, "bad_request");
+        let kept = explain(
+            api("The stored message is no longer available.", 404),
+            "r1",
+            Download::Raw,
+        );
+        assert_eq!(
+            kept.to_string(),
+            "The stored message is no longer available."
+        );
     }
 
     #[tokio::test]
