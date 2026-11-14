@@ -1,0 +1,6 @@
+{
+  "title": "File drops to Amazon S3",
+  "items": [
+    "File drops to Amazon S3 itself work: the request named port 80 in its Host header over https, which AWS refuses as a signature mismatch; other S3-compatible storage was not affected"
+  ]
+}
