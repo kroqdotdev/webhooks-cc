@@ -3,6 +3,6 @@
   "items": [
     "The CLI docs describe `whk destinations` (list, add, update, reorder, preview, test, secret, remove) and `whk deliveries` (the log, a request's deliveries, counts, redelivering one request or every failed one)",
     "The agent skill points agents at those commands for forwarding, Google Sheets and file drops",
-    "Saving a file drop refuses an SFTP private key that stops before its `-----END` line, instead of failing at the first drop"
+    "Saving a file drop refuses an SFTP private key it could never use (cut off, PKCS#8, or protected by a passphrase) and says how to rewrite it, instead of failing at the first drop"
   ]
 }

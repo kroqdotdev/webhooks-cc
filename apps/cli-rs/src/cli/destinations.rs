@@ -158,7 +158,16 @@ fn text_or_file(flag: &str, value: &str) -> Result<String> {
 
 fn read_flag_file(flag: &str, file: &str) -> Result<String> {
     use std::io::Read;
-    let handle = std::fs::File::open(file).with_context(|| format!("failed to read {file}"))?;
+    let handle = match std::fs::File::open(file) {
+        Ok(handle) => handle,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            return Err(CliError::Usage(format!(
+                "{flag}: there is no file {file:?}. A value that starts with @ names a file; write @@ for a literal @ (\"@@{file}\")."
+            ))
+            .into());
+        }
+        Err(e) => return Err(e).with_context(|| format!("failed to read {file}")),
+    };
     let mut bytes = Vec::new();
     handle
         .take(MAX_FLAG_FILE_BYTES + 1)
@@ -304,11 +313,86 @@ fn read_secret(env: &str, prompt: &str) -> Result<String> {
         ))
         .into());
     }
-    let first = rpassword::prompt_password(prompt)?;
+    // Echo stays off from the first prompt to the last line of a pasted key.
+    let _hidden = HiddenInput::new();
+    let first = rpassword::prompt_password(prompt).map_err(read_error)?;
     if first.trim().is_empty() {
         return Err(CliError::Usage("Nothing was typed.".into()).into());
     }
     pem_or_line(first, env, rpassword::read_password)
+}
+
+/// A failed hidden read; Ctrl-C (which rpassword reports as Interrupted)
+/// is a cancel.
+fn read_error(e: std::io::Error) -> anyhow::Error {
+    if e.kind() == std::io::ErrorKind::Interrupted {
+        CliError::Cancelled.into()
+    } else {
+        e.into()
+    }
+}
+
+/// Keeps the terminal from echoing while a secret is read over several
+/// hidden prompts. rpassword puts back the terminal it found after each line,
+/// so with this guard that is echo off, and a pasted key's later lines never
+/// show between two prompts. Ctrl-C is ignored meanwhile: rpassword answers
+/// it by raising SIGINT, which then only ends the read with an error, so this
+/// guard's drop restores echo rather than the process dying with it off.
+#[cfg(unix)]
+struct HiddenInput {
+    tty: std::fs::File,
+    saved: libc::termios,
+    sigint: libc::sighandler_t,
+}
+
+#[cfg(unix)]
+impl HiddenInput {
+    fn new() -> Option<Self> {
+        use std::os::fd::AsRawFd;
+        let tty = std::fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .open("/dev/tty")
+            .ok()?;
+        let fd = tty.as_raw_fd();
+        let mut saved = std::mem::MaybeUninit::<libc::termios>::uninit();
+        // SAFETY: tcgetattr fills the termios on success, checked before use.
+        if unsafe { libc::tcgetattr(fd, saved.as_mut_ptr()) } != 0 {
+            return None;
+        }
+        let saved = unsafe { saved.assume_init() };
+        let mut quiet = saved;
+        quiet.c_lflag &= !(libc::ECHO | libc::ECHONL);
+        // SAFETY: plain calls on an open descriptor and a valid termios.
+        if unsafe { libc::tcsetattr(fd, libc::TCSANOW, &quiet) } != 0 {
+            return None;
+        }
+        let sigint = unsafe { libc::signal(libc::SIGINT, libc::SIG_IGN) };
+        Some(Self { tty, saved, sigint })
+    }
+}
+
+#[cfg(unix)]
+impl Drop for HiddenInput {
+    fn drop(&mut self) {
+        use std::os::fd::AsRawFd;
+        // SAFETY: restores what `new` saved, on the descriptor it opened.
+        unsafe {
+            libc::tcsetattr(self.tty.as_raw_fd(), libc::TCSANOW, &self.saved);
+            libc::signal(libc::SIGINT, self.sigint);
+        }
+    }
+}
+
+/// Windows prompts are left as rpassword makes them.
+#[cfg(not(unix))]
+struct HiddenInput;
+
+#[cfg(not(unix))]
+impl HiddenInput {
+    fn new() -> Option<Self> {
+        Some(Self)
+    }
 }
 
 /// The most lines and bytes a pasted key may take. A 16384-bit RSA key in
@@ -333,12 +417,19 @@ fn pem_or_line(
     mut next_line: impl FnMut() -> std::io::Result<String>,
 ) -> Result<String> {
     let opening = first.trim();
+    // The label runs to the first `-----` after BEGIN.
     let Some(label) = opening
         .strip_prefix("-----BEGIN ")
-        .and_then(|rest| rest.strip_suffix("-----"))
+        .and_then(|rest| rest.split_once("-----"))
+        .map(|(label, _)| label)
+        .filter(|label| !label.is_empty())
     else {
         return Ok(first);
     };
+    // A key pasted as one line already holds its end: the server judges it.
+    if opening.contains("-----END") {
+        return Ok(first);
+    }
     let end = format!("-----END {label}-----");
     let too_long = || -> anyhow::Error {
         CliError::Usage(format!(
@@ -349,8 +440,8 @@ fn pem_or_line(
     let mut key = String::from(opening);
     key.push('\n');
     for _ in 0..MAX_PEM_LINES {
-        let line = next_line()?;
-        let line = line.trim_end();
+        let line = next_line().map_err(read_error)?;
+        let line = line.trim();
         // One blank line belongs after the headers (`DEK-Info: ...`); other
         // blanks are the second half of a pasted \r\n.
         if line.is_empty() && (key.ends_with("\n\n") || !after_header(&key)) {
@@ -361,7 +452,7 @@ fn pem_or_line(
         if key.len() > MAX_PEM_BYTES {
             return Err(too_long());
         }
-        if line.trim() == end {
+        if line == end {
             return Ok(key);
         }
     }
@@ -1292,6 +1383,61 @@ mod tests {
         .unwrap();
         assert!(key.contains("0011\n\nmade-up body"), "{key}");
         assert!(key.contains("body\n-----END"), "{key}");
+    }
+
+    #[test]
+    fn an_indented_paste_is_trimmed_line_by_line() {
+        let key = pem_or_line(
+            "   -----BEGIN OPENSSH PRIVATE KEY-----  ".into(),
+            "WHK_DROP_SECRET",
+            lines(&[
+                "    made-up line\r",
+                "\t-----END OPENSSH PRIVATE KEY-----   ",
+            ]),
+        )
+        .unwrap();
+        assert_eq!(
+            key,
+            "-----BEGIN OPENSSH PRIVATE KEY-----\nmade-up line\n-----END OPENSSH PRIVATE KEY-----\n"
+        );
+    }
+
+    #[test]
+    fn a_key_pasted_as_one_line_is_sent_as_it_is() {
+        let one_line =
+            "-----BEGIN OPENSSH PRIVATE KEY----- made-up -----END OPENSSH PRIVATE KEY-----";
+        let secret = pem_or_line(one_line.into(), "WHK_DROP_SECRET", || {
+            panic!("reads no further line")
+        })
+        .unwrap();
+        assert_eq!(secret, one_line);
+        // A BEGIN line with text after its label reads to the END of that label.
+        let key = pem_or_line(
+            "-----BEGIN RSA PRIVATE KEY-----extra".into(),
+            "WHK_DROP_SECRET",
+            lines(&["made-up", "-----END RSA PRIVATE KEY-----"]),
+        )
+        .unwrap();
+        assert!(key.ends_with("-----END RSA PRIVATE KEY-----\n"), "{key}");
+    }
+
+    #[test]
+    fn ctrl_c_at_the_prompt_cancels() {
+        let error = pem_or_line(
+            "-----BEGIN OPENSSH PRIVATE KEY-----".into(),
+            "WHK_DROP_SECRET",
+            || Err(std::io::Error::from(std::io::ErrorKind::Interrupted)),
+        )
+        .unwrap_err();
+        assert_eq!(classify(&error).code, "cancelled");
+    }
+
+    #[test]
+    fn an_at_that_names_no_file_suggests_a_double_at() {
+        let error = text_or_file("--message-template", "@here deploy failed").unwrap_err();
+        assert_eq!(classify(&error).code, "usage");
+        let message = format!("{error}");
+        assert!(message.contains("\"@@here deploy failed\""), "{message}");
     }
 
     #[test]
