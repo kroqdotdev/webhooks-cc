@@ -123,7 +123,8 @@ export function parseAlertSettings(
     ) {
       return "notifyDestinationIds must be a list of this endpoint's destination ids.";
     }
-    next.notifyDestinationIds = [...new Set(ids as string[])];
+    // Stored and compared lowercase, as the database writes ids.
+    next.notifyDestinationIds = [...new Set((ids as string[]).map((id) => id.toLowerCase()))];
   }
   return next;
 }

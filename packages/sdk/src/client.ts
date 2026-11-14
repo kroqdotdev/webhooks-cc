@@ -1728,7 +1728,11 @@ export class WebhooksCC {
         },
         sendTest: {
           description: "Deliver a sample email with a code and a link (counts as one request)",
-          params: { endpointSlug: "string", tag: "string?" },
+          params: {
+            endpointSlug: "string",
+            tag: "string?",
+            template: "string? (a ready-made layout's id: send its sample email)",
+          },
         },
         toJson: {
           description: "The email.received JSON forwarding would post for an email",

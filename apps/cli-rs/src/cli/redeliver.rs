@@ -172,15 +172,17 @@ pub async fn range(
     );
     let limit = count("limit");
     if let Some(next) = answer.value.get("nextSince").and_then(Value::as_u64) {
+        // The server this run used, so the later run goes to the same one.
         let mut command = format!(
-            "whk requests replay-range {} --since {next}",
-            sanitize_line(slug)
+            "whk requests replay-range --api-url={} {} --since={next}",
+            crate::cli::requests::shell_word(client.base_url()),
+            crate::cli::requests::shell_word(slug)
         );
         if let Some(until) = body.get("until").and_then(Value::as_i64) {
-            command.push_str(&format!(" --until {until}"));
+            command.push_str(&format!(" --until={until}"));
         }
         if let Some(kind) = body.get("kind").and_then(Value::as_str) {
-            command.push_str(&format!(" --kind {kind}"));
+            command.push_str(&format!(" --kind={kind}"));
         }
         println!(
             "  {} {}",

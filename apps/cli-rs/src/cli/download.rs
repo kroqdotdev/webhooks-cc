@@ -36,8 +36,11 @@ enum Sink {
 /// The sink for `-o`, refusing what would put the bytes on a terminal or
 /// mix them with `--json`'s output. Decided before anything is downloaded.
 fn sink(output: Option<&str>, json: bool, stdout_is_terminal: bool) -> Result<Sink> {
-    match output.map(str::trim) {
-        Some("") => Err(CliError::Usage("-o needs a file name".into()).into()),
+    // Trimmed only to tell an empty or `-` value; the path is kept as given.
+    match output {
+        Some(path) if path.trim().is_empty() => {
+            Err(CliError::Usage("-o needs a file name".into()).into())
+        }
         // `-o -` is stdout, as for most tools, under the same rules.
         Some("-") => sink(None, json, stdout_is_terminal),
         Some(path) if std::path::Path::new(path).is_dir() => Err(CliError::Usage(format!(
