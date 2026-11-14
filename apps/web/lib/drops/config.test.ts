@@ -152,6 +152,25 @@ describe("parseDropSecret, SFTP keys", () => {
     }
   });
 
+  it("takes the key out of a paste with more around it", () => {
+    const pem = ec.export({ type: "sec1", format: "pem" }).toString();
+    // What `openssl ecparam -genkey -name prime256v1` writes: the curve first.
+    const params = "-----BEGIN EC PARAMETERS-----\nBggqhkjOPQMBBw==\n-----END EC PARAMETERS-----\n";
+    expect(keyOf(params + pem)).toBe(pem);
+    // A PKCS#12 export's preamble.
+    expect(
+      keyOf(`Bag Attributes\n    localKeyID: 01 02\nKey Attributes: <No Attributes>\n${pem}`)
+    ).toBe(pem);
+    // A secret store's one line with \n escapes.
+    expect(keyOf(pem.trim().replaceAll("\n", "\\n"))).toBe(pem);
+  });
+
+  it("names PuTTY when it is a PuTTY key drops cannot read", () => {
+    expect(sftp("PuTTY-User-Key-File-3: ssh-ed25519\nEncryption: none\nPrivate-MAC: 00\n")).toMatch(
+      /PuTTY key.*puttygen/
+    );
+  });
+
   it("refuses a key cut off, made up or public", () => {
     expect(sftp("-----BEGIN OPENSSH PRIVATE KEY-----")).toMatch(/not a key drops can use/);
     expect(

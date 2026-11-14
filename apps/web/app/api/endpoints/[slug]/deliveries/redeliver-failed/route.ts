@@ -2,6 +2,7 @@ import { auditUserAction } from "@/lib/audit";
 import { authenticateRequestRequireUser } from "@/lib/api-auth";
 import { applyRateLimitHeaders, checkRateLimitWithInfo } from "@/lib/rate-limit";
 import { listDestinations } from "@/lib/supabase/destinations";
+import { isUuid } from "@/lib/uuid";
 import { queueFailedRedeliveries } from "@/lib/supabase/forwarding";
 import { resolveEndpointAccess } from "@/lib/supabase/teams-endpoints";
 import { reportError } from "@/lib/observability";
@@ -26,6 +27,10 @@ export async function POST(request: Request, { params }: { params: Promise<{ slu
   if (!access?.isOwner) return reply({ error: "Endpoint not found" }, 404);
 
   const destinationId = new URL(request.url).searchParams.get("destination");
+  // Present but empty or not an id is refused, never read as every destination.
+  if (destinationId !== null && !isUuid(destinationId)) {
+    return reply({ error: "destination must be a destination id." }, 400);
+  }
   try {
     const destinations = await listDestinations(access.endpointId);
     const chosen = destinationId

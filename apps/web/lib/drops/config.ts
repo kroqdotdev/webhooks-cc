@@ -259,8 +259,11 @@ const NEW_KEY_ADVICE =
  * trimmed, and a key whose line breaks became spaces is put back on its lines.
  */
 function usablePrivateKey(value: string): string | { problem: string } {
+  // A key as a secret store hands it out: on one line with literal \n escapes.
+  const unescaped =
+    !/[\r\n]/.test(value) && value.includes("\\n") ? value.replaceAll("\\n", "\n") : value;
   let key =
-    value
+    onlyPrivateKeyBlock(unescaped)
       .split(/\r?\n|\r/)
       .map((line) => line.trim())
       .join("\n")
@@ -302,6 +305,12 @@ function usablePrivateKey(value: string): string | { problem: string } {
   const first = Array.isArray(parsed) ? parsed[0] : parsed;
   if (first instanceof Error) {
     if (/passphrase|encrypted/i.test(first.message)) return encrypted;
+    if (key.startsWith("PuTTY-User-Key-File-")) {
+      return {
+        problem:
+          "dropSecret.privateKey is a PuTTY key of a version drops cannot read. Convert a copy to OpenSSH form (puttygen <key>.ppk -O private-openssh -o drop_key) and send drop_key.",
+      };
+    }
     if (oneLine) {
       return {
         problem:
@@ -316,6 +325,32 @@ function usablePrivateKey(value: string): string | { problem: string } {
     return { problem: "dropSecret.privateKey is a public key; send the private one." };
   }
   return key;
+}
+
+/**
+ * The first private key block of a paste that holds more around it, such as
+ * the `EC PARAMETERS` block `openssl ecparam -genkey` writes first, or the
+ * "Bag Attributes" lines of a PKCS#12 export; the paste as it is otherwise.
+ * Found with plain searches, so no input can make it slow.
+ */
+function onlyPrivateKeyBlock(value: string): string {
+  const marker = "PRIVATE KEY-----";
+  let from = 0;
+  while (from < value.length) {
+    const begin = value.indexOf("-----BEGIN ", from);
+    if (begin < 0) return value;
+    const lineEnd = value.indexOf("-----", begin + "-----BEGIN ".length);
+    if (lineEnd < 0) return value;
+    const label = value.slice(begin + "-----BEGIN ".length, lineEnd);
+    if (label.length <= 64 && `${label}-----`.endsWith(marker)) {
+      const end = value.indexOf(`-----END ${label}-----`, lineEnd);
+      if (end < 0) return value;
+      const block = value.slice(begin, end + `-----END ${label}-----`.length);
+      return begin === 0 && block.length === value.trimEnd().length ? value : block;
+    }
+    from = lineEnd + "-----".length;
+  }
+  return value;
 }
 
 /**

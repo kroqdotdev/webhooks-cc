@@ -313,14 +313,37 @@ fn read_secret(env: &str, prompt: &str) -> Result<String> {
         ))
         .into());
     }
-    // Echo stays off from the first prompt to the last line of a pasted key.
-    let _hidden = HiddenInput::new();
-    let first = rpassword::prompt_password(prompt).map_err(read_error)?;
+    // Echo stays off from the first prompt to the last line of a pasted key,
+    // and whatever is left unread when it ends is thrown away, so no line of
+    // a paste reaches the shell (which would run it and keep it in history).
+    let hidden = HiddenInput::new();
+    let pending = || hidden.as_ref().is_some_and(HiddenInput::has_pending);
+    let mut first = rpassword::prompt_password(prompt).map_err(read_error)?;
+    // A paste that starts with blank lines.
+    for _ in 0..MAX_PEM_LINES {
+        if !first.trim().is_empty() || !pending() {
+            break;
+        }
+        first = rpassword::read_password().map_err(read_error)?;
+    }
     if first.trim().is_empty() {
         return Err(CliError::Usage("Nothing was typed.".into()).into());
     }
+    let opens_key = first.trim_start().starts_with("-----BEGIN ")
+        || first.trim_start().starts_with(PUTTY_PREFIX);
+    if !opens_key && pending() {
+        // A line, then more of a paste: most likely a comment or a file name
+        // above a key, which would otherwise be saved as the password.
+        return Err(CliError::Usage(format!(
+            "That was more than one line. Paste the key alone, from its -----BEGIN line, or pass it from its file: {env}=\"$(cat ~/.ssh/<key>)\" whk ..."
+        ))
+        .into());
+    }
     pem_or_line(first, env, rpassword::read_password)
 }
+
+/// How a PuTTY key file starts; it ends with its `Private-MAC:` line.
+const PUTTY_PREFIX: &str = "PuTTY-User-Key-File-";
 
 /// A failed hidden read; Ctrl-C (which rpassword reports as Interrupted)
 /// is a cancel.
@@ -370,14 +393,28 @@ impl HiddenInput {
         let sigint = unsafe { libc::signal(libc::SIGINT, libc::SIG_IGN) };
         Some(Self { tty, saved, sigint })
     }
+
+    /// Whether more input is already waiting, as the rest of a paste is.
+    fn has_pending(&self) -> bool {
+        use std::os::fd::AsRawFd;
+        let mut poll = libc::pollfd {
+            fd: self.tty.as_raw_fd(),
+            events: libc::POLLIN,
+            revents: 0,
+        };
+        // SAFETY: one valid pollfd on an open descriptor, 100 ms at most.
+        unsafe { libc::poll(&mut poll, 1, 100) > 0 && poll.revents & libc::POLLIN != 0 }
+    }
 }
 
 #[cfg(unix)]
 impl Drop for HiddenInput {
     fn drop(&mut self) {
         use std::os::fd::AsRawFd;
-        // SAFETY: restores what `new` saved, on the descriptor it opened.
+        // SAFETY: drops unread input, then restores what `new` saved, on the
+        // descriptor it opened.
         unsafe {
+            libc::tcflush(self.tty.as_raw_fd(), libc::TCIFLUSH);
             libc::tcsetattr(self.tty.as_raw_fd(), libc::TCSANOW, &self.saved);
             libc::signal(libc::SIGINT, self.sigint);
         }
@@ -392,6 +429,10 @@ struct HiddenInput;
 impl HiddenInput {
     fn new() -> Option<Self> {
         Some(Self)
+    }
+
+    fn has_pending(&self) -> bool {
+        false
     }
 }
 
@@ -417,6 +458,9 @@ fn pem_or_line(
     mut next_line: impl FnMut() -> std::io::Result<String>,
 ) -> Result<String> {
     let opening = first.trim();
+    if opening.starts_with(PUTTY_PREFIX) {
+        return putty_block(opening, env, next_line);
+    }
     // The label runs to the first `-----` after BEGIN.
     let Some(label) = opening
         .strip_prefix("-----BEGIN ")
@@ -457,6 +501,35 @@ fn pem_or_line(
         }
     }
     Err(too_long())
+}
+
+/// A pasted PuTTY key file: its lines up to and with `Private-MAC:`, bounded
+/// like a PEM block.
+fn putty_block(
+    opening: &str,
+    env: &str,
+    mut next_line: impl FnMut() -> std::io::Result<String>,
+) -> Result<String> {
+    let mut key = format!("{opening}\n");
+    for _ in 0..MAX_PEM_LINES {
+        let line = next_line().map_err(read_error)?;
+        let line = line.trim();
+        if line.is_empty() {
+            continue;
+        }
+        key.push_str(line);
+        key.push('\n');
+        if key.len() > MAX_PEM_BYTES {
+            break;
+        }
+        if line.starts_with("Private-MAC:") {
+            return Ok(key);
+        }
+    }
+    Err(CliError::Usage(format!(
+        "That PuTTY key did not end with its Private-MAC line within {MAX_PEM_LINES} lines and 16 KB. Pass it from its file instead: {env}=\"$(cat <key>.ppk)\" whk ..."
+    ))
+    .into())
 }
 
 /// The API's `dropSecret` for a protocol: the S3 secret key, the FTP
@@ -1105,6 +1178,9 @@ fn test_lines(answer: &Value) -> Vec<String> {
     }
     if let Some(request) = answer.get("request").filter(|r| !r.is_null()) {
         let mut request = request.clone();
+        if !request.is_object() {
+            request = json!({ "value": request });
+        }
         if answer.get("sample").and_then(Value::as_bool) == Some(true) {
             request["sample"] = json!(true);
         }
@@ -1342,6 +1418,37 @@ mod tests {
         .unwrap();
         assert_eq!(secret, "hunter2");
         assert!(!called, "a password reads no further lines");
+    }
+
+    #[test]
+    fn a_pasted_putty_key_is_read_to_its_mac_line() {
+        let key = pem_or_line(
+            "PuTTY-User-Key-File-3: ssh-ed25519".into(),
+            "WHK_DROP_SECRET",
+            lines(&[
+                "Encryption: none",
+                "Comment: made-up",
+                "Public-Lines: 1",
+                "AAAAmadeup",
+                "",
+                "Private-Lines: 1",
+                "AAAAalsomadeup",
+                "Private-MAC: 00ff",
+                "echo this stays unread",
+            ]),
+        )
+        .unwrap();
+        assert!(key.starts_with("PuTTY-User-Key-File-3: ssh-ed25519\nEncryption: none\n"));
+        assert!(key.ends_with("Private-MAC: 00ff\n"));
+        assert!(!key.contains("echo"));
+        let error = pem_or_line(
+            "PuTTY-User-Key-File-3: ssh-ed25519".into(),
+            "WHK_DROP_SECRET",
+            lines(&["x"; 300]),
+        )
+        .unwrap_err();
+        assert_eq!(classify(&error).code, "usage");
+        assert!(!format!("{error:#}").contains("x\n"));
     }
 
     #[test]
