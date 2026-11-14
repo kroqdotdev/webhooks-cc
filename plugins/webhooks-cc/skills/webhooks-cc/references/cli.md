@@ -5,10 +5,11 @@
 - Pass `--json` to every command: stdout carries the API's own JSON (NDJSON
   for streams), and a failure is an `error` object (`code`, `message`,
   `exit`, `hint`) on stderr.
-- Exit statuses are stable and listed in `whk --help`: 3 not logged in,
-  4 not found, 5 not allowed by the plan, 6 rate limited, 7 server or
-  network failure (retry), 8 a wait or approval timed out, 9 not confirmed
-  or refused.
+- Exit statuses are stable and listed in `whk --help`: 1 with
+  `delivery_failed` when `whk destinations test` was not accepted (the
+  result is still on stdout), 3 not logged in, 4 not found, 5 not allowed
+  by the plan, 6 rate limited, 7 server or network failure (retry), 8 a
+  wait or approval timed out, 9 not confirmed or refused.
 - Nothing reads stdin without a terminal: destructive commands need
   `--yes`.
 - Sign in with `whk auth login` (the person approves in a browser), or
@@ -25,6 +26,7 @@
 | Read, search, export               | `whk requests list`, `get`, `search`, `count`, `export`, `clear`                                                  |
 | Send                               | `whk send <slug> -d @body.json`, `whk send-to <url>`, `whk replay <id> --to <url>`                                |
 | Local app                          | `whk tunnel <port> [--live]`, `whk share <port>`, `whk shares`, `whk names`                                       |
+| Forwarding                         | `whk destinations ls`, `add`, `update`, `preview`, `test`, `secret`, `rm`; `whk deliveries ls`, `redeliver`       |
 | Email setup                        | `whk fields preview`, `whk layouts`, `whk ai setup`, `whk domains`                                                |
 | Account                            | `whk usage`, `whk billing`, `whk keys`, `whk agents`, `whk account`, `whk share-links`, `whk teams`, `whk google` |
 | Anything else                      | `whk api <path> [-X METHOD] [-d JSON]`                                                                            |
@@ -33,9 +35,23 @@
 the sender, and its exit is the signal. Without `--since now`, a request
 from the last 5 minutes also counts.
 
-`whk api` reaches every route a command does not cover (destinations among
-them): `whk api endpoints/<slug>/destinations`,
-`whk api -X POST endpoints/<slug>/destinations -d @destination.json`.
+`whk api` reaches every route a command does not cover (alerts among
+them): `whk api endpoints/<slug>/alerts`,
+`whk api -X PUT endpoints/<slug>/alerts -d @alerts.json`.
+
+`whk destinations add` and `update` take a flag per setting (`--url`,
+`--format`, `--filter @filter.json`,
+`--header "Authorization: Bearer $HOOK_TOKEN"`, ...); `update` changes only
+what you pass. Give a header's token as a variable in double quotes: the
+shell stores the variable's name in its history, not the token. A file
+drop's password or key comes from `WHK_DROP_SECRET` (never a flag), so the
+person sets it in their own environment; a key from its file,
+`WHK_DROP_SECRET="$(cat ~/.ssh/drop_key)"`. `@file` reads a flag from a
+file; `@@` starts a value with a literal `@`. `whk destinations preview` is a dry run; `test`,
+`secret --rotate`, `rm` and `whk deliveries redeliver` need `--yes`.
+`whk deliveries ls` rows carry the request id and the destination id;
+`whk deliveries redeliver <request-id> --destination <destination-id> --yes`
+sends a failed one again (it takes the request id, not the delivery's).
 
 Commands that need the person's approval (`whk keys create`,
 `whk share-links create`, `whk teams invite`, `whk domains remove`, ...)

@@ -101,6 +101,9 @@ BASE_URL_ENV = "WHK_BASE_URL"
 WEBHOOK_URL_ENV = "WHK_WEBHOOK_URL"
 
 _DEFAULT_TIMEOUT_MS = 30_000
+# How long a destination's test may take: the server gives a file drop's test a
+# minute to connect, log in and write its file, past the default timeout.
+_DESTINATION_TEST_TIMEOUT_MS = 90_000
 _WAIT_FOR_LOOKBACK_MS = 5 * 60 * 1000
 # How far before the newest request a wait's next poll starts. The receiver stamps
 # receivedAt before the capture commits, and a capture can wait its turn behind
@@ -631,13 +634,20 @@ class WebhooksCC:
         params: Mapping[str, str] | None = None,
         repeatable: bool | None = None,
         deadline_ms: float | None = None,
+        attempt_timeout_ms: float | None = None,
     ) -> Any:
         """Call the API and return its JSON. ``repeatable`` overrides whether a network
         error, a timeout or a 5xx is retried, for a call whose method says otherwise;
-        ``deadline_ms`` is a time on the monotonic clock the call must end by (see
-        :meth:`_call`)."""
+        ``deadline_ms`` is a time on the monotonic clock the call must end by and
+        ``attempt_timeout_ms`` a longer timeout for each try (see :meth:`_call`)."""
         response = self._call(
-            method, path, body=body, params=params, repeatable=repeatable, deadline_ms=deadline_ms
+            method,
+            path,
+            body=body,
+            params=params,
+            repeatable=repeatable,
+            deadline_ms=deadline_ms,
+            attempt_timeout_ms=attempt_timeout_ms,
         )
         if response.status_code == 204 or response.headers.get("content-length") == "0":
             return None
@@ -676,6 +686,7 @@ class WebhooksCC:
         params: Mapping[str, str] | None = None,
         repeatable: bool | None = None,
         deadline_ms: float | None = None,
+        attempt_timeout_ms: float | None = None,
     ) -> httpx.Response:
         """Call the API with retries; the response, once it is a success.
 
@@ -683,14 +694,20 @@ class WebhooksCC:
         then: each try times out at the deadline when that is sooner than the
         client's timeout, and a retry whose wait would end after it is not made, so
         the error goes to the caller instead. Getting an agent's access token is
-        bounded the same way.
+        bounded the same way. ``attempt_timeout_ms`` lets each try take longer than
+        the client's timeout, for a route that does slow work while the caller waits.
         """
-        timeout_ms = self._timeout_ms
+        try_timeout_ms = (
+            max(self._timeout_ms, attempt_timeout_ms)
+            if attempt_timeout_ms is not None
+            else self._timeout_ms
+        )
+        timeout_ms = try_timeout_ms
 
         def time_left() -> float:
             """What a try, or a token exchange, may take: no longer than the deadline."""
             assert deadline_ms is not None
-            return min(self._timeout_ms, max(deadline_ms - time.monotonic() * 1000, 1.0))
+            return min(try_timeout_ms, max(deadline_ms - time.monotonic() * 1000, 1.0))
 
         def may_retry_after(wait_ms: float) -> bool:
             return deadline_ms is None or time.monotonic() * 1000 + wait_ms < deadline_ms
@@ -2305,7 +2322,8 @@ class Destinations:
 
         It sends ``request_id``, or the newest request of ``kind``, or a sample
         when none has arrived. The filter is reported (``filter_passes``), not
-        applied; nothing is queued or retried.
+        applied; nothing is queued or retried. It may take up to 90 seconds (a file
+        drop's test logs in and writes a file), whatever the client's own timeout.
         """
         _validate_segment(slug, "endpoint slug")
         _validate_segment(destination_id, "destination id")
@@ -2316,7 +2334,10 @@ class Destinations:
             body["requestId"] = request_id
         return DestinationTestResult.from_dict(
             self._client._api(
-                "POST", f"/endpoints/{slug}/destinations/{destination_id}/test", body=body
+                "POST",
+                f"/endpoints/{slug}/destinations/{destination_id}/test",
+                body=body,
+                attempt_timeout_ms=_DESTINATION_TEST_TIMEOUT_MS,
             )
         )
 

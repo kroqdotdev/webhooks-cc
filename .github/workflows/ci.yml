@@ -275,6 +275,33 @@ jobs:
         run: cargo build
         working-directory: apps/cli-rs
 
+  check-cli-windows:
+    name: Check Rust CLI (Windows)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - name: Cache cargo
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            apps/cli-rs/target
+          key: ${{ runner.os }}-cargo-cli-${{ hashFiles('apps/cli-rs/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-cli-
+
+      # The release build is the only other Windows build, and it runs when a
+      # version is tagged; this catches a Windows-only break on every PR.
+      - name: Clippy
+        run: cargo clippy --all-targets -- -D warnings
+        working-directory: apps/cli-rs
+
   test-cli:
     name: Test Rust CLI
     runs-on: ubuntu-latest

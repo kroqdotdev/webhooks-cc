@@ -379,7 +379,7 @@ A **File drop** writes what the endpoint captures as files to your own server, f
 
 1. Add a destination and pick **File drop**.
 2. Choose where the files go:
-   - **SFTP**: host, port (22), username, and a password or a private key (OpenSSH or PEM). The server's host key is pinned on the first connection and shown on the drop; a different key afterwards stops the drop, as `ssh` would. **Forget it** accepts the next one.
+   - **SFTP**: host, port (22), username, and a password or a private key without a passphrase: an OpenSSH key (`-----BEGIN OPENSSH PRIVATE KEY-----`), or an RSA or EC key in PEM (`-----BEGIN RSA PRIVATE KEY-----`, `-----BEGIN EC PRIVATE KEY-----`) or PKCS#8 (`-----BEGIN PRIVATE KEY-----`, converted to PEM when you save). An Ed25519 key in PKCS#8 form cannot be used: make a new key for the drop with `ssh-keygen -t ed25519 -N "" -f drop_key` and add `drop_key.pub` to the server's `authorized_keys`. A key with a passphrase is refused when you save; remove the passphrase from a copy with `chmod 600 <copy>`, then `ssh-keygen -p -N "" -f <copy>`. The server's host key is pinned on the first connection and shown on the drop; a different key afterwards stops the drop, as `ssh` would. **Forget it** accepts the next one.
    - **FTPS** (explicit TLS) or **FTP**: host, port (21), username and password. Plain FTP sends the password and the files unencrypted, so use it only where nothing else is offered.
    - **S3**: any S3-compatible storage (AWS, Cloudflare R2, Hetzner, MinIO, Backblaze and the like): the endpoint URL, region, bucket, an access key ID and its secret key. The key only needs permission to write objects.
    - **Folder** (or the key prefix for S3) is where files go; on SFTP and FTP it must exist and is relative to the login's home folder.
@@ -507,7 +507,7 @@ To test the deployed handler through webhooks.cc instead, use **Send test delive
 
 ## Manage forwarding from code
 
-The SDK's `client.destinations` methods do everything the **Forwarding** section does, `client.forwarding` the **Deliveries** log, and the [MCP server](/docs/mcp/tools#add_destination) has the same as tools, so an agent can set up and check forwarding for you. They are for the endpoint's owner only: for anyone else they throw `NotFoundError`.
+The SDK's `client.destinations` methods do everything the **Forwarding** section does, `client.forwarding` the **Deliveries** log, and the [MCP server](/docs/mcp/tools#add_destination) has the same as tools, so an agent can set up and check forwarding for you. They are for the endpoint's owner only: for anyone else they throw `NotFoundError`. From a terminal or a script, [`whk destinations` and `whk deliveries`](/docs/cli/commands#destinations) do the same.
 
 ```ts
 import { WebhooksCC } from "@webhooks-cc/sdk";

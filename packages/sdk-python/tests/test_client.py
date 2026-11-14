@@ -1000,6 +1000,24 @@ def test_clear_is_repeated_only_with_a_before_time(before: int | None, sent: int
     assert len(calls) == sent
 
 
+def test_a_destination_test_may_take_ninety_seconds() -> None:
+    timeouts: dict[str, float] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        timeouts[request.url.path.rsplit("/", 1)[-1]] = request.extensions["timeout"]["read"]
+        if request.url.path.endswith("/test"):
+            return httpx.Response(200, json={"delivered": True})
+        return httpx.Response(200, json={"request": {}, "format": "json"})
+
+    client = make_client(handler, timeout="30s")
+    client.destinations.test("acme", DESTINATION_ID)
+    client.destinations.preview("acme", destination_id=DESTINATION_ID)
+    # A file drop's test has a minute on the server; other calls keep the client's.
+    assert timeouts == {"test": 90.0, "preview": 30.0}
+    make_client(handler, timeout="2m").destinations.test("acme", DESTINATION_ID)
+    assert timeouts["test"] == 120.0
+
+
 def test_timeouts_raise_the_sdk_timeout_error() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         raise httpx.ReadTimeout("slow", request=request)

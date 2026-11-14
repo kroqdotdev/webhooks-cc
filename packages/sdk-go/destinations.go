@@ -282,10 +282,16 @@ type TestDestinationOptions struct {
 	RequestID string
 }
 
+// destinationTestTimeout is how long a destination's test may take: the
+// server gives a file drop's test a minute to connect, log in and write its
+// file, past the default timeout.
+const destinationTestTimeout = 90 * time.Second
+
 // Test sends one delivery to the destination now, as a real one would go
 // out: opts.RequestID, or the newest request of opts.Kind, or a sample when
 // none has arrived. The filter is reported (FilterPasses), not applied;
-// nothing is queued or retried.
+// nothing is queued or retried. It may take up to 90 seconds (a file drop's
+// test logs in and writes a file), whatever the client's own timeout.
 func (s *DestinationsService) Test(ctx context.Context, slug, destinationID string, opts TestDestinationOptions) (*DestinationTestResult, error) {
 	path, err := destinationPath(slug, destinationID)
 	if err != nil {
@@ -299,6 +305,7 @@ func (s *DestinationsService) Test(ctx context.Context, slug, destinationID stri
 		body["requestId"] = opts.RequestID
 	}
 	var result DestinationTestResult
+	ctx = withAttemptTimeout(ctx, destinationTestTimeout)
 	if err := s.c.api(ctx, http.MethodPost, path+"/test", nil, body, &result); err != nil {
 		return nil, err
 	}

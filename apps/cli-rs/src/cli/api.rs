@@ -69,7 +69,13 @@ fn api_path(path: &str) -> Result<String> {
         )
         .into());
     }
+    // A trailing slash (`endpoints/`) names the same route.
     let trimmed = path.trim_start_matches('/');
+    let trimmed = match trimmed.split_once('?') {
+        Some((route, query)) => format!("{}?{query}", route.trim_end_matches('/')),
+        None => trimmed.trim_end_matches('/').to_string(),
+    };
+    let trimmed = trimmed.as_str();
     if trimmed.is_empty() {
         return Err(CliError::Usage("give an API path such as /api/endpoints".into()).into());
     }
@@ -138,6 +144,11 @@ mod tests {
         );
         // "apis" is not the api prefix.
         assert_eq!(api_path("apis").unwrap(), "/api/apis");
+        assert_eq!(api_path("endpoints/").unwrap(), "/api/endpoints");
+        assert_eq!(
+            api_path("endpoints/acme/?limit=5").unwrap(),
+            "/api/endpoints/acme?limit=5"
+        );
     }
 
     #[test]

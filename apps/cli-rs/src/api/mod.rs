@@ -1,6 +1,7 @@
 pub mod account;
 pub mod billing;
 pub mod client;
+pub mod destinations;
 pub mod device_auth;
 pub mod endpoints;
 pub mod google;

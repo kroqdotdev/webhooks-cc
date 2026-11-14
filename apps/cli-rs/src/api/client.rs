@@ -103,6 +103,7 @@ impl ApiClient {
     /// A GET that gives up after `timeout` when that is shorter than the
     /// client's own request timeout.
     pub async fn get_within(&self, path: &str, timeout: Option<Duration>) -> Result<ApiResponse> {
+        let timeout = timeout.map(|t| t.min(super::REQUEST_TIMEOUT));
         let mut resp = self
             .send_once_with(&Method::GET, path, &None, false, &HeaderMap::new(), timeout)
             .await?;
@@ -118,6 +119,28 @@ impl ApiClient {
     pub async fn post(&self, path: &str, body: &impl serde::Serialize) -> Result<ApiResponse> {
         let body = serde_json::to_vec(body).context("failed to encode request body")?;
         self.send(Method::POST, path, Some(body)).await
+    }
+
+    /// A POST with a JSON body that may take `timeout` rather than the
+    /// client's own request timeout: for a route that does slow work while
+    /// the caller waits, such as a destination's test delivery.
+    pub async fn post_within(
+        &self,
+        path: &str,
+        body: &impl serde::Serialize,
+        timeout: Duration,
+    ) -> Result<ApiResponse> {
+        let body = Some(serde_json::to_vec(body).context("failed to encode request body")?);
+        let none = HeaderMap::new();
+        let mut resp = self
+            .send_once_with(&Method::POST, path, &body, false, &none, Some(timeout))
+            .await?;
+        if resp.status() == StatusCode::UNAUTHORIZED && self.can_refresh() {
+            resp = self
+                .send_once_with(&Method::POST, path, &body, true, &none, Some(timeout))
+                .await?;
+        }
+        read_response(resp).await
     }
 
     /// Perform a PATCH request with a JSON body.
@@ -163,6 +186,7 @@ impl ApiClient {
         path: &str,
         body: Option<Vec<u8>>,
     ) -> Result<ApiResponse> {
+        checked_path(path)?;
         let mut request = self
             .http
             .request(method, self.url(path))
@@ -236,6 +260,7 @@ impl ApiClient {
         extra: &HeaderMap,
         timeout: Option<Duration>,
     ) -> Result<Response> {
+        checked_path(path)?;
         let mut headers = self.headers_with(refresh).await?;
         for (name, value) in extra {
             headers.insert(name.clone(), value.clone());
@@ -247,11 +272,43 @@ impl ApiClient {
         if let Some(body) = body {
             request = request.body(body.clone());
         }
+        // A request's own timeout replaces the client's, longer or shorter.
         if let Some(timeout) = timeout {
-            request = request.timeout(timeout.min(super::REQUEST_TIMEOUT));
+            request = request.timeout(timeout);
         }
         request.send().await.context("request failed")
     }
+}
+
+/// Refuses a path with an empty, `.` or `..` segment before it is sent. An id
+/// or slug of `..` would otherwise be resolved away by the URL parser, so
+/// `whk destinations rm acme ..` reached `DELETE /api/endpoints/acme`, and an
+/// empty id would name the collection instead of one item.
+pub(crate) fn checked_path(path: &str) -> Result<()> {
+    let route = path.split(['?', '#']).next().unwrap_or("");
+    // The URL parser drops tabs and line breaks and reads `\` as `/` in an
+    // http(s) path, so they are taken the same way here.
+    let route: String = route
+        .chars()
+        .filter(|c| !matches!(c, '\t' | '\n' | '\r'))
+        .collect();
+    let bad = route.split(['/', '\\']).skip(1).find(|segment| {
+        // The URL parser reads `%2e` as a dot in a path segment too.
+        let plain = segment.replace("%2e", ".").replace("%2E", ".");
+        plain.is_empty() || plain == "." || plain == ".."
+    });
+    if let Some(segment) = bad {
+        let shown = if segment.is_empty() {
+            "An empty value".to_string()
+        } else {
+            format!("`{segment}`")
+        };
+        return Err(crate::error::CliError::Usage(format!(
+            "{shown} cannot be part of an API path: give a slug or id, not an empty value, . or .."
+        ))
+        .into());
+    }
+    Ok(())
 }
 
 async fn read_response(resp: Response) -> Result<ApiResponse> {
@@ -311,5 +368,31 @@ mod tests {
             json!({"_id": "r1", "id": "r1", "method": "POST", "signatureVerified": null,
                 "nested": {"a": 1, "b": null}, "list": [{"x": 1, "y": null}]})
         );
+    }
+
+    #[test]
+    fn refuses_dot_and_empty_segments() {
+        for path in [
+            "/api/endpoints/acme/destinations/..",
+            "/api/endpoints/acme/destinations/.",
+            "/api/endpoints/acme/destinations/",
+            "/api/endpoints//destinations",
+            "/api/endpoints/../keys?x=1",
+            "/api/endpoints/%2E%2E",
+            "/api/endpoints/acme/.%2e",
+            "/api/endpoints\\..\\api-keys",
+            "/api/endpoints/.\t./api-keys",
+        ] {
+            let error = super::checked_path(path).unwrap_err();
+            assert_eq!(crate::error::classify(&error).code, "usage", "{path}");
+        }
+        for path in [
+            "/api/endpoints/acme/destinations/d1",
+            "/api/endpoints/a.b/destinations",
+            "/api/requests?before=a/b",
+            "/api/endpoints/%252e%252e",
+        ] {
+            assert!(super::checked_path(path).is_ok(), "{path}");
+        }
     }
 }

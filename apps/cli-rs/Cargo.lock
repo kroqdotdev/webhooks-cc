@@ -2216,6 +2216,7 @@ dependencies = [
  "futures",
  "gethostname",
  "hex",
+ "libc",
  "open",
  "percent-encoding",
  "qrcode",
@@ -2233,6 +2234,7 @@ dependencies = [
  "tokio-tungstenite",
  "unicode-width",
  "whk-tunnel",
+ "windows-sys 0.61.2",
  "yamux",
 ]
 
