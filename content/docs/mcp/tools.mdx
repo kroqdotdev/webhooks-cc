@@ -469,7 +469,7 @@ A dry run: whether the destination's filter lets a captured request through (`fi
 
 ### configure_forwarding
 
-Change the endpoint's primary destination, the one its `forwardUrl` stands for; only the arguments passed change. The primary is the first destination that sends to a URL: Google Sheets destinations and file drops never are, and turning forwarding off leaves them as they are. Saving the first URL creates it with its signing secret, so the agent can send a test delivery before turning it on. Returns the primary destination's settings, with header values masked. For filters, templates, throttling, delays or more than one destination, use `add_destination` and `update_destination`.
+Change the endpoint's primary destination, the one its `forwardUrl` stands for; only the arguments passed change. The primary is the destination holding the forwarding role, else the first one other than Notifications that sends to a URL: Google Sheets destinations and file drops never are, and turning forwarding off leaves them as they are. Saving the first URL creates it with its signing secret, so the agent can send a test delivery before turning it on. Returns the primary destination's settings, with header values masked. For filters, templates, throttling, delays or more than one destination, use `add_destination` and `update_destination`.
 
 | Parameter      | Type                                          | Required | Description                                                                                         |
 | -------------- | --------------------------------------------- | -------- | --------------------------------------------------------------------------------------------------- |
