@@ -21,6 +21,7 @@ export const SETTINGS_SECTIONS = [
   "layouts",
   "retention",
   "alerts",
+  "agent",
   "responses",
   "forwarding",
   "deliveries",

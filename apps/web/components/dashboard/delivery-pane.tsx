@@ -38,6 +38,8 @@ import type { DisplayableRequest } from "./request-detail";
 import { DeliveryJourney, type JourneyStop } from "./delivery-journey";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { takesFixPrompt } from "@/lib/fix-prompt";
+import { FixPromptActions } from "./fix-prompt-actions";
 
 /** What the pane needs to know about the endpoint's forwarding. */
 export interface DeliveryEndpoint {
@@ -52,6 +54,8 @@ export interface DeliveryEndpoint {
   forwardAppendPath?: boolean;
   forwardRetrySeconds?: number;
   forwardSentField?: string | null;
+  /** The GitHub repository fix prompts open in (endpoints.agent_repo). */
+  agentRepo?: string | null;
 }
 
 const MAX_FORWARD_BYTES = 10 * 1024 * 1024;
@@ -475,6 +479,7 @@ function DeliveryCard({
   now,
   isRedelivery,
   settingsLink,
+  agentRepo,
 }: {
   delivery: RequestDelivery;
   request: DisplayableRequest;
@@ -483,6 +488,7 @@ function DeliveryCard({
   now: number;
   isRedelivery: boolean;
   settingsLink: React.ReactNode;
+  agentRepo?: string | null;
 }) {
   const journey = useMemo(
     () => journeyFor(delivery, request, endpoint, utc, now, isRedelivery, settingsLink),
@@ -500,6 +506,9 @@ function DeliveryCard({
         <DeliveryJourney stops={journey.stops} label={journey.label} />
         {journey.note && <p className="mt-3.5 text-[13px]">{journey.note}</p>}
         <TriesList delivery={delivery} utc={utc} now={now} />
+        {delivery.status === "failed" && takesFixPrompt(delivery.format) && (
+          <FixPromptActions delivery={delivery} agentRepo={agentRepo} />
+        )}
       </div>
     </Card>
   );
@@ -790,6 +799,7 @@ export function DeliveriesPane({
                 now={now}
                 isRedelivery={delivery.id !== oldestId}
                 settingsLink={settingsLink}
+                agentRepo={endpoint.agentRepo}
               />
             ))}
           </section>

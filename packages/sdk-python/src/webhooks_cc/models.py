@@ -782,6 +782,8 @@ class Endpoint:
     """The longest retention this endpoint may have: its plan's (owner only)."""
     delete_after_delivery: bool | None = None
     """Requests are deleted once every delivery is settled (owner only)."""
+    agent_repo: str | None = None
+    """The GitHub repository (``owner/name``) a coding agent fixes failed deliveries in."""
     layouts: list[Layout] | None = None
     """How the endpoint reads its emails; the first enabled one whose ``match`` holds
     applies (owner only)."""
@@ -835,6 +837,7 @@ class Endpoint:
             delete_after_delivery=data.get("deleteAfterDelivery")
             if isinstance(data.get("deleteAfterDelivery"), bool)
             else None,
+            agent_repo=data.get("agentRepo") if isinstance(data.get("agentRepo"), str) else None,
             layouts=[
                 Layout.from_dict(item) for item in data["layouts"] if isinstance(item, Mapping)
             ]

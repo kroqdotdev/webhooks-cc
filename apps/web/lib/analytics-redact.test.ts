@@ -109,3 +109,22 @@ describe("staff pages", () => {
     expect(analyticsBeforeSend({ event: "$pageview" }, "/support")).toEqual({ event: "$pageview" });
   });
 });
+
+describe("fix prompt links", () => {
+  it("never carry the prompt or the repository into analytics or StatOSS", async () => {
+    const { t3CodeLink } = await import("./fix-prompt");
+    const { redactText } = await import("./observability-redact");
+    const link = t3CodeLink(
+      "A webhooks.cc delivery failed with status 500. Read delivery 6f1c2a4e-8b3d-4c5e-9f00-1a2b3c4d5e6f.",
+      "acme/api"
+    );
+    const event = redactAnalyticsEvent({
+      event: "$autocapture",
+      properties: { $elements: [{ attr__href: link, tag_name: "a" }], $current_url: link },
+    });
+    expect(event.properties?.$current_url).toBe("https://app.t3.codes/new");
+    expect(JSON.stringify(event)).not.toContain("6f1c2a4e");
+    expect(JSON.stringify(event)).not.toContain("acme");
+    expect(redactText(`opened ${link}`)).toBe("opened https://app.t3.codes/new");
+  });
+});

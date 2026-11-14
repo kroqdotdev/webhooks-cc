@@ -126,6 +126,41 @@ describe("PATCH /api/endpoints/[slug]", () => {
     expect(mockFns.updateEndpointBySlugForUser).not.toHaveBeenCalled();
   });
 
+  test("sets, normalises and clears the agent repository", async () => {
+    const { PATCH } = await import("./route");
+    for (const [sent, stored] of [
+      ["acme/api", "acme/api"],
+      [" acme/api.git ", "acme/api"],
+      [null, null],
+      ["", null],
+    ] as const) {
+      mockFns.updateEndpointBySlugForUser.mockClear();
+      const response = await PATCH(patchRequest({ agentRepo: sent }), params);
+      expect(response.status).toBe(200);
+      expect(mockFns.updateEndpointBySlugForUser).toHaveBeenCalledWith(
+        expect.objectContaining({ agentRepo: stored })
+      );
+    }
+  });
+
+  test("refuses an agent repository that is not owner/name", async () => {
+    const { PATCH } = await import("./route");
+    for (const agentRepo of ["acme", "https://github.com/acme/api", "-acme/api", "acme/..", 7]) {
+      const response = await PATCH(patchRequest({ agentRepo }), params);
+      expect(response.status).toBe(400);
+      expect((await response.json()).error).toMatch(/^agentRepo must be/);
+    }
+    expect(mockFns.updateEndpointBySlugForUser).not.toHaveBeenCalled();
+  });
+
+  test("leaves the agent repository alone when it is not sent", async () => {
+    const { PATCH } = await import("./route");
+    await PATCH(patchRequest({ name: "Orders" }), params);
+    expect(mockFns.updateEndpointBySlugForUser).toHaveBeenCalledWith(
+      expect.objectContaining({ agentRepo: undefined })
+    );
+  });
+
   test("rejects SendGrid as a signing provider", async () => {
     const { PATCH } = await import("./route");
     const response = await PATCH(patchRequest({ signingProvider: "sendgrid" }), params);
@@ -193,7 +228,7 @@ describe("PATCH /api/endpoints/[slug]", () => {
     expect(response.status).toBe(403);
     await expect(response.json()).resolves.toEqual({
       error:
-        "Only the endpoint owner can update where it is listed, or its email, retention, notification, forwarding or signing settings",
+        "Only the endpoint owner can update where it is listed, or its email, retention, agent repository, notification, forwarding or signing settings",
     });
     expect(mockFns.getEndpointBySlugForUser).not.toHaveBeenCalled();
     expect(mockFns.updateEndpointBySlugForUser).not.toHaveBeenCalled();
@@ -207,7 +242,11 @@ describe("PATCH /api/endpoints/[slug]", () => {
     });
 
     const { PATCH } = await import("./route");
-    for (const body of [{ deleteAfterDelivery: true }, { retentionDays: 1 }]) {
+    for (const body of [
+      { deleteAfterDelivery: true },
+      { retentionDays: 1 },
+      { agentRepo: "acme/api" },
+    ]) {
       const response = await PATCH(patchRequest(body), params);
       expect(response.status).toBe(403);
     }
@@ -230,7 +269,7 @@ describe("PATCH /api/endpoints/[slug]", () => {
     expect(response.status).toBe(403);
     await expect(response.json()).resolves.toEqual({
       error:
-        "Only the endpoint owner can update where it is listed, or its email, retention, notification, forwarding or signing settings",
+        "Only the endpoint owner can update where it is listed, or its email, retention, agent repository, notification, forwarding or signing settings",
     });
     expect(mockFns.getEndpointBySlugForUser).not.toHaveBeenCalled();
     expect(mockFns.updateEndpointBySlugForUser).not.toHaveBeenCalled();

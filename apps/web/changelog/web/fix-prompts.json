@@ -1,0 +1,8 @@
+{
+  "title": "Fix prompts for failed deliveries",
+  "items": [
+    "A failed delivery to your own server has Copy prompt and Open in T3 Code: a short instruction for a coding agent that names the delivery and its request by id and the status, never their contents",
+    "Endpoints take an agent repository (GitHub owner/name) under Settings, Coding agent, or as agentRepo from the API, the SDKs, whk update-endpoint --agent-repo and the MCP server's update_endpoint",
+    "With an agent repository, failed-delivery alert emails link to the fix prompt in T3 Code"
+  ]
+}

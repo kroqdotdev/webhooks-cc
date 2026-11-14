@@ -69,6 +69,11 @@ export interface Endpoint {
   retentionCapDays?: number;
   /** Requests are deleted once every delivery is settled (owner only) */
   deleteAfterDelivery?: boolean;
+  /**
+   * The GitHub repository (`owner/name`) a coding agent fixes failed
+   * deliveries in: fix prompts open there, and alert emails link to it
+   */
+  agentRepo?: string | null;
   /** How the endpoint reads its emails; the first that matches applies (owner only) */
   layouts?: Layout[];
   /** Layouts the plan uses; later ones are kept but not used (owner only) */
@@ -694,6 +699,12 @@ export interface UpdateEndpointOptions {
   retentionDays?: number | null;
   /** Delete each request once every delivery is settled (owner only) */
   deleteAfterDelivery?: boolean;
+  /**
+   * The GitHub repository (`owner/name`) a coding agent fixes failed
+   * deliveries in, or null to clear it (owner only). With it, delivery-failure
+   * alert emails link to the fix prompt in T3 Code.
+   */
+  agentRepo?: string | null;
   /**
    * How the endpoint reads its emails, at most 50 (the plan uses the first
    * `layoutsCap`), or null for none (owner only). Emails on an endpoint with

@@ -118,6 +118,7 @@ update(slug: string, options: UpdateEndpointOptions): Promise<Endpoint>
 | `layouts`         | `Layout[] \| null`       | no       | [Layouts](/docs/layouts) that read the endpoint's emails before delivery, at most 50; replaces the list (owner only) |
 | `retentionDays`   | `number \| null`         | no       | Keep requests this many days (1 up to the plan's), or `null` for the plan's (owner only) |
 | `deleteAfterDelivery` | `boolean`            | no       | Delete each request once every delivery is settled (owner only)                     |
+| `agentRepo`       | `string \| null`         | no       | GitHub `owner/name` a coding agent fixes failed deliveries in ([fix prompts](/docs/forwarding#fix-prompts)), or `null` to clear (owner only) |
 | `signingProvider` | `string \| null`         | no       | Provider for [server-side signature verification](/docs/sdk/signatures#server-side-verification), or `null` to turn it off |
 | `signingSecret`   | `string \| null`         | no       | The provider's signing secret (stored encrypted, never returned)                    |
 | `signingHeader`   | `string \| null`         | no       | The header name for the `generic-hmac` provider                                     |
@@ -1657,6 +1658,7 @@ interface Endpoint {
   layouts?: Layout[]; // owner only
   retentionDays?: number | null; // owner only; null keeps the plan's
   deleteAfterDelivery?: boolean; // owner only
+  agentRepo?: string | null; // GitHub owner/name for fix prompts
   sharedWith?: TeamShare[]; // { teamId, teamName }; when you own it
   fromTeams?: TeamShare[]; // when it is shared with you
   forwardEnabled?: boolean;

@@ -16,6 +16,7 @@ import { EmailFieldsEditor } from "./email-fields-editor";
 import { RetentionSection } from "./retention-section";
 import { LayoutsSection } from "./layouts-section";
 import { AlertsSection } from "./alerts-section";
+import { AgentSection } from "./agent-section";
 import { emailFieldIssues, type EmailField } from "@webhooks-cc/sdk/email";
 import { EndpointSiteField, EndpointSiteText } from "./endpoint-site-field";
 import { twoSites, type EndpointSite } from "@/lib/site";
@@ -730,6 +731,7 @@ const WEB_SECTION_ORDER: SettingsSection[] = [
   "retention",
   "layouts",
   "alerts",
+  "agent",
   "sharing",
   "delete",
 ];
@@ -741,6 +743,7 @@ const MAIL_SECTION_ORDER: SettingsSection[] = [
   "forwarding",
   "deliveries",
   "alerts",
+  "agent",
   "retention",
   "verification",
   "responses",
@@ -785,6 +788,7 @@ export function EndpointSettingsPanel({
             { id: "forwarding", label: "Forwarding" },
             ...(hasLog ? [{ id: "deliveries", label: "Deliveries", nested: true }] : []),
             { id: "alerts", label: "Alerts" },
+            { id: "agent", label: "Coding agent" },
             { id: "sharing", label: "Team sharing" },
             { id: "delete", label: "Delete endpoint" },
           ]
@@ -1033,6 +1037,8 @@ export function EndpointSettingsPanel({
                 );
               case "alerts":
                 return <AlertsSection key={id} endpoint={endpoint} />;
+              case "agent":
+                return <AgentSection key={id} endpoint={endpoint} />;
               case "sharing":
                 return <SharingSection key={id} endpointId={endpoint.id} />;
               case "delete":

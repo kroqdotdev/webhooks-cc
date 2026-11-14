@@ -5394,6 +5394,9 @@ components:
         deleteAfterDelivery:
           type: boolean
           description: Requests are deleted once every delivery is settled. Owner only.
+        agentRepo:
+          type: ["string", "null"]
+          description: The GitHub repository (owner/name) a coding agent fixes failed deliveries in; fix prompts open there, and failed-delivery alert emails link to one. Null when none is set.
         layouts:
           type: array
           items:
@@ -5925,6 +5928,10 @@ components:
         deleteAfterDelivery:
           type: boolean
           description: Delete each request once every delivery is settled. Owner only.
+        agentRepo:
+          type: ["string", "null"]
+          pattern: "^[A-Za-z0-9][A-Za-z0-9-]{0,38}/[A-Za-z0-9._-]{1,100}$"
+          description: The GitHub repository (owner/name) a coding agent fixes failed deliveries in, or null to clear it. A trailing .git is dropped and a name of only dots is refused. Owner only.
         layouts:
           type: ["array", "null"]
           maxItems: 50

@@ -117,6 +117,7 @@ async fn test_endpoint_update_mock_response() {
         signing_provider: None,
         signing_secret: None,
         signing_header: None,
+        agent_repo: None,
     };
     let updated = client
         .update_endpoint(&ep.slug, &update)

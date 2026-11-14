@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"regexp"
+	"strings"
 	"time"
 )
 
@@ -128,6 +130,27 @@ type UpdateEndpointOptions struct {
 	// Layouts replaces how the endpoint reads its emails, at most 50; Null
 	// removes them all (owner only). The server checks them, RE2 included.
 	Layouts Field[[]Layout]
+	// AgentRepo is the GitHub repository (owner/name) a coding agent fixes
+	// the endpoint's failed deliveries in; Null clears it (owner only). The
+	// dashboard's Open in T3 Code opens there, and delivery-failure alert
+	// emails link to a fix prompt. One that is not owner/name is refused
+	// before anything is sent.
+	AgentRepo Field[string]
+}
+
+// agentRepoPattern is GitHub's rule, as the API checks it: an owner of
+// letters, digits and dashes (not starting with a dash, at most 39), then a
+// name of letters, digits, dots, dashes and underscores (at most 100).
+var agentRepoPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9-]{0,38}/[A-Za-z0-9._-]{1,100}$`)
+
+// validAgentRepo reports whether repo is owner/name and its name is not
+// only dots.
+func validAgentRepo(repo string) bool {
+	if !agentRepoPattern.MatchString(repo) {
+		return false
+	}
+	_, name, _ := strings.Cut(repo, "/")
+	return strings.Trim(name, ".") != ""
 }
 
 // Update changes an endpoint's settings.
@@ -137,6 +160,9 @@ func (s *EndpointsService) Update(ctx context.Context, slug string, opts UpdateE
 	}
 	if opts.Name.isNull() || opts.ShowEmailExtracts.isNull() || opts.Site.isNull() || opts.ForwardEnabled.isNull() || opts.DeleteAfterDelivery.isNull() {
 		return nil, errors.New("webhooks.cc: Name, ShowEmailExtracts, Site, ForwardEnabled and DeleteAfterDelivery cannot be cleared; set them with Value")
+	}
+	if opts.AgentRepo.IsSet() && !opts.AgentRepo.isNull() && !validAgentRepo(opts.AgentRepo.value) {
+		return nil, errors.New("webhooks.cc: AgentRepo must be a GitHub repository as owner/name")
 	}
 	if opts.EmailFields.IsSet() && !opts.EmailFields.isNull() {
 		if issues := EmailFieldIssues(opts.EmailFields.value); len(issues) > 0 {
@@ -159,6 +185,7 @@ func (s *EndpointsService) Update(ctx context.Context, slug string, opts UpdateE
 	opts.RetentionDays.put(body, "retentionDays")
 	opts.DeleteAfterDelivery.put(body, "deleteAfterDelivery")
 	opts.Layouts.put(body, "layouts")
+	opts.AgentRepo.put(body, "agentRepo")
 	var endpoint Endpoint
 	if err := s.c.api(ctx, http.MethodPatch, "/endpoints/"+slug, nil, body, &endpoint); err != nil {
 		return nil, err

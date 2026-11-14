@@ -162,6 +162,14 @@ pub enum Command {
         /// Remove mock response
         #[arg(long)]
         clear_mock: bool,
+
+        /// GitHub repository (owner/name) a coding agent fixes failed deliveries in: fix prompts open there, and alert emails link to it
+        #[arg(long, value_name = "OWNER/NAME", conflicts_with = "clear_agent_repo")]
+        agent_repo: Option<String>,
+
+        /// Remove the agent repository
+        #[arg(long)]
+        clear_agent_repo: bool,
     },
 
     /// Mark an endpoint as a favourite: `whk list` and the dashboard show favourites first

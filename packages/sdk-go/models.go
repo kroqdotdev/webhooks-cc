@@ -1292,7 +1292,10 @@ type Endpoint struct {
 	Layouts []Layout
 	// LayoutsCap is how many layouts the plan uses; later ones are kept but
 	// not used (owner only).
-	LayoutsCap     int
+	LayoutsCap int
+	// AgentRepo is the GitHub repository (owner/name) a coding agent fixes
+	// failed deliveries in; empty when none is set.
+	AgentRepo      string
 	ForwardEnabled *bool
 	ForwardURL     string
 	SharedWith     []TeamShare
@@ -1336,6 +1339,7 @@ func (e *Endpoint) UnmarshalJSON(data []byte) error {
 		Site:              endpointSite(o.str("site")),
 		ForwardEnabled:    o.optBool("forwardEnabled"),
 		ForwardURL:        o.str("forwardUrl"),
+		AgentRepo:         o.str("agentRepo"),
 		SharedWith:        o.teams("sharedWith"),
 		FromTeams:         o.teams("fromTeams"),
 		Favorite:          o.boolean("favorite"),
@@ -1408,6 +1412,7 @@ func (e Endpoint) MarshalJSON() ([]byte, error) {
 		DeleteAfter       *bool          `json:"deleteAfterDelivery,omitempty"`
 		Layouts           []Layout       `json:"layouts,omitempty"`
 		LayoutsCap        int            `json:"layoutsCap,omitempty"`
+		AgentRepo         string         `json:"agentRepo,omitempty"`
 		ForwardEnabled    *bool          `json:"forwardEnabled,omitempty"`
 		ForwardURL        string         `json:"forwardUrl,omitempty"`
 		SharedWith        []TeamShare    `json:"sharedWith,omitempty"`
@@ -1417,7 +1422,7 @@ func (e Endpoint) MarshalJSON() ([]byte, error) {
 		e.ID, e.Slug, e.Name, e.URL, e.EmailAddress, millisOf(e.CreatedAt), e.IsEphemeral, millisOf(e.ExpiresAt),
 		e.NotificationURL, e.MockResponse, e.ResponseRules, e.SigningProvider, e.HasSigningSecret,
 		e.ShowEmailExtracts, e.Site, e.EmailFields, e.RetentionDays, e.RetentionCapDays, e.DeleteAfterDelivery,
-		e.Layouts, e.LayoutsCap, e.ForwardEnabled, e.ForwardURL, e.SharedWith, e.FromTeams, e.Favorite,
+		e.Layouts, e.LayoutsCap, e.AgentRepo, e.ForwardEnabled, e.ForwardURL, e.SharedWith, e.FromTeams, e.Favorite,
 	})
 }
 

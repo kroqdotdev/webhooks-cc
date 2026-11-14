@@ -185,6 +185,41 @@ func TestUpdateSendsOnlySetFields(t *testing.T) {
 	}
 }
 
+func TestUpdateSetsAndClearsTheAgentRepo(t *testing.T) {
+	api := newFakeAPI(t)
+	api.handle("PATCH /api/endpoints/{slug}", func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, 200, map[string]any{"id": "ep_1", "slug": r.PathValue("slug"), "agentRepo": "acme/api"})
+	})
+	client := api.client()
+	endpoint, err := client.Endpoints.Update(context.Background(), "acme-test", webhookscc.UpdateEndpointOptions{
+		AgentRepo: webhookscc.Value("acme/api"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if endpoint.AgentRepo != "acme/api" {
+		t.Errorf("AgentRepo = %q", endpoint.AgentRepo)
+	}
+	if _, body := api.last(); body != `{"agentRepo":"acme/api"}` {
+		t.Errorf("body = %s", body)
+	}
+	if _, err := client.Endpoints.Update(context.Background(), "acme-test", webhookscc.UpdateEndpointOptions{
+		AgentRepo: webhookscc.Null[string](),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, body := api.last(); body != `{"agentRepo":null}` {
+		t.Errorf("body = %s", body)
+	}
+	for _, bad := range []string{"acme", "https://github.com/acme/api", "-acme/api", "acme/..", strings.Repeat("a", 40) + "/b"} {
+		if _, err := client.Endpoints.Update(context.Background(), "acme-test", webhookscc.UpdateEndpointOptions{
+			AgentRepo: webhookscc.Value(bad),
+		}); err == nil || !strings.Contains(err.Error(), "AgentRepo") {
+			t.Errorf("%q: err = %v", bad, err)
+		}
+	}
+}
+
 func TestListAndGetReadFavorites(t *testing.T) {
 	api := newFakeAPI(t)
 	api.handle("GET /api/endpoints", func(w http.ResponseWriter, r *http.Request) {

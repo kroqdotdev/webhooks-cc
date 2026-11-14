@@ -787,6 +787,23 @@ describe("registerTools", () => {
     });
   });
 
+  it("sets and clears an endpoint's agent repository", async () => {
+    const update = vi.fn().mockResolvedValue({ slug: "acme", agentRepo: "acme/api" });
+    const tools = getRegisteredTools(
+      createMockClient({ endpoints: { update } as unknown as WebhooksCC["endpoints"] })
+    );
+    const schema = z.object(tools.update_endpoint.schema as z.ZodRawShape);
+    expect(schema.safeParse({ slug: "acme", agentRepo: "acme/api" }).success).toBe(true);
+    expect(schema.safeParse({ slug: "acme", agentRepo: null }).success).toBe(true);
+    for (const agentRepo of ["acme", "https://github.com/acme/api", "-acme/api"]) {
+      expect(schema.safeParse({ slug: "acme", agentRepo }).success).toBe(false);
+    }
+    await tools.update_endpoint.handler({ slug: "acme", agentRepo: "acme/api" });
+    expect(update).toHaveBeenCalledWith("acme", expect.objectContaining({ agentRepo: "acme/api" }));
+    await tools.update_endpoint.handler({ slug: "acme", agentRepo: null });
+    expect(update).toHaveBeenLastCalledWith("acme", expect.objectContaining({ agentRepo: null }));
+  });
+
   it("checks rule conditions with the SDK's rule language", () => {
     const tools = getRegisteredTools(createMockClient());
     const schema = z.object(tools.update_endpoint.schema as z.ZodRawShape);
