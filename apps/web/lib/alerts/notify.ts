@@ -8,8 +8,10 @@ import { NO_LAYOUT, PARSE_FAILED } from "./state";
 import { byteaToBuffer } from "@/lib/supabase/destinations";
 import { customChatPayload, isDiscordUrl, isSlackUrl } from "@/lib/forwarding/chat";
 import { sendOptions } from "@/lib/forwarding/config";
+import { isChatUrl } from "@/lib/forwarding/format";
 import { isDelivered, jsonForward, sendForward } from "@/lib/forwarding/send";
 import { forwardHeaders, FORWARD_USER_AGENT } from "@/lib/forwarding/sign";
+import { buildFixPrompt, isAgentRepo, t3CodeLink, takesFixPrompt } from "@/lib/fix-prompt";
 
 /**
  * Tells the owner when an alert opens or resolves: an email from
@@ -18,6 +20,10 @@ import { forwardHeaders, FORWARD_USER_AGENT } from "@/lib/forwarding/sign";
  * or Discord, otherwise a signed `alert.opened` or `alert.resolved` JSON
  * event). A failed send is tried again on the next pass, at most five times.
  * Alerts carry field names and delivery errors, never an email's contents.
+ * A failed-delivery email also links to T3 Code with a fix prompt when the
+ * endpoint names its repository (endpoints.agent_repo, the opt-in) and keeps
+ * its requests after delivery; chat and JSON notices never do, since they
+ * are the owner's own payloads.
  */
 
 const BATCH = 50;
@@ -31,6 +37,12 @@ interface AlertContext {
   notifyEmail: boolean;
   destinationIds: string[];
   destinationNames: Map<string, string>;
+  /** Each destination's format, to leave fix prompts off Sheets, drops and chat. */
+  destinationFormats: Map<string, string | null>;
+  /** The GitHub repository fix prompts open in; null leaves the link out. */
+  agentRepo: string | null;
+  /** Requests go once delivered, so a fix prompt's ids would name nothing. */
+  deleteAfterDelivery: boolean;
 }
 
 function plural(count: number, one: string, many: string): string {
@@ -111,9 +123,15 @@ async function contextFor(endpointId: string): Promise<AlertContext | null> {
   const admin = createAdminClient();
   const { data: endpoint, error } = await admin
     .from("endpoints")
-    .select("slug, name, user_id")
+    .select("slug, name, user_id, agent_repo, delete_after_delivery")
     .eq("id", endpointId)
-    .maybeSingle<{ slug: string; name: string | null; user_id: string | null }>();
+    .maybeSingle<{
+      slug: string;
+      name: string | null;
+      user_id: string | null;
+      agent_repo: string | null;
+      delete_after_delivery: boolean | null;
+    }>();
   if (error) throw error;
   if (!endpoint) return null;
   const [
@@ -133,14 +151,24 @@ async function contextFor(endpointId: string): Promise<AlertContext | null> {
       .select("notify_email, notify_destination_ids")
       .eq("endpoint_id", endpointId)
       .maybeSingle<{ notify_email: boolean; notify_destination_ids: string[] }>(),
-    admin.from("endpoint_destinations").select("id, name, url").eq("endpoint_id", endpointId),
+    admin
+      .from("endpoint_destinations")
+      .select("id, name, url, format")
+      .eq("endpoint_id", endpointId),
   ]);
   // A failed read must not look like "no owner" or "notify no one".
   if (ownerError) throw ownerError;
   if (settingsError) throw settingsError;
   if (destinationsError) throw destinationsError;
   const names = new Map<string, string>();
-  for (const row of (destinations ?? []) as { id: string; name: string | null; url: string }[]) {
+  const formats = new Map<string, string | null>();
+  for (const row of (destinations ?? []) as {
+    id: string;
+    name: string | null;
+    url: string;
+    format: string | null;
+  }[]) {
+    formats.set(row.id, alertDestinationFormat(row.format, row.url));
     let label = row.name;
     if (!label) {
       try {
@@ -160,6 +188,73 @@ async function contextFor(endpointId: string): Promise<AlertContext | null> {
     notifyEmail: settings?.notify_email ?? true,
     destinationIds: settings?.notify_destination_ids ?? [],
     destinationNames: names,
+    destinationFormats: formats,
+    agentRepo: endpoint.agent_repo ?? null,
+    deleteAfterDelivery: endpoint.delete_after_delivery === true,
+  };
+}
+
+/**
+ * A destination's format as the worker resolves it (`resolveFormat`): unset
+ * means automatic, which is the chat message for a Slack or Discord URL.
+ */
+export function alertDestinationFormat(format: string | null, url: string): string | null {
+  return format ?? (isChatUrl(url) ? "chat" : null);
+}
+
+/** A failed-delivery alert's fix prompt, its T3 Code link and the repository it opens in. */
+export type AlertFix = { prompt: string; link: string; repo: string };
+
+/**
+ * The fix prompt and its T3 Code link for an open failed-delivery alert, when
+ * the endpoint names its repository, keeps its requests after delivery (with
+ * `delete_after_delivery` the request and its deliveries are gone a few
+ * minutes after the failure, so the prompt's ids would 404), and the
+ * destination is a handler (not Sheets, a file drop or chat); null otherwise.
+ */
+export function alertFixPrompt(
+  event: Pick<AlertEventRow, "kind" | "subject" | "details" | "resolved_at">,
+  agentRepo: string | null,
+  destinationFormat: string | null | undefined,
+  deleteAfterDelivery = false
+): AlertFix | null {
+  if (event.kind !== "destination" || event.resolved_at !== null || !isAgentRepo(agentRepo))
+    return null;
+  if (deleteAfterDelivery) return null;
+  if (!takesFixPrompt(destinationFormat)) return null;
+  const details = (event.details ?? {}) as Record<string, unknown>;
+  const prompt = buildFixPrompt({
+    id: typeof details.lastDeliveryId === "string" ? details.lastDeliveryId : "",
+    requestId: typeof details.lastRequestId === "string" ? details.lastRequestId : "",
+    lastStatus: typeof details.lastStatus === "number" ? details.lastStatus : null,
+    lastError: typeof details.lastError === "string" ? details.lastError : null,
+  });
+  return prompt ? { prompt, link: t3CodeLink(prompt, agentRepo), repo: agentRepo } : null;
+}
+
+/** The alert email's subject and text. */
+export function alertEmail(
+  event: Pick<AlertEventRow, "kind" | "subject" | "details" | "resolved_at">,
+  summary: string,
+  lines: string[],
+  endpointLink: string,
+  fix: AlertFix | null
+): { subject: string; text: string } {
+  const text = [summary, "", ...lines, "", `Open the endpoint: ${endpointLink}`];
+  if (fix) {
+    text.push(
+      "",
+      // The repository in words, so a link someone changed shows, and the
+      // link in angle brackets, so a mail client's autolinker takes all of it.
+      `Hand it to a coding agent in T3 Code, in ${fix.repo}: <${fix.link}>`,
+      "",
+      "Or give this prompt to any agent with the webhooks.cc MCP server or whk:",
+      fix.prompt
+    );
+  }
+  return {
+    subject: `${event.resolved_at ? "Resolved" : "Alert"}: ${summary}`,
+    text: `${text.join("\n")}\n\nYou get this because alerts are on for this endpoint. Change them in its settings.\n`,
   };
 }
 
@@ -228,15 +323,21 @@ async function notifyOne(event: AlertEventRow): Promise<boolean> {
     : null;
   const { summary, lines } = describeAlert(event, label, destinationName);
   const link = `${context.origin.replace(/\/+$/, "")}/dashboard?endpoint=${encodeURIComponent(context.slug)}`;
-  const text = [summary, "", ...lines, "", `Open the endpoint: ${link}`].join("\n");
   let ok = true;
   if (context.notifyEmail && context.ownerEmail) {
+    const fix = alertFixPrompt(
+      event,
+      context.agentRepo,
+      event.subject ? context.destinationFormats.get(event.subject) : undefined,
+      context.deleteAfterDelivery
+    );
+    const email = alertEmail(event, summary, lines, link, fix);
     try {
       await sendEmail({
         to: context.ownerEmail,
         kind: "alert",
-        subject: `${event.resolved_at ? "Resolved" : "Alert"}: ${summary}`,
-        text: `${text}\n\nYou get this because alerts are on for this endpoint. Change them in its settings.\n`,
+        subject: email.subject,
+        text: email.text,
       });
     } catch (error) {
       ok = false;

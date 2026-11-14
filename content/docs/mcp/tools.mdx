@@ -77,7 +77,7 @@ Mark an endpoint as one of your favourites, or unmark it. A favourite is your ow
 
 ### update_endpoint
 
-Update an endpoint's name, mock response, notification webhook, signing configuration, or whether codes and links are picked out of its emails. Forwarding has its [own tools](#forwarding).
+Update an endpoint's name, mock response, notification webhook, signing configuration, whether codes and links are picked out of its emails, or the repository its fix prompts open in. Forwarding has its [own tools](#forwarding).
 
 | Parameter           | Type      | Required | Description                                                                   |
 | ------------------- | --------- | -------- | ----------------------------------------------------------------------------- |
@@ -93,6 +93,7 @@ Update an endpoint's name, mock response, notification webhook, signing configur
 | `site`              | `string`  | no       | Which site's dashboard lists it: `webhooks`, `mailhooks` or `both`; owner only |
 | `emailFields`       | `array`   | no       | Named fields to pick out of every email, `{ name, from, header?, pattern }` (RE2), at most 20; replaces the list, `null` or `[]` removes them; owner only. See [Fields you pick out](/docs/email-capture#fields-you-pick-out) |
 | `layouts`           | `array`   | no       | How the endpoint reads each sender's emails: `{ id, name, enabled?, match?, fields?, lineItems?, parseAttachments? }`, the first whose `match` holds applies; replaces the list, `null` or `[]` removes them; owner only. See [Layouts](/docs/layouts) |
+| `agentRepo`         | `string`  | no       | The GitHub repository (`owner/name`) a coding agent fixes failed deliveries in, or `null` to clear it; owner only. See [Fix prompts](/docs/forwarding#fix-prompts) |
 
 ### preview_layouts
 

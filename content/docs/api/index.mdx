@@ -151,6 +151,7 @@ Email and forwarding fields on every endpoint:
 | `layouts`, `layoutsCap`                                | The endpoint's [layouts](/docs/layouts) and how many of them the plan applies. Send the whole list to change it, `null` or `[]` to remove them.                                                                                                                                                                                                   |
 | `retentionDays`, `retentionCapDays`                    | The endpoint's own retention in days (`null`: the plan's) and the most it can be on the plan.                                                                                                                                                                                                                                                     |
 | `deleteAfterDelivery`                                  | Whether requests are deleted once every destination has them ("deliver, then delete").                                                                                                                                                                                                                                                            |
+| `agentRepo`                                            | The GitHub repository (`owner/name`) a coding agent fixes failed deliveries in, or `null`. See [Fix prompts](/docs/forwarding#fix-prompts).                                                                                                                                                                                                        |
 
 ### List endpoints
 
@@ -183,7 +184,9 @@ Set `"mockResponse": null` to clear the mock response and return to the default 
 
 Set `"showEmailExtracts": false` to stop picking out codes and links in emails. The `forward*` fields are covered under [Forwarding](#forwarding).
 
-Team members can change `name`, `mockResponse`, and `responseRules` on shared endpoints. `showEmailExtracts`, `site`, `emailFields`, `layouts`, `retentionDays`, `deleteAfterDelivery` and the notification, signing, and forwarding settings are owner only and return `403` for anyone else, because `showEmailExtracts` also decides what forwarding sends and `site` where the endpoint is listed for everyone.
+Set `"agentRepo": "acme/api"` to name the GitHub repository a coding agent fixes the endpoint's failed deliveries in, `null` to clear it. It takes GitHub's own rules: an owner of letters, digits and dashes (at most 39), then a name of letters, digits, dots, dashes and underscores (at most 100); a trailing `.git` is dropped, and a name that still ends in `.` or `.git`, or anything else, is a `400`. With it, failed-delivery alert emails link to a [fix prompt](/docs/forwarding#fix-prompts) in T3 Code.
+
+Team members can change `name`, `mockResponse`, and `responseRules` on shared endpoints. `showEmailExtracts`, `site`, `emailFields`, `layouts`, `retentionDays`, `deleteAfterDelivery`, `agentRepo` and the notification, signing, and forwarding settings are owner only and return `403` for anyone else, because `showEmailExtracts` also decides what forwarding sends and `site` where the endpoint is listed for everyone.
 
 ### Favourite an endpoint
 
@@ -312,6 +315,8 @@ curl -X PUT https://webhooks.cc/api/endpoints/abc123/alerts \
 | `notifyDestinationIds` | Ids of this endpoint's destinations (at most 10) that also get `alert.opened` and `alert.resolved` |
 
 Each event has `id`, `kind` (`fields`, `silence` or `destination`), `subject` (the destination, for a destination alert), `openedAt`, `resolvedAt` (`null` while open) and `details`.
+
+A destination alert's `details` has `failed` (deliveries that failed for good), `lastError`, `lastFailedAt`, and, for alerts opened since fix prompts arrived, `lastDeliveryId`, `lastRequestId` and `lastStatus` (the HTTP status, or `null` when there was no answer): the ids a [fix prompt](/docs/forwarding#fix-prompts) names. The `alert.opened` and `alert.resolved` JSON events carry the same `details` in `data.details`. New keys may be added, so ignore the ones you do not know.
 
 ## Requests
 

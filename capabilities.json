@@ -33,7 +33,7 @@
     },
     {
       "id": "endpoint.update",
-      "does": "Change an endpoint: name, mock response, rules, layouts, email, forwarding",
+      "does": "Change an endpoint: name, mock response, rules, layouts, email, forwarding, the agent repository for fix prompts",
       "routes": ["PATCH /api/endpoints/[slug]"],
       "sdk": ["endpoints.update", "forwarding.configure"],
       "python": ["endpoints.update"],

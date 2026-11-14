@@ -101,6 +101,10 @@ export interface SharedEndpoint {
   /** Forwarding state without the URL (owner-only): enough to show delivery history. */
   forwardEnabled: boolean;
   hasForwardSecret: boolean;
+  /** Requests are deleted once every delivery is settled (fix prompts are left off). */
+  deleteAfterDelivery: boolean;
+  /** The GitHub repository fix prompts open in; only the owner changes it. */
+  agentRepo: string | null;
 }
 
 /** One endpoint shared with a team, as the team page lists it. */

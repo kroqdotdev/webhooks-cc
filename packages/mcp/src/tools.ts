@@ -66,6 +66,23 @@ const MAX_BODY_SIZE = MAX_OUTPUT;
 const HTTP_METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"] as const;
 const TIME_SEPARATOR = " — ";
 
+// GitHub's own rules, as the API checks them (apps/web/lib/fix-prompt.ts): an
+// owner of letters, digits and dashes (not starting with a dash, at most 39),
+// a name of letters, digits, dots, dashes and underscores (at most 100), not
+// ending in "." or ".git".
+const AGENT_REPO = /^[A-Za-z0-9][A-Za-z0-9-]{0,38}\/[A-Za-z0-9._-]{1,100}$/;
+
+/**
+ * An agentRepo read as the API reads it: spaces around it and a trailing
+ * `.git` dropped, "" (or only spaces) clearing it as null; undefined when what
+ * is left is not `owner/name`.
+ */
+function normalizeAgentRepo(input: string): string | null | undefined {
+  const value = input.trim().replace(/\.git$/i, "");
+  if (value === "") return null;
+  return AGENT_REPO.test(value) && !/(\.|\.git)$/i.test(value) ? value : undefined;
+}
+
 const httpUrlSchema = z
   .string()
   .url()
@@ -2015,7 +2032,7 @@ export function registerTools(
 
   server.tool(
     "update_endpoint",
-    "Update an endpoint name, mock response, conditional response rules, signing configuration, whether codes and links are picked out of its emails, or the named fields picked out of them.",
+    "Update an endpoint name, mock response, conditional response rules, signing configuration, whether codes and links are picked out of its emails, the named fields picked out of them, or the GitHub repository a coding agent fixes its failed deliveries in.",
     {
       slug: z.string().describe("The endpoint slug to update"),
       name: z.string().optional().describe("New display name"),
@@ -2073,6 +2090,14 @@ export function registerTools(
         .describe(
           "How the endpoint reads each sender's emails: the first layout whose match holds applies its fields, line items and attachment parsing; the result is `parsed` in the email's JSON, and deliveries wait for it. The plan uses the first 2 (Business 50). Replaces the list; null or [] removes them. Try them with preview_layouts first. Owner only."
         ),
+      agentRepo: z
+        .string()
+        .refine((value) => normalizeAgentRepo(value) !== undefined, "owner/name, like acme/api")
+        .nullable()
+        .optional()
+        .describe(
+          "The GitHub repository (owner/name) a coding agent fixes this endpoint's failed deliveries in: the dashboard's Open in T3 Code opens there, and delivery-failure alert emails link to a fix prompt. null or \"\" clears it. Owner only."
+        ),
     },
     withErrorHandling(
       async ({
@@ -2088,6 +2113,7 @@ export function registerTools(
         site,
         emailFields,
         layouts,
+        agentRepo,
       }) => {
         const endpoint = await client.endpoints.update(slug, {
           name,
@@ -2101,6 +2127,7 @@ export function registerTools(
           site,
           emailFields,
           layouts,
+          agentRepo: typeof agentRepo === "string" ? normalizeAgentRepo(agentRepo) : agentRepo,
         });
         return jsonContent(endpoint);
       }

@@ -31,6 +31,7 @@ import type { EmailField, Layout } from "@webhooks-cc/sdk/email";
 import { layoutsProblems } from "@/lib/parsing/layouts";
 import { getWebProviderCredentialLabel } from "@/lib/provider-catalog";
 import { reportError } from "@/lib/observability";
+import { parseAgentRepo } from "@/lib/fix-prompt";
 
 export async function GET(request: Request, { params }: { params: Promise<{ slug: string }> }) {
   const auth = await authenticateRequestRequireUser(request);
@@ -82,6 +83,7 @@ const AUDITED_ENDPOINT_FIELDS = [
   "layouts",
   "retentionDays",
   "deleteAfterDelivery",
+  "agentRepo",
   "forwardEnabled",
   "forwardUrl",
   "forwardHttp",
@@ -164,6 +166,12 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ sl
   }
   if (body.deleteAfterDelivery !== undefined && typeof body.deleteAfterDelivery !== "boolean") {
     return Response.json({ error: "Invalid deleteAfterDelivery" }, { status: 400 });
+  }
+  let agentRepo: string | null | undefined;
+  if (body.agentRepo !== undefined) {
+    const checked = parseAgentRepo(body.agentRepo);
+    if (!checked.ok) return Response.json({ error: checked.error }, { status: 400 });
+    agentRepo = checked.value;
   }
 
   if (body.forwardEnabled !== undefined && typeof body.forwardEnabled !== "boolean") {
@@ -277,6 +285,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ sl
       body.layouts !== undefined ||
       body.retentionDays !== undefined ||
       body.deleteAfterDelivery !== undefined ||
+      body.agentRepo !== undefined ||
       signingConfigTouched ||
       forwardingTouched;
 
@@ -284,7 +293,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ sl
       return Response.json(
         {
           error:
-            "Only the endpoint owner can update where it is listed, or its email, retention, notification, forwarding or signing settings",
+            "Only the endpoint owner can update where it is listed, or its email, retention, agent repository, notification, forwarding or signing settings",
         },
         { status: 403 }
       );
@@ -445,6 +454,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ sl
       forwardSentField,
       retentionDays: body.retentionDays as number | null | undefined,
       deleteAfterDelivery: body.deleteAfterDelivery as boolean | undefined,
+      agentRepo,
     });
 
     await auditUserAction(request, auth.userId, {

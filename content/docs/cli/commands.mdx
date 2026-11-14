@@ -109,19 +109,22 @@ whk get <slug>
 
 ## update-endpoint
 
-Change an endpoint's name or mock response.
+Change an endpoint's name, mock response or agent repository.
 
 ```bash
 whk update-endpoint <slug> --mock-status 202 --mock-body '{"ok":true}'
+whk update-endpoint <slug> --agent-repo acme/api
 ```
 
-| Flag            | Description                                             |
-| --------------- | ------------------------------------------------------- |
-| `--name`        | New display name                                        |
-| `--mock-status` | Mock response status code                               |
-| `--mock-body`   | Mock response body (placeholders are filled in)         |
-| `--mock-header` | Mock response header (repeatable, format: `Key:Value`)  |
-| `--clear-mock`  | Remove the mock response                                |
+| Flag                 | Description                                                                                                                   |
+| -------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| `--name`             | New display name                                                                                                              |
+| `--mock-status`      | Mock response status code                                                                                                     |
+| `--mock-body`        | Mock response body (placeholders are filled in)                                                                               |
+| `--mock-header`      | Mock response header (repeatable, format: `Key:Value`)                                                                        |
+| `--clear-mock`       | Remove the mock response                                                                                                      |
+| `--agent-repo`       | The GitHub repository (`owner/name`) a coding agent fixes failed deliveries in ([fix prompts](/docs/forwarding#fix-prompts)) |
+| `--clear-agent-repo` | Remove the agent repository (as `--agent-repo ""` does)                                                                       |
 
 ## favorite
 

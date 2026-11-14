@@ -5393,7 +5393,10 @@ components:
           description: The longest retention this endpoint may have, its billing account's plan's. Owner only.
         deleteAfterDelivery:
           type: boolean
-          description: Requests are deleted once every delivery is settled. Owner only.
+          description: Requests are deleted once every delivery is settled. Only the owner changes it.
+        agentRepo:
+          type: ["string", "null"]
+          description: The GitHub repository (owner/name) a coding agent fixes failed deliveries in; fix prompts open there, and failed-delivery alert emails link to one. Null when none is set.
         layouts:
           type: array
           items:
@@ -5925,6 +5928,9 @@ components:
         deleteAfterDelivery:
           type: boolean
           description: Delete each request once every delivery is settled. Owner only.
+        agentRepo:
+          type: ["string", "null"]
+          description: The GitHub repository (owner/name) a coding agent fixes failed deliveries in, or null or "" to clear it. Spaces around it and a trailing .git are dropped, and a name that then ends in . or .git is refused. Owner only.
         layouts:
           type: ["array", "null"]
           maxItems: 50

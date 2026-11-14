@@ -335,7 +335,7 @@ async function checkDestinations(
   const since = alert.deliveries_checked_through ?? alert.created_at;
   const { data, error } = await admin
     .from("email_deliveries")
-    .select("destination_id, status, finished_at, last_error")
+    .select("id, request_id, destination_id, status, finished_at, last_status, last_error")
     .eq("endpoint_id", endpoint.id)
     .in("status", ["failed", "succeeded"])
     .gt("finished_at", since)
@@ -343,9 +343,12 @@ async function checkDestinations(
     .limit(1000);
   if (error) throw error;
   const rows = (data ?? []) as {
+    id: string;
+    request_id: string;
     destination_id: string | null;
     status: string;
     finished_at: string;
+    last_status: number | null;
     last_error: string | null;
   }[];
   if (rows.length === 0) return;
@@ -367,6 +370,10 @@ async function checkDestinations(
         failed,
         lastError: last.last_error,
         lastFailedAt: last.finished_at,
+        // Ids and the status only: what a fix prompt names (lib/fix-prompt.ts).
+        lastDeliveryId: last.id,
+        lastRequestId: last.request_id,
+        lastStatus: last.last_status,
       });
     } else {
       await resolveAlert(endpoint.id, "destination", destinationId);

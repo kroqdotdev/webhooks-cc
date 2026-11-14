@@ -192,15 +192,21 @@ async fn run(args: Cli) -> Result<()> {
             mock_body,
             mock_headers,
             clear_mock,
+            agent_repo,
+            clear_agent_repo,
         }) => {
             cli::endpoints::update_endpoint(
                 &client,
                 &slug,
-                name,
-                mock_status,
-                mock_body,
-                mock_headers,
-                clear_mock,
+                cli::endpoints::EndpointUpdate {
+                    name,
+                    mock_status,
+                    mock_body,
+                    mock_headers,
+                    clear_mock,
+                    agent_repo,
+                    clear_agent_repo,
+                },
                 args.json,
             )
             .await?;

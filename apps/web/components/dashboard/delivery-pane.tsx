@@ -38,6 +38,8 @@ import type { DisplayableRequest } from "./request-detail";
 import { DeliveryJourney, type JourneyStop } from "./delivery-journey";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { fixPromptFormat, takesFixPrompt } from "@/lib/fix-prompt";
+import { FixPromptActions } from "./fix-prompt-actions";
 
 /** What the pane needs to know about the endpoint's forwarding. */
 export interface DeliveryEndpoint {
@@ -52,6 +54,19 @@ export interface DeliveryEndpoint {
   forwardAppendPath?: boolean;
   forwardRetrySeconds?: number;
   forwardSentField?: string | null;
+  /** The GitHub repository fix prompts open in (endpoints.agent_repo). */
+  agentRepo?: string | null;
+  /** Requests are deleted once every delivery is settled, so fix prompts are left off. */
+  deleteAfterDelivery?: boolean;
+}
+
+/** What a failed delivery's fix prompt needs; null leaves the prompt off. */
+interface FixPromptContext {
+  agentRepo: string | null;
+  /** The owner redelivers; a team member's prompt leaves that to the owner. */
+  canRedeliver: boolean;
+  /** The destination's settings (owner only), to resolve a format the delivery did not record. */
+  destination: DashboardDestination | null;
 }
 
 const MAX_FORWARD_BYTES = 10 * 1024 * 1024;
@@ -475,6 +490,7 @@ function DeliveryCard({
   now,
   isRedelivery,
   settingsLink,
+  fixPrompt,
 }: {
   delivery: RequestDelivery;
   request: DisplayableRequest;
@@ -483,6 +499,7 @@ function DeliveryCard({
   now: number;
   isRedelivery: boolean;
   settingsLink: React.ReactNode;
+  fixPrompt: FixPromptContext | null;
 }) {
   const journey = useMemo(
     () => journeyFor(delivery, request, endpoint, utc, now, isRedelivery, settingsLink),
@@ -500,6 +517,23 @@ function DeliveryCard({
         <DeliveryJourney stops={journey.stops} label={journey.label} />
         {journey.note && <p className="mt-3.5 text-[13px]">{journey.note}</p>}
         <TriesList delivery={delivery} utc={utc} now={now} />
+        {fixPrompt &&
+          delivery.status === "failed" &&
+          takesFixPrompt(
+            fixPromptFormat(
+              delivery.format,
+              delivery.kind,
+              fixPrompt.destination,
+              delivery.destination
+            )
+          ) && (
+            <FixPromptActions
+              key={delivery.id}
+              delivery={delivery}
+              agentRepo={fixPrompt.agentRepo}
+              canRedeliver={fixPrompt.canRedeliver}
+            />
+          )}
       </div>
     </Card>
   );
@@ -790,6 +824,17 @@ export function DeliveriesPane({
                 now={now}
                 isRedelivery={delivery.id !== oldestId}
                 settingsLink={settingsLink}
+                fixPrompt={
+                  // Deleted once delivered: the request, and the ids a prompt
+                  // names, go minutes after the failure.
+                  endpoint.deleteAfterDelivery
+                    ? null
+                    : {
+                        agentRepo: endpoint.agentRepo ?? null,
+                        canRedeliver,
+                        destination: group.destination,
+                      }
+                }
               />
             ))}
           </section>

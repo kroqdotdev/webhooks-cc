@@ -583,6 +583,8 @@ export interface Database {
           delete_after_delivery: boolean;
           layouts: Json;
           last_email_at: string | null;
+          /** GitHub owner/name for fix prompts (migration 00103). */
+          agent_repo: string | null;
         };
         Insert: {
           id?: string;
@@ -616,6 +618,7 @@ export interface Database {
           agent_registration_id?: string | null;
           retention_days?: number | null;
           delete_after_delivery?: boolean;
+          agent_repo?: string | null;
           layouts?: Json;
           last_email_at?: string | null;
         };
@@ -651,6 +654,7 @@ export interface Database {
           agent_registration_id?: string | null;
           retention_days?: number | null;
           delete_after_delivery?: boolean;
+          agent_repo?: string | null;
           layouts?: Json;
           last_email_at?: string | null;
           /** Only cleared: a stop ends the grace a drop started (lib/tunnels/stops.ts). */

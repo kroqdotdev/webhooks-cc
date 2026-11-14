@@ -52,6 +52,7 @@ pub async fn create(
             signing_provider: Some(provider.clone()),
             signing_secret: signing_secret.clone(),
             signing_header: None,
+            agent_repo: None,
         };
         match client.update_endpoint(&endpoint.slug, &update).await {
             Ok(_) => signing_configured = true,
@@ -201,30 +202,88 @@ pub async fn get(client: &ApiClient, slug: &str, json: bool) -> Result<()> {
     Ok(())
 }
 
-#[allow(clippy::too_many_arguments)]
+/// What `whk update-endpoint` was asked to change.
+pub struct EndpointUpdate {
+    pub name: Option<String>,
+    pub mock_status: Option<u16>,
+    pub mock_body: Option<String>,
+    pub mock_headers: Vec<String>,
+    pub clear_mock: bool,
+    pub agent_repo: Option<String>,
+    pub clear_agent_repo: bool,
+}
+
+/// GitHub's rules, as the API checks them: an owner of letters, digits and
+/// dashes (not starting with a dash, at most 39), then a repository name of
+/// letters, digits, dots, dashes and underscores (at most 100, not ending in
+/// `.` or `.git`).
+/// Spaces around it and a trailing `.git` are dropped, and what is then empty
+/// (`--agent-repo ""`) clears it, as the API reads it: `Ok(None)`.
+pub fn parse_agent_repo(value: &str) -> Result<Option<String>> {
+    let trimmed = value.trim();
+    let repo = trimmed
+        .len()
+        .checked_sub(4)
+        .and_then(|cut| Some((trimmed.get(..cut)?, trimmed.get(cut..)?)))
+        .filter(|(_, suffix)| suffix.eq_ignore_ascii_case(".git"))
+        .map_or(trimmed, |(head, _)| head);
+    if repo.is_empty() {
+        return Ok(None);
+    }
+    let valid = repo.split_once('/').is_some_and(|(owner, name)| {
+        let owner_ok = !owner.is_empty()
+            && owner.len() <= 39
+            && !owner.starts_with('-')
+            && owner.chars().all(|c| c.is_ascii_alphanumeric() || c == '-');
+        let name_ok = !name.is_empty()
+            && name.len() <= 100
+            && !name.ends_with('.')
+            && !name.to_ascii_lowercase().ends_with(".git")
+            && name
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '_'));
+        owner_ok && name_ok
+    });
+    if !valid {
+        return Err(crate::error::CliError::Usage(format!(
+            "--agent-repo must be a GitHub repository as owner/name, not {}",
+            sanitize(value)
+        ))
+        .into());
+    }
+    Ok(Some(repo.to_string()))
+}
+
 pub async fn update_endpoint(
     client: &ApiClient,
     slug: &str,
-    name: Option<String>,
-    mock_status: Option<u16>,
-    mock_body: Option<String>,
-    mock_headers: Vec<String>,
-    clear_mock: bool,
+    update: EndpointUpdate,
     json: bool,
 ) -> Result<()> {
-    let mock_response = if clear_mock {
+    let mock_response = if update.clear_mock {
         Some(serde_json::Value::Null)
     } else {
-        build_mock_response(mock_status, mock_body, mock_headers)?
+        build_mock_response(update.mock_status, update.mock_body, update.mock_headers)?
             .map(|m| serde_json::to_value(m).expect("MockResponse is always serializable"))
+    };
+    let agent_repo = if update.clear_agent_repo {
+        Some(serde_json::Value::Null)
+    } else {
+        update
+            .agent_repo
+            .as_deref()
+            .map(parse_agent_repo)
+            .transpose()?
+            .map(|repo| repo.map_or(serde_json::Value::Null, serde_json::Value::String))
     };
 
     let req = UpdateEndpointRequest {
-        name,
+        name: update.name,
         mock_response,
         signing_provider: None,
         signing_secret: None,
         signing_header: None,
+        agent_repo,
     };
 
     let endpoint = client.update_endpoint(slug, &req).await?;
@@ -315,4 +374,91 @@ fn build_mock_response(
         headers: header_map,
         delay: None,
     }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn agent_repo_takes_owner_and_name() {
+        assert_eq!(parse_agent_repo("acme/api").unwrap().unwrap(), "acme/api");
+        assert_eq!(
+            parse_agent_repo(" acme/api.git ").unwrap().unwrap(),
+            "acme/api"
+        );
+        assert_eq!(
+            parse_agent_repo("Acme-Inc/web.app_2").unwrap().unwrap(),
+            "Acme-Inc/web.app_2"
+        );
+        let longest = format!("{}/{}", "a".repeat(39), "b".repeat(100));
+        assert_eq!(parse_agent_repo(&longest).unwrap().unwrap(), longest);
+    }
+
+    #[test]
+    fn agent_repo_empty_clears_it_as_the_api_does() {
+        for empty in ["", "  ", ".git", " .GIT "] {
+            assert_eq!(parse_agent_repo(empty).unwrap(), None, "{empty:?}");
+        }
+    }
+
+    #[test]
+    fn agent_repo_refuses_anything_else() {
+        for bad in [
+            "acme",
+            "acme/",
+            "/api",
+            "-acme/api",
+            "acme/api/extra",
+            "acme/..",
+            "acme/.git",
+            "acme/api.",
+            "acme/api.git.git",
+            "acme_inc/api",
+            "ac me/api",
+            "https://github.com/acme/api",
+            "acme/api?x=1",
+            "acme/ap\u{e9}",
+        ] {
+            let err = parse_agent_repo(bad).unwrap_err();
+            assert!(
+                matches!(
+                    err.downcast_ref::<crate::error::CliError>(),
+                    Some(crate::error::CliError::Usage(_))
+                ),
+                "{bad} should be a usage error"
+            );
+        }
+        assert!(parse_agent_repo(&format!("{}/api", "a".repeat(40))).is_err());
+        assert!(parse_agent_repo(&format!("acme/{}", "a".repeat(101))).is_err());
+    }
+
+    #[test]
+    fn update_request_sends_agent_repo_only_when_asked() {
+        let base = UpdateEndpointRequest {
+            name: None,
+            mock_response: None,
+            signing_provider: None,
+            signing_secret: None,
+            signing_header: None,
+            agent_repo: None,
+        };
+        assert_eq!(serde_json::to_value(&base).unwrap(), serde_json::json!({}));
+        let set = UpdateEndpointRequest {
+            agent_repo: Some(serde_json::Value::String("acme/api".into())),
+            ..base.clone()
+        };
+        assert_eq!(
+            serde_json::to_value(&set).unwrap(),
+            serde_json::json!({ "agentRepo": "acme/api" })
+        );
+        let clear = UpdateEndpointRequest {
+            agent_repo: Some(serde_json::Value::Null),
+            ..base
+        };
+        assert_eq!(
+            serde_json::to_value(&clear).unwrap(),
+            serde_json::json!({ "agentRepo": null })
+        );
+    }
 }

@@ -428,6 +428,34 @@ describe("WebhooksCC", () => {
       expect(body.mockResponse).toBeDefined();
       expect(body).not.toHaveProperty("notificationUrl");
     });
+
+    it("sets and clears the agent repository", async () => {
+      const fetchMock = mockFetch({
+        body: { id: "ep1", slug: "abc123", agentRepo: "acme/api", createdAt: Date.now() },
+      });
+      globalThis.fetch = fetchMock;
+
+      const client = createClient();
+      const result = await client.endpoints.update("abc123", { agentRepo: "acme/api" });
+      expect(result.agentRepo).toBe("acme/api");
+      expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({ agentRepo: "acme/api" });
+
+      await client.endpoints.update("abc123", { agentRepo: null });
+      expect(JSON.parse(fetchMock.mock.calls[1][1].body)).toEqual({ agentRepo: null });
+    });
+
+    it("refuses an agent repository that is not owner/name before sending", async () => {
+      const fetchMock = mockFetch({ body: {} });
+      globalThis.fetch = fetchMock;
+
+      const client = createClient();
+      for (const agentRepo of ["acme", "https://github.com/acme/api", "-acme/api", "acme/.."]) {
+        await expect(client.endpoints.update("abc123", { agentRepo })).rejects.toThrow(
+          "agentRepo must be"
+        );
+      }
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
   });
 
   describe("endpoints.list", () => {

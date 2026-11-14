@@ -130,3 +130,16 @@ export function validateEmailFields(fields: unknown): void {
   const issues = emailFieldIssues(fields);
   if (issues.length > 0) throw new Error(`emailFields: ${issues[0]}`);
 }
+
+// GitHub's rules, as the API checks them (apps/web/lib/fix-prompt.ts).
+const AGENT_REPO = /^[A-Za-z0-9][A-Za-z0-9-]{0,38}\/[A-Za-z0-9._-]{1,100}$/;
+
+/** Refuses an agent repository the API would refuse: `owner/name`, or null or "" to clear it. */
+export function validateAgentRepo(repo: unknown): void {
+  if (repo === undefined || repo === null || repo === "") return;
+  const value = typeof repo === "string" ? repo.trim().replace(/\.git$/i, "") : null;
+  if (value === "") return;
+  if (value === null || !AGENT_REPO.test(value) || /(\.|\.git)$/i.test(value)) {
+    throw new Error("agentRepo must be a GitHub repository as owner/name");
+  }
+}

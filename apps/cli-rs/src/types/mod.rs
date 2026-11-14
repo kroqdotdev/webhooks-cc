@@ -112,6 +112,9 @@ pub struct UpdateEndpointRequest {
     pub signing_secret: Option<String>,
     #[serde(rename = "signingHeader", skip_serializing_if = "Option::is_none")]
     pub signing_header: Option<String>,
+    /// `owner/name`, or `Value::Null` to clear it; absent leaves it alone.
+    #[serde(rename = "agentRepo", skip_serializing_if = "Option::is_none", default)]
+    pub agent_repo: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

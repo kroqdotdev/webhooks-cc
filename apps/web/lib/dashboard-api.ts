@@ -75,6 +75,8 @@ export interface DashboardEndpoint {
   retentionCapDays?: number;
   /** Requests are deleted once every delivery is settled. */
   deleteAfterDelivery?: boolean;
+  /** The GitHub repository (`owner/name`) fix prompts open in (lib/fix-prompt.ts); owner only to change. */
+  agentRepo?: string | null;
   /** How the endpoint reads its emails; the first that matches applies (owner only to change). */
   layouts?: Layout[];
   /** Layouts the plan uses; later ones are kept but not used. */

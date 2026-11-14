@@ -853,7 +853,7 @@ All endpoints require `Authorization: Bearer whcc_...` unless noted. "Bearer" is
 | GET | `/api/endpoints` | Bearer | List endpoints: `{ "owned": [...], "shared": [...] }` |
 | POST | `/api/endpoints` | Bearer | Create endpoint; body `{ "name"?, "isEphemeral"?, "expiresAt"?, "mockResponse"?, "responseRules"?, "notificationUrl"?, "site"? }` (rate limit: 30 per 10 min) |
 | GET | `/api/endpoints/[slug]` | Bearer | Get endpoint |
-| PATCH | `/api/endpoints/[slug]` | Bearer | Update endpoint: `name`, `mockResponse`, `responseRules` (team members too), and for the owner `notificationUrl`, `showEmailExtracts`, `site`, `emailFields`, `layouts`, `retentionDays`, `deleteAfterDelivery`, `signingProvider`, `signingSecret`, `signingHeader` and the `forward*` fields |
+| PATCH | `/api/endpoints/[slug]` | Bearer | Update endpoint: `name`, `mockResponse`, `responseRules` (team members too), and for the owner `notificationUrl`, `showEmailExtracts`, `site`, `emailFields`, `layouts`, `retentionDays`, `deleteAfterDelivery`, `agentRepo`, `signingProvider`, `signingSecret`, `signingHeader` and the `forward*` fields |
 | DELETE | `/api/endpoints/[slug]` | Bearer | Delete endpoint and its requests |
 | PUT/DELETE | `/api/endpoints/[slug]/favorite` | Bearer | Mark or unmark it as your favourite: `{ "favorite": true }` |
 | POST | `/api/endpoints/claim` | Bearer | Claim a guest endpoint into your account; body `{ "slug": "..." }` |

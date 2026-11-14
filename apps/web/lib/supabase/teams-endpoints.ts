@@ -298,7 +298,7 @@ export async function getSharedEndpointsForUser(userId: string): Promise<SharedE
   const { data: endpointsData, error: endpointsError } = await admin
     .from("endpoints")
     .select(
-      "id, user_id, slug, name, mock_response, is_ephemeral, created_at, show_email_extracts, site, endpoint_destinations(enabled, legacy_role, secret_encrypted)"
+      "id, user_id, slug, name, mock_response, is_ephemeral, created_at, show_email_extracts, site, delete_after_delivery, agent_repo, endpoint_destinations(enabled, legacy_role, secret_encrypted)"
     )
     .in("id", endpointIds)
     .neq("user_id", userId);
@@ -316,6 +316,8 @@ export async function getSharedEndpointsForUser(userId: string): Promise<SharedE
     created_at: string;
     show_email_extracts: boolean;
     site: string;
+    delete_after_delivery: boolean | null;
+    agent_repo: string | null;
     endpoint_destinations:
       { enabled: boolean; legacy_role: string | null; secret_encrypted: string | null }[] | null;
   };
@@ -357,6 +359,10 @@ export async function getSharedEndpointsForUser(userId: string): Promise<SharedE
       // Whether anything is forwarded (any destination on), and whether a log can exist.
       forwardEnabled: (ep.endpoint_destinations ?? []).some((d) => d.enabled),
       hasForwardSecret: (ep.endpoint_destinations ?? []).length > 0,
+      // Fix prompts: none where requests go once delivered, and the
+      // repository they open in (members may read it, not change it).
+      deleteAfterDelivery: ep.delete_after_delivery === true,
+      agentRepo: ep.agent_repo ?? null,
     });
   }
 

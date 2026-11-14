@@ -132,6 +132,7 @@ import { buildTemplateSendOptions, TEMPLATE_METADATA, TEMPLATE_PROVIDERS } from 
 import { buildCurlExport, buildHarExport } from "./request-export";
 import { WebhookFlowBuilder } from "./flow";
 import {
+  validateAgentRepo,
   validateDestinationInput,
   validateEmailFields,
   validateLayouts,
@@ -1387,6 +1388,8 @@ export class WebhooksCC {
             forwardUrl: "string|null? (owner only)",
             retentionDays: "number|null?: keep requests fewer days than the plan (owner only)",
             deleteAfterDelivery: "boolean?: delete once every delivery is settled (owner only)",
+            agentRepo:
+              "string|null?: GitHub owner/name a coding agent fixes failed deliveries in; null clears (owner only)",
             layouts:
               "Layout[]|null?: how emails are read: match conditions, fields, lineItems, parseAttachments; the first match applies (owner only)",
           },
@@ -2099,6 +2102,7 @@ export class WebhooksCC {
       }
       validateEmailFields(options.emailFields);
       validateLayouts(options.layouts);
+      validateAgentRepo(options.agentRepo);
       return this.request<Endpoint>("PATCH", `/endpoints/${slug}`, options);
     },
 

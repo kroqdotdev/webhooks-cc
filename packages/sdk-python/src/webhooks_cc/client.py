@@ -876,6 +876,26 @@ class WebhooksCC:
         return self._send(built.method, built.url, built.headers, built.body)
 
 
+# GitHub's rules, as the API checks them (apps/web/lib/fix-prompt.ts).
+_AGENT_REPO = re.compile(r"[A-Za-z0-9][A-Za-z0-9-]{0,38}/[A-Za-z0-9._-]{1,100}")
+
+
+def _agent_repo(value: str | None) -> str | None:
+    """An agent repository as the API takes it: ``owner/name``, or ``None`` to clear."""
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        raise ValueError("agent_repo must be a GitHub repository as owner/name")
+    repo = value.strip()
+    if repo.lower().endswith(".git"):
+        repo = repo[:-4]
+    if repo == "":
+        return None
+    if not _AGENT_REPO.fullmatch(repo) or repo.lower().endswith((".", ".git")):
+        raise ValueError("agent_repo must be a GitHub repository as owner/name")
+    return repo
+
+
 class Endpoints:
     """Create, read, change and delete endpoints, and send test webhooks to them."""
 
@@ -982,6 +1002,7 @@ class Endpoints:
         retention_days: int | None = UNSET,
         delete_after_delivery: bool = UNSET,
         layouts: Sequence[Mapping[str, Any] | Layout] | None = UNSET,
+        agent_repo: str | None = UNSET,
     ) -> Endpoint:
         """Change an endpoint's settings.
 
@@ -1002,8 +1023,16 @@ class Endpoints:
         takes (see https://webhooks.cc/docs/layouts); the server checks them, RE2
         included. All three are owner only, as is ``site``, which site's
         dashboard lists the endpoint (see :meth:`create`).
+
+        ``agent_repo`` is the GitHub repository (``owner/name``) a coding agent
+        fixes the endpoint's failed deliveries in (``None`` clears it, owner
+        only): the dashboard's Open in T3 Code opens there, and delivery-failure
+        alert emails link to a fix prompt. One that is not ``owner/name`` is
+        refused before anything is sent.
         """
         _validate_segment(slug, "slug")
+        if agent_repo is not UNSET:
+            agent_repo = _agent_repo(agent_repo)
         if email_fields is not UNSET and email_fields is not None:
             issues = email_field_issues(email_fields)
             if issues:
@@ -1031,6 +1060,7 @@ class Endpoints:
             "forwardUrl": forward_url,
             "retentionDays": retention_days,
             "deleteAfterDelivery": delete_after_delivery,
+            "agentRepo": agent_repo,
             "layouts": _layouts_body(layouts)
             if layouts is not UNSET and layouts is not None
             else layouts,

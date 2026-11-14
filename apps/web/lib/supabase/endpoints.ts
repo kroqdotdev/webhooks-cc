@@ -40,6 +40,8 @@ type SelectedEndpointRow = Pick<
   email_fields?: Json;
   retention_days?: number | null;
   delete_after_delivery?: boolean;
+  /** GitHub owner/name for fix prompts (migration 00103). */
+  agent_repo?: string | null;
   /** Computed column (migration 00068): the billing account's retention. */
   retention_cap?: number | null;
   layouts?: Json;
@@ -71,7 +73,7 @@ type EmbeddedDestination = Pick<
 type OwnedEndpointRow = Pick<EndpointRow, "id" | "slug" | "user_id">;
 
 const ENDPOINT_COLUMNS =
-  "id, user_id, slug, name, mock_response, response_rules, is_ephemeral, expires_at, created_at, signing_provider, signing_secret_encrypted, signing_header, show_email_extracts, email_fields, retention_days, delete_after_delivery, retention_cap, layouts, layouts_cap, site, endpoint_destinations(id, position, created_at, legacy_role, enabled, url, http, email, format, headers_encrypted, append_path, retry_seconds, keep_order, sent_field, secret_encrypted)";
+  "id, user_id, slug, name, mock_response, response_rules, is_ephemeral, expires_at, created_at, signing_provider, signing_secret_encrypted, signing_header, show_email_extracts, email_fields, retention_days, delete_after_delivery, agent_repo, retention_cap, layouts, layouts_cap, site, endpoint_destinations(id, position, created_at, legacy_role, enabled, url, http, email, format, headers_encrypted, append_path, retry_seconds, keep_order, sent_field, secret_encrypted)";
 interface ExistingSigningConfigRow {
   signing_provider: string | null;
   signing_secret_encrypted: string | null;
@@ -140,6 +142,8 @@ export interface EndpointRecord {
   retentionCapDays: number;
   /** Requests are deleted once every delivery is settled. */
   deleteAfterDelivery: boolean;
+  /** The GitHub repository (`owner/name`) a coding agent fixes failed deliveries in (lib/fix-prompt.ts). */
+  agentRepo: string | null;
   /** How the endpoint reads its emails (lib/parsing/layouts.ts); the first that matches applies. */
   layouts: Layout[];
   /** Layouts the billing account's plan uses; later ones are kept but not used. */
@@ -217,6 +221,8 @@ interface UpdateEndpointInput {
   /** Validated by the route against the account's retention; null keeps the plan's. */
   retentionDays?: number | null;
   deleteAfterDelivery?: boolean;
+  /** Validated by the route (lib/fix-prompt.ts); null clears it. */
+  agentRepo?: string | null;
 }
 
 /** Endpoints without an owner get no email: guest captures are readable by anyone with the slug. */
@@ -310,6 +316,7 @@ function normalizeEndpoint(row: SelectedEndpointRow): EndpointRecord {
     retentionDays: row.retention_days ?? null,
     retentionCapDays: row.retention_cap ?? 7,
     deleteAfterDelivery: row.delete_after_delivery ?? false,
+    agentRepo: row.agent_repo ?? null,
     layouts: storedLayouts(row.layouts),
     layoutsCap: row.layouts_cap ?? 0,
   };
@@ -604,6 +611,7 @@ export async function updateEndpointBySlugForUser({
   forwardSentField,
   retentionDays,
   deleteAfterDelivery,
+  agentRepo,
 }: UpdateEndpointInput): Promise<EndpointRecord | null> {
   const admin = createAdminClient();
 
@@ -694,6 +702,9 @@ export async function updateEndpointBySlugForUser({
   }
   if (deleteAfterDelivery !== undefined) {
     updates.delete_after_delivery = deleteAfterDelivery;
+  }
+  if (agentRepo !== undefined) {
+    updates.agent_repo = agentRepo;
   }
   // Handle signing config
   if (signingProvider !== undefined) {

@@ -267,6 +267,33 @@ def test_update_sends_only_given_fields() -> None:
     assert bodies == [{"name": "renamed", "forwardUrl": None}]
 
 
+def test_update_sets_and_clears_the_agent_repo() -> None:
+    bodies: list[Any] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        bodies.append(json.loads(request.content))
+        return httpx.Response(
+            200, json={"id": "e1", "slug": "acme", "createdAt": 1, "agentRepo": "acme/api"}
+        )
+
+    endpoints = make_client(handler).endpoints
+    assert endpoints.update("acme", agent_repo=" acme/api.git ").agent_repo == "acme/api"
+    endpoints.update("acme", agent_repo=None)
+    assert bodies == [{"agentRepo": "acme/api"}, {"agentRepo": None}]
+    for bad in [
+        "acme",
+        "https://github.com/acme/api",
+        "-acme/api",
+        "acme/..",
+        "acme/api.",
+        "acme/api.git.git",
+        "a" * 40 + "/b",
+    ]:
+        with pytest.raises(ValueError, match="agent_repo"):
+            endpoints.update("acme", agent_repo=bad)
+    assert len(bodies) == 2
+
+
 def test_update_sends_email_fields_and_refuses_a_bad_list() -> None:
     bodies: list[Any] = []
 

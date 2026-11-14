@@ -70,6 +70,8 @@ export async function GET(request: Request) {
       site: ep.site,
       forwardEnabled: ep.forwardEnabled,
       hasForwardSecret: ep.hasForwardSecret,
+      deleteAfterDelivery: ep.deleteAfterDelivery,
+      agentRepo: ep.agentRepo,
       favorite: favorites.has(ep.id),
     }));
 
