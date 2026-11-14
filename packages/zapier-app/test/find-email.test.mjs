@@ -13,8 +13,10 @@ const bundle = { inputData: { endpoint: "acme-orders", query: "invoice" } };
 /** A fake z whose search pages answer from `pages` in order. */
 function fakeZ(pages) {
   const calls = [];
+  const timeouts = [];
   const z = {
     calls,
+    timeouts,
     request: async (options) => {
       if (options.method === "POST") {
         calls.push({ render: options.url });
@@ -24,6 +26,7 @@ function fakeZ(pages) {
         };
       }
       calls.push({ ...options.params });
+      timeouts.push(options.timeout);
       const page = pages.shift();
       if (!page) throw new Error("no more pages");
       if (page.onRequest) page.onRequest();
@@ -99,5 +102,7 @@ describe("Find Email", () => {
     // 0, 2, ..., 14 seconds.
     expect(z.calls).toHaveLength(8);
     expect(Date.now()).toBeLessThanOrEqual(20_000);
+    // Each page may run only until the deadline.
+    expect(z.timeouts).toEqual([20_000, 18_000, 16_000, 14_000, 12_000, 10_000, 8_000, 6_000]);
   });
 });

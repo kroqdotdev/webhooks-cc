@@ -28,7 +28,14 @@ async function findNewest(z, bundle) {
       paged: "true",
     };
     if (cursor) params.cursor = cursor;
-    const response = await z.request({ url: `${baseUrl()}/api/search/requests`, params });
+    // A page normally ends within its budget; a slow one is cut off at the
+    // deadline (an error, not an empty search) so the step stays within
+    // Zapier's limit.
+    const response = await z.request({
+      url: `${baseUrl()}/api/search/requests`,
+      params,
+      timeout: Math.max(1, stopAt - Date.now()),
+    });
     const data = response.data;
     const list = Array.isArray(data) ? data : (data && (data.requests || data.results)) || [];
     if (list.length > 0) return list[0];
