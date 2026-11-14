@@ -73,7 +73,11 @@ and `whk approvals wait <id>` collects it later.
 `whk setup agent` adds the MCP server and this skill to every coding agent
 on the machine (Claude Code, Codex, Cursor, VS Code, Claude Desktop, Devin);
 without a terminal it needs `--yes`, and `--dry-run --json` says what it
-would change first.
+would change first. Codex signs in to the remote server while it is added,
+so without a terminal whk leaves that to the person: Codex reports that it
+needs a sign-in (exit 0, skill still copied), and the person runs
+`codex mcp add webhooks-cc --url https://webhooks.cc/mcp` in a terminal.
+Do not switch to `--local` to get around it unless the person asks.
 
 Signed provider templates are sent from the MCP tools or the SDKs, not the
 CLI: `whk send` and `whk send-to` send the body and headers you give them.

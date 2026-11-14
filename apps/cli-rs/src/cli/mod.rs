@@ -576,7 +576,13 @@ only kind their config files run.
 A re-run changes nothing that is already in place. A config file is backed
 up to <file>.bak the first time it is changed, and left alone when it is not
 valid JSON. --remove takes out what this command installed and nothing
-else. Without a terminal it changes nothing unless --yes is given.";
+else. Without a terminal it changes nothing unless --yes is given.
+
+Codex signs in to the remote server while `codex mcp add` adds it, in the
+browser. Without a terminal no one can, so whk does not add it: Codex is
+reported as needs_sign_in (exit 0) with the command to run in a terminal,
+`codex mcp add webhooks-cc --url https://webhooks.cc/mcp`, and its skill is
+still copied.";
 
 #[derive(clap::Args, Debug)]
 pub struct SetupAgentArgs {
@@ -609,6 +615,8 @@ impl From<SetupAgentArgs> for setup::Options {
             dry_run: args.dry_run,
             remove: args.remove,
             yes: args.yes,
+            // Set by `setup::run` from the process's own terminal.
+            terminal: false,
         }
     }
 }

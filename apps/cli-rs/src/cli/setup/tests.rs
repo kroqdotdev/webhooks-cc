@@ -22,6 +22,8 @@ struct Fake {
     /// What `codex mcp get` fails with, as for a broken config.toml.
     codex_broken: Option<String>,
     calls: Vec<String>,
+    /// The runs whose output goes to the person (Codex's sign-in).
+    shown: Vec<String>,
 }
 
 fn fail(stderr: &str) -> io::Result<RunOutput> {
@@ -72,9 +74,12 @@ impl Fake {
 }
 
 impl Runner for Fake {
-    fn run(&mut self, program: &Path, args: &[String], _show: bool) -> io::Result<RunOutput> {
+    fn run(&mut self, program: &Path, args: &[String], show: bool) -> io::Result<RunOutput> {
         let name = program.file_name().unwrap().to_string_lossy().into_owned();
         self.calls.push(format!("{name} {}", args.join(" ")));
+        if show {
+            self.shown.push(format!("{name} {}", args.join(" ")));
+        }
         let args: Vec<&str> = args.iter().map(String::as_str).collect();
         let after_dashes = |args: &[&str]| -> Vec<String> {
             let at = args.iter().position(|a| *a == "--").unwrap();
@@ -194,6 +199,7 @@ fn home(name: &str) -> Home {
         codex: None,
         codex_broken: None,
         calls: Vec::new(),
+        shown: Vec::new(),
     };
     Home { dir, env, fake }
 }
@@ -207,6 +213,13 @@ fn opts(agent: Agent) -> Options {
 
 fn yes(mut o: Options) -> Options {
     o.yes = true;
+    o
+}
+
+/// As run by a person at a terminal, who can sign in to Codex. The gate in
+/// [`run`] still answers as without one, so these pass `--yes` too.
+fn tty(mut o: Options) -> Options {
+    o.terminal = true;
     o
 }
 
@@ -314,7 +327,7 @@ fn installs_every_agent_then_changes_nothing_then_removes_it_all() {
         let mut h = home(agent.id());
         let before = snapshot(&h);
 
-        let report = run(&mut h, &yes(opts(agent))).unwrap();
+        let report = run(&mut h, &yes(tty(opts(agent)))).unwrap();
         assert!(!report.failed(), "{agent:?}: {report:?}");
         assert!(
             steps(&report).iter().all(|s| *s == Step::Install),
@@ -346,7 +359,7 @@ fn installs_every_agent_then_changes_nothing_then_removes_it_all() {
         // A re-run changes nothing and says so.
         let installed = snapshot(&h);
         let calls = h.fake.calls.len();
-        let report = run(&mut h, &opts(agent)).unwrap();
+        let report = run(&mut h, &tty(opts(agent))).unwrap();
         assert!(
             steps(&report).iter().all(|s| *s == Step::Unchanged),
             "{agent:?}: {:?}",
@@ -403,7 +416,7 @@ impl Options {
 fn the_agents_own_commands_are_run_with_their_flags() {
     let mut h = home("commands");
     run(&mut h, &yes(opts(Agent::ClaudeCode))).unwrap();
-    run(&mut h, &yes(opts(Agent::Codex))).unwrap();
+    run(&mut h, &yes(tty(opts(Agent::Codex)))).unwrap();
     assert_eq!(
         h.fake.calls,
         [
@@ -445,7 +458,7 @@ fn a_dry_run_writes_nothing_and_says_what_it_would_do() {
             &mut h,
             &Options {
                 dry_run: true,
-                ..opts(agent)
+                ..tty(opts(agent))
             },
         )
         .unwrap();
@@ -479,6 +492,138 @@ fn without_a_terminal_nothing_changes_unless_yes_is_given() {
         assert_eq!(classify(&error).code, "confirmation_required");
         assert_eq!(snapshot(&h), installed, "{agent:?}");
     }
+}
+
+#[test]
+fn without_a_terminal_codex_is_left_to_sign_in_and_still_gets_the_skill() {
+    let mut h = home("codex-sign-in");
+    let report = run(&mut h, &yes(opts(Agent::Codex))).unwrap();
+    assert!(!report.failed());
+    let Step::NeedsSignIn(message) = &steps(&report)[0] else {
+        panic!("{:?}", steps(&report));
+    };
+    let add = "codex mcp add webhooks-cc --url https://webhooks.cc/mcp";
+    assert!(message.contains(add), "{message}");
+    assert_eq!(steps(&report)[1], Step::Install);
+    // Codex was only read, never asked to add (which would wait to sign in).
+    assert_eq!(h.fake.calls, ["codex mcp get webhooks-cc --json"]);
+    assert_eq!(h.fake.codex, None);
+    skill_is_embedded(&skill_path(&h, Agent::Codex).unwrap());
+
+    let json = report.to_json();
+    let agent = &json["agents"][0];
+    assert_eq!(agent["agent"], "codex");
+    assert_eq!(agent["status"], "needs_sign_in");
+    assert_eq!(agent["server"]["kind"], "remote");
+    assert_eq!(
+        agent["items"][0],
+        json!({
+            "what": "mcp",
+            "status": "needs_sign_in",
+            "command": add,
+            "message": message,
+        })
+    );
+    assert_eq!(agent["items"][1]["status"], "installed");
+    let next = agent["next"].as_str().unwrap();
+    assert!(next.contains(add), "{next}");
+    assert!(!next.contains("login"), "{next}");
+
+    let mut text = Vec::new();
+    report.write_text(&h.env, &mut text).unwrap();
+    let text = String::from_utf8(text).unwrap();
+    assert!(text.contains("needs sign-in"), "{text}");
+    assert!(text.contains(&format!("Next: {CODEX_SIGN_IN}")), "{text}");
+
+    // A dry run says the same, and asks for nothing.
+    let dry = run(
+        &mut h,
+        &Options {
+            dry_run: true,
+            ..opts(Agent::Codex)
+        },
+    )
+    .unwrap();
+    assert!(matches!(steps(&dry)[0], Step::NeedsSignIn(_)));
+    assert_eq!(dry.to_json()["agents"][0]["status"], "needs_sign_in");
+    assert_eq!(dry.to_json()["agents"][0]["next"], CODEX_SIGN_IN);
+
+    // A re-run leaves the skill and asks for nothing: only the sign-in is
+    // left, so it needs no --yes.
+    let report = run(&mut h, &opts(Agent::Codex)).unwrap();
+    assert!(matches!(steps(&report)[0], Step::NeedsSignIn(_)));
+    assert_eq!(steps(&report)[1], Step::Unchanged);
+
+    // The local server is a choice, never made for the person.
+    assert!(h.fake.calls.iter().all(|c| !c.contains("npx")));
+
+    // --remove takes out the skill; Codex has nothing of whk's to remove,
+    // and it is never told to sign in for that.
+    h.fake.calls.clear();
+    let report = run(&mut h, &yes(opts(Agent::Codex)).clone_with_remove()).unwrap();
+    assert!(!report.failed());
+    assert_eq!(steps(&report), [Step::Absent, Step::Remove]);
+    let json = report.to_json();
+    assert_eq!(json["agents"][0]["status"], "changed");
+    assert_eq!(json["agents"][0]["next"], Value::Null);
+    assert!(!skill_path(&h, Agent::Codex).unwrap().exists());
+    assert!(!h.env.manifest_path().exists());
+    assert!(h.fake.calls.iter().all(|c| c.contains(" get ")));
+}
+
+#[test]
+fn without_a_terminal_codex_keeps_its_local_server_until_the_person_signs_in() {
+    // Moving from --local to the remote server would sign in too, so the
+    // local entry stays as it is and the person is told what to run.
+    let mut h = home("codex-local-to-remote");
+    let local = Options {
+        local: true,
+        ..yes(opts(Agent::Codex))
+    };
+    run(&mut h, &local).unwrap();
+    assert_eq!(prune(&mcp_entry(&h, Agent::Codex).unwrap()), local_entry());
+    // The local server needs no sign-in, so it is added without a terminal.
+    assert!(
+        h.fake
+            .calls
+            .contains(&"codex mcp add webhooks-cc -- npx -y @webhooks-cc/mcp".to_string())
+    );
+
+    h.fake.calls.clear();
+    let report = run(&mut h, &yes(opts(Agent::Codex))).unwrap();
+    assert!(matches!(steps(&report)[0], Step::NeedsSignIn(_)));
+    assert_eq!(prune(&mcp_entry(&h, Agent::Codex).unwrap()), local_entry());
+    assert!(h.fake.calls.iter().all(|c| c.contains(" get ")));
+
+    // At a terminal the same run replaces it, and Codex signs in.
+    let report = run(&mut h, &yes(tty(opts(Agent::Codex)))).unwrap();
+    assert_eq!(steps(&report)[0], Step::Update);
+    assert_eq!(prune(&mcp_entry(&h, Agent::Codex).unwrap()), remote_entry());
+    assert!(
+        report.to_json()["agents"][0]["next"]
+            .as_str()
+            .unwrap()
+            .contains("codex mcp login webhooks-cc")
+    );
+
+    // And --remove then takes it out, at a terminal or not.
+    let report = run(&mut h, &yes(opts(Agent::Codex)).clone_with_remove()).unwrap();
+    assert_eq!(steps(&report), [Step::Remove, Step::Remove]);
+    assert_eq!(h.fake.codex, None);
+}
+
+#[test]
+fn at_a_terminal_codex_is_added_and_shown_to_the_person() {
+    let mut h = home("codex-tty");
+    let report = run(&mut h, &yes(tty(opts(Agent::Codex)))).unwrap();
+    assert_eq!(steps(&report), [Step::Install, Step::Install]);
+    assert_eq!(
+        h.fake.shown,
+        ["codex mcp add webhooks-cc --url https://webhooks.cc/mcp"]
+    );
+    let json = report.to_json();
+    assert_eq!(json["agents"][0]["status"], "changed");
+    assert_eq!(json["agents"][0]["items"][0]["status"], "installed");
 }
 
 #[test]

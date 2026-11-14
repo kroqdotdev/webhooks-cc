@@ -6,7 +6,11 @@
 //! (`npx skills add`) puts one for that agent.
 //!
 //! Claude Code and Codex are changed through their own `mcp add` commands;
-//! the others through a JSON merge into their config file. The agents and
+//! the others through a JSON merge into their config file. `codex mcp add
+//! --url` signs in to the remote server in the browser before it returns
+//! (Codex has no way to add it and sign in later), so without a terminal
+//! whk does not run it: Codex is reported as `needs_sign_in`, with the
+//! command for the person to run. The agents and
 //! their file locations follow `packages/mcp/src/setup.ts`, except that
 //! Cursor and VS Code get their user-level files rather than a project's.
 //!
@@ -104,6 +108,9 @@ pub struct Options {
     pub dry_run: bool,
     pub remove: bool,
     pub yes: bool,
+    /// Whether a person is at a terminal (`confirm::interactive()`), who
+    /// can finish Codex's sign-in in the browser.
+    pub terminal: bool,
 }
 
 // ---------------------------------------------------------------------------
@@ -827,6 +834,9 @@ pub enum Step {
     Absent,
     Skip(String),
     Fail(String),
+    /// Left to the person, because adding it signs in and no one is at a
+    /// terminal to do that (Codex with the remote server).
+    NeedsSignIn(String),
 }
 
 impl Step {
@@ -875,6 +885,7 @@ struct Cx<'a> {
     runner: &'a mut dyn Runner,
     manifest: &'a mut Manifest,
     remove: bool,
+    terminal: bool,
 }
 
 /// Decides what happens to `target` and, with `execute`, does it. Planning
@@ -1105,6 +1116,15 @@ fn command(
     let Some(program) = program else {
         return Step::Fail(not_on_path(tool, (!cx.remove).then_some(server)));
     };
+    // `codex mcp add --url` writes the entry and then waits for a sign-in in
+    // the browser, with no flag to skip it; without a terminal it would wait
+    // for good, so the person runs it instead.
+    if tool == Tool::Codex && server == Server::Remote && !cx.remove && !cx.terminal {
+        return Step::NeedsSignIn(format!(
+            "Codex signs in to the remote server while adding it, in your browser, and no terminal is attached, so it was not added; run `{}` in a terminal",
+            command_line(tool.program(), &tool.add_args(server))
+        ));
+    }
     if !execute {
         return step;
     }
@@ -1326,6 +1346,12 @@ impl AgentReport {
     fn changes(&self) -> bool {
         self.items.iter().any(|i| i.step.is_change())
     }
+
+    fn needs_sign_in(&self) -> bool {
+        self.items
+            .iter()
+            .any(|i| matches!(i.step, Step::NeedsSignIn(_)))
+    }
 }
 
 /// The whole outcome.
@@ -1357,12 +1383,15 @@ impl Report {
             (Step::Absent, _) => "absent",
             (Step::Skip(_), _) => "skipped",
             (Step::Fail(_), _) => "failed",
+            (Step::NeedsSignIn(_), _) => "needs_sign_in",
         }
     }
 
     fn agent_status(&self, agent: &AgentReport) -> &'static str {
         if agent.failed() {
             "failed"
+        } else if agent.needs_sign_in() {
+            "needs_sign_in"
         } else if agent.changes() {
             if self.applied {
                 "changed"
@@ -1396,7 +1425,7 @@ impl Report {
                         if let Some(command) = &i.command {
                             item["command"] = json!(command);
                         }
-                        if let Step::Skip(m) | Step::Fail(m) = &i.step {
+                        if let Step::Skip(m) | Step::Fail(m) | Step::NeedsSignIn(m) = &i.step {
                             item["message"] = json!(m);
                         }
                         item
@@ -1426,7 +1455,13 @@ impl Report {
 
     /// What the person does next, once the server is in place.
     fn next_step(&self, a: &AgentReport) -> Option<&'static str> {
-        if self.remove || !self.applied {
+        if self.remove {
+            return None;
+        }
+        if a.agent == Agent::Codex && a.needs_sign_in() {
+            return Some(CODEX_SIGN_IN);
+        }
+        if !self.applied {
             return None;
         }
         let mcp_ready = a.items.iter().any(|i| {
@@ -1466,6 +1501,7 @@ impl Report {
             "would_update" => "would update",
             "would_remove" => "would remove",
             "absent" => "not there",
+            "needs_sign_in" => "needs sign-in",
             other => other,
         }
     }
@@ -1516,7 +1552,7 @@ impl Report {
                     "  {what:<11} {:<14}{place}",
                     self.status_words(&i.step)
                 )?;
-                if let Step::Skip(m) | Step::Fail(m) = &i.step {
+                if let Step::Skip(m) | Step::Fail(m) | Step::NeedsSignIn(m) = &i.step {
                     writeln!(out, "              {m}")?;
                 }
             }
@@ -1527,6 +1563,9 @@ impl Report {
         Ok(())
     }
 }
+
+/// What Codex needs once it was left for the person to add.
+const CODEX_SIGN_IN: &str = "In a terminal, run `codex mcp add webhooks-cc --url https://webhooks.cc/mcp`: Codex adds the server and opens your browser to sign in.";
 
 fn server_json(server: Server) -> Value {
     match server {
@@ -1605,6 +1644,7 @@ pub fn execute(
             runner: &mut *runner,
             manifest: &mut manifest,
             remove: opts.remove,
+            terminal: opts.terminal,
         };
         for (agent, detected) in &chosen {
             let mut items = Vec::new();
@@ -1686,6 +1726,7 @@ pub fn execute(
             runner: &mut *runner,
             manifest: &mut manifest,
             remove: opts.remove,
+            terminal: opts.terminal,
         };
         for (agent, _, items) in plans.iter_mut() {
             let mut stopped = false;
@@ -1716,6 +1757,10 @@ pub fn execute(
 /// `whk setup agent`.
 pub fn run(opts: Options, json: bool) -> Result<()> {
     let env = Env::from_process()?;
+    let opts = Options {
+        terminal: confirm::interactive(),
+        ..opts
+    };
     let mut runner = ProcessRunner { json };
     let mut gate = |plan: &Report, question: &str| -> Result<()> {
         if !json {

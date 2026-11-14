@@ -15,8 +15,7 @@ pub fn confirm(question: &str, yes: bool) -> Result<()> {
     if yes {
         return Ok(());
     }
-    let interactive = io::stdin().is_terminal() && io::stderr().is_terminal();
-    decide(question, interactive, || {
+    decide(question, interactive(), || {
         // The question goes to stderr, so stdout stays clean for --json.
         eprint!("  {question} [y/N] ");
         io::stderr().flush()?;
@@ -24,6 +23,13 @@ pub fn confirm(question: &str, yes: bool) -> Result<()> {
         io::stdin().lock().read_line(&mut input)?;
         Ok(input)
     })
+}
+
+/// Whether a person can answer here: stdin and stderr are both terminals.
+/// Commands that would otherwise wait on someone (a question, a sign-in in
+/// the browser) check this first.
+pub fn interactive() -> bool {
+    io::stdin().is_terminal() && io::stderr().is_terminal()
 }
 
 pub(crate) fn decide(
