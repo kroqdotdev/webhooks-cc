@@ -76,6 +76,22 @@ async function ask(method: string, params: Record<string, unknown> = {}) {
   return answer.result!;
 }
 
+function capturedRequest() {
+  return {
+    id: "req_9",
+    endpointId: "ep_1",
+    method: "POST",
+    path: "/",
+    headers: { "content-type": "application/json" },
+    body: "{}",
+    queryParams: {},
+    contentType: "application/json",
+    ip: "203.0.113.1",
+    size: 2,
+    receivedAt: Date.now() + 60_000,
+  };
+}
+
 describe("the request inspector on the hosted server", () => {
   it("names the inspector on get_request and get_email", async () => {
     const { tools } = (await ask("tools/list")) as {
@@ -217,22 +233,13 @@ describe("the hosted server", () => {
         if (method === "POST" && target.startsWith("https://go.webhooks.cc/w/flow-1")) {
           return new Response("OK");
         }
+        if (method === "GET" && path === "/api/requests/req_9") {
+          // What a replay reads first: answered, so a replay that slipped
+          // through would really post to targetUrl and fail the checks below.
+          return Response.json(capturedRequest());
+        }
         if (method === "GET" && path === "/api/endpoints/flow-1/requests") {
-          return Response.json([
-            {
-              id: "req_9",
-              endpointId: "ep_1",
-              method: "POST",
-              path: "/",
-              headers: { "content-type": "application/json" },
-              body: "{}",
-              queryParams: {},
-              contentType: "application/json",
-              ip: "203.0.113.1",
-              size: 2,
-              receivedAt: Date.now() + 60_000,
-            },
-          ]);
+          return Response.json([capturedRequest()]);
         }
         if (method === "DELETE" && path === "/api/endpoints/flow-1") {
           return new Response(null, { status: 204 });
