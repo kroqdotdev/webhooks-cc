@@ -1867,9 +1867,18 @@ fn a_ctrl_c_still_pending_when_a_shown_program_ends_does_not_end_whk() {
         .env(PENDING_CTRL_C_CHILD, "1")
         .stdin(std::process::Stdio::null());
     // SAFETY: runs in the forked child before exec, after std has emptied
-    // its signal mask; sigprocmask is async-signal-safe.
+    // its signal mask; sigaction and sigprocmask are async-signal-safe.
     unsafe {
         command.pre_exec(|| {
+            // The other Ctrl-C test may have SIGINT ignored for a moment
+            // while this fork happens, and an ignored signal stays ignored
+            // across exec: start the copy at the default action.
+            let mut default: libc::sigaction = std::mem::zeroed();
+            default.sa_sigaction = libc::SIG_DFL;
+            libc::sigemptyset(&mut default.sa_mask);
+            if libc::sigaction(libc::SIGINT, &default, std::ptr::null_mut()) != 0 {
+                return Err(io::Error::last_os_error());
+            }
             let mut only_sigint: libc::sigset_t = std::mem::zeroed();
             libc::sigemptyset(&mut only_sigint);
             libc::sigaddset(&mut only_sigint, libc::SIGINT);
@@ -1879,7 +1888,22 @@ fn a_ctrl_c_still_pending_when_a_shown_program_ends_does_not_end_whk() {
             Ok(())
         });
     }
-    let output = command.output().unwrap();
+    // A deadline, so a wedged copy fails the test rather than hanging it.
+    let mut child = command
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .unwrap();
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(60);
+    while child.try_wait().unwrap().is_none() {
+        if std::time::Instant::now() > deadline {
+            let _ = child.kill();
+            let _ = child.wait();
+            panic!("the copy of the test binary did not finish within 60 s");
+        }
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+    let output = child.wait_with_output().unwrap();
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
     {
