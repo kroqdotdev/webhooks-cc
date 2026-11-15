@@ -219,6 +219,14 @@ export async function exchangeAssertion(assertion: string): Promise<AccessToken>
   if (!registration || registration.revoked_at) {
     throw new InvalidGrantError("The registration was revoked or no longer exists.");
   }
+  // A delegation made through a team's organisation issuer lives only as
+  // long as each fresh ID-JAG from that issuer: our own long-lived assertion
+  // would outlast the member's sign-in there, so it is never accepted.
+  if (registration.idjag_team_issuer_id) {
+    throw new InvalidGrantError(
+      "This agent connects through its organisation's issuer. Present a fresh ID-JAG from it."
+    );
+  }
 
   const now = Date.now();
   let userId: string | null;
@@ -250,6 +258,33 @@ export async function exchangeAssertion(assertion: string): Promise<AccessToken>
   }
 
   return mintAccessToken(registration, { userId, scopes, issuedAtMs: now, expiresAtMs });
+}
+
+/**
+ * A one-hour access token for a claimed registration, read again here so a
+ * revocation since the caller looked takes effect (an organisation ID-JAG
+ * that linked, lib/agent/org-id-jag.ts). No assertion of ours is involved.
+ */
+export async function issueClaimedAccessToken(registrationId: string): Promise<AccessToken> {
+  const { data: registration, error } = await createAdminClient()
+    .from("agent_registrations")
+    .select("*")
+    .eq("id", registrationId)
+    .maybeSingle();
+  if (error) throw error;
+  if (!registration || registration.revoked_at) {
+    throw new InvalidGrantError("The registration was revoked or no longer exists.");
+  }
+  if (!registration.claimed_at || !registration.user_id) {
+    throw new InvalidGrantError("The registration is not connected to an account.");
+  }
+  const now = Date.now();
+  return mintAccessToken(registration, {
+    userId: registration.user_id,
+    scopes: POST_CLAIM_SCOPES,
+    issuedAtMs: now,
+    expiresAtMs: now + ACCESS_TOKEN_TTL_SECONDS * 1000,
+  });
 }
 
 /**

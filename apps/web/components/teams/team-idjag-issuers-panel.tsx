@@ -25,10 +25,14 @@ import { longDate } from "@/lib/dates";
  * off (the route answers 404). Members see the list; the owner adds and
  * removes. Adding takes a session, so it lives here and not in the clients.
  *
- * Each member connects their own agent here: Connect opens a 10-minute
- * window in which the first sign-in from the issuer with the member's email
- * connects at once; the row then shows the agent and a Disconnect button.
- * While a window is open the panel reads the list again every few seconds.
+ * Each member connects their own agent here: Connect (confirmed in a
+ * dialog naming the full issuer URL, since one host serves every
+ * organisation's issuer) opens a 10-minute window in which the first
+ * sign-in from the issuer with the member's email connects at once. When
+ * one does, the row says what connected (the client's name, the issuer and
+ * the time) with a one-click Disconnect, so a sign-in the member did not
+ * expect is undone at once. While a window is open the panel reads the list
+ * again every few seconds.
  */
 
 interface Connection {
@@ -54,14 +58,6 @@ interface IssuersState {
 }
 
 const POLL_MS = 4000;
-
-function hostOf(issuer: string): string {
-  try {
-    return new URL(issuer).host;
-  } catch {
-    return issuer;
-  }
-}
 
 function timeOf(iso: string): string {
   return new Date(iso).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
@@ -90,7 +86,14 @@ export function TeamIdJagIssuersPanel({
     text: string;
   } | null>(null);
   const [now, setNow] = useState(() => Date.now());
-  const waitingRef = useRef<Set<string>>(new Set());
+  /** What connected when a window closed, until the member dismisses it. */
+  const [bound, setBound] = useState<{
+    rowId: string;
+    issuer: string;
+    connections: Connection[];
+  } | null>(null);
+  /** Rows with an open window, and the connections they had when it opened. */
+  const waitingRef = useRef<Map<string, Set<string>>>(new Map());
 
   const base = `/api/teams/${encodeURIComponent(teamId)}/idjag-issuers`;
 
@@ -128,23 +131,29 @@ export function TeamIdJagIssuersPanel({
     };
   }, [windowOpen, load]);
 
-  // A window that ends with a new connection says so once.
+  // A window that ends says what connected through it, or that nothing did.
   useEffect(() => {
     for (const row of state?.issuers ?? []) {
       const open =
         row.connect?.window_expires_at && Date.parse(row.connect.window_expires_at) > Date.now();
+      const connections = row.connect?.connections ?? [];
       if (open) {
-        waitingRef.current.add(row.id);
+        if (!waitingRef.current.has(row.id)) {
+          waitingRef.current.set(row.id, new Set(connections.map((c) => c.id)));
+        }
       } else if (waitingRef.current.has(row.id)) {
+        const before = waitingRef.current.get(row.id)!;
         waitingRef.current.delete(row.id);
-        const connected = (row.connect?.connections.length ?? 0) > 0;
-        setRowMessage({
-          id: row.id,
-          tone: connected ? "success" : "error",
-          text: connected
-            ? "Connected."
-            : "The window closed before an agent signed in. Choose Connect to try again.",
-        });
+        const added = connections.filter((c) => !before.has(c.id));
+        if (added.length > 0) {
+          setBound({ rowId: row.id, issuer: row.issuer, connections: added });
+        } else {
+          setRowMessage({
+            id: row.id,
+            tone: "error",
+            text: "The window closed before an agent signed in. Choose Connect to try again.",
+          });
+        }
       }
     }
   }, [state]);
@@ -155,6 +164,7 @@ export function TeamIdJagIssuersPanel({
     if (!accessToken) return;
     setBusy(true);
     setRowMessage(null);
+    setBound(null);
     try {
       const res = await fetch(`${base}/${encodeURIComponent(row.id)}/connect`, {
         method: "POST",
@@ -195,6 +205,7 @@ export function TeamIdJagIssuersPanel({
         return;
       }
       waitingRef.current.delete(row.id);
+      setBound(null);
       setRowMessage({ id: row.id, tone: "success", text: "Disconnected." });
       await load();
     } catch {
@@ -311,6 +322,14 @@ export function TeamIdJagIssuersPanel({
                     onDisconnect={() => void disconnect(row)}
                   />
                 )}
+                {bound?.rowId === row.id && (
+                  <BoundNotice
+                    bound={bound}
+                    busy={busy}
+                    onDisconnect={() => void disconnect(row)}
+                    onDismiss={() => setBound(null)}
+                  />
+                )}
                 {rowMessage?.id === row.id && (
                   <div className="pt-1">
                     <InlineMessage tone={rowMessage.tone}>{rowMessage.text}</InlineMessage>
@@ -386,7 +405,7 @@ export function TeamIdJagIssuersPanel({
               <PanelRow
                 label="Allowed clients"
                 htmlFor="idjag-client-ids"
-                hint="Optional. Client ids the issuer may name, separated by commas. Empty allows any."
+                hint="Optional. Client ids the issuer may name, separated by commas. Empty allows any. A client id is only what the assertion names: whoever holds a valid assertion from the issuer can present it with that id, so this narrows which of your organisation's clients connect but does not prove which one asked."
               >
                 <div className="flex flex-wrap items-center gap-2">
                   <FieldControl
@@ -433,7 +452,6 @@ function MemberConnect({
   onDisconnect: () => void;
 }) {
   const connect = row.connect!;
-  const host = hostOf(row.issuer);
   const expiresAt = connect.window_expires_at ? Date.parse(connect.window_expires_at) : 0;
   const open = expiresAt > now;
   const seconds = Math.max(0, Math.ceil((expiresAt - now) / 1000));
@@ -453,14 +471,15 @@ function MemberConnect({
             </span>
           </span>
           <span className="text-xs text-muted-foreground">
-            since {longDate(connection.connected_at)}
+            since {longDate(connection.connected_at)}, {timeOf(connection.connected_at)}
           </span>
         </div>
       ))}
 
       {open ? (
         <p className="text-sm" role="status" aria-live="polite">
-          Waiting for your agent to sign in through {host}, until{" "}
+          Waiting for your agent to sign in through{" "}
+          <span className="font-mono text-xs break-all">{row.issuer}</span>, until{" "}
           {timeOf(connect.window_expires_at!)}{" "}
           <span className="font-mono text-xs text-muted-foreground tabular-nums">({left})</span>.
           Ask it to connect to webhooks.cc now.
@@ -469,16 +488,37 @@ function MemberConnect({
         connect.connections.length === 0 && (
           <p className="text-xs text-muted-foreground">
             Connect, then ask your agent to connect to webhooks.cc within {windowMinutes} minutes.
-            The first sign-in from {host} with your email connects it.
+            The first sign-in from this issuer with your email connects it.
           </p>
         )
       )}
 
       <div className="flex flex-wrap items-center gap-2">
         {!open && (
-          <Button size="sm" variant="outline" disabled={busy} onClick={onConnect}>
-            {connect.connections.length > 0 ? "Connect another agent" : "Connect"}
-          </Button>
+          <AlertDialog>
+            <AlertDialogTrigger render={<Button size="sm" variant="outline" disabled={busy} />}>
+              {connect.connections.length > 0 ? "Connect another agent" : "Connect"}
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Connect an agent through this issuer?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  For the next {windowMinutes} minutes, the first sign-in from{" "}
+                  <span className="ph-no-capture font-mono text-xs break-all text-foreground">
+                    {row.issuer}
+                  </span>{" "}
+                  with your email connects an agent that acts as you on webhooks.cc. Check that this
+                  is your organisation&apos;s issuer, then ask your agent to connect.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Not now</AlertDialogCancel>
+                <AlertDialogAction onClick={onConnect}>
+                  Open for {windowMinutes} minutes
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
         )}
         {(connect.connections.length > 0 || open) && (
           <AlertDialog>
@@ -494,7 +534,7 @@ function MemberConnect({
                 </AlertDialogTitle>
                 <AlertDialogDescription>
                   {connect.connections.length > 0
-                    ? `Every agent you connected through ${host} is disconnected now, and its tokens stop working. You can connect again later.`
+                    ? `Every agent you connected through ${row.issuer} is disconnected now, and its tokens stop working. You can connect again later.`
                     : "No agent connects through this window. You can open a new one later."}
                 </AlertDialogDescription>
               </AlertDialogHeader>
@@ -510,6 +550,49 @@ function MemberConnect({
             </AlertDialogContent>
           </AlertDialog>
         )}
+      </div>
+    </div>
+  );
+}
+
+/** What a window just connected, with a one-click way out. */
+function BoundNotice({
+  bound,
+  busy,
+  onDisconnect,
+  onDismiss,
+}: {
+  bound: { issuer: string; connections: Connection[] };
+  busy: boolean;
+  onDisconnect: () => void;
+  onDismiss: () => void;
+}) {
+  return (
+    <div className="mt-2 space-y-2 rounded-md border p-3 text-sm" role="status">
+      {bound.connections.map((connection) => (
+        <p key={connection.id}>
+          <span className="font-medium break-all">{connection.client_name ?? "Unnamed agent"}</span>{" "}
+          connected as you through{" "}
+          <span className="font-mono text-xs break-all">{bound.issuer}</span> at{" "}
+          {timeOf(connection.connected_at)} on {longDate(connection.connected_at)}.
+        </p>
+      ))}
+      <p className="text-xs text-muted-foreground">
+        Not what you expected? Disconnect ends it now, with its tokens.
+      </p>
+      <div className="flex flex-wrap items-center gap-2">
+        <Button
+          size="sm"
+          variant="outline"
+          disabled={busy}
+          onClick={onDisconnect}
+          className="text-destructive-ink"
+        >
+          Disconnect
+        </Button>
+        <Button size="sm" variant="ghost" disabled={busy} onClick={onDismiss}>
+          That was me
+        </Button>
       </div>
     </div>
   );

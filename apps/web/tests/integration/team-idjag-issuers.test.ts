@@ -7,7 +7,13 @@
  * on the team page) binds the first matching assertion at once; outside
  * it, wrong email, after expiry and after Disconnect, nothing binds. The
  * relaxed claims (no auth_time on a short-lived assertion, email_verified
- * absent) and the list read with an API key or agent token are covered too.
+ * absent) and the list read with an API key or agent token are covered too,
+ * as are: our own assertions still exchanging with the feature on (they
+ * carry the ID-JAG typ too), no long-lived assertion of ours for an agent
+ * bound through a team's issuer, a member of two teams trusting one issuer
+ * keeping a connection the other team still covers, and a member leaving
+ * while a link holds their membership (driven through psql in a held
+ * transaction, so it needs SUPABASE_DB_URL and psql on PATH).
  *
  * Needs the local Supabase stack with migration 00105 applied, and
  * AGENT_ASSERTION_SIGNING_KEY plus AGENT_POW_SECRET in .env.local. Run with:
@@ -21,6 +27,7 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { createClient } from "@supabase/supabase-js";
 import * as jose from "jose";
+import { spawn } from "node:child_process";
 import { randomBytes, randomUUID } from "node:crypto";
 import { hashApiKey } from "@/lib/supabase/api-keys";
 import {
@@ -29,8 +36,10 @@ import {
   bearer,
   cleanupRegistrations,
   configureAgentEnv,
+  exchange,
   formPost,
   loadAgentRoutes,
+  registerAnonymous,
   type AgentRoutes,
 } from "./agent-helpers";
 
@@ -121,6 +130,7 @@ async function mint(
     authTime?: boolean;
     emailVerified?: boolean | null;
     ttl?: number;
+    iss?: string;
   } = {}
 ) {
   const jti = randomUUID();
@@ -131,7 +141,7 @@ async function mint(
   if (overrides.authTime !== false) claims.auth_time = now - 30;
   return new jose.SignJWT(claims)
     .setProtectedHeader({ alg: "ES256", typ: "oauth-id-jag+jwt", kid: "org-key-1" })
-    .setIssuer(ISS)
+    .setIssuer(overrides.iss ?? ISS)
     .setSubject(sub)
     .setAudience(APP)
     .setIssuedAt(now)
@@ -205,7 +215,21 @@ async function connectThroughClaim(
   );
   expect(collected.status).toBe(200);
   const tokens = await collected.json();
+  // Only the one-hour token: no long-lived assertion of ours for this agent.
+  expect(tokens.identity_assertion).toBeUndefined();
+  expect(tokens.assertion_expires).toBeUndefined();
   return { registrationId: body.registration_id, token: tokens.access_token };
+}
+
+/** Our own claimed assertion for a registration, as the claim grant would sign it. */
+async function ourAssertion(registrationId: string): Promise<string> {
+  const { signAssertion } = await import("@/lib/agent/assertion");
+  return signAssertion({
+    registrationId,
+    stage: "claimed",
+    expiresAt: new Date(Date.now() + 3600_000),
+    email: MEMBER_EMAIL,
+  });
 }
 
 async function tokenWorks(token: string): Promise<boolean> {
@@ -329,6 +353,16 @@ describe("team ID-JAG issuers", () => {
     ]);
   });
 
+  it("still exchanges our own assertions with the feature on", async () => {
+    // They carry typ oauth-id-jag+jwt too; their issuer is ours, not a prefix.
+    const { body } = await registerAnonymous(routes, registrations, "org-feature-on-agent");
+    const [header] = body.identity_assertion.split(".");
+    expect(JSON.parse(Buffer.from(header, "base64url").toString()).typ).toBe("oauth-id-jag+jwt");
+    const res = await exchange(routes, body.identity_assertion);
+    expect(res.status).toBe(200);
+    expect(res.body.access_token).toMatch(/^whcc_/);
+  });
+
   it("refuses someone who is not a member, and never creates an account", async () => {
     const res = await present(await mint(`outsider-${RUN}`, OUTSIDER_EMAIL));
     expect(res.status).toBe(400);
@@ -351,7 +385,7 @@ describe("team ID-JAG issuers", () => {
     );
     expect(view.status).toBe(200);
     expect(await view.json()).toMatchObject({
-      trustedBy: { team: `ID-JAG team ${RUN}`, host: "identity.idjag-test.local" },
+      trustedBy: { team: `ID-JAG team ${RUN}`, issuer: ISS },
       clientName: "client.idjag-test.local",
     });
     await admin.from("agent_registrations").delete().eq("id", first.registration_id);
@@ -361,6 +395,14 @@ describe("team ID-JAG issuers", () => {
     const sub = `member-${RUN}`;
     const { registrationId, token } = await connectThroughClaim(sub);
     expect(await tokenWorks(token)).toBe(true);
+
+    // Our own assertion never stands in for a fresh ID-JAG.
+    const ours = await exchange(routes, await ourAssertion(registrationId));
+    expect(ours.status).toBe(400);
+    expect(ours.body).toMatchObject({
+      error: "invalid_grant",
+      error_description: expect.stringContaining("organisation's issuer"),
+    });
 
     const again = await present(await mint(sub, MEMBER_EMAIL));
     expect(again.status).toBe(200);
@@ -438,9 +480,20 @@ describe("team ID-JAG issuers", () => {
       },
     ]);
 
-    // No team trusts the issuer now.
+    // No team trusts the issuer now: the same answer as a bad signature.
     const refused = await present(await mint(sub, MEMBER_EMAIL));
-    expect((await refused.json()).error).toBe("invalid_grant");
+    expect(await refused.json()).toEqual({
+      error: "invalid_grant",
+      error_description: "The assertion could not be verified.",
+    });
+    const { data: reason } = await admin
+      .from("audit_events")
+      .select("metadata")
+      .eq("action", "agent.registration.refused")
+      .contains("metadata", { code: "invalid_issuer", source: "team_issuer" })
+      .gte("occurred_at", new Date(Date.now() - 60_000).toISOString())
+      .limit(1);
+    expect(reason).toHaveLength(1);
   });
 
   it("revokes the connection and its tokens when the member leaves the team", async () => {
@@ -722,6 +775,194 @@ describe("team ID-JAG issuers", () => {
       } finally {
         await admin.from("api_keys").delete().eq("name", "ID-JAG list test");
       }
+    });
+  });
+
+  describe("two teams trusting one issuer, and a member leaving mid-link", () => {
+    const ISS2 = `${PREFIX}shared-${RUN}`;
+    const MEMBER2_EMAIL = `idjag-member2-${RUN}@webhooks-test.local`;
+    let member2Id: string;
+    let member2Session: string;
+    let teamA: string;
+    let teamB: string;
+    let trustA: string;
+    let trustB: string;
+
+    const listTrust = async (team: string) => {
+      const res = await issuersGet(
+        bearer("GET", `/api/teams/${team}/idjag-issuers`, ownerSession),
+        {
+          params: Promise.resolve({ teamId: team }),
+        }
+      );
+      return ((await res.json()).issuers as { id: string; issuer: string }[]).find(
+        (row) => row.issuer === ISS2
+      )!.id;
+    };
+    const addTo = async (team: string) => {
+      const res = await issuersPost(
+        bearer("POST", `/api/teams/${team}/idjag-issuers`, ownerSession, { issuer: ISS2 }),
+        { params: Promise.resolve({ teamId: team }) }
+      );
+      expect(res.status).toBe(201);
+    };
+    const bind = async (team: string, trust: string, sub: string): Promise<string> => {
+      const opened = await connectPost(
+        bearer("POST", `/api/teams/${team}/idjag-issuers/${trust}/connect`, member2Session),
+        { params: Promise.resolve({ teamId: team, issuerId: trust }) }
+      );
+      expect(opened.status).toBe(200);
+      const res = await present(await mint(sub, MEMBER2_EMAIL, { iss: ISS2 }));
+      expect(res.status).toBe(200);
+      return (await res.json()).access_token;
+    };
+    const registrationOf = async (sub: string) => {
+      const { data } = await admin
+        .from("agent_registrations")
+        .select("id, revoked_at, idjag_team_issuer_id, idjag_client_id")
+        .eq("idjag_iss", ISS2)
+        .eq("idjag_sub", sub)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .single();
+      registrations.add(data!.id);
+      return data!;
+    };
+
+    beforeAll(async () => {
+      const jwksUri = `https://identity.idjag-test.local/jwks/org-${RUN}`;
+      documents.set(
+        `${ISS2}/.well-known/openid-configuration`,
+        JSON.stringify({ issuer: ISS2, jwks_uri: jwksUri })
+      );
+      const member2 = await makeUser(MEMBER2_EMAIL);
+      member2Id = member2.id;
+      member2Session = member2.session;
+      const ids: string[] = [];
+      for (const name of ["A", "B"]) {
+        const { data, error } = await admin.rpc("create_team_with_owner", {
+          p_user_id: ownerId,
+          p_name: `ID-JAG shared ${name} ${RUN}`,
+        });
+        if (error) throw error;
+        const id = (data as { id: string }).id;
+        ids.push(id);
+        const { error: memberError } = await admin
+          .from("team_members")
+          .insert({ team_id: id, user_id: member2Id, role: "member" });
+        if (memberError) throw memberError;
+      }
+      [teamA, teamB] = ids;
+      await addTo(teamA);
+      await addTo(teamB);
+      trustA = await listTrust(teamA);
+      trustB = await listTrust(teamB);
+    });
+
+    afterAll(async () => {
+      for (const id of [teamA, teamB]) if (id) await admin.from("teams").delete().eq("id", id);
+    });
+
+    it("keeps a connection the other team still covers when one team removes the issuer", async () => {
+      const sub = `shared-${RUN}`;
+      const token = await bind(teamA, trustA, sub);
+      expect(await registrationOf(sub)).toMatchObject({
+        revoked_at: null,
+        idjag_team_issuer_id: trustA,
+        idjag_client_id: CLIENT,
+      });
+
+      const removed = await issuerDelete(
+        bearer("DELETE", `/api/teams/${teamA}/idjag-issuers/${trustA}`, ownerSession),
+        { params: Promise.resolve({ teamId: teamA, issuerId: trustA }) }
+      );
+      expect(removed.status).toBe(200);
+      expect(await removed.json()).toEqual({ success: true, revoked_connections: 0 });
+
+      // Team B still trusts the issuer for this member: the delegation moved.
+      const row = await registrationOf(sub);
+      expect(row).toMatchObject({ revoked_at: null, idjag_team_issuer_id: trustB });
+      expect(await tokenWorks(token)).toBe(true);
+      expect((await present(await mint(sub, MEMBER2_EMAIL, { iss: ISS2 }))).status).toBe(200);
+      const { data: moved } = await admin
+        .from("audit_events")
+        .select("team_id, metadata")
+        .eq("action", "agent.registration.moved")
+        .eq("target_id", row.id);
+      expect(moved).toEqual([
+        {
+          team_id: teamB,
+          metadata: expect.objectContaining({
+            source: "team_issuer_removed",
+            from_team_id: teamA,
+            trust_id: trustB,
+          }),
+        },
+      ]);
+
+      // The claim page of a new ceremony names the team it binds for.
+      const pending = await (
+        await present(await mint(`shared-pending-${RUN}`, MEMBER2_EMAIL, { iss: ISS2 }))
+      ).json();
+      registrations.add(pending.registration_id);
+      const attempt = new URL(pending.claim.verification_uri).searchParams.get("attempt")!;
+      const view = await attemptGet(
+        bearer("GET", `/api/agent/identity/claim/attempt?attempt=${attempt}`, member2Session)
+      );
+      expect(await view.json()).toMatchObject({
+        trustedBy: { team: `ID-JAG shared B ${RUN}`, issuer: ISS2 },
+      });
+      await admin.from("agent_registrations").delete().eq("id", pending.registration_id);
+
+      // Leaving the last team that covers it revokes it.
+      await admin.from("team_members").delete().eq("team_id", teamB).eq("user_id", member2Id);
+      expect((await registrationOf(sub)).revoked_at).not.toBeNull();
+      expect(await tokenWorks(token)).toBe(false);
+    });
+
+    it("revokes what a link left pending when the member leaves while it runs", async () => {
+      // Back in team B, which trusts the issuer; no window, so the link
+      // leaves a pending ceremony.
+      const { error } = await admin
+        .from("team_members")
+        .insert({ team_id: teamB, user_id: member2Id, role: "member" });
+      if (error) throw error;
+      const sub = `race-${RUN}`;
+      const hash = () => randomBytes(32).toString("hex");
+      // The link runs inside a transaction held open for two seconds.
+      const sql = `begin;
+select public.link_team_idjag_identity('${ISS2}', '${sub}', '${MEMBER2_EMAIL}', '${CLIENT}',
+  'race-client', '${hash()}', '${hash()}', '${hash()}', 3600, 600, 5, 3, 25)->>'status';
+select pg_sleep(2);
+commit;`;
+      const psql = spawn("psql", [process.env.SUPABASE_DB_URL!, "-At", "-v", "ON_ERROR_STOP=1"], {
+        stdio: ["pipe", "pipe", "pipe"],
+      });
+      let output = "";
+      const linked = new Promise<void>((resolve) => {
+        psql.stdout.on("data", (chunk: Buffer) => {
+          output += chunk.toString();
+          if (output.includes("pending")) resolve();
+        });
+      });
+      const done = new Promise<number>((resolve) => psql.on("close", resolve));
+      psql.stdin.end(sql);
+      await linked;
+
+      // The member leaves now: the delete waits for the link's transaction,
+      // and its trigger then sees the pending registration.
+      const started = Date.now();
+      const { error: leaveError } = await admin
+        .from("team_members")
+        .delete()
+        .eq("team_id", teamB)
+        .eq("user_id", member2Id);
+      if (leaveError) throw leaveError;
+      expect(Date.now() - started).toBeGreaterThan(1000);
+      expect(await done).toBe(0);
+
+      const row = await registrationOf(sub);
+      expect(row.revoked_at).not.toBeNull();
     });
   });
 

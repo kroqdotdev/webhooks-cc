@@ -50,9 +50,9 @@ export function orgIssuersEnabled(): boolean {
 
 /**
  * Whether an issuer string may be trusted: an https URL exactly as written
- * (no normalisation, since `iss` is compared byte for byte), with no
- * credentials, query or fragment, under a configured prefix and longer than
- * it. Returns the reason for a person when it may not.
+ * (no normalisation, since `iss` is compared byte for byte, so it must equal
+ * its own parsed form and hold no `%` or `\`), with no credentials, query
+ * or fragment, under a configured prefix and longer than it. Returns the reason for a person when it may not.
  */
 export function checkOrgIssuer(
   value: unknown
@@ -77,6 +77,15 @@ export function checkOrgIssuer(
   }
   if (value.includes("#") || value.includes("?")) {
     return { ok: false, reason: "The issuer must be an https URL without query or fragment." };
+  }
+  // `iss` is compared byte for byte, so the URL must already be in the one
+  // form a parser writes it: no percent escapes, backslashes, upper-case
+  // host, default port or anything else a parser would rewrite.
+  if (value.includes("%") || value.includes("\\") || url.href !== value) {
+    return {
+      ok: false,
+      reason: "The issuer must be written exactly as a URL parser writes it, without % or \\.",
+    };
   }
   const segments = value.slice("https://".length).split("/");
   if (segments.some((segment) => segment === "." || segment === "..")) {

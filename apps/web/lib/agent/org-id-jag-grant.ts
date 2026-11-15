@@ -8,6 +8,7 @@ import { issuer } from "./http";
 import { maxAuthAgeSeconds } from "./id-jag";
 import { linkOrgIdJag, MAX_LIFETIME_WITHOUT_AUTH_TIME_SECS, verifyOrgIdJag } from "./org-id-jag";
 import { claimEndpointUrl } from "./registrations";
+import { issuerRateKey, ORG_ISSUER_LIMIT } from "./token-rate-limit";
 
 /**
  * The jwt-bearer grant with an organisation ID-JAG as its assertion
@@ -22,13 +23,21 @@ import { claimEndpointUrl } from "./registrations";
  * later assertions get a token at once. No refresh token: a fresh assertion
  * is the way to a new access token.
  *
- * Rate limits: the token route counts an assertion from a trusted issuer
- * per issuer (600 a minute) before its signature is checked, since an
- * organisation's members share its platform's few addresses; once
- * verified, it is counted per identity (iss, sub) here, 30 a minute.
+ * Rate limits: before the signature is checked, the token route counts an
+ * assertion naming an issuer under a configured prefix per address and per
+ * (issuer, address) (lib/agent/token-rate-limit.ts), so one address can
+ * spend only its own budget. Once the signature holds, it is counted here
+ * against the issuer's shared budget (600 a minute, which only the issuer's
+ * own signed assertions can spend) and per identity (iss, sub), 30 a minute.
+ *
+ * Until the signature holds, every refusal is the same invalid_grant
+ * answer: whether the issuer is under a prefix, trusted by some team, or
+ * publishes keys stays out of it. The audit row keeps the reason.
  */
 
 const KIND = "identity_assertion";
+/** The one answer to an assertion whose signature did not hold. */
+export const UNVERIFIED_DESCRIPTION = "The assertion could not be verified.";
 const SOURCE = "team_issuer";
 /** Verified assertions one identity may present a minute. */
 export const IDENTITY_RATE_LIMIT = 30;
@@ -65,6 +74,9 @@ export async function orgIdJagGrant(
       status: 400,
       metadata: { kind: KIND, source: SOURCE, code: verified.error },
     });
+    if (!verified.signed) {
+      return oauthError(400, "invalid_grant", UNVERIFIED_DESCRIPTION);
+    }
     if (verified.error === "auth_time_too_old") {
       return oauthError(
         400,
@@ -82,6 +94,17 @@ export async function orgIdJagGrant(
     return oauthError(400, "invalid_grant", `The assertion was rejected (${verified.error}).`);
   }
 
+  // The issuer's shared budget, which only its signed assertions reach.
+  const issuerPace = await checkRateLimitByKeyWithInfo(
+    issuerRateKey(verified.iss),
+    ORG_ISSUER_LIMIT,
+    60_000
+  );
+  if (issuerPace.response) {
+    return oauthError(429, "rate_limited", "Too many requests for this issuer. Wait and retry.", {
+      "Retry-After": issuerPace.response.headers.get("Retry-After") ?? "60",
+    });
+  }
   // Per identity, now that it is known to be real.
   const pace = await checkRateLimitByKeyWithInfo(
     identityRateKey(verified.iss, verified.sub),

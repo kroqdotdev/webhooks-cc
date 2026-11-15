@@ -1,5 +1,6 @@
+import { generateKeyPairSync } from "node:crypto";
 import * as jose from "jose";
-import { beforeAll, beforeEach, describe, expect, test, vi } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, test, vi } from "vitest";
 
 /**
  * Organisation ID-JAG verification (lib/agent/org-id-jag.ts) and the grant's
@@ -18,6 +19,10 @@ const env: Record<string, unknown> = {
   AGENT_IDJAG_MAX_AUTH_AGE_SECONDS: 3600,
   AGENT_MAX_PENDING_PER_LOGIN_HINT: 3,
   EMAIL_CAPTURE_DOMAIN: "mailhooks.cc",
+  // Our own assertion key, so the suite can sign a real one of ours.
+  AGENT_ASSERTION_SIGNING_KEY: generateKeyPairSync("ec", { namedCurve: "prime256v1" })
+    .privateKey.export({ format: "pem", type: "pkcs8" })
+    .toString(),
 };
 
 vi.mock("@/lib/env", () => ({
@@ -63,6 +68,7 @@ vi.mock("@/lib/supabase/admin", () => ({
 }));
 
 vi.mock("@/lib/supabase/inbound-domains", () => ({ isInboundDomainAddress: async () => false }));
+vi.mock("@/lib/observability", () => ({ reportError: vi.fn() }));
 vi.mock("@/lib/audit", () => ({ auditAgentEvent: vi.fn(async () => {}), emailDomain: () => null }));
 // The token endpoint's budgets: every key asked for, and which are spent.
 const rateKeys: { key: string; max: number }[] = [];
@@ -94,9 +100,12 @@ vi.mock("@/lib/forwarding/send", () => ({
   },
 }));
 
-const { verifyOrgIdJag, looksLikeIdJag, trustedOrgIssuerOf, orgClientName } =
+const { verifyOrgIdJag, looksLikeIdJag, orgIssuerCandidate, orgClientName } =
   await import("./org-id-jag");
-const { orgIdJagGrant, identityRateKey } = await import("./org-id-jag-grant");
+const { orgIdJagGrant, identityRateKey, UNVERIFIED_DESCRIPTION } =
+  await import("./org-id-jag-grant");
+const { issuerRateKey } = await import("./token-rate-limit");
+const { signAssertion } = await import("./assertion");
 const { clearOrgJwksCache, discoveryUrl } = await import("./org-jwks");
 const { checkOrgIssuer, checkAllowedClientIds } = await import("./org-issuers");
 
@@ -386,29 +395,91 @@ describe("verifyOrgIdJag", () => {
     });
   });
 
-  test("tells an ID-JAG from our own assertions by its typ", async () => {
+  test("reads the typ: our own assertions carry the ID-JAG typ too", async () => {
     expect(looksLikeIdJag(await mint())).toBe(true);
     expect(looksLikeIdJag(await mint({ typ: "JWT" }))).toBe(false);
     expect(looksLikeIdJag("garbage")).toBe(false);
+    const ours = await signAssertion({
+      registrationId: crypto.randomUUID(),
+      stage: "claimed",
+      expiresAt: new Date(Date.now() + 3600_000),
+      email: "member@example.com",
+    });
+    expect(looksLikeIdJag(ours)).toBe(true);
   });
 });
 
-describe("trustedOrgIssuerOf", () => {
-  test("names a trusted issuer without verifying or fetching anything", async () => {
-    expect(await trustedOrgIssuerOf(await mint({ signWith: otherKey }))).toBe(ISS);
+describe("orgIssuerCandidate", () => {
+  test("names an issuer under a prefix without verifying, fetching or looking anything up", async () => {
+    expect(orgIssuerCandidate(await mint({ signWith: otherKey }))).toBe(ISS);
+    // Untrusted but under the prefix: still the organisation path.
+    expect(orgIssuerCandidate(await mint({ iss: `${PREFIX}nobody` }))).toBe(`${PREFIX}nobody`);
     expect(fetched).toEqual([]);
   });
 
-  test("is null for an untrusted, out-of-prefix or non-ID-JAG assertion, or when off", async () => {
-    expect(await trustedOrgIssuerOf(await mint({ iss: `${PREFIX}nobody` }))).toBeNull();
-    trusted.add("https://other.example.com/issuers/org-1");
+  test("is never our own assertion, which has the same typ", async () => {
+    const ours = await signAssertion({
+      registrationId: crypto.randomUUID(),
+      stage: "pre_claim",
+      expiresAt: new Date(Date.now() + 3600_000),
+    });
+    expect(orgIssuerCandidate(ours)).toBeNull();
+    // Even with a prefix our own issuer falls under.
+    env.AGENT_IDJAG_ORG_ISSUER_PREFIXES = ["https://webhooks"];
+    expect(orgIssuerCandidate(ours)).toBeNull();
+  });
+
+  test("is null outside the prefixes, for garbage, or when off", async () => {
     expect(
-      await trustedOrgIssuerOf(await mint({ iss: "https://other.example.com/issuers/org-1" }))
+      orgIssuerCandidate(await mint({ iss: "https://other.example.com/issuers/org-1" }))
     ).toBeNull();
-    expect(await trustedOrgIssuerOf(await mint({ typ: "JWT" }))).toBeNull();
-    expect(await trustedOrgIssuerOf("garbage")).toBeNull();
+    expect(orgIssuerCandidate("garbage")).toBeNull();
     env.AGENT_IDJAG_ORG_ISSUER_PREFIXES = [];
-    expect(await trustedOrgIssuerOf(await mint())).toBeNull();
+    expect(orgIssuerCandidate(await mint())).toBeNull();
+  });
+});
+
+describe("the issuer's key cache", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  test("keeps the last good key set when a refetch fails", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    expect((await verifyOrgIdJag(await mint(), CLIENT)).ok).toBe(true);
+    // The issuer goes away, and the cached set is past its five minutes.
+    documents.clear();
+    vi.setSystemTime(Date.now() + 6 * 60_000);
+    const before = fetched.length;
+    expect((await verifyOrgIdJag(await mint(), CLIENT)).ok).toBe(true);
+    expect(fetched.length).toBe(before + 1);
+    // The failed attempt counts for the cooldown: a made-up kid does not refetch.
+    expect(
+      await verifyOrgIdJag(await mint({ kid: "made-up", signWith: otherKey }), CLIENT)
+    ).toMatchObject({ error: "unknown_key" });
+    expect(fetched.length).toBe(before + 1);
+    // The good keys still work.
+    expect((await verifyOrgIdJag(await mint(), CLIENT)).ok).toBe(true);
+  });
+
+  test("a made-up kid after the cooldown, during an outage, keeps the keys", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    expect((await verifyOrgIdJag(await mint(), CLIENT)).ok).toBe(true);
+    documents.clear();
+    vi.setSystemTime(Date.now() + 60_000);
+    expect(
+      await verifyOrgIdJag(await mint({ kid: "made-up", signWith: otherKey }), CLIENT)
+    ).toMatchObject({ error: "unknown_key" });
+    expect((await verifyOrgIdJag(await mint(), CLIENT)).ok).toBe(true);
+  });
+
+  test("shares one fetch between concurrent requests", async () => {
+    const results = await Promise.all(
+      Array.from({ length: 5 }, async () => verifyOrgIdJag(await mint(), CLIENT))
+    );
+    expect(results.every((result) => result.ok)).toBe(true);
+    expect(fetched.filter((url) => url === discoveryUrl(ISS))).toHaveLength(1);
+    expect(fetched).toHaveLength(2);
   });
 });
 
@@ -425,11 +496,64 @@ describe("orgIdJagGrant", () => {
     return new Request(`${APP}/api/oauth2/token`, { method: "POST" });
   }
 
-  test("counts a verified assertion per identity, 30 a minute", async () => {
+  test("counts a verified assertion per issuer, 600 a minute, then per identity, 30", async () => {
     await orgIdJagGrant(tokenRequest(), { client_id: CLIENT }, await mint());
-    expect(rateKeys).toEqual([{ key: identityRateKey(ISS, "member-sub"), max: 30 }]);
+    expect(rateKeys).toEqual([
+      { key: issuerRateKey(ISS), max: 600 },
+      { key: identityRateKey(ISS, "member-sub"), max: 30 },
+    ]);
     // The raw sub never goes into the key.
-    expect(rateKeys[0].key).not.toContain("member-sub");
+    expect(rateKeys[1].key).not.toContain("member-sub");
+  });
+
+  test("answers 429 once the issuer's shared budget is spent", async () => {
+    exhausted.add(issuerRateKey(ISS));
+    const res = await orgIdJagGrant(tokenRequest(), { client_id: CLIENT }, await mint());
+    expect(res.status).toBe(429);
+    expect(rateKeys).toEqual([{ key: issuerRateKey(ISS), max: 600 }]);
+  });
+
+  test("never charges the issuer's budget for an assertion whose signature fails", async () => {
+    for (const assertion of [
+      await mint({ signWith: otherKey }),
+      await mint({ kid: "missing", signWith: otherKey }),
+      await mint({ iss: `${PREFIX}not-trusted` }),
+    ]) {
+      await orgIdJagGrant(tokenRequest(), { client_id: CLIENT }, assertion);
+    }
+    expect(rateKeys).toEqual([]);
+  });
+
+  test("answers alike for every refusal before the signature holds", async () => {
+    const outside = "https://other.example.com/issuers/org-1";
+    const unservedIssuer = `${PREFIX}trusted-without-keys`;
+    trusted.add(unservedIssuer);
+    const bodies = [];
+    for (const assertion of [
+      await mint({ iss: `${PREFIX}not-trusted` }),
+      await mint({ iss: outside }),
+      await mint({ iss: unservedIssuer }),
+      await mint({ signWith: otherKey }),
+      await mint({ kid: "missing", signWith: otherKey }),
+      await mint({ alg: "HS256", signWith: new Uint8Array(32) }),
+      await mint({ typ: "JWT" }),
+    ]) {
+      const res = await orgIdJagGrant(tokenRequest(), { client_id: CLIENT }, assertion);
+      expect(res.status).toBe(400);
+      bodies.push(await res.json());
+    }
+    for (const body of bodies) {
+      expect(body).toEqual({ error: "invalid_grant", error_description: UNVERIFIED_DESCRIPTION });
+    }
+  });
+
+  test("says why once the signature holds", async () => {
+    const res = await orgIdJagGrant(
+      tokenRequest(),
+      { client_id: CLIENT },
+      await mint({ aud: "https://elsewhere.example" })
+    );
+    expect((await res.json()).error_description).toContain("invalid_audience");
   });
 
   test("answers 429 once the identity's budget is spent, before linking", async () => {
@@ -499,6 +623,12 @@ describe("checkOrgIssuer", () => {
       "https://user:pw@identity.example.com/issuers/abc",
       `${PREFIX}a b`,
       `${PREFIX}${"a".repeat(600)}`,
+      // Written otherwise than a parser writes it, or with escapes.
+      `${PREFIX}a%2Fb`,
+      `${PREFIX}a%41`,
+      `${PREFIX}a\\b`,
+      `${PREFIX}a{b}`,
+      `${PREFIX}\u00e9`,
     ]) {
       expect(checkOrgIssuer(value).ok).toBe(false);
     }

@@ -22,13 +22,19 @@ import { sendForward } from "@/lib/forwarding/send";
  *
  * Kept in memory for a few minutes; a kid nobody has seen refetches at most
  * every REFETCH_COOLDOWN_MS, so tokens with made-up kids cannot hammer the
- * issuer through us.
+ * issuer through us. A refetch that fails keeps the last good key set (for
+ * up to STALE_MAX_MS after it was fetched) and only records when it tried,
+ * so an issuer that is briefly down, or a made-up kid during an outage,
+ * never throws away keys that work. Concurrent requests for one issuer
+ * share one fetch.
  */
 
 const FETCH_TIMEOUT_MS = 5_000;
 const CACHE_TTL_MS = 5 * 60_000;
 const NEGATIVE_CACHE_TTL_MS = 60_000;
 const REFETCH_COOLDOWN_MS = 30_000;
+/** How long after its fetch a key set is still used while refetches fail. */
+const STALE_MAX_MS = 60 * 60_000;
 const CACHE_MAX_ENTRIES = 200;
 /** What the proxy and the direct path hand back at most. */
 export const MAX_DOCUMENT_BYTES = 1024;
@@ -43,17 +49,24 @@ export class OrgJwksError extends Error {
 type KeySet = ReturnType<typeof jose.createLocalJWKSet>;
 
 interface Entry {
+  /** The last good key set, or null when none was ever fetched. */
   keys: KeySet | null;
+  /** When `keys` was fetched. */
+  keysFetchedAt: number;
   reason?: string;
+  /** Until when the entry is used without asking again. */
   until: number;
-  fetchedAt: number;
+  /** The last attempt, good or not: the cooldown counts from here. */
+  attemptedAt: number;
 }
 
 const cache = new Map<string, Entry>();
+const inflight = new Map<string, Promise<KeySet>>();
 
 /** Drops cached key sets (tests). */
 export function clearOrgJwksCache(): void {
   cache.clear();
+  inflight.clear();
 }
 
 function remember(issuer: string, entry: Entry): void {
@@ -158,21 +171,54 @@ export function signingKeys(document: unknown): jose.JSONWebKeySet {
   return { keys: usable };
 }
 
-async function load(issuer: string): Promise<KeySet> {
+async function fetchKeys(issuer: string): Promise<KeySet> {
   const now = Date.now();
+  const previous = cache.get(issuer);
   try {
     const discovery = await fetchDocument(discoveryUrl(issuer), "discovery document");
     const jwksUri = jwksUriFromDiscovery(issuer, discovery);
     const jwks = signingKeys(await fetchDocument(jwksUri, "key set"));
     const keys = jose.createLocalJWKSet(jwks);
-    remember(issuer, { keys, until: now + CACHE_TTL_MS, fetchedAt: now });
+    remember(issuer, {
+      keys,
+      keysFetchedAt: now,
+      until: now + CACHE_TTL_MS,
+      attemptedAt: now,
+    });
     return keys;
   } catch (error) {
     const reason =
       error instanceof OrgJwksError ? error.message : "The issuer's keys could not be fetched.";
-    remember(issuer, { keys: null, reason, until: now + NEGATIVE_CACHE_TTL_MS, fetchedAt: now });
+    if (previous?.keys && now - previous.keysFetchedAt < STALE_MAX_MS) {
+      // Keep the keys that worked; only the attempt is new.
+      remember(issuer, {
+        ...previous,
+        reason,
+        until: now + NEGATIVE_CACHE_TTL_MS,
+        attemptedAt: now,
+      });
+      return previous.keys;
+    }
+    remember(issuer, {
+      keys: null,
+      keysFetchedAt: 0,
+      reason,
+      until: now + NEGATIVE_CACHE_TTL_MS,
+      attemptedAt: now,
+    });
     throw new OrgJwksError(reason);
   }
+}
+
+/** One fetch per issuer at a time; everyone asking meanwhile shares it. */
+function load(issuer: string): Promise<KeySet> {
+  const running = inflight.get(issuer);
+  if (running) return running;
+  const promise = fetchKeys(issuer).finally(() => {
+    if (inflight.get(issuer) === promise) inflight.delete(issuer);
+  });
+  inflight.set(issuer, promise);
+  return promise;
 }
 
 async function keySet(issuer: string): Promise<KeySet> {
@@ -186,7 +232,7 @@ async function keySet(issuer: string): Promise<KeySet> {
 
 /**
  * A key resolver for jose.jwtVerify. A kid missing from the cached set
- * refetches once, unless the set was fetched within the cooldown.
+ * refetches once, unless the issuer was asked within the cooldown.
  */
 export function orgKeyResolver(issuer: string): jose.JWTVerifyGetKey {
   return async (header, token) => {
@@ -196,7 +242,7 @@ export function orgKeyResolver(issuer: string): jose.JWTVerifyGetKey {
     } catch (error) {
       if (!(error instanceof jose.errors.JWKSNoMatchingKey)) throw error;
       const cached = cache.get(issuer);
-      if (cached && Date.now() - cached.fetchedAt < REFETCH_COOLDOWN_MS) throw error;
+      if (cached && Date.now() - cached.attemptedAt < REFETCH_COOLDOWN_MS) throw error;
       const fresh = await load(issuer);
       return fresh(header, token);
     }

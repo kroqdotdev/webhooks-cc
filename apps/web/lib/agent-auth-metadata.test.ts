@@ -199,6 +199,15 @@ describe("agent auth.md: Authorization Server Metadata", () => {
       "## Organisation issuers a team trusts (ID-JAG)"
     );
   });
+
+  test("names both audiences an organisation ID-JAG may carry, and the bearer client id", () => {
+    const md = buildAuthMd({ idJagEnabled: false, orgIdJagEnabled: true });
+    const section = md.slice(md.indexOf("## Organisation issuers a team trusts"));
+    expect(section).toContain(`\`aud\` \`${APP_URL}\``);
+    expect(section).toContain(`\`${APP_URL}/api/\``);
+    expect(section).toMatch(/`client_id` is not\s+authenticated/);
+    expect(section).toMatch(/no `identity_assertion` of ours is ever issued/);
+  });
 });
 
 describe("agent auth.md: proactive discovery pointers", () => {

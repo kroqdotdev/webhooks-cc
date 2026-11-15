@@ -4,10 +4,8 @@ import { isCaptureDomainAddress } from "@/lib/email-capture";
 import { isPlainEmailAddress } from "@/lib/request-validation";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { isInboundDomainAddress } from "@/lib/supabase/inbound-domains";
-import { signAssertion } from "./assertion";
-import { accountEmail, newAttemptSecrets, type ClaimAttempt } from "./claims";
+import { newAttemptSecrets, type ClaimAttempt } from "./claims";
 import {
-  CLAIMED_ASSERTION_TTL_SECONDS,
   MAX_CLAIM_ATTEMPTS,
   MAX_CONNECTED_AGENTS,
   UNCLAIMED_LIFETIME_SECONDS,
@@ -17,8 +15,8 @@ import { maxAuthAgeSeconds, recordJti } from "./id-jag";
 import { issuerTrustedByAnyTeam, issuerUnderPrefix, orgIssuersEnabled } from "./org-issuers";
 import { OrgJwksError, orgKeyResolver } from "./org-jwks";
 import {
-  exchangeAssertion,
   generateClaimToken,
+  issueClaimedAccessToken,
   hashClaimToken,
   type AccessToken,
   type RegistrationRow,
@@ -66,6 +64,8 @@ import {
  * Every check runs before anything is looked up by email, and the trust
  * check (an issuer some team trusts, under a configured prefix) runs before
  * any key is fetched, so an arbitrary `iss` never makes us fetch anything.
+ * A failure before the signature holds is marked unsigned: the grant answers
+ * all of those alike, so nobody learns whether a team trusts an issuer.
  */
 
 const ID_JAG_TYP = "oauth-id-jag+jwt";
@@ -107,8 +107,15 @@ export interface OrgIdJagSuccess {
   authTime: number | null;
 }
 
-export type OrgIdJagResult =
-  OrgIdJagSuccess | { ok: false; error: OrgIdJagError; authAge?: number };
+export type OrgIdJagFailure = {
+  ok: false;
+  error: OrgIdJagError;
+  /** True once the signature held: only then may the answer say why. */
+  signed?: true;
+  authAge?: number;
+};
+
+export type OrgIdJagResult = OrgIdJagSuccess | OrgIdJagFailure;
 
 /** True when the JWT's header says it is an ID-JAG (decoded, not verified). */
 export function looksLikeIdJag(jwt: string): boolean {
@@ -126,20 +133,24 @@ function normalizedTyp(typ: unknown): string {
 }
 
 /**
- * The issuer of an ID-JAG that some team trusts, read without verifying
- * anything, or null. Picks the token endpoint's rate limit (per issuer for
- * a trusted one, per address otherwise) before the signature is checked.
+ * The issuer of an assertion that goes down the organisation path, read
+ * without verifying anything, or null: one under a configured prefix and
+ * never our own issuer. Our own assertions carry `typ: oauth-id-jag+jwt`
+ * too, so the typ cannot tell them apart; the issuer can. Picks both the
+ * token endpoint's path and its rate limit before the signature is checked,
+ * without a database lookup.
  */
-export async function trustedOrgIssuerOf(jwt: string): Promise<string | null> {
-  if (!orgIssuersEnabled() || !looksLikeIdJag(jwt)) return null;
+export function orgIssuerCandidate(jwt: string): string | null {
+  if (!orgIssuersEnabled()) return null;
   let iss: unknown;
   try {
     iss = jose.decodeJwt(jwt).iss;
   } catch {
     return null;
   }
-  if (typeof iss !== "string" || iss.length > 512 || !issuerUnderPrefix(iss)) return null;
-  return (await issuerTrustedByAnyTeam(iss)) ? iss : null;
+  if (typeof iss !== "string" || iss.length > 512) return null;
+  if (iss === publicEnv().NEXT_PUBLIC_APP_URL) return null;
+  return issuerUnderPrefix(iss) ? iss : null;
 }
 
 /**
@@ -162,21 +173,30 @@ export function orgAudiences(): string[] {
   return [app, `${app}/api/`];
 }
 
-function mapVerifyError(err: unknown): OrgIdJagError {
-  if (err instanceof OrgJwksError) return "keys_unavailable";
-  if (err instanceof jose.errors.JWKSNoMatchingKey) return "unknown_key";
-  if (err instanceof jose.errors.JOSEAlgNotAllowed) return "unsupported_algorithm";
-  if (err instanceof jose.errors.JWTExpired) return "credential_expired";
+function mapVerifyError(err: unknown): OrgIdJagFailure {
+  if (err instanceof OrgJwksError) return { ok: false, error: "keys_unavailable" };
+  if (err instanceof jose.errors.JWKSNoMatchingKey) return { ok: false, error: "unknown_key" };
+  if (err instanceof jose.errors.JOSEAlgNotAllowed) {
+    return { ok: false, error: "unsupported_algorithm" };
+  }
+  // jose checks the claims only after the signature holds.
+  if (err instanceof jose.errors.JWTExpired) {
+    return { ok: false, error: "credential_expired", signed: true };
+  }
   if (err instanceof jose.errors.JWTClaimValidationFailed) {
-    if (err.claim === "aud") return "invalid_audience";
-    if (err.claim === "nbf") return "not_yet_valid";
+    if (err.claim === "aud") return { ok: false, error: "invalid_audience", signed: true };
+    if (err.claim === "nbf") return { ok: false, error: "not_yet_valid", signed: true };
     if (err.claim === "iat") {
       // Missing iat is malformed; a stale or future one is expired or early.
-      return err.reason === "missing" ? "invalid_token" : "credential_expired";
+      return {
+        ok: false,
+        error: err.reason === "missing" ? "invalid_token" : "credential_expired",
+        signed: true,
+      };
     }
-    return "invalid_token";
+    return { ok: false, error: "invalid_token", signed: true };
   }
-  return "invalid_signature";
+  return { ok: false, error: "invalid_signature" };
 }
 
 /**
@@ -216,52 +236,57 @@ export async function verifyOrgIdJag(jwt: string, clientId: string): Promise<Org
     });
     payload = result.payload;
   } catch (err) {
-    return { ok: false, error: mapVerifyError(err) };
+    return mapVerifyError(err);
   }
+  // From here on the signature holds.
+  const fail = (error: OrgIdJagError, authAge?: number): OrgIdJagFailure =>
+    authAge === undefined
+      ? { ok: false, error, signed: true }
+      : { ok: false, error, signed: true, authAge };
 
   // Section 4.4.1: one audience, as a string or a one-element array.
   if (Array.isArray(payload.aud) && payload.aud.length !== 1) {
-    return { ok: false, error: "invalid_audience" };
+    return fail("invalid_audience");
   }
   const jti = typeof payload.jti === "string" && payload.jti ? payload.jti : null;
   const exp = typeof payload.exp === "number" ? payload.exp : null;
   const sub = typeof payload.sub === "string" && payload.sub ? payload.sub : null;
   if (!jti || exp === null || !sub || jti.length > 256 || sub.length > 256) {
-    return { ok: false, error: "invalid_token" };
+    return fail("invalid_token");
   }
   // Consumed as soon as the signature holds, so a replay is always flagged.
   if (!(await recordJti(jti, iss, "id-jag", exp))) {
-    return { ok: false, error: "replay_detected" };
+    return fail("replay_detected");
   }
 
   let authTime: number | null = null;
   if (payload.auth_time !== undefined) {
     if (typeof payload.auth_time !== "number" || !Number.isFinite(payload.auth_time)) {
-      return { ok: false, error: "invalid_token" };
+      return fail("invalid_token");
     }
     authTime = payload.auth_time;
     const authAge = Math.floor(Date.now() / 1000) - authTime;
-    if (authAge < -CLOCK_TOLERANCE_SECS) return { ok: false, error: "invalid_token" };
+    if (authAge < -CLOCK_TOLERANCE_SECS) return fail("invalid_token");
     if (authAge > maxAuthAgeSeconds()) {
-      return { ok: false, error: "auth_time_too_old", authAge };
+      return fail("auth_time_too_old", authAge);
     }
   } else {
     // No auth_time: only an assertion minted for this exchange will do.
     const iat = typeof payload.iat === "number" ? payload.iat : null;
     if (iat === null || exp - iat > MAX_LIFETIME_WITHOUT_AUTH_TIME_SECS) {
-      return { ok: false, error: "lifetime_too_long" };
+      return fail("lifetime_too_long");
     }
   }
 
   // Section 4.4.1: the client_id claim identifies the client asking.
   if (typeof payload.client_id !== "string" || payload.client_id !== clientId) {
-    return { ok: false, error: "client_mismatch" };
+    return fail("client_mismatch");
   }
 
   const email = typeof payload.email === "string" ? payload.email.trim().toLowerCase() : "";
   // Absent is accepted; false (or anything but true) is not.
   if (!email || (payload.email_verified !== undefined && payload.email_verified !== true)) {
-    return { ok: false, error: "missing_verified_email" };
+    return fail("missing_verified_email");
   }
 
   return { ok: true, iss, sub, clientId, email, authTime };
@@ -360,15 +385,10 @@ export async function linkOrgIdJag(verified: OrgIdJagSuccess): Promise<OrgIdJagL
   switch (result.status) {
     case "linked": {
       const registration = await readRegistration(result.registration_id!);
-      const assertion = await signAssertion({
-        registrationId: registration.id,
-        stage: "claimed",
-        expiresAt: new Date(Date.now() + CLAIMED_ASSERTION_TTL_SECONDS * 1000),
-        email: await accountEmail(registration.user_id!),
-      });
-      // The same exchange as the jwt-bearer grant with our own assertion,
-      // so the registration is read again and the token capped the same way.
-      const token = await exchangeAssertion(assertion);
+      // A one-hour token only, never an assertion of ours: the next token
+      // takes a fresh ID-JAG. The registration is read again and the token
+      // capped as for the jwt-bearer grant.
+      const token = await issueClaimedAccessToken(registration.id);
       return {
         status: "linked",
         registration,

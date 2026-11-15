@@ -12,7 +12,9 @@
 --    issuer may name (empty: any), who added it and when. No client access.
 -- 2. agent_registrations.idjag_team_issuer_id: the trust row a delegation was
 --    made through, so removing the row, or the member leaving the team,
---    revokes exactly the delegations it made.
+--    revokes exactly the delegations it made; idjag_client_id: the client id
+--    the assertion named, so a delegation can move to another trust row of
+--    the same issuer that allows that client.
 -- 3. team_idjag_connect_windows: a member's pre-approval ("Connect Claude"
 --    on the team page). The member opens a 10-minute window for one trust
 --    row; the first assertion from that issuer inside it whose email is the
@@ -30,7 +32,9 @@
 -- 6. Triggers revoke the delegations (and delete their tokens) when a trust
 --    row goes, whatever deleted it (the owner, the team's deletion), and when
 --    a member leaves or is removed (closing their windows too); every
---    revocation is written to audit_events.
+--    revocation is written to audit_events. A member in two teams trusting
+--    the same issuer keeps a delegation while another trust row still covers
+--    them: it moves to that row instead (audited as moved).
 --
 -- Service role only. Apply in autocommit mode (see AGENTS.md): the index on
 -- agent_registrations is built concurrently, outside the transaction.
@@ -67,6 +71,9 @@ revoke all on table public.team_idjag_issuers from public, anon, authenticated;
 alter table public.agent_registrations
   add column if not exists idjag_team_issuer_id uuid
     references public.team_idjag_issuers(id) on delete set null;
+alter table public.agent_registrations
+  add column if not exists idjag_client_id text
+    check (char_length(idjag_client_id) <= 512);
 
 -- 3. Pre-approval windows, one per (trust row, member). Reopening one moves
 -- its expiry; binding or expiry deletes it.
@@ -90,11 +97,17 @@ revoke all on table public.team_idjag_connect_windows from public, anon, authent
 -- Revokes registrations made through the given trust rows: all of them, or
 -- only one member's (claimed as that user, or still waiting for that email).
 -- Deletes their tokens and records each revocation. Returns the ids.
+--
+-- With p_rehome, a registration whose person is still a member of another
+-- team trusting the same issuer (for its client) is not revoked: it moves to
+-- that team's oldest such trust row, which the person's membership still
+-- justifies. A member's own Disconnect does not rehome.
 create or replace function public.revoke_team_idjag_delegations(
   p_trust_ids uuid[],
   p_user_id   uuid,
   p_team_id   uuid,
-  p_source    text
+  p_source    text,
+  p_rehome    boolean
 )
 returns uuid[]
 language plpgsql
@@ -106,6 +119,60 @@ declare
 begin
   if p_user_id is not null then
     select lower(email) into v_email from public.users where id = p_user_id;
+  end if;
+
+  if p_rehome then
+    with affected as (
+      select r.id, r.idjag_iss, r.idjag_client_id,
+             coalesce(
+               r.user_id,
+               (select u.id from public.users u where u.email = r.attempt_login_hint)
+             ) as person
+        from public.agent_registrations r
+       where r.idjag_team_issuer_id = any(p_trust_ids)
+         and r.revoked_at is null
+         and (
+           p_user_id is null
+           or r.user_id = p_user_id
+           or (r.claimed_at is null and v_email is not null and r.attempt_login_hint = v_email)
+         )
+         for update of r
+    ),
+    targets as (
+      select a.id,
+             (select t.id
+                from public.team_idjag_issuers t
+                join public.team_members m on m.team_id = t.team_id and m.user_id = a.person
+               where t.issuer = a.idjag_iss
+                 and t.id <> all(p_trust_ids)
+                 and (
+                   cardinality(t.allowed_client_ids) = 0
+                   or a.idjag_client_id = any(t.allowed_client_ids)
+                 )
+               order by t.created_at, t.id
+               limit 1) as trust_id
+        from affected a
+       where a.person is not null
+    ),
+    moved as (
+      update public.agent_registrations r
+         set idjag_team_issuer_id = g.trust_id
+        from targets g
+       where r.id = g.id
+         and g.trust_id is not null
+      returning r.id, r.kind, r.user_id, r.idjag_iss, g.trust_id
+    )
+    insert into public.audit_events (
+      actor_type, action, outcome, team_id, target_id, target_user_id, metadata
+    )
+    select 'system', 'agent.registration.moved', 'ok', t.team_id, m.id::text,
+           coalesce(m.user_id, p_user_id),
+           jsonb_build_object(
+             'kind', m.kind, 'source', p_source, 'issuer', left(m.idjag_iss, 200),
+             'from_team_id', p_team_id, 'trust_id', m.trust_id
+           )
+      from moved m
+      join public.team_idjag_issuers t on t.id = m.trust_id;
   end if;
 
   with revoked as (
@@ -141,9 +208,9 @@ begin
 end;
 $$;
 
-revoke all on function public.revoke_team_idjag_delegations(uuid[], uuid, uuid, text)
+revoke all on function public.revoke_team_idjag_delegations(uuid[], uuid, uuid, text, boolean)
   from public, anon, authenticated;
-grant execute on function public.revoke_team_idjag_delegations(uuid[], uuid, uuid, text)
+grant execute on function public.revoke_team_idjag_delegations(uuid[], uuid, uuid, text, boolean)
   to service_role;
 
 -- 4. Resolve an organisation ID-JAG to a team member and link it.
@@ -185,6 +252,17 @@ begin
   -- The same lock as link_agent_idjag_identity(), taken first so the checks
   -- below and its decision see one state.
   perform pg_advisory_xact_lock(hashtextextended('agent-idjag:' || p_iss || '#' || p_sub, 0));
+
+  -- Hold the person's memberships of teams trusting this issuer, and those
+  -- trust rows, until this transaction ends: a member leaving (or a trust
+  -- row going) waits, and its trigger then sees what this call bound or left
+  -- pending and revokes it, instead of running in between and missing it.
+  perform 1
+    from public.team_members m
+    join public.team_idjag_issuers t on t.team_id = m.team_id
+   where m.user_id = v_user_id
+     and t.issuer = p_iss
+     for share of m, t;
 
   -- Trust rows of teams this person belongs to, oldest first.
   select array_agg(t.id order by t.created_at, t.id) into v_trust_ids
@@ -267,11 +345,11 @@ begin
 
     insert into public.agent_registrations (
       kind, user_id, client_name, claimed_at, expires_at,
-      idjag_iss, idjag_sub, idjag_team_issuer_id
+      idjag_iss, idjag_sub, idjag_team_issuer_id, idjag_client_id
     ) values (
       -- Claimed from the start: no unclaimed lifetime.
       'identity_assertion', v_user_id, left(p_client_name, 200), now(), now(),
-      p_iss, p_sub, v_window.trust_id
+      p_iss, p_sub, v_window.trust_id, left(p_client_id, 512)
     )
     returning * into v_registration;
 
@@ -313,7 +391,8 @@ begin
     end if;
     -- The agent's name, for the claim page.
     update public.agent_registrations
-       set client_name = coalesce(client_name, left(p_client_name, 200))
+       set client_name = coalesce(client_name, left(p_client_name, 200)),
+           idjag_client_id = left(p_client_id, 512)
      where id = (v_result->>'registration_id')::uuid;
     select team_id into v_team_id from public.team_idjag_issuers where id = v_trust_id;
     v_result := v_result || jsonb_build_object('team_id', v_team_id);
@@ -407,7 +486,7 @@ begin
 
   -- Revoked here to report them; the trigger then finds nothing left.
   v_revoked := public.revoke_team_idjag_delegations(
-    array[p_issuer_id], null, p_team_id, 'team_issuer_removed'
+    array[p_issuer_id], null, p_team_id, 'team_issuer_removed', true
   );
   delete from public.team_idjag_issuers where id = p_issuer_id;
 
@@ -497,7 +576,7 @@ begin
   delete from public.team_idjag_connect_windows
    where trust_id = p_issuer_id and user_id = p_user_id;
   v_revoked := public.revoke_team_idjag_delegations(
-    array[p_issuer_id], p_user_id, p_team_id, 'team_member_disconnected'
+    array[p_issuer_id], p_user_id, p_team_id, 'team_member_disconnected', false
   );
 
   return jsonb_build_object('status', 'ok', 'issuer', v_issuer, 'revoked', to_jsonb(v_revoked));
@@ -552,8 +631,11 @@ language plpgsql
 security definer set search_path = ''
 as $$
 begin
+  -- Wait for a link_team_idjag_identity() holding this row (for share), so
+  -- the revocation below sees what it bound.
+  perform 1 from public.team_idjag_issuers where id = old.id for update;
   perform public.revoke_team_idjag_delegations(
-    array[old.id], null, old.team_id, 'team_issuer_removed'
+    array[old.id], null, old.team_id, 'team_issuer_removed', true
   );
   return old;
 end;
@@ -581,7 +663,7 @@ begin
     delete from public.team_idjag_connect_windows
      where trust_id = any(v_trust_ids) and user_id = old.user_id;
     perform public.revoke_team_idjag_delegations(
-      v_trust_ids, old.user_id, old.team_id, 'team_member_left'
+      v_trust_ids, old.user_id, old.team_id, 'team_member_left', true
     );
   end if;
   return null;

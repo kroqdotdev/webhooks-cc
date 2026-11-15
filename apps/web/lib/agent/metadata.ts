@@ -784,9 +784,13 @@ A team's owner can trust their organisation's ID-JAG issuer in the team's
 settings. A member's agent then sends the member's ID-JAG to ${tokenUrl}
 as \`grant_type=${JWT_BEARER_GRANT}\` with \`assertion\` and \`client_id\`.
 The assertion must be \`typ: oauth-id-jag+jwt\` signed with ES256 (keys from
-the issuer's \`/.well-known/openid-configuration\`), \`aud\` \`${appUrl}\`, a
+the issuer's \`/.well-known/openid-configuration\`), \`aud\` \`${appUrl}\` (our
+authorization server's issuer) or \`${appUrl}/api/\` (the API, as on the
+ID-JAG path of the identity endpoint), as a string or a one-element array, a
 \`client_id\` equal to the request's, a unique \`jti\`, and an \`email\`
-belonging to a member of a team that trusts the issuer. \`auth_time\`, when
+belonging to a member of a team that trusts the issuer. The token request is
+a bearer assertion: its \`client_id\` is not authenticated, so a team's list
+of allowed client ids only narrows which client ids an assertion may name. \`auth_time\`, when
 present, must be within the last ${maxAuthAge} seconds; without it, \`exp\`
 must be at most 300 seconds after \`iat\`. \`email_verified\` may be left
 out, but \`false\` is refused. No account is ever created this way.
@@ -798,12 +802,18 @@ that window, an identity that is not connected yet answers 400
 \`interaction_required\`; its \`error_description\` names the team page, and
 a \`claim\` block lets an agent that can show the human a code confirm
 through Step 4b instead. Once connected, later assertions answer an access
-token at once, with no refresh token. Disconnecting on the team page,
-removing the issuer, or the member leaving the team revokes the connection
-and its tokens.
+token at once, with no refresh token, and the claim grant pays out only
+the access token: no \`identity_assertion\` of ours is ever issued for such
+an identity, and one would be refused, so every new token takes a fresh
+ID-JAG. Disconnecting on the team page, removing the issuer, or the member
+leaving the team revokes the connection and its tokens (unless another team
+of the member still trusts the issuer, for that client).
 
-The token endpoint counts assertions from a trusted issuer per issuer, 600
-a minute, and each verified identity 30 a minute; other assertions count
-per address, 60 a minute.
+Until the signature holds, every refusal is the same \`invalid_grant\`
+("The assertion could not be verified."). Before the signature is checked,
+the token endpoint counts an assertion naming an issuer under a configured
+prefix per address, 1,200 a minute, and per issuer and address, 600 a
+minute; once verified, per issuer, 600 a minute, and per identity, 30 a
+minute. Other assertions count per address, 60 a minute.
 `;
 }

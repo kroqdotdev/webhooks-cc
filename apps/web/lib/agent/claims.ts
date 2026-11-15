@@ -305,11 +305,13 @@ export interface AttemptView {
   /** For an ID-JAG identity: its provider, named by our trust list. */
   provider: string | null;
   /**
-   * For an organisation's ID-JAG: the team that trusts its issuer and the
-   * issuer's host ("Acme trusts identity.anthropic.com to sign you in").
-   * Only for a viewer who is a member of that team.
+   * For an organisation's ID-JAG: the team the member connects through (the
+   * one whose trust row the registration came by, even when another team
+   * of theirs trusts the same issuer) and the issuer's full URL, since one
+   * host serves every organisation's issuer. Only for a viewer who is a
+   * member of that team.
    */
-  trustedBy: { team: string; host: string } | null;
+  trustedBy: { team: string; issuer: string } | null;
   registeredAt: number;
   attemptExpiresAt: number | null;
   requestedFor: string;
@@ -396,11 +398,11 @@ export async function readClaimAttempt(
   };
 }
 
-/** The team behind a trust row and its issuer's host, for one of its members. */
+/** The team behind a trust row and its issuer, for one of its members. */
 async function trustingTeam(
   trustId: string,
   userId: string
-): Promise<{ team: string; host: string } | null> {
+): Promise<{ team: string; issuer: string } | null> {
   const admin = createAdminClient();
   const { data: trust, error } = await admin
     .from("team_idjag_issuers")
@@ -422,13 +424,7 @@ async function trustingTeam(
   if (teamError) throw teamError;
   if (memberError) throw memberError;
   if (!team || !member) return null;
-  let host: string;
-  try {
-    host = new URL(trust.issuer).host;
-  } catch {
-    host = trust.issuer.slice(0, 64);
-  }
-  return { team: team.name, host };
+  return { team: team.name, issuer: trust.issuer };
 }
 
 export type CompleteResult =
@@ -526,8 +522,13 @@ export type PollResult =
   | {
       status: "claimed";
       token: AccessToken;
-      assertion: string;
-      assertionExpires: Date;
+      /**
+       * Our claimed identity assertion, or null for a registration bound
+       * through a team's organisation issuer: that agent gets each new
+       * token with a fresh ID-JAG, never with a 90-day assertion of ours.
+       */
+      assertion: string | null;
+      assertionExpires: Date | null;
       registration: RegistrationRow;
     };
 
@@ -569,6 +570,9 @@ export async function pollClaim(claimToken: string): Promise<PollResult> {
       issuedAtMs: now,
       expiresAtMs: now + ACCESS_TOKEN_TTL_SECONDS * 1000,
     });
+    if (registration.idjag_team_issuer_id) {
+      return { status: "claimed", token, assertion: null, assertionExpires: null, registration };
+    }
     const assertionExpires = new Date(now + CLAIMED_ASSERTION_TTL_SECONDS * 1000);
     const assertion = await signAssertion({
       registrationId: registration.id,
