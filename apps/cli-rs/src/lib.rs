@@ -8,5 +8,6 @@ pub mod tunnel;
 pub mod types;
 pub mod util;
 
-#[cfg(test)]
+// Only Unix tests send or handle SIGINT today.
+#[cfg(all(test, unix))]
 pub(crate) mod test_support;
