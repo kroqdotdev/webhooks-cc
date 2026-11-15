@@ -34,7 +34,7 @@ export const CLI_VERSION = "1.20.1";
 export const SDK_VERSION = "1.30.0";
 export const PYTHON_SDK_VERSION = "0.10.0";
 export const GO_SDK_VERSION = "0.10.0";
-export const MCP_VERSION = "2.4.1";
+export const MCP_VERSION = "2.4.2";
 
 export const CHANGELOG: ChangelogEntry[] = [
   ...RELEASE.entries,
@@ -3284,6 +3284,16 @@ export const CHANGELOG: ChangelogEntry[] = [
   },
 
   // ─── MCP ────────────────────────────────────────────────────────────
+  {
+    version: "2.4.2",
+    date: "2026-11-15",
+    title: "Discord Keys Checked Before Create",
+    track: "mcp",
+    items: [
+      "`create_endpoint` refuses a Discord public key that is not 64 hex characters before it creates anything, so a mistyped key no longer leaves an endpoint behind that verifies nothing",
+      "The hosted server says so when a client with an older tool list still passes `targetUrl` to `render_email` or `test_webhook_flow`: nothing was posted, and posting to your own URL needs the local server",
+    ],
+  },
   {
     version: "2.4.1",
     date: "2026-11-15",

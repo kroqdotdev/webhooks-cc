@@ -1,4 +1,10 @@
-import { createMcpHandler, McpServer, type ServerContext } from "@modelcontextprotocol/server";
+import {
+  createMcpHandler,
+  isCallToolResult,
+  McpServer,
+  type ServerContext,
+  type StandardSchemaWithJSON,
+} from "@modelcontextprotocol/server";
 import { z } from "zod";
 import { WebhooksCC } from "@webhooks-cc/sdk";
 import {
@@ -6,6 +12,7 @@ import {
   parseToolGroups,
   registerTools,
   sdkToolResult,
+  TARGET_URL_TOOLS,
   toolCallFrom,
   attachSkill,
   attachInspector,
@@ -107,20 +114,67 @@ export function callerFetch(clientIp: string | null): typeof fetch {
 export const MAX_RUNNING_TOOLS_PER_ACCOUNT = 8;
 const running = new Map<string, number>();
 
+/** Set on the parsed arguments of a call whose raw arguments named targetUrl. */
+const SENT_TARGET_URL = Symbol("sentTargetUrl");
+
+/** Said beside the result of a call that named a targetUrl the hosted server never posts to. */
+export const TARGET_URL_NOTE =
+  "targetUrl was ignored and nothing was posted to it: this hosted server cannot reach your machine. Posting to your own URL needs the local MCP server (npx -y @webhooks-cc/mcp).";
+
+/**
+ * The input schema of a tool whose targetUrl the hosted server leaves out:
+ * the same object schema, listed the same way, but a call from a client
+ * that still sends targetUrl (one with a tools/list from before it was left
+ * out) is marked before the object schema drops the key, so the result can
+ * say nothing was posted rather than succeed in silence.
+ */
+function noticingTargetUrl(schema: z.ZodObject): StandardSchemaWithJSON {
+  const standard = schema["~standard"];
+  return {
+    "~standard": {
+      version: 1,
+      vendor: standard.vendor,
+      jsonSchema: standard.jsonSchema,
+      async validate(value) {
+        const result = await standard.validate(value);
+        const sent =
+          typeof value === "object" &&
+          value !== null &&
+          Object.hasOwn(value, "targetUrl") &&
+          (value as { targetUrl?: unknown }).targetUrl !== undefined;
+        if (result.issues || !sent) return result;
+        return { value: { ...(result.value as object), [SENT_TARGET_URL]: true } };
+      },
+    },
+  };
+}
+
 /** registerTools' view of the v2 server, with the per-account cap. */
 function toolServer(server: McpServer, account: string): ToolServer {
   return {
     tool(name, description, shape, handler, annotations, meta) {
+      const schema = z.object(shape);
       return server.registerTool(
         name,
         {
           title: annotations?.title,
           description,
-          inputSchema: z.object(shape),
+          inputSchema:
+            TARGET_URL_TOOLS.has(name) && !("targetUrl" in shape)
+              ? noticingTargetUrl(schema)
+              : schema,
           annotations,
           ...(meta ? { _meta: meta } : {}),
         },
-        async (args: unknown, ctx: ServerContext) => {
+        async (rawArgs: unknown, ctx: ServerContext) => {
+          const marked = rawArgs as Record<PropertyKey, unknown>;
+          const sentTargetUrl = marked?.[SENT_TARGET_URL] === true;
+          let args = rawArgs;
+          if (sentTargetUrl) {
+            const plain = { ...marked };
+            delete plain[SENT_TARGET_URL];
+            args = plain;
+          }
           const busy = running.get(account) ?? 0;
           if (busy >= MAX_RUNNING_TOOLS_PER_ACCOUNT) {
             return {
@@ -135,9 +189,14 @@ function toolServer(server: McpServer, account: string): ToolServer {
           }
           running.set(account, busy + 1);
           try {
-            return sdkToolResult(
+            const result = sdkToolResult(
               await handler(args as Parameters<typeof handler>[0], toolCallFrom(server, ctx))
             );
+            if (!sentTargetUrl || !isCallToolResult(result)) return result;
+            return {
+              ...result,
+              content: [...result.content, { type: "text" as const, text: TARGET_URL_NOTE }],
+            };
           } finally {
             const left = (running.get(account) ?? 1) - 1;
             if (left > 0) running.set(account, left);

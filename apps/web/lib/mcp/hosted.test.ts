@@ -27,14 +27,20 @@ describe("the instructions", () => {
     expect(INSTRUCTIONS).toContain("?tools=");
   });
 
-  it("name every group ?tools= takes", () => {
-    for (const group of TOOL_GROUP_NAMES) {
-      expect(INSTRUCTIONS, group).toMatch(new RegExp(`\\b${group}\\b`));
-    }
-  });
-
-  it("name only groups ?tools= takes", () => {
-    for (const group of TOOL_GROUP_NAMES) {
+  it("list exactly the groups beside core that ?tools= takes", () => {
+    // "name groups beside core: forwarding, layouts, extras (notes), ... and names (notes), as in"
+    const list = /beside core: (.+?), as in\b/.exec(INSTRUCTIONS)?.[1];
+    expect(list, "the instructions list the groups after 'beside core:'").toBeDefined();
+    const named = list!
+      .replace(/\([^)]*\)/g, "")
+      .split(/,|\band\b/)
+      .map((name) => name.trim())
+      .filter(Boolean);
+    const expected = TOOL_GROUP_NAMES.filter((group) => group !== "core");
+    expect([...named].sort()).toEqual([...expected].sort());
+    expect(new Set(named).size, "no group named twice").toBe(named.length);
+    // Every name listed is one ?tools= takes.
+    for (const group of named) {
       expect([...toolSelection(url(`?tools=${group}`), []).groups], group).toContain(group);
     }
   });

@@ -22,7 +22,7 @@ vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: () => ({}) }));
 vi.mock("@/lib/forwarding/config", () => ({ sendOptions: () => ({}) }));
 vi.mock("@/lib/forwarding/send", () => ({ sendForward: vi.fn() }));
 
-const { buildServer } = await import("./hosted");
+const { buildServer, TARGET_URL_NOTE } = await import("./hosted");
 
 const open: Array<{ close(): Promise<void> }> = [];
 afterEach(async () => {
@@ -74,6 +74,22 @@ async function ask(method: string, params: Record<string, unknown> = {}) {
   };
   expect(answer.error).toBeUndefined();
   return answer.result!;
+}
+
+function capturedRequest() {
+  return {
+    id: "req_9",
+    endpointId: "ep_1",
+    method: "POST",
+    path: "/",
+    headers: { "content-type": "application/json" },
+    body: "{}",
+    queryParams: {},
+    contentType: "application/json",
+    ip: "203.0.113.1",
+    size: 2,
+    receivedAt: Date.now() + 60_000,
+  };
 }
 
 describe("the request inspector on the hosted server", () => {
@@ -136,7 +152,7 @@ describe("the hosted server", () => {
       tools: Array<{
         name: string;
         description: string;
-        inputSchema: { properties?: Record<string, unknown> };
+        inputSchema: { properties?: Record<string, unknown>; required?: string[] };
       }>;
     };
     const byName = Object.fromEntries(tools.map((tool) => [tool.name, tool]));
@@ -147,6 +163,16 @@ describe("the hosted server", () => {
       );
       expect(byName[name].description, name).not.toContain("targetUrl");
     }
+    // The rest of each schema is still listed, so a wrapper that lost the
+    // JSON Schema fails here.
+    const render = byName.render_email.inputSchema;
+    expect(Object.keys(render.properties ?? {})).toEqual(
+      expect.arrayContaining(["requestId", "format", "mailgunSigningKey"])
+    );
+    expect(render.required).toEqual(expect.arrayContaining(["requestId", "format"]));
+    expect(Object.keys(byName.test_webhook_flow.inputSchema.properties ?? {})).toEqual(
+      expect.arrayContaining(["provider", "event", "secret", "mockStatus", "cleanup"])
+    );
   });
 
   it("drops a targetUrl sent anyway, so nothing is posted there", async () => {
@@ -178,5 +204,94 @@ describe("the hosted server", () => {
       false
     );
     expect(result.isError, result.content[0]?.text).toBeFalsy();
+    // A client whose tools/list still offered targetUrl hears that nothing was posted.
+    expect(result.content.map((item) => item.text)).toContain(TARGET_URL_NOTE);
+    expect(TARGET_URL_NOTE).toContain("npx -y @webhooks-cc/mcp");
+  });
+
+  it("adds the note to test_webhook_flow too, and posts nothing to targetUrl", async () => {
+    // The flow runs to the end: create, send to the capture URL, see the
+    // request, clean up. A replay to targetUrl would come after the capture.
+    const fetched: string[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+        const target =
+          typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+        const method = (init?.method ?? "GET").toUpperCase();
+        fetched.push(`${method} ${target}`);
+        const path = new URL(target).pathname;
+        if (method === "POST" && path === "/api/endpoints") {
+          return Response.json({
+            id: "ep_1",
+            slug: "flow-1",
+            name: "flow-1",
+            url: "https://go.webhooks.cc/w/flow-1",
+            createdAt: Date.now(),
+          });
+        }
+        if (method === "POST" && target.startsWith("https://go.webhooks.cc/w/flow-1")) {
+          return new Response("OK");
+        }
+        if (method === "GET" && path === "/api/requests/req_9") {
+          // What a replay reads first: answered, so a replay that slipped
+          // through would really post to targetUrl and fail the checks below.
+          return Response.json(capturedRequest());
+        }
+        if (method === "GET" && path === "/api/endpoints/flow-1/requests") {
+          return Response.json([capturedRequest()]);
+        }
+        if (method === "DELETE" && path === "/api/endpoints/flow-1") {
+          return new Response(null, { status: 204 });
+        }
+        return Response.json({ error: "Not in this test" }, { status: 404 });
+      })
+    );
+    const result = (await ask("tools/call", {
+      name: "test_webhook_flow",
+      arguments: { targetUrl: "http://localhost:3000/hook" },
+    })) as { isError?: boolean; content: Array<{ text: string }> };
+    expect(result.isError, result.content[0]?.text).toBeFalsy();
+    const flow = JSON.parse(result.content[0].text) as {
+      request: { id: string } | null;
+      replayResponse: unknown;
+      cleanedUp: boolean;
+    };
+    expect(flow.request?.id).toBe("req_9");
+    expect(flow.replayResponse).toBeNull();
+    expect(flow.cleanedUp).toBe(true);
+    expect(fetched.some((call) => call.includes("http://localhost:3000/hook"))).toBe(false);
+    expect(result.content.map((item) => item.text)).toContain(TARGET_URL_NOTE);
+  });
+
+  it("adds no note to a call the schema refuses", async () => {
+    const fetch = vi.fn(async () => Response.json({}));
+    vi.stubGlobal("fetch", fetch);
+    const result = (await ask("tools/call", {
+      name: "render_email",
+      arguments: { format: "postmark", targetUrl: "http://localhost:3000/inbound" },
+    })) as { isError?: boolean; content: Array<{ text: string }> };
+    expect(result.isError).toBe(true);
+    expect(result.content.map((item) => item.text)).not.toContain(TARGET_URL_NOTE);
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it("adds no note to a call without targetUrl", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        Response.json({
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: "{}",
+        })
+      )
+    );
+    const result = (await ask("tools/call", {
+      name: "render_email",
+      arguments: { requestId: "req_1", format: "postmark" },
+    })) as { isError?: boolean; content: Array<{ text: string }> };
+    expect(result.isError, result.content[0]?.text).toBeFalsy();
+    expect(result.content.map((item) => item.text)).not.toContain(TARGET_URL_NOTE);
   });
 });

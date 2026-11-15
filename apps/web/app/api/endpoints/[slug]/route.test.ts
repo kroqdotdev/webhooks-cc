@@ -187,6 +187,41 @@ describe("PATCH /api/endpoints/[slug]", () => {
     expect(mockFns.updateEndpointBySlugForUser).not.toHaveBeenCalled();
   });
 
+  test("refuses a Discord public key that is not 64 hex characters, and saves nothing", async () => {
+    const { PATCH } = await import("./route");
+    const response = await PATCH(
+      patchRequest({ signingProvider: "discord", signingSecret: "not-a-key" }),
+      params
+    );
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toEqual({
+      error:
+        "signingSecret for discord is the application's public key: 64 hex characters, from the Discord developer portal's General Information page.",
+    });
+    expect(mockFns.updateEndpointBySlugForUser).not.toHaveBeenCalled();
+  });
+
+  test("checks a new Discord key when the provider stays Discord", async () => {
+    mockFns.getEndpointBySlugForUser.mockResolvedValue({
+      signingProvider: "discord",
+      hasSigningSecret: true,
+      signingHeader: null,
+    });
+
+    const { PATCH } = await import("./route");
+    const refused = await PATCH(patchRequest({ signingSecret: "a".repeat(63) }), params);
+    expect(refused.status).toBe(400);
+    expect(mockFns.updateEndpointBySlugForUser).not.toHaveBeenCalled();
+
+    const key = "0123456789abcdef".repeat(4);
+    const saved = await PATCH(patchRequest({ signingSecret: key }), params);
+    expect(saved.status).toBe(200);
+    expect(mockFns.updateEndpointBySlugForUser).toHaveBeenCalledWith(
+      expect.objectContaining({ signingSecret: key })
+    );
+  });
+
   test("requires a header when configuring Generic HMAC", async () => {
     const { PATCH } = await import("./route");
     const response = await PATCH(

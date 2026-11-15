@@ -1423,6 +1423,55 @@ describe("registerTools", () => {
     expect(create).not.toHaveBeenCalled();
   });
 
+  it("refuses a discord public key of the wrong form before creating anything", async () => {
+    const create = vi.fn();
+    const update = vi.fn();
+    const tools = getRegisteredTools(
+      createMockClient({ endpoints: { create, update } as unknown as WebhooksCC["endpoints"] })
+    );
+    for (const signingSecret of [
+      "abc",
+      "g".repeat(64),
+      "a".repeat(63),
+      ` ${"a".repeat(64)}`,
+      `${"a".repeat(64)}\n`,
+    ]) {
+      const result = await tools.create_endpoint.handler({
+        signingProvider: "discord",
+        signingSecret,
+      });
+      expect(result.isError, JSON.stringify(signingSecret)).toBe(true);
+      expect(result.content[0].text).toContain("64 hex characters");
+    }
+    expect(create).not.toHaveBeenCalled();
+    expect(update).not.toHaveBeenCalled();
+  });
+
+  it("creates an endpoint with a discord public key of the right form", async () => {
+    const key = "0123456789abcdefABCDEF0123456789abcdef0123456789abcdef0123456789";
+    const create = vi
+      .fn()
+      .mockResolvedValue({ slug: "acme-3", url: "https://go.webhooks.cc/w/acme-3" });
+    const update = vi.fn().mockResolvedValue({
+      slug: "acme-3",
+      url: "https://go.webhooks.cc/w/acme-3",
+      signingProvider: "discord",
+      hasSigningSecret: true,
+    });
+    const tools = getRegisteredTools(
+      createMockClient({ endpoints: { create, update } as unknown as WebhooksCC["endpoints"] })
+    );
+    const result = parseJsonResult(
+      await tools.create_endpoint.handler({ signingProvider: "discord", signingSecret: key })
+    );
+    expect(update).toHaveBeenCalledWith("acme-3", {
+      signingProvider: "discord",
+      signingSecret: key,
+      signingHeader: undefined,
+    });
+    expect(result).toMatchObject({ signingProvider: "discord", hasSigningSecret: true });
+  });
+
   it("returns the endpoint with a warning when signing fails to save", async () => {
     const create = vi
       .fn()
@@ -1432,7 +1481,7 @@ describe("registerTools", () => {
       createMockClient({ endpoints: { create, update } as unknown as WebhooksCC["endpoints"] })
     );
     const result = parseJsonResult(
-      await tools.create_endpoint.handler({ signingProvider: "discord", signingSecret: "abc" })
+      await tools.create_endpoint.handler({ signingProvider: "stripe", signingSecret: "abc" })
     );
     expect(result.slug).toBe("acme-2");
     expect(result.warning).toContain("signing configuration failed: Invalid signing secret");

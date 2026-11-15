@@ -1,6 +1,24 @@
 import { describe, expect, test } from "vitest";
+import { signingCredentialProblem as mcpSigningCredentialProblem } from "@webhooks-cc/mcp/tools";
 
-import { isValidSigningHeaderName, isValidSigningProvider } from "./signing-config";
+import {
+  isValidSigningHeaderName,
+  isValidSigningProvider,
+  normalizeSigningCredential,
+  signingCredentialProblem,
+} from "./signing-config";
+
+/** A well-formed Discord public key, in mixed case. */
+const DISCORD_KEY = "0123456789abcdefABCDEF0123456789abcdef0123456789abcdef0123456789";
+
+const REFUSED_DISCORD_KEYS = [
+  "abc",
+  "g".repeat(64),
+  "a".repeat(63),
+  "a".repeat(65),
+  ` ${"a".repeat(64)}`,
+  `${"a".repeat(64)}\n`,
+];
 
 describe("signing-config", () => {
   test("accepts compact HTTP header names used for Generic HMAC", () => {
@@ -25,5 +43,38 @@ describe("signing-config", () => {
     expect(isValidSigningProvider("plaid")).toBe(false);
     expect(isValidSigningProvider("unknown")).toBe(false);
     expect(isValidSigningProvider(null)).toBe(false);
+  });
+
+  test("refuses a Discord public key that is not 64 hex characters", () => {
+    for (const key of REFUSED_DISCORD_KEYS) {
+      expect(signingCredentialProblem("discord", key), JSON.stringify(key)).toContain(
+        "64 hex characters"
+      );
+    }
+    expect(signingCredentialProblem("discord", DISCORD_KEY)).toBeNull();
+  });
+
+  test("leaves other providers' credentials to the provider", () => {
+    expect(signingCredentialProblem("stripe", "abc")).toBeNull();
+    expect(signingCredentialProblem("generic-hmac", "secret")).toBeNull();
+  });
+
+  test("trims only a Discord public key", () => {
+    expect(normalizeSigningCredential("discord", ` ${DISCORD_KEY} `)).toBe(DISCORD_KEY);
+    expect(normalizeSigningCredential("discord", "   ")).toBe("");
+    expect(normalizeSigningCredential("generic-hmac", " s3cret ")).toBe(" s3cret ");
+    expect(normalizeSigningCredential("stripe", " whsec_test ")).toBe(" whsec_test ");
+  });
+
+  test("says the same as the MCP server's check", () => {
+    const cases: [string, string][] = [
+      ...[...REFUSED_DISCORD_KEYS, DISCORD_KEY].map((key): [string, string] => ["discord", key]),
+      ["stripe", "abc"],
+    ];
+    for (const [provider, key] of cases) {
+      expect(signingCredentialProblem(provider, key), `${provider} ${JSON.stringify(key)}`).toBe(
+        mcpSigningCredentialProblem(provider, key)
+      );
+    }
   });
 });
