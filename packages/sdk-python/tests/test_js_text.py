@@ -126,3 +126,18 @@ def test_bodies_with_nan_are_not_json() -> None:
         }
     )
     assert not match_body_path("type", "order.paid")(request)
+
+
+@pytest.mark.parametrize(
+    "text",
+    ["9" * 400, "1e400", "9" * 400 + "ms", "9" * 400 + "s", "1" + "0" * 306 + "d"],
+)
+def test_a_duration_that_would_be_infinite_is_refused(text: str) -> None:
+    # float() turns too many digits into inf, and a wait with it would never end.
+    with pytest.raises(ValueError, match="Invalid duration"):
+        parse_duration(text)
+
+
+def test_the_largest_finite_durations_are_still_taken() -> None:
+    assert parse_duration("1" + "0" * 300) == pytest.approx(1e300)
+    assert parse_duration("1" + "0" * 300 + "d") == pytest.approx(8.64e307)

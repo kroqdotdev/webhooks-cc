@@ -24,7 +24,7 @@ export function parseDuration(input: number | string): number {
 
   // Try plain numeric string first
   if (PLAIN_NUMBER_REGEX.test(trimmed)) {
-    return Number(trimmed);
+    return finiteDuration(Number(trimmed), input);
   }
 
   const match = DURATION_REGEX.exec(trimmed);
@@ -35,16 +35,27 @@ export function parseDuration(input: number | string): number {
   const value = parseFloat(match[1]);
   switch (match[2]) {
     case "ms":
-      return value;
+      return finiteDuration(value, input);
     case "s":
-      return value * 1000;
+      return finiteDuration(value * 1000, input);
     case "m":
-      return value * 60_000;
+      return finiteDuration(value * 60_000, input);
     case "h":
-      return value * 3_600_000;
+      return finiteDuration(value * 3_600_000, input);
     case "d":
-      return value * 86_400_000;
+      return finiteDuration(value * 86_400_000, input);
     default:
       throw new Error(`Invalid duration: "${input}"`);
   }
+}
+
+/**
+ * `ms`, unless a digit string too long for a number (or a huge value times
+ * its unit) made it Infinity: a wait with an infinite timeout would never end.
+ */
+function finiteDuration(ms: number, input: string): number {
+  if (!Number.isFinite(ms)) {
+    throw new Error(`Invalid duration: "${input}"`);
+  }
+  return ms;
 }

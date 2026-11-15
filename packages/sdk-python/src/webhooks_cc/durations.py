@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import math
 import re
+import sys
 from datetime import timedelta
 from typing import TypeAlias
 
@@ -46,11 +47,21 @@ def parse_duration(value: Duration) -> float:
 
     trimmed = js_trim(value)
     if _PLAIN_NUMBER.fullmatch(trimmed):
-        return _number(trimmed)
+        return _finite(_number(trimmed), value)
     match = _DURATION.fullmatch(trimmed)
     if not match:
         raise ValueError(f'Invalid duration: "{value}"')
-    return _number(match.group(1)) * _UNIT_MS[match.group(2)]
+    return _finite(_number(match.group(1)) * _UNIT_MS[match.group(2)], value)
+
+
+def _finite(ms: float, value: str) -> float:
+    """``ms``, unless it is past what a float holds, as the TypeScript SDK
+    refuses a duration that would be Infinity: digits too long for a float
+    (``inf``), or a huge value times its unit (an int no float can hold). A
+    wait with an infinite timeout would never end."""
+    if not ms <= sys.float_info.max:
+        raise ValueError(f'Invalid duration: "{value}"')
+    return ms
 
 
 def _number(text: str) -> float:

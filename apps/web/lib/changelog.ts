@@ -2554,6 +2554,7 @@ export const CHANGELOG: ChangelogEntry[] = [
     items: [
       "An error from the API carries its text, not its JSON: the `message` of a JSON error body, else its `error`, so a long answer is no longer cut into broken JSON; the recovery hint for a short message is still added",
       "`WebhooksCCError` has `apiMessage`, what the API said without the SDK's hint, and `path`, the API route that answered, on downloads and `requests.subscribe()` streams too",
+      "A duration string too long or too large for a number (400 digits, or a huge value with a unit) is refused as an invalid duration instead of becoming Infinity, which made a wait run forever",
     ],
   },
   {
@@ -3039,6 +3040,7 @@ export const CHANGELOG: ChangelogEntry[] = [
     track: "python",
     items: [
       "An error's `message` is the API's text, not its JSON: the `message` of a JSON error body, else its `error`, so a long answer is no longer cut into broken JSON",
+      "A duration string too long or too large for a float (400 digits, or a huge value with a unit) raises the invalid-duration `ValueError` instead of becoming an endless wait",
     ],
   },
   {
