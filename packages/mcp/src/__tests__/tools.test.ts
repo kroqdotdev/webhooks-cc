@@ -16,7 +16,7 @@ import {
   type Request,
 } from "@webhooks-cc/sdk";
 import { registerResources } from "../resources";
-import { registerTools, toolWords, type ToolServer } from "../tools";
+import { registerTools, summarizeResponse, toolWords, type ToolServer } from "../tools";
 
 const EXPECTED_TOOLS = [
   "create_endpoint",
@@ -300,6 +300,21 @@ function parseJsonResult(result: { content: Array<{ text: string }> }) {
   return JSON.parse(result.content[0].text);
 }
 
+describe("summarizeResponse", () => {
+  it("keeps a reason phrase the answer carried", async () => {
+    const summary = await summarizeResponse(
+      new Response("ok", { status: 202, statusText: "Accepted" })
+    );
+    expect(summary).toEqual({ status: 202, statusText: "Accepted", body: "ok" });
+  });
+
+  it("leaves statusText out when the answer had none, never making one up", async () => {
+    const summary = await summarizeResponse(new Response("ok", { status: 200 }));
+    expect(summary).toEqual({ status: 200, body: "ok" });
+    expect(summary).not.toHaveProperty("statusText");
+  });
+});
+
 describe("registerTools", () => {
   it("leaves out local-only tools on the hosted server and caps its waits", async () => {
     const waitFor = vi.fn().mockResolvedValue({ id: "req1", method: "POST", headers: {} });
@@ -324,13 +339,17 @@ describe("registerTools", () => {
       expect(tools).toHaveProperty(name);
     }
 
-    const render = await tools.render_email.handler({
-      requestId: "req1",
-      format: "postmark",
-      targetUrl: "http://localhost:3000/inbound",
-    });
-    expect(render.isError).toBe(true);
-    expect(render.content[0].text).toContain("local MCP server");
+    expect(tools.send_webhook.description).toContain("Cloudflare address");
+    // targetUrl would post from webhooks.cc's network: the hosted server
+    // never offers it, and the local server still does.
+    const local = getRegisteredTools(createMockClient());
+    for (const name of ["render_email", "test_webhook_flow"]) {
+      expect(Object.keys(tools[name].schema as object), name).not.toContain("targetUrl");
+      expect(tools[name].description, name).not.toContain("targetUrl");
+      expect(Object.keys(local[name].schema as object), name).toContain("targetUrl");
+      expect(local[name].description, name).toContain("targetUrl");
+    }
+    expect(local.send_webhook.description).not.toContain("Cloudflare");
 
     await tools.wait_for_request.handler({ endpointSlug: "abc", timeout: "10m" });
     expect(waitFor).toHaveBeenCalledWith("abc", expect.objectContaining({ timeout: 50_000 }));
@@ -1364,6 +1383,59 @@ describe("registerTools", () => {
 
     expect(preview.headers["x-hub-signature-256"]).toBe("sha256=abc");
     expect(preview.body).toBe('{"ok":true}');
+  });
+
+  it("creates an endpoint with signing and returns it as updated", async () => {
+    const create = vi
+      .fn()
+      .mockResolvedValue({ slug: "acme-1", url: "https://go.webhooks.cc/w/acme-1" });
+    const update = vi.fn().mockResolvedValue({
+      slug: "acme-1",
+      url: "https://go.webhooks.cc/w/acme-1",
+      signingProvider: "stripe",
+      hasSigningSecret: true,
+    });
+    const tools = getRegisteredTools(
+      createMockClient({ endpoints: { create, update } as unknown as WebhooksCC["endpoints"] })
+    );
+    const result = parseJsonResult(
+      await tools.create_endpoint.handler({
+        signingProvider: "stripe",
+        signingSecret: "test_secret",
+      })
+    );
+    expect(update).toHaveBeenCalledWith("acme-1", {
+      signingProvider: "stripe",
+      signingSecret: "test_secret",
+      signingHeader: undefined,
+    });
+    expect(result).toMatchObject({ signingProvider: "stripe", hasSigningSecret: true });
+  });
+
+  it("refuses discord signing without its public key before creating anything", async () => {
+    const create = vi.fn();
+    const tools = getRegisteredTools(
+      createMockClient({ endpoints: { create } as unknown as WebhooksCC["endpoints"] })
+    );
+    const result = await tools.create_endpoint.handler({ signingProvider: "discord" });
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain("signingSecret is required");
+    expect(create).not.toHaveBeenCalled();
+  });
+
+  it("returns the endpoint with a warning when signing fails to save", async () => {
+    const create = vi
+      .fn()
+      .mockResolvedValue({ slug: "acme-2", url: "https://go.webhooks.cc/w/acme-2" });
+    const update = vi.fn().mockRejectedValue(new Error("Invalid signing secret"));
+    const tools = getRegisteredTools(
+      createMockClient({ endpoints: { create, update } as unknown as WebhooksCC["endpoints"] })
+    );
+    const result = parseJsonResult(
+      await tools.create_endpoint.handler({ signingProvider: "discord", signingSecret: "abc" })
+    );
+    expect(result.slug).toBe("acme-2");
+    expect(result.warning).toContain("signing configuration failed: Invalid signing secret");
   });
 
   it("creates multiple endpoints in one call", async () => {

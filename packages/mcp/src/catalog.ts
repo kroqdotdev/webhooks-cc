@@ -39,7 +39,7 @@ interface Behaviour {
   destructive?: true;
   /** Calling it again with the same arguments changes nothing more. */
   idempotent?: true;
-  /** Reaches past webhooks.cc: a URL you name, an email inbox, Google, Anthropic. */
+  /** Reaches past webhooks.cc: a URL you name, an email inbox, Google, Anthropic, Polar. */
   openWorld?: true;
   /**
    * Shows its answer in the request inspector, an MCP App (app.ts) that
@@ -59,6 +59,12 @@ const remove: Behaviour = { destructive: true, idempotent: true };
 /** Overwrites settings: the same call twice does nothing more, but the old values are gone. */
 const replace: Behaviour = { destructive: true, idempotent: true };
 const outward: Behaviour = { openWorld: true };
+/**
+ * Billing changes: each can charge the card (or end what was paid for) through
+ * Polar, and once the owner has set an agent budget, some are made at once
+ * without asking anyone.
+ */
+const billing: Behaviour = { destructive: true, openWorld: true };
 
 function group(name: ToolGroup, tools: Record<string, Behaviour>): Record<string, CatalogEntry> {
   return Object.fromEntries(
@@ -140,7 +146,8 @@ export const TOOL_CATALOG: Record<string, CatalogEntry> = {
     unshare_endpoint: remove,
     create_team: write,
     rename_team: update,
-    delete_team: remove,
+    // Ends the team's Polar subscription at once.
+    delete_team: { ...remove, openWorld: true },
     remove_team_member: remove,
     leave_team: remove,
     invite_to_team: outward,
@@ -151,15 +158,16 @@ export const TOOL_CATALOG: Record<string, CatalogEntry> = {
   }),
   ...group("account", {
     get_billing: read,
-    // Each asks the owner to approve a quoted change, which can charge the card.
-    change_plan: write,
-    set_seats: write,
-    change_addons: write,
-    cancel_subscription: { destructive: true },
-    resume_subscription: write,
+    // Each asks the owner to approve a quoted change, which can charge the card,
+    // or, within an agent budget, makes it at once.
+    change_plan: billing,
+    set_seats: billing,
+    change_addons: billing,
+    cancel_subscription: billing,
+    resume_subscription: billing,
     get_agent_budget: read,
-    // Lowering applies at once; a raise asks the owner.
-    set_agent_budget: update,
+    // Lowering applies at once; a raise asks the owner, and lets keys charge without asking.
+    set_agent_budget: { ...billing, idempotent: true },
     list_api_keys: read,
     create_api_key: write,
     revoke_api_key: remove,

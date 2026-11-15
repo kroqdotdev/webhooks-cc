@@ -553,7 +553,7 @@ export const createEndpointShape = {
     .string()
     .optional()
     .describe(
-      "Signing secret (encrypted server-side, never returned). Required when signingProvider is set."
+      "Signing secret (encrypted server-side, never returned); for discord, the application's public key. Required when signingProvider is set."
     ),
   signingHeader: z
     .string()
@@ -880,6 +880,10 @@ function describeBought(bought: { seats: number | null; units: number | null } |
   if (bought.units !== null) return `${bought.units} units`;
   return "another product";
 }
+
+/** What every billing change tells the agent about the approval it needs. */
+export const BILLING_APPROVAL =
+  "The account's owner (the team's owner for a team) approves the quoted change, with what is charged now and when it applies: this returns a link and a code to show them, then call wait_for_approval. If the price or the subscription changed before they approve, nothing is changed and you ask again. Only when the person asks for it; never to spend money on your own. When the owner has set an agent budget (get_agent_budget), more seats and a monthly move up a tier are made at once from it instead, and the answer says so.";
 
 /** The tools that hand the person a checkout link: the only ones a retry waits on. */
 const CHECKOUT_TOOLS = new Set(["create_checkout"]);
@@ -1363,14 +1367,20 @@ function ensureVerifyArgs(args: {
   };
 }
 
-async function summarizeResponse(response: Response): Promise<{
+/**
+ * A response as the tools report it: status, the reason phrase when the
+ * answer carried one (HTTP/2 and the notify proxy carry none, and a phrase
+ * made up from the status would claim what the server never sent), and the
+ * body, truncated.
+ */
+export async function summarizeResponse(response: Response): Promise<{
   status: number;
-  statusText: string;
+  statusText?: string;
   body: string;
 }> {
   return {
     status: response.status,
-    statusText: response.statusText,
+    ...(response.statusText ? { statusText: response.statusText } : {}),
     body: await readBodyTruncated(response),
   };
 }
@@ -1581,8 +1591,8 @@ export interface RegisterToolsOptions {
   /**
    * The hosted server (webhooks.cc/mcp): leave out the tools that send to a
    * URL the caller names, which would run from webhooks.cc's network and
-   * could never reach the caller's machine anyway, refuse targetUrl on the
-   * others, and cap waits below the proxy's timeout.
+   * could never reach the caller's machine anyway, leave targetUrl out of
+   * the others, and cap waits below the proxy's timeout.
    */
   remote?: boolean;
   /**
@@ -1690,17 +1700,17 @@ function toolTarget(
       if (!entry) throw new Error(`${name} has no entry in catalog.ts`);
       if (options.groups && !options.groups.has(entry.group)) return { remove() {} };
       if (options.readOnly && entry.readOnly !== true) return { remove() {} };
+      // The hosted server cannot reach the caller's machine, so it never
+      // offers targetUrl; the adapter's z.object(shape) drops one sent anyway
+      // (hosted-app.test.ts checks that nothing is posted there).
+      if (remote && TARGET_URL_TOOLS.has(name)) {
+        shape = Object.fromEntries(
+          Object.entries(shape).filter(([key]) => key !== "targetUrl")
+        ) as typeof shape;
+      }
       const wrapped: typeof handler = remote
         ? async (args, call) => {
             const input = args as Record<string, unknown>;
-            if (TARGET_URL_TOOLS.has(name) && input.targetUrl !== undefined) {
-              return {
-                ...textContent(
-                  "targetUrl needs the local MCP server (npx -y @webhooks-cc/mcp): the hosted server cannot reach your machine. Leave it out here."
-                ),
-                isError: true,
-              };
-            }
             // Waits poll the API: bound how long and how often, and poll no
             // faster than once a second even when the caller leaves it out.
             const bounded = { ...input };
@@ -1892,7 +1902,8 @@ export function registerTools(
       }) => {
         // Validate signing fields before creating endpoint
         if (signingProvider) {
-          if (signingProvider !== "discord" && !signingSecret) {
+          // Discord too: its credential is the application's public key.
+          if (!signingSecret) {
             throw new Error(`signingSecret is required for provider "${signingProvider}"`);
           }
           if (signingProvider === "generic-hmac" && !signingHeader) {
@@ -1913,13 +1924,16 @@ export function registerTools(
           site,
         });
         // Configure signing after creation (create doesn't support signing fields yet)
-        if (signingProvider && signingSecret) {
+        if (signingProvider) {
           try {
-            await client.endpoints.update(endpoint.slug, {
-              signingProvider,
-              signingSecret,
-              signingHeader,
-            });
+            // The update answers with the endpoint as it now is, signing included.
+            return jsonContent(
+              await client.endpoints.update(endpoint.slug, {
+                signingProvider,
+                signingSecret,
+                signingHeader,
+              })
+            );
           } catch (err) {
             return jsonContent({
               ...endpoint,
@@ -2192,7 +2206,9 @@ export function registerTools(
         .string()
         .nullable()
         .optional()
-        .describe("New signing secret (encrypted server-side). Pass null to clear."),
+        .describe(
+          "New signing secret (encrypted server-side); for discord, the application's public key. Pass null to clear."
+        ),
       signingHeader: z
         .string()
         .nullable()
@@ -2426,7 +2442,9 @@ export function registerTools(
 
   server.tool(
     "send_webhook",
-    "Send a test webhook to a hosted endpoint. Supports provider templates and signing.",
+    remote
+      ? "Send a test webhook to a hosted endpoint. Supports provider templates and signing. It is sent from webhooks.cc's network, so the capture shows a Cloudflare address."
+      : "Send a test webhook to a hosted endpoint. Supports provider templates and signing.",
     {
       slug: z.string().describe("The endpoint slug to send to"),
       method: methodSchema,
@@ -2468,12 +2486,7 @@ export function registerTools(
           response = await client.endpoints.send(slug, { method, headers, body });
         }
 
-        const responseBody = await readBodyTruncated(response);
-        return jsonContent({
-          status: response.status,
-          statusText: response.statusText,
-          body: responseBody,
-        });
+        return jsonContent(await summarizeResponse(response));
       }
     )
   );
@@ -2673,18 +2686,13 @@ export function registerTools(
     },
     withErrorHandling(async ({ requestId, targetUrl }) => {
       const response = await client.requests.replay(requestId, targetUrl);
-      const responseBody = await readBodyTruncated(response);
-      return jsonContent({
-        status: response.status,
-        statusText: response.statusText,
-        body: responseBody,
-      });
+      return jsonContent(await summarizeResponse(response));
     })
   );
 
   server.tool(
     "render_email",
-    "A captured email in the shape an inbound mail provider posts it (postmark, sendgrid, mailgun, cloudmailin), to test the inbound handler you wrote for that provider against real mail. Returns the method, headers and body; with targetUrl (your local handler), posts it there and returns the answer. A Mailgun form is signed when you pass the signing key your handler checks.",
+    `A captured email in the shape an inbound mail provider posts it (postmark, sendgrid, mailgun, cloudmailin), to test the inbound handler you wrote for that provider against real mail. Returns the method, headers and body${remote ? "" : "; with targetUrl (your local handler), posts it there and returns the answer"}. A Mailgun form is signed when you pass the signing key your handler checks.`,
     {
       requestId: z.string().describe("The captured email's request ID"),
       format: z
@@ -2714,12 +2722,7 @@ export function registerTools(
         body: rendered.body,
         redirect: "manual",
       });
-      return jsonContent({
-        format,
-        status: response.status,
-        statusText: response.statusText,
-        body: await readBodyTruncated(response),
-      });
+      return jsonContent({ format, ...(await summarizeResponse(response)) });
     })
   );
 
@@ -2901,12 +2904,7 @@ export function registerTools(
         event,
         secret,
       });
-      const responseBody = await readBodyTruncated(response);
-      return jsonContent({
-        status: response.status,
-        statusText: response.statusText,
-        body: responseBody,
-      });
+      return jsonContent(await summarizeResponse(response));
     })
   );
 
@@ -3013,8 +3011,6 @@ export function registerTools(
       ].join("\n")
     );
   };
-  const BILLING_APPROVAL =
-    "The account's owner (the team's owner for a team) approves the quoted change, with what is charged now and when it applies: this returns a link and a code to show them, then call wait_for_approval. If the price or the subscription changed before they approve, nothing is changed and you ask again. Only when the person asks for it; never to spend money on your own. When the owner has set an agent budget (get_agent_budget), more seats and a monthly move up a tier are made at once from it instead, and the answer says so.";
   const teamIdShape = z
     .string()
     .min(1)
@@ -3185,7 +3181,9 @@ export function registerTools(
 
   server.tool(
     "test_webhook_flow",
-    "Run a full webhook test flow: create endpoint, optionally mock, send, wait, verify, replay, and clean up.",
+    remote
+      ? "Run a full webhook test flow: create endpoint, optionally mock, send, wait, verify, and clean up."
+      : "Run a full webhook test flow: create endpoint, optionally mock, send, wait, verify, replay to targetUrl, and clean up.",
     {
       provider: z
         .enum(TEMPLATE_PROVIDERS)

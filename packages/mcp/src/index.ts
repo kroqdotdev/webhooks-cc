@@ -24,7 +24,7 @@ export interface CreateServerOptions extends ToolSelectionOptions {
 }
 
 const INSTRUCTIONS =
-  "webhooks.cc captures webhooks and inbound email for testing. Start with create_endpoint, send to its URL (or point a provider at it), then wait_for_request and get_request to inspect what arrived. send_webhook sends a signed test webhook to an endpoint; verify_signature checks a captured request. With an account the tools come in groups: when a tool you need is missing, enable_tools loads its group (teams, domains, Google Sheets, billing and keys, and more).";
+  "webhooks.cc captures webhooks and inbound email for testing. Start with create_endpoint, send to its URL (or point a provider at it), then wait_for_request and get_request to inspect what arrived. send_webhook sends a signed test webhook to an endpoint; verify_signature checks a captured request. With an account the tools come in groups (teams, domains, Google Sheets, billing and keys, and more). When a tool you need is missing and enable_tools is listed, it loads the group; when enable_tools is not listed, every group is already loaded.";
 
 /**
  * Create an MCP server with the webhooks.cc tools, prompts, and resources registered.

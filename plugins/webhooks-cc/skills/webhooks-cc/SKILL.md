@@ -14,7 +14,7 @@ Everything works without the dashboard. Do it yourself with the tools; send the 
 ## Which interface
 
 1. **MCP tools** (server `webhooks-cc`) when they are available.
-   - Remote, `https://webhooks.cc/mcp`: needs an account, cannot reach this machine (no `send_to`, `replay_request` or `share_port`; `targetUrl` is refused), and waits return after 50 seconds, so call them again.
+   - Remote, `https://webhooks.cc/mcp`: needs an account, cannot reach this machine (no `send_to`, `replay_request` or `share_port`; no `targetUrl`), and waits return after 50 seconds, so call them again.
    - Local, `npx -y @webhooks-cc/mcp`: reaches localhost and runs without an account.
    - Claude Code, Claude, Codex and ChatGPT get every tool; other clients get the core group (endpoints, requests, emails, sending, signatures, destinations, deliveries, previews, usage, approvals). When a tool is missing, call `enable_tools` (local), or have the person set `WHK_MCP_TOOLS=all` (local) or use `https://webhooks.cc/mcp?tools=all`.
 2. **CLI `whk`**: for tunnels, shares and scripts. Pass `--json`. See [references/cli.md](references/cli.md).

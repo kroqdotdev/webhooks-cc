@@ -1,0 +1,10 @@
+{
+  "title": "A clearer hosted MCP server",
+  "items": [
+    "The hosted MCP server at webhooks.cc/mcp reports the MCP package's version and tells agents how to load more tool groups with `?tools=`",
+    "It no longer lists `targetUrl` on `render_email` and `test_webhook_flow`, which it could never post to, and says that `send_webhook` sends from webhooks.cc's network",
+    "Billing tools are annotated as destructive and reaching past webhooks.cc, so clients ask before using them",
+    "`create_endpoint` with a signing provider needs its secret (for Discord, the application's public key) and returns the endpoint with its signing settings",
+    "A test webhook sent through our own delivery proxy no longer records the proxy's Cloudflare Worker headers on the capture"
+  ]
+}
