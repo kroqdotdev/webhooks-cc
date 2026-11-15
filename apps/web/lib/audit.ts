@@ -253,15 +253,18 @@ export async function auditUserAction(
 
 /**
  * Records something the app did on its own, not for a request: a refund the
- * refund worker issued through Polar (lib/billing/refunds.ts), say. Only ids,
- * amounts and our own codes go in.
+ * refund worker issued through Polar (lib/billing/refunds.ts), or a second
+ * team plan subscription the webhook left for a person
+ * (lib/supabase/team-billing.ts), say. Only ids, amounts and our own codes go
+ * in.
  */
 export async function auditSystemEvent(input: {
   action:
     | "billing.refund_issued"
     | "billing.agent_budget_zeroed"
     | "billing.agent_budget_settled"
-    | "billing.agent_budget_raised";
+    | "billing.agent_budget_raised"
+    | "team.duplicate_plan_reported";
   outcome: AuditOutcome;
   userId?: string | null;
   teamId?: string | null;

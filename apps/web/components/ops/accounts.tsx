@@ -316,6 +316,7 @@ export function AccountInspector({ id }: { id: string }) {
                       )}
                     </span>
                     <span className="text-xs text-muted-foreground">
+                      {entry.by ? `by ${entry.by === "user" ? "another account" : entry.by}, ` : ""}
                       {entry.via ? `${entry.via.replace("_", " ")}, ` : ""}
                       {shortDateTime(entry.at)}
                     </span>

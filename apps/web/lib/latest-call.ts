@@ -14,3 +14,15 @@ export function createLatestCall(): { begin(): () => boolean } {
     },
   };
 }
+
+/**
+ * Settles a write that succeeded. While it is still the newest call its
+ * answer is applied. Otherwise a call begun after it superseded it, and that
+ * call may have read the value before the write landed, so the value is read
+ * again (a fresh, newest call) rather than left showing what the write
+ * replaced.
+ */
+export function settleWrite(current: () => boolean, apply: () => void, reload: () => void): void {
+  if (current()) apply();
+  else reload();
+}

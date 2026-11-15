@@ -177,9 +177,14 @@ fn from_status(status: u16, retry_after: Option<u64>) -> Classified {
 /// The codes the billing routes answer when they refused a change and
 /// nothing was changed (lib/billing/change.ts, `BEFORE_POLAR`, less the
 /// generic ones a status already says: not found, forbidden, a plan
-/// required).
+/// required; and less `quote_changed`, which has a code of its own), plus
+/// `payment_action_required`: the bank wants the cardholder to confirm the
+/// charge, which a 402 must not read as the plan forbidding. A test keeps
+/// this list in step with `BEFORE_POLAR`.
 const BILLING_REFUSALS: &[&str] = &[
     "payment_failed",
+    "payment_action_required",
+    "owner_not_found",
     "seats_below_members",
     "seats_below_minimum",
     "invalid_seats",
@@ -198,13 +203,20 @@ fn is_billing_refusal(code: &str) -> bool {
 }
 
 fn billing_refused(code: &str, status: Option<u16>) -> Classified {
-    let mut c = Classified::new("billing_refused", 1).hint(format!(
-        "Nothing was changed ({code}). Fix what the message says, then ask again."
-    ));
+    let hint = if code == "payment_action_required" {
+        // Not a plain refusal: the change may still be made once the
+        // cardholder confirms the payment, so asking again could repeat it.
+        "The bank wants the cardholder to confirm the payment (Polar emails them a link). Check `whk billing` before asking again.".to_string()
+    } else {
+        format!("Nothing was changed ({code}). Fix what the message says, then ask again.")
+    };
+    let mut c = Classified::new("billing_refused", 1).hint(hint);
     c.reason = Some(code.to_string());
     c.status = status;
     c
 }
+
+const QUOTE_CHANGED_HINT: &str = "Nothing was changed. Ask again for a new quote.";
 
 const OUTCOME_UNKNOWN_HINT: &str = "The change may have been made. Check `whk billing` (or the team's billing) before asking again.";
 
@@ -245,8 +257,9 @@ pub fn classify(error: &anyhow::Error) -> Classified {
                 CliError::DeliveryFailed(_) => Classified::new("delivery_failed", 1).hint(
                     "Fix the destination (its URL, headers or server), then run the test again.",
                 ),
-                CliError::QuoteChanged(_) => Classified::new("quote_changed", 8)
-                    .hint("Nothing was changed. Ask again for a new quote."),
+                CliError::QuoteChanged(_) => {
+                    Classified::new("quote_changed", 8).hint(QUOTE_CHANGED_HINT)
+                }
                 CliError::BillingRefused { code, .. } => billing_refused(code, None),
                 CliError::OutcomeUnknown(_) => {
                     Classified::new("outcome_unknown", 1).hint(OUTCOME_UNKNOWN_HINT)
@@ -259,6 +272,13 @@ pub fn classify(error: &anyhow::Error) -> Classified {
             // next step as an approved change's.
             if e.code.as_deref() == Some("outcome_unknown") {
                 let mut c = Classified::new("outcome_unknown", 1).hint(OUTCOME_UNKNOWN_HINT);
+                c.status = Some(e.status);
+                return c;
+            }
+            // A billing change not made because its price or the
+            // subscription moved: the same code as an approved change's.
+            if e.code.as_deref() == Some("quote_changed") && (400..500).contains(&e.status) {
+                let mut c = Classified::new("quote_changed", 8).hint(QUOTE_CHANGED_HINT);
                 c.status = Some(e.status);
                 return c;
             }
@@ -401,6 +421,8 @@ mod tests {
         // status: a declined card's 402 is not the plan forbidding it.
         for (status, code) in [
             (402, "payment_failed"),
+            (402, "payment_action_required"),
+            (409, "owner_not_found"),
             (409, "seats_below_members"),
             (409, "unchanged"),
             (400, "not_offered"),
@@ -464,6 +486,73 @@ mod tests {
             ("connection_revoked", 3, Some(400))
         );
         assert!(c.hint.unwrap().contains("sandbox connect"));
+    }
+
+    #[test]
+    fn a_changed_quote_has_its_own_code() {
+        let error = anyhow::Error::new(ApiError {
+            status: 409,
+            message: "Nothing was changed: the price changed.".into(),
+            retry_after: None,
+            code: Some("quote_changed".into()),
+        });
+        let c = classify(&error);
+        assert_eq!((c.code, c.exit, c.status), ("quote_changed", 8, Some(409)));
+        assert!(c.hint.unwrap().contains("new quote"));
+    }
+
+    #[test]
+    fn a_confirmation_the_bank_wants_is_no_plain_refusal() {
+        let c = classify(&anyhow::Error::new(ApiError {
+            status: 402,
+            message: "The bank wants the cardholder to confirm this payment.".into(),
+            retry_after: None,
+            code: Some("payment_action_required".into()),
+        }));
+        assert_eq!((c.code, c.exit), ("billing_refused", 1));
+        let hint = c.hint.unwrap();
+        assert!(hint.contains("Check `whk billing`"));
+        assert!(!hint.contains("Nothing was changed"));
+    }
+
+    /// Every code the web app raises before asking Polar (`BEFORE_POLAR` in
+    /// lib/billing/change.ts) is classified here: as a billing refusal, as
+    /// `quote_changed`, or as one of the generic codes a status already says.
+    #[test]
+    fn billing_refusals_follow_the_web_apps_list() {
+        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../web/lib/billing/change.ts");
+        let source = std::fs::read_to_string(path).expect("read lib/billing/change.ts");
+        let start = source
+            .find("const BEFORE_POLAR = {")
+            .expect("BEFORE_POLAR in change.ts");
+        let block = &source[start..];
+        let block = &block[..block.find("\n};").expect("the end of BEFORE_POLAR")];
+        let codes: Vec<&str> = block
+            .split('"')
+            .skip(1)
+            .step_by(2)
+            .filter(|code| !code.is_empty())
+            .collect();
+        assert!(codes.len() > 10, "read too few codes: {codes:?}");
+        // Said by their status (404, 403) or a code of their own.
+        const BY_STATUS: &[&str] = &[
+            "not_found",
+            "user_not_found",
+            "team_not_found",
+            "forbidden",
+            "not_owner",
+            "plan_required",
+            "quote_changed",
+        ];
+        let missing: Vec<&str> = codes
+            .iter()
+            .copied()
+            .filter(|code| !BY_STATUS.contains(code) && !is_billing_refusal(code))
+            .collect();
+        assert!(
+            missing.is_empty(),
+            "BEFORE_POLAR codes missing from BILLING_REFUSALS: {missing:?}"
+        );
     }
 
     #[test]

@@ -1220,7 +1220,7 @@ export class WebhooksCC {
         }
 
         if (!response.ok) {
-          const errorText = await response.text();
+          const errorText = await readBody(response.text());
           const sanitizedError =
             errorText.length > 200 ? errorText.slice(0, 200) + "..." : errorText;
           const error = mapStatusToError(
@@ -1276,8 +1276,10 @@ export class WebhooksCC {
         }
         // With a budget of its own, reading the body counts against it too.
         // So does a search's page: its timer must cover a body that stalls.
-        if (timeoutMs !== undefined || stopAt !== undefined) return (await response.json()) as T;
-        return response.json() as Promise<T>;
+        if (timeoutMs !== undefined || stopAt !== undefined) {
+          return (await readBody(response.json())) as T;
+        }
+        return readBody(response.json()) as Promise<T>;
       } catch (error) {
         if (error instanceof WebhooksCCError) {
           throw error;
@@ -4950,6 +4952,25 @@ function sleepUnlessAborted(ms: number, signal: AbortSignal | undefined): Promis
  * get the fetch's own error.
  */
 const networkFailures = new WeakSet<Error>();
+
+/**
+ * Reads a response's body, counting a read that fails partway (the
+ * connection ending after the headers came, which fetch throws as a
+ * TypeError such as "terminated") as the network, so a wait polls again
+ * after it as it does after a fetch that failed. A body that is not JSON
+ * (a SyntaxError) is an answer, and a timeout is the attempt's timer, so
+ * neither is counted.
+ */
+async function readBody<T>(body: Promise<T>): Promise<T> {
+  try {
+    return await body;
+  } catch (error) {
+    if (error instanceof Error && error.name !== "AbortError" && !(error instanceof SyntaxError)) {
+      networkFailures.add(error);
+    }
+    throw error;
+  }
+}
 
 /**
  * How many polls in a row a wait with no deadline lets fail for now before

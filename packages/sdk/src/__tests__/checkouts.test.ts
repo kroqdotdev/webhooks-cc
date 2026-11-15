@@ -228,6 +228,40 @@ describe("billing checkout links", () => {
     }
   });
 
+  it("keeps polling when the connection ends while the body is read", async () => {
+    const once = new WebhooksCC({
+      apiKey: "whcc_testkey123",
+      baseUrl: BASE_URL,
+      retry: { maxAttempts: 1 },
+    });
+    // The headers came, then the connection ended: fetch's TypeError "terminated".
+    const cut = (status: number) => ({
+      ...answer({}, status),
+      json: () => Promise.reject(new TypeError("terminated")),
+      text: () => Promise.reject(new TypeError("terminated")),
+    });
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(cut(200))
+      .mockResolvedValueOnce(cut(503))
+      .mockResolvedValueOnce(answer(link("paid")));
+    globalThis.fetch = fetchMock;
+    const paid = await once.billing.waitForCheckout(ID, { pollInterval: 1_000, timeout: 10_000 });
+    expect(paid.status).toBe("paid");
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+
+    // A body that is not JSON is an answer, not the network: thrown at once.
+    const garbled = vi.fn().mockResolvedValue({
+      ...answer({}),
+      json: () => Promise.reject(new SyntaxError("Unexpected token < in JSON")),
+    });
+    globalThis.fetch = garbled;
+    await expect(
+      once.billing.waitForCheckout(ID, { pollInterval: 1_000, timeout: 10_000 })
+    ).rejects.toThrow(SyntaxError);
+    expect(garbled).toHaveBeenCalledTimes(1);
+  }, 15_000);
+
   it("counts only a request that got no answer as the network", async () => {
     // An answer that is not the API's JSON is no network failure: thrown at once.
     const html = vi.fn().mockResolvedValue({
