@@ -213,4 +213,17 @@ describe("checkout links opened by the client (URL elicitation)", () => {
     expect(unknown).toContain("Paid:");
     expect(unknown).not.toContain("differs");
   });
+
+  it("never lets the agent say nothing was charged for a link that may have been paid", async () => {
+    const { CheckoutExpiredError } = await import("@webhooks-cc/sdk");
+    const waitForCheckout = vi
+      .fn()
+      .mockRejectedValueOnce(new CheckoutExpiredError(CHECKOUT, undefined, "unsettled"));
+    const handlers = tools({ billing: { waitForCheckout } as unknown as WebhooksCC["billing"] });
+    const text = (await handlers.wait_for_checkout({ id: CHECKOUT })).content[0].text;
+    expect(text).toContain("if the person paid, it is still applied");
+    expect(text).toContain("has been alerted");
+    expect(text).toContain("Do not tell them nothing was charged");
+    expect(text).toContain(`wait_for_checkout with id ${CHECKOUT}`);
+  });
 });

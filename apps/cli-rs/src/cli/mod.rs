@@ -1389,6 +1389,9 @@ Examples:
   whk billing checkout monthly-blocks --blocks 2 --resource pages
   whk billing checkout overage
 
+With --wait --json it prints NDJSON: one line when the link is made (its url
+is what the person is handed), and one when it settles.
+
 At most 5 links an hour and 3 open at once per account. A team's purchase
 needs the team's owner.")]
     Checkout {

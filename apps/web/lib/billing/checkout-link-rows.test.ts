@@ -37,6 +37,10 @@ function builder(table: string) {
     in: filter("in"),
     is: filter("is"),
     contains: filter("contains"),
+    filter: (column: string, operator: string, value: unknown) => {
+      query.filters.push(["filter", column, `${operator}.${String(value)}`]);
+      return chain;
+    },
     or: (expression: string) => {
       query.filters.push(["or", expression, null]);
       return chain;
@@ -77,6 +81,7 @@ describe("supersedeCheckoutLinks", () => {
     mocks.results.push({ data: null, error: null }); // the session's own links
     mocks.results.push({ data: null, error: null }); // paid_at stamp
     mocks.results.push({ data: null, error: null }); // links that replaced it
+    mocks.results.push({ data: [], error: null }); // superseded links that list it
     mocks.results.push({ data: null, error: null }); // the named link is no candidate
     await supersedeCheckoutLinks("polar_checkout_1", { checkout_link: LINK }, "cus_other");
     // Nothing read from users or teams, nothing reported.
@@ -89,6 +94,7 @@ describe("supersedeCheckoutLinks", () => {
     mocks.results.push({ data: null, error: null });
     mocks.results.push({ data: null, error: null });
     mocks.results.push({ data: null, error: null });
+    mocks.results.push({ data: [], error: null });
     mocks.results.push({ data: { id: LINK }, error: null });
     mocks.results.push({ data: { user_id: "user-1", team_id: null }, error: null });
     mocks.results.push({ data: { polar_customer_id: "cus_1" }, error: null });
@@ -103,6 +109,37 @@ describe("supersedeCheckoutLinks", () => {
         (q) => q.op === "update" && q.filters.some(([, c, v]) => c === "id" && v === LINK)
       )
     ).toBe(false);
+  });
+});
+
+describe("an undone session", () => {
+  it("is taken off the replaced sessions of superseded links, so it never pays one", async () => {
+    mocks.results.push({ data: null, error: null }); // the session's own links
+    mocks.results.push({ data: null, error: null }); // paid_at stamp
+    mocks.results.push({ data: null, error: null }); // links that replaced it
+    mocks.results.push({
+      data: [{ id: LINK, previous_checkout_ids: ["polar_checkout_0", "polar_checkout_1"] }],
+      error: null,
+    }); // a superseded link that lists it
+    await supersedeCheckoutLinks("polar_checkout_1", null, null);
+    const read = mocks.queries[3];
+    expect(read).toMatchObject({
+      op: "select",
+      filters: [
+        ["contains", "previous_checkout_ids", ["polar_checkout_1"]],
+        ["eq", "status", "superseded"],
+      ],
+    });
+    expect(mocks.queries[4]).toMatchObject({
+      op: "update",
+      patch: { previous_checkout_ids: ["polar_checkout_0"] },
+      // Only while the row still holds the list it was read with.
+      filters: [
+        ["eq", "id", LINK],
+        ["eq", "status", "superseded"],
+        ["filter", "previous_checkout_ids", "eq.{polar_checkout_0,polar_checkout_1}"],
+      ],
+    });
   });
 });
 

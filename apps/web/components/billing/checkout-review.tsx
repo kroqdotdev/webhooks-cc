@@ -20,6 +20,10 @@ export interface CheckoutReviewData {
   requester: { kind: "agent" | "key" | "session"; name: string | null; prefix: string | null };
   /** Why the account cannot buy this now; null when it can. */
   unavailable: string | null;
+  /** The refusal's code: checkout_in_progress is for now only (Try again). */
+  unavailableCode?: string | null;
+  /** An expired link's reason: "unsettled" when it may have been paid. */
+  expiredReason?: "unsettled" | null;
   country: string | null;
   network: "same" | "different" | "unknown";
   createdAt: string;

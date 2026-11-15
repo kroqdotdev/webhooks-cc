@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { refusalPhase, runOpen } from "./checkout-page-flow";
+import { expiredNotice, refusalPhase, runOpen, unavailablePhase } from "./checkout-page-flow";
 
 describe("refusalPhase", () => {
   it("keeps temporary failures retryable and refuses only the purchase", () => {
@@ -18,9 +18,38 @@ describe("refusalPhase", () => {
       message: "has it",
     });
     expect(refusalPhase(404, {}, "x", "open")).toMatchObject({ kind: "gone" });
+    // Another link's checkout for the team is open until a time: try again then.
+    expect(
+      refusalPhase(409, { code: "checkout_in_progress", error: "until 12:30 UTC" }, "x", "open")
+    ).toEqual({ kind: "failed", message: "until 12:30 UTC", retry: "open" });
     expect(refusalPhase(403, { code: "wrong_account" }, "x", "open")).toMatchObject({
       kind: "wrong_account",
     });
+  });
+});
+
+describe("unavailablePhase", () => {
+  it("offers Try again for a refusal for now only, and the Plan page otherwise", () => {
+    expect(unavailablePhase("until 12:30 UTC", "checkout_in_progress")).toEqual({
+      kind: "failed",
+      message: "until 12:30 UTC",
+      retry: "review",
+    });
+    expect(unavailablePhase("has it", "already_subscribed")).toEqual({
+      kind: "refused",
+      message: "has it",
+    });
+    expect(unavailablePhase("has it", null)).toMatchObject({ kind: "refused" });
+  });
+});
+
+describe("expiredNotice", () => {
+  it("never says nothing was charged for a link that may have been paid", () => {
+    expect(expiredNotice(null)).toMatch(/^Nothing was charged\./);
+    const unsettled = expiredNotice("unsettled");
+    expect(unsettled).not.toContain("Nothing was charged");
+    expect(unsettled).toContain("If you paid, it is still applied");
+    expect(unsettled).toContain("we have been alerted");
   });
 });
 

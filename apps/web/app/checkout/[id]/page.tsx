@@ -11,8 +11,10 @@ import { MfaGate } from "@/components/auth/mfa-challenge";
 import { CheckoutReview, type CheckoutReviewData } from "@/components/billing/checkout-review";
 import { supersededExplanation } from "@/lib/billing/superseded-copy";
 import {
+  expiredNotice,
   refusalPhase,
   runOpen,
+  unavailablePhase,
   type ApiAnswer,
   type OpenAnswer,
 } from "@/lib/billing/checkout-page-flow";
@@ -43,7 +45,7 @@ type Phase =
   | { kind: "redirect"; summary: string }
   | { kind: "paid"; summary: string }
   | { kind: "processing"; summary: string }
-  | { kind: "expired"; summary: string }
+  | { kind: "expired"; summary: string; reason: string | null }
   | { kind: "superseded"; summary: string; explanation: string }
   | { kind: "wrong_account"; message: string }
   | { kind: "gone"; message: string }
@@ -102,13 +104,19 @@ function CheckoutLinkContent() {
       const review = result.review;
       // The purchase check ran with the review: say so before anything else.
       if (review.status === "open" && review.unavailable) {
-        setPhase({ kind: "refused", message: review.unavailable });
+        setPhase(unavailablePhase(review.unavailable, review.unavailableCode));
       } else if (review.status === "open") setPhase({ kind: "review", review, opening: false });
       else if (review.status === "superseded") {
         setPhase({
           kind: "superseded",
           summary: review.summary,
           explanation: supersededExplanation(review.kind, review.resource),
+        });
+      } else if (review.status === "expired") {
+        setPhase({
+          kind: "expired",
+          summary: review.summary,
+          reason: review.expiredReason ?? null,
         });
       } else setPhase({ kind: review.status, summary: review.summary });
     } catch {
@@ -162,7 +170,9 @@ function CheckoutLinkContent() {
             result.kind ? result.resource : review?.resource
           ),
         });
-      } else if (kind === "paid" || kind === "processing" || kind === "expired") {
+      } else if (kind === "expired") {
+        setPhase({ kind, summary, reason: result.expiredReason ?? null });
+      } else if (kind === "paid" || kind === "processing") {
         setPhase({ kind, summary });
       } else {
         setPhase({ kind: "failed", message: failed, retry: "open" });
@@ -230,7 +240,7 @@ function CheckoutLinkContent() {
 
           {phase.kind === "expired" && (
             <Notice title="This link has expired" summary={phase.summary}>
-              Nothing was charged. If you still want it, ask the agent or tool for a new link.
+              {expiredNotice(phase.reason)}
             </Notice>
           )}
 

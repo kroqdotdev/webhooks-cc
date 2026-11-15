@@ -948,7 +948,7 @@ A [checkout link](/docs/api#checkout-links) for the person to pay with their own
 
 ### wait_for_checkout
 
-Waits for the person to pay a link from `create_checkout`, and says when it is paid or has expired, when what was bought differs from what the link asked for, and when the purchase was undone as a duplicate because the account already had what it buys (its subscription ended and a refund under review). A link the person opened that reads expired, under 20 minutes after it expired, is polled for a minute more, since a payment Polar confirms late still turns it paid; any other expired link is answered at once.
+Waits for the person to pay a link from `create_checkout`, and says when it is paid or has expired, when what was bought differs from what the link asked for, and when the purchase was undone as a duplicate because the account already had what it buys (its subscription ended and a refund under review). A link the person opened that reads expired, under 20 minutes after it expired, is polled for a minute more, since a payment Polar confirms late still turns it paid; any other expired link is answered at once. A link that expired before Polar confirmed a payment it was processing (or while Polar could not be asked) is answered as possibly paid, never as nothing charged: if the person paid, it is still applied, and webhooks.cc has been alerted. A poll our side or the network fails is asked again until the wait ends.
 
 | Parameter | Type     | Required | Description                                  |
 | --------- | -------- | -------- | -------------------------------------------- |

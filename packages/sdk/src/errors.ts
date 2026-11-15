@@ -69,14 +69,34 @@ export class ApprovalExpiredError extends WebhooksCCError {
   }
 }
 
-/** A checkout link expired before the person paid. Make a new one if they still want it. */
+/** What CheckoutExpiredError says for a link that may have been paid (`reason` "unsettled"). */
+const UNSETTLED_CHECKOUT_MESSAGE =
+  "The checkout link expired before Polar confirmed a payment for it. If the person paid, it is still applied to the account once Polar confirms it, and webhooks.cc has been alerted; check billing before making a new link.";
+
+/**
+ * A checkout link expired before the person paid. Make a new one if they
+ * still want it. `reason` is "unsettled" when it expired while Polar never
+ * said it was unpaid (a payment still being confirmed a day later, or
+ * Polar not answering): the person may have paid, and a payment that
+ * lands still turns the link paid, so check billing first.
+ */
 export class CheckoutExpiredError extends WebhooksCCError {
+  public readonly reason: "unsettled" | null;
+
   constructor(
     public readonly checkoutId: string,
-    message = "The checkout link expired before it was paid. Make a new one if the person still wants it."
+    message?: string,
+    reason: "unsettled" | null = null
   ) {
-    super(0, message);
+    super(
+      0,
+      message ??
+        (reason === "unsettled"
+          ? UNSETTLED_CHECKOUT_MESSAGE
+          : "The checkout link expired before it was paid. Make a new one if the person still wants it.")
+    );
     this.name = "CheckoutExpiredError";
+    this.reason = reason;
   }
 }
 

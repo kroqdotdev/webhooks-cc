@@ -5,6 +5,8 @@ export type BillingCheckoutKind = "plan" | "team_plan" | "blocks" | "monthly_blo
 
 /** Where a checkout link stands (migration 00104). */
 export type BillingCheckoutStatus = "open" | "paid" | "expired" | "superseded";
+/** Why an opened link expired unpaid while Polar never said it was not paid (migration 00104). */
+export type BillingCheckoutExpiredReason = "unsettled";
 
 /** Why a refund was recorded (migration 00086, lib/billing/refunds.ts). */
 export type PolarRefundReason =
@@ -1253,8 +1255,10 @@ export interface Database {
           cancelled_at: string | null;
           detached_at: string | null;
           opening_at: string | null;
+          opened_at: string | null;
           polar_checked_at: string | null;
           status: BillingCheckoutStatus;
+          expired_reason: BillingCheckoutExpiredReason | null;
           created_at: string;
           expires_at: string;
           paid_at: string | null;
@@ -1280,8 +1284,10 @@ export interface Database {
           cancelled_at?: string | null;
           detached_at?: string | null;
           opening_at?: string | null;
+          opened_at?: string | null;
           polar_checked_at?: string | null;
           status?: BillingCheckoutStatus;
+          expired_reason?: BillingCheckoutExpiredReason | null;
           created_at?: string;
           expires_at: string;
           paid_at?: string | null;
@@ -1297,8 +1303,10 @@ export interface Database {
           cancelled_at?: string | null;
           detached_at?: string | null;
           opening_at?: string | null;
+          opened_at?: string | null;
           polar_checked_at?: string | null;
           status?: BillingCheckoutStatus;
+          expired_reason?: BillingCheckoutExpiredReason | null;
           expires_at?: string;
           paid_at?: string | null;
         };

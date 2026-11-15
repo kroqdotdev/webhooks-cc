@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"time"
 )
@@ -11,6 +12,15 @@ import (
 // ErrCheckoutExpired: a checkout link expired before the person paid. Make
 // a new one if they still want it. Returned by BillingService.WaitForCheckout.
 var ErrCheckoutExpired = errors.New("webhooks.cc: the checkout link expired before it was paid")
+
+// ErrCheckoutUnsettled: a checkout link expired while Polar never said it
+// was unpaid (a payment still being confirmed a day past its expiry, or
+// Polar not answering 15 minutes past it), so the person may have paid: a
+// payment that lands is still applied and turns the link paid, and
+// webhooks.cc has been alerted. Check billing before making a new link. It
+// also matches ErrCheckoutExpired. Returned by BillingService.WaitForCheckout
+// for a link whose ExpiredReason is "unsettled".
+var ErrCheckoutUnsettled = fmt.Errorf("%w before Polar confirmed a payment: if the person paid, it is still applied once Polar confirms it, and webhooks.cc has been alerted", ErrCheckoutExpired)
 
 // ErrCheckoutSuperseded: a checkout link was paid, but the purchase was
 // undone as a duplicate: the account already had that plan or add-on (or
@@ -83,20 +93,24 @@ type CheckoutBought struct {
 // the person opened (Opened) can; rarely too, "paid" turns "superseded", when
 // a read marked it paid from Polar before the webhook's duplicate checks
 // undid the purchase. Opened is nil from a server released before it.
+// ExpiredReason is "unsettled" for an expired link that may have been paid
+// (see ErrCheckoutUnsettled), else empty.
 type CheckoutLink struct {
-	ID        string          `json:"id"`
-	Status    string          `json:"status"`
-	Kind      CheckoutKind    `json:"kind"`
-	Summary   string          `json:"summary"`
-	Item      map[string]any  `json:"item"`
-	TeamID    string          `json:"teamId"`
-	URL       string          `json:"url"`
-	Opened    *bool           `json:"opened"`
-	CreatedAt string          `json:"createdAt"`
-	ExpiresAt string          `json:"expiresAt"`
-	PaidAt    string          `json:"paidAt"`
-	Bought    *CheckoutBought `json:"bought"`
-	Matches   *bool           `json:"matches"`
+	ID        string         `json:"id"`
+	Status    string         `json:"status"`
+	Kind      CheckoutKind   `json:"kind"`
+	Summary   string         `json:"summary"`
+	Item      map[string]any `json:"item"`
+	TeamID    string         `json:"teamId"`
+	URL       string         `json:"url"`
+	Opened    *bool          `json:"opened"`
+	CreatedAt string         `json:"createdAt"`
+	ExpiresAt string         `json:"expiresAt"`
+	PaidAt    string         `json:"paidAt"`
+	// ExpiredReason is "unsettled" when an expired link may have been paid.
+	ExpiredReason string          `json:"expiredReason"`
+	Bought        *CheckoutBought `json:"bought"`
+	Matches       *bool           `json:"matches"`
 }
 
 // CreateCheckout makes a checkout link for something the account, or a team
@@ -166,6 +180,22 @@ const checkoutExpiredGrace = time.Minute
 // minutes past its expiry).
 const checkoutLatePayment = 20 * time.Minute
 
+// failsForNow reports whether a failed poll is worth asking again until the
+// wait's deadline: our side (5xx), a rate limit, a poll that timed out, or
+// the network. The API's refusals (a 401, a 404 and the like) are final.
+func failsForNow(err error) bool {
+	var apiErr *Error
+	if errors.As(err, &apiErr) {
+		return apiErr.StatusCode >= 500 || apiErr.StatusCode == http.StatusTooManyRequests
+	}
+	var timeout *TimeoutError
+	if errors.As(err, &timeout) {
+		return true
+	}
+	var netErr net.Error
+	return errors.As(err, &netErr)
+}
+
 // mayStillBePaid reports whether an expired checkout link may still turn
 // paid: one the person opened, expired under checkoutLatePayment ago. A
 // server from before Opened is given the benefit of the doubt.
@@ -181,11 +211,14 @@ func mayStillBePaid(checkout *CheckoutLink) bool {
 // returns an error matching ErrCheckoutExpired when the link expires first
 // (for a link the person opened that expired under 20 minutes ago, after
 // polling for opts.ExpiredGrace more, since a late payment can still turn it
-// paid; at once otherwise), ErrCheckoutSuperseded when its purchase was
-// undone as a duplicate, and a *TimeoutError when opts.Timeout passes first,
-// a poll in flight included: each poll, its retries and an agent's token
-// exchange end by the wait's deadline. A nil Matches on the paid link is not
-// known yet, never a mismatch.
+// paid; at once otherwise; ErrCheckoutUnsettled when the person may have
+// paid), ErrCheckoutSuperseded when its purchase was undone as a duplicate,
+// and a *TimeoutError when opts.Timeout passes first, a poll in flight
+// included: each poll, its retries and an agent's token exchange end by the
+// wait's deadline. A poll that fails for now (a 5xx, a 429, a network error
+// or a timed-out poll) is tried again until the deadline; any other failure
+// is returned. A nil Matches on the paid link is not known yet, never a
+// mismatch.
 func (s *BillingService) WaitForCheckout(ctx context.Context, id string, opts WaitForCheckoutOptions) (*CheckoutLink, error) {
 	if err := validateSegment(id, "checkout id"); err != nil {
 		return nil, err
@@ -199,11 +232,19 @@ func (s *BillingService) WaitForCheckout(ctx context.Context, id string, opts Wa
 	if grace == 0 {
 		grace = checkoutExpiredGrace
 	}
-	// When the link first read expired, while it may still turn paid.
+	// When the link first read expired, while it may still turn paid, and
+	// whether it read as one that may have been paid.
 	var expiredAt time.Time
+	unsettled := false
+	expiredErr := func() error {
+		if unsettled {
+			return ErrCheckoutUnsettled
+		}
+		return ErrCheckoutExpired
+	}
 	timedOut := func() error {
 		if !expiredAt.IsZero() {
-			return ErrCheckoutExpired
+			return expiredErr()
 		}
 		return &TimeoutError{After: opts.Timeout, message: "timed out waiting for the checkout to be paid"}
 	}
@@ -216,32 +257,46 @@ func (s *BillingService) WaitForCheckout(ctx context.Context, id string, opts Wa
 			pollCtx = withCallDeadline(ctx, deadline)
 		}
 		checkout, err := s.GetCheckout(pollCtx, id)
+		wait := poll
 		if err != nil {
+			if ctx.Err() != nil {
+				return nil, ctx.Err()
+			}
 			var timeout *TimeoutError
 			if !deadline.IsZero() && errors.As(err, &timeout) && !time.Now().Before(deadline) {
 				return nil, timedOut()
 			}
-			return nil, err
+			if !failsForNow(err) {
+				return nil, err
+			}
+			// Our side, a rate limit or the network: poll again, after as
+			// long as the server asked.
+			var apiErr *Error
+			if errors.As(err, &apiErr) && apiErr.RetryAfter > wait {
+				wait = apiErr.RetryAfter
+			}
+		} else {
+			switch checkout.Status {
+			case "paid":
+				return checkout, nil
+			case "superseded":
+				return nil, ErrCheckoutSuperseded
+			case "expired":
+				unsettled = checkout.ExpiredReason == "unsettled"
+				if !mayStillBePaid(checkout) {
+					return nil, expiredErr()
+				}
+				if expiredAt.IsZero() {
+					expiredAt = time.Now()
+				}
+				if time.Since(expiredAt) >= grace {
+					return nil, expiredErr()
+				}
+			default:
+				expiredAt = time.Time{}
+				unsettled = false
+			}
 		}
-		switch checkout.Status {
-		case "paid":
-			return checkout, nil
-		case "superseded":
-			return nil, ErrCheckoutSuperseded
-		case "expired":
-			if !mayStillBePaid(checkout) {
-				return nil, ErrCheckoutExpired
-			}
-			if expiredAt.IsZero() {
-				expiredAt = time.Now()
-			}
-			if time.Since(expiredAt) >= grace {
-				return nil, ErrCheckoutExpired
-			}
-		default:
-			expiredAt = time.Time{}
-		}
-		wait := poll
 		if !deadline.IsZero() {
 			left := time.Until(deadline)
 			if left <= 0 {

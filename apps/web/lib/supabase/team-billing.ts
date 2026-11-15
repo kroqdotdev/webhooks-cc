@@ -30,6 +30,7 @@ import {
   parseEventTimestamp,
   revokeSubscriptionQuietly,
   CHECKOUT_LINK_METADATA_KEY,
+  type CheckoutExpected,
   type CheckoutLinkContext,
   type CheckoutSession,
   type LinkPurchase,
@@ -626,12 +627,46 @@ async function takeOpenCheckout(
     return openSession(open, open.url);
   }
   if (open.fixed) {
-    throw new TeamBillingError(
-      "checkout_in_progress",
-      "A checkout link's checkout for this team is open, for another plan or seat count. Pay it, or try again once it expires (within an hour)."
-    );
+    throw new TeamBillingError("checkout_in_progress", fixedCheckoutMessage(open));
   }
   return openSession(open, await switchOpenCheckout(team.id, open, seats, productId, link));
+}
+
+/**
+ * Why another plan or seat count cannot be checked out for the team while a
+ * checkout link's fixed session is open, naming when that session expires
+ * (after which a checkout for another count opens).
+ */
+function fixedCheckoutMessage(open: OpenCheckout): string {
+  const expiresAt = openSession(open, open.url).expiresAt;
+  const ms = expiresAt ? Date.parse(expiresAt) : Number.NaN;
+  const until = Number.isFinite(ms)
+    ? ` until ${new Date(ms).toISOString().slice(11, 16)} UTC (${new Date(ms).toISOString()})`
+    : "";
+  return `Another checkout link's checkout for this team is open${until}, for another plan or seat count, and Polar cannot change it. Pay that one, or try again once it expires.`;
+}
+
+/**
+ * Why opening a checkout link for this plan and seat count would be refused
+ * now (checkout_in_progress: another link's fixed session for the team is
+ * open, for another plan or seat count, until the time the message names),
+ * or null. Reads the database only, for the checkout page's review: opening
+ * refuses the same way (takeOpenCheckout()).
+ */
+export async function teamCheckoutBlocked(
+  teamId: string,
+  expected: CheckoutExpected
+): Promise<{ code: "checkout_in_progress"; message: string } | null> {
+  const { data, error } = await createAdminClient()
+    .from("teams")
+    .select("pending_checkout")
+    .eq("id", teamId)
+    .maybeSingle();
+  if (error) throw error;
+  const open = openPendingCheckout(data?.pending_checkout ?? null);
+  if (!open || !open.fixed) return null;
+  if (open.seats === expected.seats && open.product === expected.product) return null;
+  return { code: "checkout_in_progress", message: fixedCheckoutMessage(open) };
 }
 
 /**

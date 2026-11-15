@@ -2807,11 +2807,14 @@ export class WebhooksCC {
      * CheckoutExpiredError when it expires first (for a link the person
      * opened that expired under 20 minutes ago, after polling for
      * `expiredGrace`, a minute by default, since a late payment can still
-     * turn it paid; at once otherwise), CheckoutSupersededError when its
-     * purchase was undone as a duplicate, TimeoutError when `timeout`
-     * passes first, and the signal's reason when it is aborted (the poll in
-     * flight and the wait between polls included). `matches` null on the
-     * paid link is not known yet, never a mismatch.
+     * turn it paid; at once otherwise; its `reason` "unsettled" when the
+     * person may have paid), CheckoutSupersededError when its purchase was
+     * undone as a duplicate, TimeoutError when `timeout` passes first, and
+     * the signal's reason when it is aborted (the poll in flight and the
+     * wait between polls included). A poll that fails for now (a 5xx, a
+     * 429, a network error or a timed-out poll) is tried again until the
+     * deadline; any other failure is thrown. `matches` null on the paid
+     * link is not known yet, never a mismatch.
      */
     waitForCheckout: async (
       id: string,
@@ -2821,32 +2824,60 @@ export class WebhooksCC {
       const interval = Math.max(1_000, options.pollInterval ?? 3_000);
       const deadline = options.timeout === undefined ? Infinity : Date.now() + options.timeout;
       const grace = Math.max(0, options.expiredGrace ?? CHECKOUT_EXPIRED_GRACE_MS);
-      // When the link first read expired, while it may still turn paid.
+      // When the link first read expired, while it may still turn paid,
+      // and how it last read.
       let expiredAt: number | null = null;
+      let lastExpired: CheckoutLink | null = null;
+      const expiredError = (checkout: CheckoutLink | null) =>
+        new CheckoutExpiredError(
+          id,
+          undefined,
+          checkout?.expiredReason === "unsettled" ? "unsettled" : null
+        );
       const timedOut = () =>
         expiredAt !== null
-          ? new CheckoutExpiredError(id)
+          ? expiredError(lastExpired)
           : new TimeoutError(options.timeout ?? 0, "Timed out waiting for the checkout to be paid");
       for (;;) {
         options.signal?.throwIfAborted();
         const left = deadline - Date.now();
         if (left <= 0) throw timedOut();
-        const checkout = await this.billing.getCheckout(id, {
-          timeout: Number.isFinite(left) ? left : undefined,
-          signal: options.signal,
-        });
+        let checkout: CheckoutLink;
+        let pause = interval;
+        try {
+          checkout = await this.billing.getCheckout(id, {
+            timeout: Number.isFinite(left) ? left : undefined,
+            signal: options.signal,
+          });
+        } catch (error) {
+          options.signal?.throwIfAborted();
+          if (!failsForNow(error)) throw error;
+          // Our side, a rate limit or the network: poll again until the
+          // deadline, as the server asked when it said how long to wait.
+          if (error instanceof RateLimitError && error.retryAfter !== undefined) {
+            pause = Math.max(interval, error.retryAfter * 1_000);
+          }
+          const remaining = deadline - Date.now();
+          if (remaining <= 0) throw timedOut();
+          await sleepUnlessAborted(Math.min(pause, remaining), options.signal);
+          continue;
+        }
         // Aborted while the poll ran: never an answer after cancelling.
         options.signal?.throwIfAborted();
         if (checkout.status === "paid") return checkout;
         if (checkout.status === "superseded") throw new CheckoutSupersededError(id);
         if (checkout.status === "expired") {
-          if (!mayStillBePaid(checkout)) throw new CheckoutExpiredError(id);
+          if (!mayStillBePaid(checkout)) throw expiredError(checkout);
           expiredAt ??= Date.now();
-          if (Date.now() - expiredAt >= grace) throw new CheckoutExpiredError(id);
-        } else expiredAt = null;
+          lastExpired = checkout;
+          if (Date.now() - expiredAt >= grace) throw expiredError(checkout);
+        } else {
+          expiredAt = null;
+          lastExpired = null;
+        }
         const remaining = deadline - Date.now();
         if (remaining <= 0) throw timedOut();
-        await sleepUnlessAborted(Math.min(interval, remaining), options.signal);
+        await sleepUnlessAborted(Math.min(pause, remaining), options.signal);
       }
     },
 
@@ -4792,6 +4823,21 @@ function sleepUnlessAborted(ms: number, signal: AbortSignal | undefined): Promis
     }, ms);
     signal.addEventListener("abort", done, { once: true });
   });
+}
+
+/**
+ * Whether a failed poll is for now only, worth asking again until the
+ * wait's deadline: our side (5xx), a rate limit, a poll that timed out, or
+ * the network (any error that is not one of the API's answers). The API's
+ * refusals (a 401, a 404 and the like) are final.
+ */
+function failsForNow(error: unknown): boolean {
+  if (error instanceof WebhooksCCError) {
+    return (
+      error.statusCode >= 500 || error instanceof RateLimitError || error instanceof TimeoutError
+    );
+  }
+  return error instanceof Error && error.name !== "AbortError";
 }
 
 /**

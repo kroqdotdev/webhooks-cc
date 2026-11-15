@@ -1956,7 +1956,10 @@ class CheckoutLink:
     was undone as a duplicate: its subscription was ended and a refund is under
     review. Rarely too, ``"paid"`` turns ``"superseded"``, when a read marked it
     paid from Polar before the webhook's duplicate checks undid the purchase.
-    ``opened`` is ``None`` from a server released before it.
+    ``opened`` is ``None`` from a server released before it. ``expired_reason`` is
+    ``"unsettled"`` for an expired link that may have been paid (Polar was still
+    confirming a payment a day later, or could not be read about it): a payment
+    that lands still turns it paid, and webhooks.cc has been alerted.
     """
 
     id: str
@@ -1972,6 +1975,7 @@ class CheckoutLink:
     bought: CheckoutBought | None = None
     matches: bool | None = None
     opened: bool | None = None
+    expired_reason: Literal["unsettled"] | None = None
     raw: dict[str, Any] = field(default_factory=dict, repr=False, compare=False)
 
     @classmethod
@@ -1995,5 +1999,6 @@ class CheckoutLink:
             bought=CheckoutBought.from_dict(bought) if isinstance(bought, Mapping) else None,
             matches=matches if isinstance(matches, bool) else None,
             opened=opened if isinstance(opened, bool) else None,
+            expired_reason="unsettled" if data.get("expiredReason") == "unsettled" else None,
             raw=dict(data),
         )

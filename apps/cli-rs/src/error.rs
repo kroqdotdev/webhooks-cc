@@ -59,6 +59,10 @@ pub enum CliError {
     ApprovalExpired,
     /// A checkout link expired before the person paid.
     CheckoutExpired,
+    /// A checkout link expired while Polar never said it was unpaid (a
+    /// payment still being confirmed a day later, or Polar not answering):
+    /// the person may have paid. The same code as CheckoutExpired.
+    CheckoutUnsettled,
     /// A checkout link was paid, but the purchase was undone as a duplicate
     /// (the account already had it, or what it added to had ended): its
     /// subscription was ended and a refund is under review.
@@ -103,6 +107,9 @@ impl std::fmt::Display for CliError {
             CliError::CheckoutExpired => {
                 f.write_str("The checkout link expired before it was paid.")
             }
+            CliError::CheckoutUnsettled => f.write_str(
+                "The checkout link expired before Polar confirmed a payment for it. If the person paid, it is still applied to the account once Polar confirms it, and webhooks.cc has been alerted.",
+            ),
             CliError::CheckoutSuperseded => f.write_str(
                 "By the time this checkout was paid, the account already had what it buys (or what it added to had ended), so the purchase was undone: its subscription was ended and a refund of what it charged is under review. Monthly blocks bought twice stay on the account as one-time blocks instead, and a second overage subscription was ended before it charged anything.",
             ),
@@ -189,6 +196,9 @@ pub fn classify(error: &anyhow::Error) -> Classified {
                     .hint("Nobody answered it in time. Ask again."),
                 CliError::CheckoutExpired => Classified::new("checkout_expired", 8).hint(
                     "Make a new link with `whk billing checkout` if the person still wants it.",
+                ),
+                CliError::CheckoutUnsettled => Classified::new("checkout_expired", 8).hint(
+                    "Check `whk billing` before making a new link: the payment may still land.",
                 ),
                 CliError::CheckoutSuperseded => Classified::new("checkout_superseded", 8)
                     .hint("Nothing else to do: `whk billing` shows what the account keeps."),

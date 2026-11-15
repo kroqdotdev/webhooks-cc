@@ -163,6 +163,63 @@ describe("billing checkout links", () => {
     expect(globalThis.fetch).toHaveBeenCalledTimes(1);
   });
 
+  it("keeps polling through our side failing, a rate limit or the network", async () => {
+    // No retries of the client's own: the wait itself asks again.
+    const once = new WebhooksCC({
+      apiKey: "whcc_testkey123",
+      baseUrl: BASE_URL,
+      retry: { maxAttempts: 1 },
+    });
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(answer({ error: "busy" }, 503))
+      .mockResolvedValueOnce(answer({ error: "slow down" }, 429))
+      .mockRejectedValueOnce(new TypeError("fetch failed"))
+      .mockResolvedValueOnce(answer(link("paid")));
+    globalThis.fetch = fetchMock;
+    const paid = await once.billing.waitForCheckout(ID, { pollInterval: 1_000, timeout: 10_000 });
+    expect(paid.status).toBe("paid");
+    expect(fetchMock).toHaveBeenCalledTimes(4);
+
+    // Until the deadline: then it is a timeout, not the last failure.
+    globalThis.fetch = vi.fn().mockResolvedValue(answer({ error: "busy" }, 503));
+    await expect(
+      once.billing.waitForCheckout(ID, { pollInterval: 1_000, timeout: 1_500 })
+    ).rejects.toThrow("Timed out");
+
+    // A refusal is final.
+    const refused = vi.fn().mockResolvedValue(answer({ error: "Checkout link not found" }, 404));
+    globalThis.fetch = refused;
+    await expect(
+      once.billing.waitForCheckout(ID, { pollInterval: 1_000, timeout: 10_000 })
+    ).rejects.toThrow("Checkout link not found");
+    expect(refused).toHaveBeenCalledTimes(1);
+  }, 15_000);
+
+  it("never says nothing was bought for a link that may have been paid", async () => {
+    globalThis.fetch = vi.fn().mockResolvedValue(
+      answer(
+        link("expired", {
+          expiredReason: "unsettled",
+          expiresAt: new Date(Date.now() - 60 * 60_000).toISOString(),
+        })
+      )
+    );
+    const error = await client()
+      .billing.waitForCheckout(ID)
+      .catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(CheckoutExpiredError);
+    expect((error as CheckoutExpiredError).reason).toBe("unsettled");
+    expect((error as Error).message).toContain("If the person paid, it is still applied");
+    expect((error as Error).message).toContain("has been alerted");
+
+    globalThis.fetch = vi.fn().mockResolvedValue(answer(link("expired", { opened: false })));
+    const plain = await client()
+      .billing.waitForCheckout(ID)
+      .catch((e: unknown) => e);
+    expect((plain as CheckoutExpiredError).reason).toBeNull();
+  });
+
   it("throws when the purchase was undone as a duplicate plan", async () => {
     globalThis.fetch = vi.fn().mockResolvedValue(answer(link("superseded")));
     const error = await client()

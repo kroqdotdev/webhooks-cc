@@ -857,6 +857,9 @@ async function waitForCheckoutText(client: WebhooksCC, id: string, ms: number): 
     if (error instanceof CheckoutSupersededError) {
       return "The person paid, but by then the account already had what the link buys (or what it added to had ended), so the purchase was undone: its subscription was ended and a refund of what it charged is under review (monthly blocks bought twice stay on the account as one-time blocks, and a second overage subscription was ended before it charged anything). Do not promise the person a refund; get_billing shows what the account keeps.";
     }
+    if (error instanceof CheckoutExpiredError && error.reason === "unsettled") {
+      return `The checkout link expired before Polar confirmed a payment for it, so it may still have been paid: if the person paid, it is still applied to the account once Polar confirms it, and webhooks.cc has been alerted. Do not tell them nothing was charged. Check get_billing, and call wait_for_checkout with id ${id} again later; make a new link only if they did not pay.`;
+    }
     if (error instanceof CheckoutExpiredError) {
       return `The checkout link expired before it was paid. If the person still wants it, make a new one with create_checkout. If they say they did pay, call wait_for_checkout with id ${id} once more first: a payment confirmed late still turns the link paid.`;
     }

@@ -68,13 +68,20 @@ import {
   overagePurchase,
   type CapacityAccount,
 } from "@/lib/supabase/capacity-billing";
+import { refundTargetKey } from "@/lib/billing/refunds";
 import type {
+  BillingCheckoutExpiredReason,
   BillingCheckoutKind,
   BillingCheckoutStatus,
   Database,
   Json,
 } from "@/lib/supabase/database";
-import { getTeamForOwner, TeamBillingError, teamPlanPurchase } from "@/lib/supabase/team-billing";
+import {
+  getTeamForOwner,
+  TeamBillingError,
+  teamCheckoutBlocked,
+  teamPlanPurchase,
+} from "@/lib/supabase/team-billing";
 
 /** The public page Polar sends the person to after paying. */
 export const CHECKOUT_COMPLETE_PATH = "/checkout/complete";
@@ -275,11 +282,19 @@ export interface CheckoutLinkView {
   teamId: string | null;
   url: string | null;
   /**
-   * Whether the person opened it (a Polar session was made for it), so a
-   * payment may still land after it expires; one never opened was never
-   * payable.
+   * Whether the person opened it (continued to payment, so a Polar session
+   * may have been made for it), so a payment may still land after it
+   * expires; one never opened was never payable.
    */
   opened: boolean;
+  /**
+   * Why an expired link expired, when it is not simply unpaid: "unsettled",
+   * a payment Polar was still confirming a day past its expiry, or sessions
+   * Polar could not be read about 15 minutes past it. Such a link may have
+   * been paid: a payment that lands still turns it paid, and we have been
+   * alerted. Null otherwise.
+   */
+  expiredReason: BillingCheckoutExpiredReason | null;
   createdAt: string;
   expiresAt: string;
   paidAt: string | null;
@@ -381,14 +396,13 @@ function view(row: Row): CheckoutLinkView {
     // Past its expiry an open link is being settled (from Polar, at most
     // every 30 seconds): never handed out again.
     url: row.status === "open" && !isPastExpiry(row) ? row.url : null,
-    opened:
-      row.polar_checkout_id !== null ||
-      (row.previous_checkout_ids ?? []).length > 0 ||
-      row.paid_checkout_id !== null ||
-      paid,
+    // Stamped with the first opening lease, and kept when the session is
+    // detached or replaced later: a session that names the link may exist.
+    opened: row.opened_at !== null || paid,
     createdAt: row.created_at,
     expiresAt: row.expires_at,
     paidAt: row.paid_at,
+    expiredReason: row.status === "expired" ? (row.expired_reason ?? null) : null,
     bought: paid ? bought : null,
     // A mismatch the webhook recorded (a top-up paid on another base) is
     // one the order itself cannot show.
@@ -441,7 +455,7 @@ async function purchaseFor(
 }
 
 const COLUMNS =
-  "id, user_id, team_id, created_by, requested_by_key, requested_by_agent, network, country, kind, item, url, polar_checkout_id, paid_checkout_id, previous_checkout_ids, expected, bought, mismatch, detached_at, cancelled_at, opening_at, polar_checked_at, status, created_at, expires_at, paid_at";
+  "id, user_id, team_id, created_by, requested_by_key, requested_by_agent, network, country, kind, item, url, polar_checkout_id, paid_checkout_id, previous_checkout_ids, expected, bought, mismatch, detached_at, cancelled_at, opening_at, opened_at, polar_checked_at, status, expired_reason, created_at, expires_at, paid_at";
 
 /**
  * Checks the purchase and makes the link (the limits). Nothing in Polar is
@@ -540,8 +554,12 @@ async function mayFollow(row: Row, userId: string): Promise<boolean> {
 /**
  * A link for the person who may follow it (mayFollow(): any of their keys,
  * agents or sessions), or null. One still open past its expiry is settled
- * from Polar's state of its session, at most every 30 seconds: a checkout
- * paid before it expired is paid even when its webhook has not arrived yet.
+ * from Polar's state of its session, at most every 30 seconds: a read marks
+ * a paid checkout paid only when Polar shows the live subscription it made
+ * (paidAtPolar()), so a subscription paid before the link expired reads
+ * paid even when its webhook has not arrived yet; a one-time order turns
+ * the link paid only through the webhook (the link reads processing until
+ * then).
  */
 export async function getCheckoutLink(
   id: string,
@@ -720,6 +738,14 @@ export interface CheckoutLinkReview {
    * anything is made), for an open link; null when it can.
    */
   unavailable: string | null;
+  /**
+   * The refusal's code: checkout_in_progress is for now only (another
+   * checkout link's checkout for the team is open until the time the
+   * message names), so the page offers Try again instead of the Plan page.
+   */
+  unavailableCode: string | null;
+  /** As CheckoutLinkView's: why an expired link expired, when it may have been paid. */
+  expiredReason: BillingCheckoutExpiredReason | null;
   country: string | null;
   /** Whether the link was made from this browser's network. */
   network: NetworkMatch;
@@ -756,8 +782,10 @@ export async function reviewCheckoutLink(
   ]);
   if (userError) throw userError;
   if (team?.error) throw team.error;
-  const check: { unavailable: string | null; have: number; max?: number } =
-    status === "open" ? await purchaseCheck(item, userId) : { unavailable: null, have: 0 };
+  const check: PurchaseCheck =
+    status === "open"
+      ? await purchaseCheck(item, userId)
+      : { unavailable: null, unavailableCode: null, have: 0 };
   // Overage opens with the maximum the account has stored now.
   const shown = withOpenMax(item, check.max);
   return {
@@ -771,6 +799,8 @@ export async function reviewCheckoutLink(
     teamName: cleanAskerName(team?.data?.name, 80),
     requester: await requesterOf(row),
     unavailable: check.unavailable,
+    unavailableCode: check.unavailableCode,
+    expiredReason: status === "expired" ? (row.expired_reason ?? null) : null,
     country: row.country,
     network: compareNetworks(row.network, viewerNetwork),
     createdAt: row.created_at,
@@ -778,26 +808,44 @@ export async function reviewCheckoutLink(
   };
 }
 
+interface PurchaseCheck {
+  unavailable: string | null;
+  unavailableCode: string | null;
+  have: number;
+  max?: number;
+}
+
 /**
  * The purchase check opening the link runs, for the page to show first:
  * why it refuses the item now (null when it passes), and the monthly blocks
- * a top-up adds to. Database reads only: nothing in Polar is asked or made
- * until the person continues.
+ * a top-up adds to. A team link also answers why opening would be refused
+ * while another checkout link's checkout for the team is open
+ * (teamCheckoutBlocked(): checkout_in_progress, until that one expires).
+ * Database reads only: nothing in Polar is asked or made until the person
+ * continues.
  */
-async function purchaseCheck(
-  item: StoredCheckoutItem,
-  userId: string
-): Promise<{ unavailable: string | null; have: number; max?: number }> {
+async function purchaseCheck(item: StoredCheckoutItem, userId: string): Promise<PurchaseCheck> {
   try {
     const purchase = await purchaseFor(item, userId);
-    return { unavailable: null, have: purchase?.have ?? 0, max: purchase?.max };
+    if (item.kind === "team_plan") {
+      const blocked = await teamCheckoutBlocked(item.teamId, purchase.expected);
+      if (blocked) {
+        return { unavailable: blocked.message, unavailableCode: blocked.code, have: 0 };
+      }
+    }
+    return {
+      unavailable: null,
+      unavailableCode: null,
+      have: purchase?.have ?? 0,
+      max: purchase?.max,
+    };
   } catch (error) {
     if (
       error instanceof BillingActionError ||
       error instanceof TeamBillingError ||
       error instanceof CapacityError
     ) {
-      return { unavailable: error.message, have: 0 };
+      return { unavailable: error.message, unavailableCode: error.code, have: 0 };
     }
     throw error;
   }
@@ -837,8 +885,13 @@ function pastExpiryKind(row: Row): "expired" | "processing" {
  * processing for CONFIRMING_GRACE_MS past its expiry; one still open, or
  * one not read (Polar not answering, or past the reads' deadline), keeps it
  * processing for EXPIRY_GRACE_MS past its expiry. Then it reads expired (a
- * payment that arrives later still marks it paid). A read is never failed
- * for Polar: what could not be settled is asked again later.
+ * payment that arrives later still marks it paid), with expired_reason
+ * 'unsettled' when it was let go of for either of those (it may have been
+ * paid: the page and the waits never say nothing was charged, and someone
+ * is alerted). A read is never failed for Polar: what could not be settled
+ * is asked again later. Every call to Polar, the subscription reads
+ * included, gives up after POLAR_READ_TIMEOUT_S, and none starts once
+ * SETTLE_DEADLINE_MS has passed (what is left counts as unsettled).
  */
 async function settleIfExpired(row: Row): Promise<Row> {
   if (!isPastExpiry(row)) return row;
@@ -867,7 +920,8 @@ async function settleIfExpired(row: Row): Promise<Row> {
     current,
     ...[...(row.previous_checkout_ids ?? [])].reverse().filter((id) => id !== current),
   ];
-  const answers = await readSessions(row.id, sessions);
+  const stopAt = Date.now() + SETTLE_DEADLINE_MS;
+  const answers = await readSessions(row.id, sessions, stopAt);
   // A payment Polar is confirming, or one it took that the webhook has not
   // settled yet.
   let confirming = false;
@@ -883,7 +937,12 @@ async function settleIfExpired(row: Row): Promise<Row> {
     if (polarStatus === "succeeded" && checkout) {
       // Only a subscription Polar has live is marked paid here; the rest
       // waits for the webhook, which checks for duplicates first.
-      if (!(await paidAtPolar(row.id, checkout))) {
+      const paid = await paidAtPolar(row.id, checkout, stopAt);
+      if (paid === "unread") {
+        unsettled = true;
+        continue;
+      }
+      if (paid === "not_live") {
         confirming = true;
         continue;
       }
@@ -894,8 +953,19 @@ async function settleIfExpired(row: Row): Promise<Row> {
           row
         );
       }
+      // settlePaid() asks Polar about the subscription again: never once
+      // the reads' deadline has passed.
+      if (Date.now() >= stopAt) {
+        unsettled = true;
+        continue;
+      }
       try {
-        await settlePaid(sessionId, checkout, { source: "checkout" });
+        await settlePaid(
+          sessionId,
+          checkout,
+          { source: "checkout" },
+          { timeout: POLAR_READ_TIMEOUT_S }
+        );
       } catch (error) {
         // The webhook, or a later read, applies it.
         console.warn("[checkout-links] could not apply a replaced session's payment", {
@@ -916,12 +986,17 @@ async function settleIfExpired(row: Row): Promise<Row> {
   const expiry = Date.parse(row.expires_at);
   if (confirming && Date.now() < expiry + CONFIRMING_GRACE_MS) return row;
   if (unsettled && Date.now() < expiry + EXPIRY_GRACE_MS) return row;
-  const expired = await markExpired(row.id);
-  if (expired && confirming) {
-    // A day of a payment Polar took or is confirming without its webhook
-    // settling it: someone should look. Its payment still marks it paid.
+  // Let go of while Polar never said it was not paid: it may have been.
+  const letGo = confirming || unsettled;
+  const expired = await markExpired(row.id, letGo ? "unsettled" : null);
+  if (expired && letGo) {
+    // A payment Polar took or was confirming without its webhook settling
+    // it for a day, or sessions Polar could not be read about: someone
+    // should look. Its payment, should it land, still marks it paid.
     reportError(
-      "[checkout-links] a checkout link's payment stayed unsettled for a day; expired it",
+      confirming
+        ? "[checkout-links] a checkout link's payment stayed unsettled for a day; expired it"
+        : "[checkout-links] a checkout link's Polar sessions could not be read past its grace; expired it",
       undefined,
       { linkId: row.id }
     );
@@ -931,22 +1006,34 @@ async function settleIfExpired(row: Row): Promise<Row> {
 
 /**
  * Whether a read may mark a link paid from Polar's succeeded session: only
- * when the session made a subscription Polar has live. The webhook's
- * duplicate checks may still end it, and the link then turns superseded;
- * a one-time order, a subscription not live, or Polar not answering is
- * left to the webhook (the link reads processing meanwhile).
+ * when the session made a subscription Polar has live ("live"). The
+ * webhook's duplicate checks may still end it, and the link then turns
+ * superseded; a one-time order, a subscription not live, or Polar not
+ * answering is left to the webhook ("not_live": the link reads processing
+ * meanwhile). With `stopAt` (a read past expiry), the subscription is not
+ * asked about once that time has passed, and the read gives up after
+ * POLAR_READ_TIMEOUT_S: "unread", which the caller counts as unsettled.
  */
-async function paidAtPolar(linkId: string, checkout: Record<string, unknown>): Promise<boolean> {
+async function paidAtPolar(
+  linkId: string,
+  checkout: Record<string, unknown>,
+  stopAt?: number
+): Promise<"live" | "not_live" | "unread"> {
   const subscription = asNonEmptyString(checkout.subscription_id);
-  if (!subscription) return false;
+  if (!subscription) return "not_live";
+  if (stopAt !== undefined && Date.now() >= stopAt) return "unread";
   try {
-    return await isLiveSubscription(subscription);
+    const live = await isLiveSubscription(
+      subscription,
+      stopAt === undefined ? undefined : { timeout: POLAR_READ_TIMEOUT_S }
+    );
+    return live ? "live" : "not_live";
   } catch (error) {
     console.warn("[checkout-links] could not read a checkout's subscription from Polar", {
       id: linkId,
       error: loggablePolarError(error),
     });
-    return false;
+    return "not_live";
   }
 }
 
@@ -958,11 +1045,11 @@ async function paidAtPolar(linkId: string, checkout: Record<string, unknown>): P
  */
 async function readSessions(
   linkId: string,
-  sessions: string[]
+  sessions: string[],
+  stopAt: number
 ): Promise<Array<Record<string, unknown> | null | undefined>> {
   const polar = createPolarClient();
   const answers: Array<Record<string, unknown> | null | undefined> = sessions.map(() => undefined);
-  const stopAt = Date.now() + SETTLE_DEADLINE_MS;
   let next = 0;
   const reader = async () => {
     while (next < sessions.length && Date.now() < stopAt) {
@@ -983,7 +1070,7 @@ async function readSessions(
   };
   let timer: ReturnType<typeof setTimeout> | undefined;
   const deadline = new Promise<void>((resolve) => {
-    timer = setTimeout(resolve, SETTLE_DEADLINE_MS);
+    timer = setTimeout(resolve, Math.max(0, stopAt - Date.now()));
   });
   try {
     await Promise.race([
@@ -1011,16 +1098,21 @@ function boughtFrom(data: Record<string, unknown>): CheckoutBought {
 
 /**
  * Moves links that follow a session to paid from open or expired (paid
- * wins, since a payment confirmed before expiry can arrive after it), never
- * from superseded, with what was bought and the session that paid
- * (paid_checkout_id). By id, only while the link still follows `session`.
+ * wins, since a payment confirmed before expiry can arrive after it), with
+ * what was bought and the session that paid (paid_checkout_id). With
+ * `undone` (the webhook, by `polarCheckoutId`, once settlePaid() found the
+ * purchase still live), superseded links too, but only those another of
+ * their sessions superseded (paid_checkout_id names that one): that
+ * purchase was undone, and this one stands; a link this session itself
+ * superseded stays so. By id, only while the link still follows `session`.
  * Idempotent: a redelivery finds nothing left to change. Returns the first
  * row changed.
  */
 async function markPaid(
   where: { id: string } | { polarCheckoutId: string },
   bought: CheckoutBought | null,
-  session?: string
+  session?: string,
+  undone = false
 ): Promise<Row | null> {
   const paidBy = "id" in where ? session : where.polarCheckoutId;
   let query = createAdminClient()
@@ -1031,18 +1123,27 @@ async function markPaid(
       ...(paidBy ? { paid_checkout_id: paidBy } : {}),
       ...(bought ? { bought: bought as unknown as Json } : {}),
     });
-  query =
-    "id" in where ? query.eq("id", where.id) : query.eq("polar_checkout_id", where.polarCheckoutId);
-  if ("id" in where && session) query = query.eq("polar_checkout_id", session);
-  const { data, error } = await query.in("status", ["open", "expired"]).select(COLUMNS);
+  if ("id" in where) {
+    query = query.eq("id", where.id).in("status", ["open", "expired"]);
+    if (session) query = query.eq("polar_checkout_id", session);
+  } else {
+    query = query.eq("polar_checkout_id", where.polarCheckoutId);
+    query = undone
+      ? query.or(payableThrough(where.polarCheckoutId)).is("cancelled_at", null)
+      : query.in("status", ["open", "expired"]);
+  }
+  const { data, error } = await query.select(COLUMNS);
   if (error) throw error;
   return (data as Row[] | null)?.[0] ?? null;
 }
 
-async function markExpired(id: string): Promise<Row | null> {
+async function markExpired(
+  id: string,
+  reason: BillingCheckoutExpiredReason | null = null
+): Promise<Row | null> {
   const { data, error } = await createAdminClient()
     .from("billing_checkouts")
-    .update({ status: "expired" })
+    .update({ status: "expired", ...(reason ? { expired_reason: reason } : {}) })
     .eq("id", id)
     .eq("status", "open")
     .select(COLUMNS);
@@ -1056,8 +1157,28 @@ async function markExpired(id: string): Promise<Row | null> {
  * words a superseded link's explanation by).
  */
 export type OpenCheckoutResult = (
-  { kind: "redirect"; url: string } | { kind: "paid" | "superseded" | "expired" | "processing" }
+  | { kind: "redirect"; url: string }
+  | { kind: "paid" | "superseded" | "processing" }
+  | {
+      kind: "expired";
+      /** As CheckoutLinkView's: "unsettled" when it may have been paid. */
+      expiredReason: BillingCheckoutExpiredReason | null;
+    }
 ) & { summary: string; link: OpenedLink };
+
+/** The answer for a link that is no longer open, or past its expiry. */
+function settledResult(row: Row, summary: string, link: OpenedLink): OpenCheckoutResult {
+  const kind = row.status === "open" ? pastExpiryKind(row) : row.status;
+  if (kind === "expired") {
+    return {
+      kind,
+      expiredReason: row.status === "expired" ? (row.expired_reason ?? null) : null,
+      summary,
+      link,
+    };
+  }
+  return { kind, summary, link };
+}
 
 /** What an opened link buys, for the page's wording. */
 export interface OpenedLink {
@@ -1108,8 +1229,7 @@ async function openLink(id: string, userId: string, again: boolean): Promise<Ope
   const item = storedItem(row);
   const summary = checkoutSummary(item);
   const link: OpenedLink = { kind: row.kind, resource: "resource" in item ? item.resource : null };
-  if (row.status !== "open") return { kind: row.status, summary, link };
-  if (isPastExpiry(row)) return { kind: pastExpiryKind(row), summary, link };
+  if (row.status !== "open" || isPastExpiry(row)) return settledResult(row, summary, link);
 
   let storedSession: Record<string, unknown> | null = null;
   if (row.polar_checkout_id) {
@@ -1119,7 +1239,7 @@ async function openLink(id: string, userId: string, again: boolean): Promise<Ope
     if (polarStatus === "succeeded") {
       // Paid at Polar: marked paid here only for a subscription Polar has
       // live, else the webhook settles it (processing meanwhile).
-      if (!storedSession || !(await paidAtPolar(row.id, storedSession))) {
+      if (!storedSession || (await paidAtPolar(row.id, storedSession)) !== "live") {
         return { kind: "processing", summary, link };
       }
       row =
@@ -1130,7 +1250,9 @@ async function openLink(id: string, userId: string, again: boolean): Promise<Ope
         )) ??
         (await readRow(row.id)) ??
         row;
-      return { kind: row.status === "open" ? "processing" : row.status, summary, link };
+      return row.status === "open"
+        ? { kind: "processing", summary, link }
+        : settledResult(row, summary, link);
     }
   }
 
@@ -1157,9 +1279,12 @@ async function openLink(id: string, userId: string, again: boolean): Promise<Ope
   // Fenced on the session read above too: a tab that finished making one
   // meanwhile (and gave the lease back) is not replaced from a stale read.
   const observed = row.polar_checkout_id;
+  // The first lease also stamps opened_at, for good: from here a Polar
+  // session may be made for the link (a team's naming it in its metadata
+  // too), even if this tab fails or the session is detached later.
   let claim = admin
     .from("billing_checkouts")
-    .update({ opening_at: lease })
+    .update({ opening_at: lease, ...(row.opened_at ? {} : { opened_at: lease }) })
     .eq("id", row.id)
     .eq("status", "open")
     .or(`opening_at.is.null,opening_at.lt."${leaseCutoff}"`);
@@ -1274,8 +1399,7 @@ async function settledSince(
   if (!now) {
     throw new CheckoutLinkError("not_found", "This checkout link does not exist.", 404);
   }
-  if (now.status !== "open") return { kind: now.status, summary, link };
-  if (isPastExpiry(now)) return { kind: pastExpiryKind(now), summary, link };
+  if (now.status !== "open" || isPastExpiry(now)) return settledResult(now, summary, link);
   throw new CheckoutLinkError(
     "opening",
     "This checkout is being prepared in another tab. Try again in a moment.",
@@ -1332,12 +1456,20 @@ const CHECKOUT_ID = /^[A-Za-z0-9_-]{1,128}$/;
  * (they supersede it too; this covers an end that could not). A link its
  * asker cancelled is never paid through either, and one named only by the
  * metadata only when the payment came from its own account's Polar
- * customer (linkCustomerMatches()).
+ * customer (linkCustomerMatches()). The same holds for a link that follows
+ * this session but was superseded by another of its sessions (that
+ * purchase was undone, this one stands), and a one-time order that a
+ * refund was recorded for (polar_refunds: it bought nothing) never pays a
+ * link through a replaced session or the metadata.
+ *
+ * `polar` bounds the subscription read (a read past expiry gives each call
+ * to Polar POLAR_READ_TIMEOUT_S).
  */
 async function settlePaid(
   checkoutId: string,
   data: Record<string, unknown>,
-  event: BoughtEvent
+  event: BoughtEvent,
+  polar?: { timeout?: number }
 ): Promise<void> {
   const { source } = event;
   const bought = boughtFrom(data);
@@ -1345,28 +1477,47 @@ async function settlePaid(
   const admin = createAdminClient();
   const subscriptionId =
     source === "subscription" ? asNonEmptyString(data.id) : asNonEmptyString(data.subscription_id);
+  const orderId = source === "order" ? asNonEmptyString(data.id) : null;
   let live: boolean | null = null;
   const stillLive = async () => {
-    if (subscriptionId === null) return true;
-    live ??= await isLiveSubscription(subscriptionId);
+    if (live !== null) return live;
+    if (subscriptionId !== null) live = await isLiveSubscription(subscriptionId, polar);
+    // A one-time order stands unless the webhook recorded a refund for it
+    // (extra domains with nothing left to go on, an account deleted
+    // meanwhile): such an order bought nothing.
+    else live = orderId === null || !(await orderRefundRecorded(orderId));
     return live;
   };
   const safeId = CHECKOUT_ID.test(checkoutId);
 
   if (safeId) {
-    // A link that went on to a new session after this one; read first, so
-    // only that case asks Polar anything.
-    // A link superseded by another of its sessions (that one's purchase was
-    // undone) is paid by this one too: this purchase stands.
-    const { data: replacedBy, error: replacedError } = await admin
+    // Links this payment may still pay that markPaid() above did not, read
+    // first so only they ask Polar anything: one that went on to a new
+    // session after this one (previous_checkout_ids), open, expired or
+    // superseded by another of its sessions; and one that follows this
+    // session but was superseded by another of its sessions. That other
+    // purchase was undone, and this one stands.
+    const { data: candidates, error: replacedError } = await admin
       .from("billing_checkouts")
       .select("id, polar_checkout_id, previous_checkout_ids")
-      .contains("previous_checkout_ids", [checkoutId])
-      .or(payableThrough(checkoutId))
+      .or(
+        `and(previous_checkout_ids.cs.{${checkoutId}},or(${payableThrough(checkoutId)})),` +
+          `and(polar_checkout_id.eq."${checkoutId}",status.eq.superseded,paid_checkout_id.neq."${checkoutId}")`
+      )
       .is("cancelled_at", null);
     if (replacedError) throw replacedError;
-    if ((replacedBy ?? []).length > 0 && (await stillLive())) {
-      for (const link of replacedBy ?? []) await payThroughReplaced(link, checkoutId, bought);
+    const replacedBy = (candidates ?? []).filter((link) =>
+      (link.previous_checkout_ids ?? []).includes(checkoutId)
+    );
+    const undone = (candidates ?? []).filter(
+      (link) =>
+        link.polar_checkout_id === checkoutId &&
+        !(link.previous_checkout_ids ?? []).includes(checkoutId)
+    );
+    if ((candidates ?? []).length > 0 && (await stillLive())) {
+      if (undone.length > 0)
+        await markPaid({ polarCheckoutId: checkoutId }, bought, undefined, true);
+      for (const link of replacedBy) await payThroughReplaced(link, checkoutId, bought);
     }
   }
 
@@ -1442,14 +1593,6 @@ async function settlePaid(
 }
 
 /**
- * Marks a link paid through a session it had replaced: it follows that
- * session from then on, and the one it had moved to goes into
- * previous_checkout_ids, so a later payment of that one never reads as
- * this link's purchase. Fenced on the session the link followed when it was
- * read; when a reopen moved it meanwhile and the link still waits, the
- * event fails, so Polar delivers it again.
- */
-/**
  * The statuses a link can be paid in through a session it had replaced:
  * open or expired, or superseded by another of its sessions (whose purchase
  * was undone; superseding records that session in paid_checkout_id).
@@ -1458,6 +1601,25 @@ function payableThrough(checkoutId: string): string {
   return `status.in.(open,expired),and(status.eq.superseded,paid_checkout_id.neq."${checkoutId}")`;
 }
 
+/** Whether the webhook recorded a refund for a Polar order (polar_refunds): it bought nothing. */
+async function orderRefundRecorded(orderId: string): Promise<boolean> {
+  const { data, error } = await createAdminClient()
+    .from("polar_refunds")
+    .select("id")
+    .eq("target", refundTargetKey({ order: orderId }))
+    .maybeSingle();
+  if (error) throw error;
+  return data !== null;
+}
+
+/**
+ * Marks a link paid through a session it had replaced: it follows that
+ * session from then on, and the one it had moved to goes into
+ * previous_checkout_ids, so a later payment of that one never reads as
+ * this link's purchase. Fenced on the session the link followed when it was
+ * read; when a reopen moved it meanwhile and the link still waits, the
+ * event fails, so Polar delivers it again.
+ */
 async function payThroughReplaced(
   link: { id: string; polar_checkout_id: string | null; previous_checkout_ids: string[] | null },
   checkoutId: string,

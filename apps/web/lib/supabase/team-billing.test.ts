@@ -50,6 +50,7 @@ import {
   createTeamCustomerPortal,
   ensureOwnerSeat,
   extractTeamIdFromWebhook,
+  teamCheckoutBlocked,
   teamPlanPurchase,
   keepTeamPlan,
   quoteTeamSeatChange,
@@ -626,12 +627,38 @@ describe("createTeamCheckout", () => {
 
       await expect(createTeamCheckout("user_1", "team_1", 5)).rejects.toMatchObject({
         code: "checkout_in_progress",
+        // When the person can try again.
+        message: expect.stringContaining("until 00:00 UTC (2099-01-01T00:00:00.000Z)"),
       });
       // The link's session keeps buying what the link says, and no other is made.
       expect(checkoutCreate).not.toHaveBeenCalled();
       expect(checkoutUpdate).not.toHaveBeenCalled();
       expect(mockFns.detachCheckoutLinks).not.toHaveBeenCalled();
       expect(recorded.some((call) => call.table === "teams" && call.op === "update")).toBe(false);
+    });
+
+    test("says, from the database alone, when another link's fixed session blocks this one", async () => {
+      const fixed = openTeam(createdAt(), { fixed: true });
+      mockFns.createAdminClient.mockReturnValue(createFakeAdmin({ "teams:select": [fixed] }));
+      // Another seat count: blocked until the fixed session expires.
+      await expect(
+        teamCheckoutBlocked("team_1", { product: "prod_teams_123", seats: 5 })
+      ).resolves.toEqual({
+        code: "checkout_in_progress",
+        message: expect.stringContaining("until 00:00 UTC (2099-01-01T00:00:00.000Z)"),
+      });
+      // The same plan and seats: that session is this purchase's to reuse.
+      mockFns.createAdminClient.mockReturnValue(createFakeAdmin({ "teams:select": [fixed] }));
+      await expect(
+        teamCheckoutBlocked("team_1", { product: "prod_teams_123", seats: 3 })
+      ).resolves.toBeNull();
+      // A dashboard session can be moved, so it blocks nothing.
+      mockFns.createAdminClient.mockReturnValue(
+        createFakeAdmin({ "teams:select": [openTeam(createdAt())] })
+      );
+      await expect(
+        teamCheckoutBlocked("team_1", { product: "prod_teams_123", seats: 5 })
+      ).resolves.toBeNull();
     });
 
     test("lets go of the moved session's links before caching what it sells now", async () => {

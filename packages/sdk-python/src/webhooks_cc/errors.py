@@ -73,16 +73,33 @@ class RateLimitError(WebhooksCCError):
 
 class CheckoutExpiredError(WebhooksCCError):
     """A checkout link expired before the person paid. Make a new one if they still
-    want it. Raised by ``billing.wait_for_checkout()``."""
+    want it. Raised by ``billing.wait_for_checkout()``.
 
-    def __init__(self, checkout_id: str, message: str | None = None) -> None:
-        super().__init__(
-            0,
-            message
-            or "The checkout link expired before it was paid. "
-            "Make a new one if the person still wants it.",
-        )
+    ``reason`` is ``"unsettled"`` when it expired while Polar never said it was
+    unpaid (a payment still being confirmed a day later, or Polar not answering):
+    the person may have paid, a payment that lands still turns the link paid, and
+    webhooks.cc has been alerted, so check billing before making a new link."""
+
+    def __init__(
+        self,
+        checkout_id: str,
+        message: str | None = None,
+        *,
+        reason: Literal["unsettled"] | None = None,
+    ) -> None:
+        if message is None:
+            message = (
+                "The checkout link expired before Polar confirmed a payment for it. "
+                "If the person paid, it is still applied to the account once Polar "
+                "confirms it, and webhooks.cc has been alerted; check billing before "
+                "making a new link."
+                if reason == "unsettled"
+                else "The checkout link expired before it was paid. "
+                "Make a new one if the person still wants it."
+            )
+        super().__init__(0, message)
         self.checkout_id = checkout_id
+        self.reason = reason
 
 
 class CheckoutSupersededError(CheckoutExpiredError):

@@ -360,11 +360,13 @@ async fn wait_until_paid(
     json: Option<Json>,
 ) -> Result<()> {
     use anyhow::Context;
-    // When the link first read expired, while it may still turn paid.
+    // When the link first read expired, while it may still turn paid, and
+    // whether it read as one that may have been paid.
     let mut expired_at: Option<Instant> = None;
-    let out_of_time = |expired: bool| -> anyhow::Error {
+    let mut unsettled = false;
+    let out_of_time = |expired: bool, unsettled: bool| -> anyhow::Error {
         if expired {
-            return CliError::CheckoutExpired.into();
+            return expired_error(unsettled);
         }
         CliError::Timeout(format!(
             "Not paid yet. Run `whk billing checkout-status {id} --wait` to keep waiting."
@@ -376,13 +378,30 @@ async fn wait_until_paid(
         // never holds the command past its timeout.
         let left = deadline.saturating_duration_since(Instant::now());
         if left.is_zero() {
-            return Err(out_of_time(expired_at.is_some()));
+            return Err(out_of_time(expired_at.is_some(), unsettled));
         }
         let answer = match tokio::time::timeout(left, client.get_checkout(id)).await {
-            Ok(answer) => answer.with_context(|| {
-                format!("could not check checkout link {id}; run `whk billing checkout-status {id} --wait` to try again")
-            })?,
-            Err(_) => return Err(out_of_time(expired_at.is_some())),
+            Ok(Ok(answer)) => answer,
+            // Our side, a rate limit or the network: ask again until the
+            // deadline, after as long as the server asked for.
+            Ok(Err(error)) if crate::cli::wait::transient(&error) => {
+                let asked = crate::error::classify(&error)
+                    .retry_after
+                    .map(Duration::from_secs)
+                    .unwrap_or(POLL_EVERY);
+                let left = deadline.saturating_duration_since(Instant::now());
+                if left.is_zero() {
+                    return Err(out_of_time(expired_at.is_some(), unsettled));
+                }
+                tokio::time::sleep(asked.max(POLL_EVERY).min(left)).await;
+                continue;
+            }
+            Ok(Err(error)) => {
+                return Err(error).with_context(|| {
+                    format!("could not check checkout link {id}; run `whk billing checkout-status {id} --wait` to try again")
+                });
+            }
+            Err(_) => return Err(out_of_time(expired_at.is_some(), unsettled)),
         };
         let link = &answer.raw["checkout"];
         match link["status"].as_str() {
@@ -397,22 +416,42 @@ async fn wait_until_paid(
                 return Ok(());
             }
             Some("expired") => {
+                unsettled = is_unsettled(link);
                 if !may_still_be_paid(link) {
-                    return Err(CliError::CheckoutExpired.into());
+                    return Err(expired_error(unsettled));
                 }
                 let since = *expired_at.get_or_insert_with(Instant::now);
                 if since.elapsed() >= EXPIRED_GRACE {
-                    return Err(CliError::CheckoutExpired.into());
+                    return Err(expired_error(unsettled));
                 }
             }
             Some("superseded") => return Err(CliError::CheckoutSuperseded.into()),
-            _ => expired_at = None,
+            _ => {
+                expired_at = None;
+                unsettled = false;
+            }
         }
         let left = deadline.saturating_duration_since(Instant::now());
         if left.is_zero() {
-            return Err(out_of_time(expired_at.is_some()));
+            return Err(out_of_time(expired_at.is_some(), unsettled));
         }
         tokio::time::sleep(POLL_EVERY.min(left)).await;
+    }
+}
+
+/// Whether an expired link was let go of while Polar never said it was
+/// unpaid (`expiredReason` "unsettled"): the person may have paid.
+fn is_unsettled(link: &Value) -> bool {
+    link["expiredReason"].as_str() == Some("unsettled")
+}
+
+/// The error for an expired link: checkout_expired either way, worded for
+/// one that may have been paid.
+fn expired_error(unsettled: bool) -> anyhow::Error {
+    if unsettled {
+        CliError::CheckoutUnsettled.into()
+    } else {
+        CliError::CheckoutExpired.into()
     }
 }
 
@@ -463,6 +502,15 @@ fn print_status(link: &Value) {
                 "  {}",
                 dim(
                     "By the time it was paid, the account already had what it buys (or what it added to had ended), so it was undone: its subscription was ended and a refund of what it charged is under review. Monthly blocks bought twice stay as one-time blocks, and a second overage subscription charged nothing."
+                )
+            );
+        }
+        Some("expired") if is_unsettled(link) => {
+            println!("  Expired before Polar confirmed a payment: {summary}");
+            println!(
+                "  {}",
+                dim(
+                    "If the person paid, it is still applied to the account once Polar confirms it, and webhooks.cc has been alerted. Check `whk billing` before making a new link."
                 )
             );
         }
@@ -757,10 +805,22 @@ mod tests {
                     let polls = polls.clone();
                     let statuses = statuses.clone();
                     async move {
+                        use axum::response::IntoResponse;
                         let mut n = polls.lock().unwrap();
                         let status = statuses[(*n).min(statuses.len() - 1)];
                         *n += 1;
-                        axum::Json(link(status))
+                        // A status code instead of a link: the route failing.
+                        if let Ok(code) = status.parse::<u16>() {
+                            let code = axum::http::StatusCode::from_u16(code).unwrap();
+                            return (code, axum::Json(json!({ "error": "not now" })))
+                                .into_response();
+                        }
+                        if status == "unsettled" {
+                            let mut answer = link("expired");
+                            answer["checkout"]["expiredReason"] = json!("unsettled");
+                            return axum::Json(answer).into_response();
+                        }
+                        axum::Json(link(status)).into_response()
                     }
                 }),
             );
@@ -813,6 +873,54 @@ mod tests {
         checkout_status(&client(&base), ID, None, true)
             .await
             .unwrap();
+    }
+
+    #[tokio::test]
+    async fn keeps_polling_through_our_side_failing_or_a_rate_limit() {
+        let (base, _) = server(vec!["503", "429", "502", "paid"]).await;
+        checkout_status(&client(&base), ID, Some("1m"), true)
+            .await
+            .unwrap();
+        // Until the deadline: then it is a timeout.
+        let (base, _) = server(vec!["503"]).await;
+        let error = checkout_status(&client(&base), ID, Some("1s"), true)
+            .await
+            .unwrap_err();
+        assert_eq!(crate::error::classify(&error).code, "timeout");
+        // A refusal is final.
+        let (base, _) = server(vec!["404", "paid"]).await;
+        let error = checkout_status(&client(&base), ID, Some("1m"), true)
+            .await
+            .unwrap_err();
+        assert_eq!(crate::error::classify(&error).code, "not_found");
+    }
+
+    #[tokio::test]
+    async fn keeps_polling_through_the_network_failing() {
+        // Nothing listens here: every poll fails to connect.
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let base = format!("http://127.0.0.1:{}", listener.local_addr().unwrap().port());
+        drop(listener);
+        let error = checkout_status(&client(&base), ID, Some("1s"), true)
+            .await
+            .unwrap_err();
+        assert_eq!(crate::error::classify(&error).code, "timeout");
+    }
+
+    #[tokio::test]
+    async fn an_unsettled_link_never_says_nothing_was_bought() {
+        let (base, _) = server(vec!["unsettled"]).await;
+        let error = checkout_status(&client(&base), ID, Some("1m"), true)
+            .await
+            .unwrap_err();
+        let c = crate::error::classify(&error);
+        assert_eq!((c.code, c.exit), ("checkout_expired", 8));
+        let message = error.to_string();
+        assert!(
+            message.contains("If the person paid, it is still applied"),
+            "{message}"
+        );
+        assert!(message.contains("has been alerted"), "{message}");
     }
 
     #[tokio::test]

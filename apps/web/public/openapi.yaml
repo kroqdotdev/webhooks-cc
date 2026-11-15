@@ -5902,8 +5902,17 @@ components:
         opened:
           type: boolean
           description: >-
-            Whether the person opened it (a Polar checkout was made for it): only then can a
-            payment still land after it expires.
+            Whether the person opened it (continued to payment from its page, so a Polar
+            checkout may have been made for it): only then can a payment still land after it
+            expires.
+        expiredReason:
+          type: [string, "null"]
+          enum: [unsettled, null]
+          description: >-
+            Why an expired link expired, when it may have been paid: `unsettled` when Polar was
+            still confirming a payment a day past its expiry, or could not be read about it 15
+            minutes past it. A payment that lands still turns it `paid`, and we have been
+            alerted, so never tell the person nothing was charged. `null` for any other link.
         createdAt:
           type: string
           format: date-time

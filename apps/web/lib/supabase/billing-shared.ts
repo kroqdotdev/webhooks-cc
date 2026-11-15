@@ -133,10 +133,19 @@ export function isLiveSubscriptionState(subscription: Record<string, unknown> | 
 
 /**
  * Whether the subscription is live as Polar has it now. Polar's errors
- * propagate, so the event is delivered again later.
+ * propagate, so the event is delivered again later. `options.timeout` (in
+ * seconds) overrides the client's for this read.
  */
-export async function isLiveSubscription(id: string): Promise<boolean> {
-  return isLiveSubscriptionState(asRecord(await createPolarClient().subscriptions.get(id)));
+export async function isLiveSubscription(
+  id: string,
+  options?: { timeout?: number }
+): Promise<boolean> {
+  const polar = createPolarClient();
+  const subscription =
+    options?.timeout === undefined
+      ? await polar.subscriptions.get(id)
+      : await polar.subscriptions.get(id, { timeout: options.timeout });
+  return isLiveSubscriptionState(asRecord(subscription));
 }
 
 /** When a Polar subscription started (else was created), in ms; null when Polar left both out. */

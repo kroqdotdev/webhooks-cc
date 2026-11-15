@@ -120,6 +120,11 @@ export async function supersedeCheckoutLinks(
       .in("status", ["open", "expired"])
       .is("cancelled_at", null);
     if (replacedError) throw replacedError;
+
+    // This session's purchase was undone, so it must never pay a link
+    // later: superseded links (another of their sessions may still pay
+    // them, settlePaid()) let go of it.
+    await forgetUndoneSession(checkoutId);
   }
   if (named && (!checkoutId || safeId)) {
     // The link first, then whether the payment is its account's: a link
@@ -162,6 +167,34 @@ export async function supersedeCheckoutLinks(
         .is("paid_at", null);
       if (stampError) throw stampError;
     }
+  }
+}
+
+/**
+ * Removes a session whose purchase was undone from the replaced sessions of
+ * superseded links, which a payment of one of them could otherwise still
+ * pay (settlePaid() pays superseded links through their other sessions).
+ * Each row is rewritten only while it still lists the session and is still
+ * superseded, so a concurrent change is never overwritten with a stale list.
+ */
+async function forgetUndoneSession(checkoutId: string): Promise<void> {
+  const admin = createAdminClient();
+  const { data: rows, error } = await admin
+    .from("billing_checkouts")
+    .select("id, previous_checkout_ids")
+    .contains("previous_checkout_ids", [checkoutId])
+    .eq("status", "superseded");
+  if (error) throw error;
+  for (const row of rows ?? []) {
+    const previous = row.previous_checkout_ids ?? [];
+    const { error: writeError } = await admin
+      .from("billing_checkouts")
+      .update({ previous_checkout_ids: previous.filter((id) => id !== checkoutId) })
+      .eq("id", row.id)
+      .eq("status", "superseded")
+      // Session ids are [A-Za-z0-9_-] (POLAR_CHECKOUT_ID), so no element needs quoting.
+      .filter("previous_checkout_ids", "eq", `{${previous.join(",")}}`);
+    if (writeError) throw writeError;
   }
 }
 

@@ -516,13 +516,22 @@ describe("checkout links", () => {
     // paid or expires.
     const more = await create(ownerKey.raw, { ...body, seats: 5 });
     expect(more.status).toBe(201);
+    // The page says so before the person continues, with when to try again.
+    const moreReview = (await review(ownerToken, more.body.checkout.id)).body.review;
+    expect(moreReview).toMatchObject({ status: "open", unavailableCode: "checkout_in_progress" });
+    expect(String(moreReview?.unavailable)).toMatch(/open until \d\d:\d\d UTC \(/);
     const moreOpened = await open(ownerToken, more.body.checkout.id);
     expect(moreOpened.status).toBe(409);
     expect(moreOpened.body.code).toBe("checkout_in_progress");
+    expect((moreOpened.body as { error?: string }).error).toMatch(/open until \d\d:\d\d UTC \(/);
     expect(polar.create).toHaveBeenCalledTimes(1);
     expect(await teamOpen()).toMatchObject({ id: firstSession, seats: 3, fixed: true });
 
     // The first link still goes to its own session, which still sells 3 seats.
+    expect((await review(ownerToken, first)).body.review).toMatchObject({
+      unavailable: null,
+      unavailableCode: null,
+    });
     expect((await open(ownerToken, first)).body.url).toBe(opened.body.url);
     expect(polar.create).toHaveBeenCalledTimes(1);
 
@@ -1279,5 +1288,157 @@ describe("checkout links", () => {
       metadata: { checkout_link: id },
     });
     expect((await read(ownerKey.raw, id)).body.checkout.status).toBe("open");
+  });
+});
+
+describe("checkout links let go of or settled late", () => {
+  it("stamps when the person opened it, and keeps it once the session is let go of", async () => {
+    const userId = await makeUser("opened-at");
+    const key = await makeKey(userId);
+    const token = await sessionToken(userId);
+    const id = (await create(key.raw, { kind: "plan", plan: "pro" })).body.checkout.id;
+    expect((await stored(id)).opened_at).toBeNull();
+    expect((await read(key.raw, id)).body.checkout.opened).toBe(false);
+    expect((await open(token, id)).body.status).toBe("redirect");
+    const openedAt = (await stored(id)).opened_at;
+    expect(openedAt).not.toBeNull();
+    const { detachCheckoutLinks } = await import("@/lib/billing/checkout-link-rows");
+    await detachCheckoutLinks(String((await stored(id)).polar_checkout_id));
+    expect(await stored(id)).toMatchObject({ polar_checkout_id: null, opened_at: openedAt });
+    expect((await read(key.raw, id)).body.checkout.opened).toBe(true);
+    // Opening again keeps the first stamp.
+    expect((await open(token, id)).body.status).toBe("redirect");
+    expect((await stored(id)).opened_at).toBe(openedAt);
+  });
+
+  it("expires one Polar could not be read about as unsettled, and never says nothing was charged", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    const userId = await makeUser("unsettled");
+    const key = await makeKey(userId);
+    const token = await sessionToken(userId);
+    const id = (await create(key.raw, { kind: "plan", plan: "pro" })).body.checkout.id;
+    await open(token, id);
+    await admin
+      .from("billing_checkouts")
+      .update({ expires_at: new Date(Date.now() - 16 * 60_000).toISOString() })
+      .eq("id", id);
+    polar.get.mockRejectedValueOnce(new Error("Polar is down"));
+    expect((await read(key.raw, id)).body.checkout).toMatchObject({
+      status: "expired",
+      expiredReason: "unsettled",
+    });
+    expect((await stored(id)).expired_reason).toBe("unsettled");
+    expect((await review(token, id)).body.review).toMatchObject({
+      status: "expired",
+      expiredReason: "unsettled",
+    });
+    expect((await open(token, id)).body).toMatchObject({
+      status: "expired",
+      expiredReason: "unsettled",
+    });
+
+    // One Polar says expired has no reason.
+    const plain = (await create(key.raw, { kind: "plan", plan: "pro" })).body.checkout.id;
+    await open(token, plain);
+    await admin
+      .from("billing_checkouts")
+      .update({ expires_at: new Date(Date.now() - 60_000).toISOString() })
+      .eq("id", plain);
+    polar.get.mockResolvedValueOnce({
+      id: String((await stored(plain)).polar_checkout_id),
+      status: "expired",
+    });
+    expect((await read(key.raw, plain)).body.checkout).toMatchObject({
+      status: "expired",
+      expiredReason: null,
+    });
+  });
+
+  it("lets an undone session go for good, and pays a superseded link through its own session", async () => {
+    const userId = await makeUser("undone");
+    const key = await makeKey(userId);
+    const token = await sessionToken(userId);
+    const id = (await create(key.raw, { kind: "plan", plan: "pro" })).body.checkout.id;
+    await open(token, id);
+    // The link followed two sessions before its own third one.
+    const [s1, s2, s3] = [1, 2, 3].map((n) => `polar_checkout_undone_${n}_${ts}`);
+    await admin
+      .from("billing_checkouts")
+      .update({ polar_checkout_id: s3, previous_checkout_ids: [s1, s2] })
+      .eq("id", id);
+    const { supersedeCheckoutLinks } = await import("@/lib/billing/checkout-link-rows");
+
+    // The first session's purchase is undone: the link reads superseded and
+    // lets go of that session.
+    await supersedeCheckoutLinks(s1, null, null);
+    expect(await stored(id)).toMatchObject({
+      status: "superseded",
+      paid_checkout_id: s1,
+      previous_checkout_ids: [s2],
+    });
+    // The second one's purchase is undone too: let go of as well, so a
+    // later event for it never pays the link.
+    await supersedeCheckoutLinks(s2, null, null);
+    expect((await stored(id)).previous_checkout_ids).toEqual([]);
+    await deliver("order.paid", {
+      id: `order_undone_2_${ts}`,
+      checkout_id: s2,
+      product_id: "prod_pro_test",
+      status: "paid",
+      net_amount: 800,
+      currency: "usd",
+    });
+    expect((await stored(id)).status).toBe("superseded");
+
+    // Its own session's payment stands: the link reads paid.
+    await deliver("order.paid", {
+      id: `order_undone_3_${ts}`,
+      checkout_id: s3,
+      product_id: "prod_pro_test",
+      status: "paid",
+      net_amount: 800,
+      currency: "usd",
+    });
+    expect(await stored(id)).toMatchObject({ status: "paid", paid_checkout_id: s3 });
+    expect((await read(key.raw, id)).body.checkout).toMatchObject({
+      status: "paid",
+      matches: true,
+    });
+  });
+
+  it("never pays a link through a replaced session with a one-time order that was refunded", async () => {
+    const userId = await makeUser("refunded");
+    const key = await makeKey(userId);
+    const token = await sessionToken(userId);
+    const id = (await create(key.raw, { kind: "plan", plan: "pro" })).body.checkout.id;
+    await open(token, id);
+    const [s1, s2] = [1, 2].map((n) => `polar_checkout_refunded_${n}_${ts}`);
+    await admin
+      .from("billing_checkouts")
+      .update({ polar_checkout_id: s2, previous_checkout_ids: [s1] })
+      .eq("id", id);
+    const order = `order_refunded_${ts}`;
+    const { error } = await admin.from("polar_refunds").insert({
+      target: `order:${order}`,
+      reason: "addon_not_applied",
+      user_id: userId,
+      status: "held",
+      hold_reason: "manual",
+    });
+    if (error) throw error;
+    try {
+      await deliver("order.paid", {
+        id: order,
+        checkout_id: s1,
+        product_id: "prod_pro_test",
+        status: "paid",
+        net_amount: 800,
+        currency: "usd",
+        metadata: { checkout_link: id },
+      });
+      expect(await stored(id)).toMatchObject({ status: "open", polar_checkout_id: s2 });
+    } finally {
+      await admin.from("polar_refunds").delete().eq("target", `order:${order}`);
+    }
   });
 });

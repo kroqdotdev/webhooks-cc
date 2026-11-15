@@ -2168,6 +2168,13 @@ export interface CheckoutLink {
   createdAt: string;
   expiresAt: string;
   paidAt: string | null;
+  /**
+   * Why an expired link expired, when it may have been paid: "unsettled"
+   * (Polar was still confirming a payment a day later, or could not be read
+   * about it). A payment that lands still turns it paid, and webhooks.cc
+   * has been alerted. Null otherwise; absent from servers released before it.
+   */
+  expiredReason?: "unsettled" | null;
   /** Once paid: what the order or subscription holds. */
   bought: CheckoutBought | null;
   /**

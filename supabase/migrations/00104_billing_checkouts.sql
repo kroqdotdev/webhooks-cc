@@ -18,7 +18,8 @@
 -- buy (expected). The Polar webhook marks a row paid when the session's
 -- order or subscription arrives, recording what it actually holds (bought);
 -- a read past expires_at settles it from Polar, at most every 30 seconds
--- (polar_checked_at). A link whose subscription was ended as the account's
+-- (polar_checked_at), and one it could not settle expires as 'unsettled'
+-- (expired_reason). A link whose subscription was ended as the account's
 -- second plan subscription (a refund queued for review) is superseded, never
 -- paid. A link answers 404 once its account or team is deleted: the rows
 -- cascade with it.
@@ -86,10 +87,22 @@ create table if not exists public.billing_checkouts (
   detached_at         timestamptz,
   -- A lease while a session is being made for it, so two tabs make one.
   opening_at          timestamptz,
+  -- When the person first continued to payment (the first opening lease):
+  -- from then on a Polar session may exist for the link, a team's that
+  -- names it in its metadata included, so a payment may still land after
+  -- it expires. Kept when the session is later detached or replaced.
+  opened_at           timestamptz,
   -- The last time a read past expiry asked Polar about the session.
   polar_checked_at    timestamptz,
   status              text not null default 'open'
                         check (status in ('open', 'paid', 'expired', 'superseded')),
+  -- Why an opened link expired without being paid, when Polar never said
+  -- it was not: 'unsettled', a payment Polar was still confirming a day
+  -- past its expiry, or sessions Polar could not be read about 15 minutes
+  -- past it. Such a link may have been paid (the payment still marks it
+  -- paid when it lands), so it never reads "nothing was charged", and
+  -- someone is alerted.
+  expired_reason      text check (expired_reason in ('unsettled')),
   created_at          timestamptz not null default now(),
   expires_at          timestamptz not null,
   paid_at             timestamptz,

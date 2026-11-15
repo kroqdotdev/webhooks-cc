@@ -164,3 +164,20 @@ async fn a_slow_poll_never_outlasts_the_timeout() {
     assert!(stderr.contains("\"timeout\""), "{stderr}");
     assert!(output.stdout.is_empty());
 }
+
+#[tokio::test]
+async fn help_says_wait_with_json_prints_ndjson() {
+    let home = Home::new();
+    let output = home
+        .command("http://127.0.0.1:9", &["billing", "checkout", "--help"])
+        .output()
+        .await
+        .unwrap();
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(output.status.success(), "{stdout}");
+    assert!(
+        stdout.contains("With --wait --json it prints NDJSON: one line when the link is made"),
+        "{stdout}"
+    );
+    assert!(stdout.contains("and one when it settles"), "{stdout}");
+}

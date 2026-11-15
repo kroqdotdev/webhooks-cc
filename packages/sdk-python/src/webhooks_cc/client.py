@@ -2119,46 +2119,68 @@ class Billing:
         confirms late can still turn it paid; at once otherwise),
         :class:`CheckoutSupersededError` when its purchase was undone as a duplicate,
         and :class:`TimeoutError` when ``timeout`` passes first (default:
-        until it expires). Polls at least a second apart. ``matches`` ``None``
-        on the paid link is not known yet, never a mismatch."""
+        until it expires). The expired error's ``reason`` is ``"unsettled"`` when
+        the person may have paid. A poll that fails for now (a 5xx, a 429, a
+        network error or a timed-out poll) is tried again until the deadline; any
+        other failure is raised. Polls at least a second apart. ``matches``
+        ``None`` on the paid link is not known yet, never a mismatch."""
         _validate_segment(checkout_id, "checkout id")
         interval = max(1000.0, parse_duration(poll_interval))
         grace = max(0.0, parse_duration(expired_grace))
         timeout_ms = None if timeout is None else parse_duration(timeout)
         deadline = None if timeout_ms is None else time.monotonic() * 1000 + timeout_ms
-        # When the link first read expired, while it may still turn paid.
+        # When the link first read expired, while it may still turn paid, and
+        # how it read then.
         expired_at: float | None = None
+        reason: Literal["unsettled"] | None = None
+
+        def expired_error() -> CheckoutExpiredError:
+            return CheckoutExpiredError(checkout_id, reason=reason)
 
         def timed_out() -> Exception:
             if expired_at is not None:
-                return CheckoutExpiredError(checkout_id)
+                return expired_error()
             return TimeoutError(timeout_ms or 0, "Timed out waiting for the checkout to be paid")
 
         while True:
             if deadline is not None and time.monotonic() * 1000 >= deadline:
                 raise timed_out()
-            checkout = CheckoutLink.from_dict(
-                _checkout_of(
-                    self._client._api(
-                        "GET", f"/billing/checkouts/{checkout_id}", deadline_ms=deadline
-                    )
+            wait = interval
+            try:
+                answer = self._client._api(
+                    "GET", f"/billing/checkouts/{checkout_id}", deadline_ms=deadline
                 )
-            )
+            except (httpx.TransportError, TimeoutError, RateLimitError, WebhooksCCError) as error:
+                if not _fails_for_now(error):
+                    raise
+                # Our side, a rate limit or the network: poll again until the
+                # deadline, after as long as the server asked.
+                if isinstance(error, RateLimitError) and error.retry_after is not None:
+                    wait = max(interval, error.retry_after * 1000.0)
+                if deadline is not None:
+                    left = deadline - time.monotonic() * 1000
+                    if left <= 0:
+                        raise timed_out() from None
+                    wait = min(wait, left)
+                _sleep_ms(wait)
+                continue
+            checkout = CheckoutLink.from_dict(_checkout_of(answer))
             if checkout.status == "paid":
                 return checkout
             if checkout.status == "superseded":
                 raise CheckoutSupersededError(checkout_id)
             if checkout.status == "expired":
+                reason = checkout.expired_reason
                 if not _may_still_be_paid(checkout):
-                    raise CheckoutExpiredError(checkout_id)
+                    raise expired_error()
                 now = time.monotonic() * 1000
                 if expired_at is None:
                     expired_at = now
                 if now - expired_at >= grace:
-                    raise CheckoutExpiredError(checkout_id)
+                    raise expired_error()
             else:
                 expired_at = None
-            wait = interval
+                reason = None
             if deadline is not None:
                 left = deadline - time.monotonic() * 1000
                 if left <= 0:
@@ -2174,6 +2196,15 @@ class Billing:
         _validate_segment(checkout_id, "checkout id")
         data = self._client._api("DELETE", f"/billing/checkouts/{checkout_id}")
         return CheckoutLink.from_dict(_checkout_of(data))
+
+
+def _fails_for_now(error: Exception) -> bool:
+    """Whether a failed poll is worth asking again until the wait's deadline: our
+    side (5xx), a rate limit, a poll that timed out, or the network. The API's
+    refusals (a 401, a 404 and the like) are final."""
+    if isinstance(error, (httpx.TransportError, TimeoutError, RateLimitError)):
+        return True
+    return isinstance(error, WebhooksCCError) and error.status_code >= 500
 
 
 def _checkout_of(data: Any) -> Mapping[str, Any]:

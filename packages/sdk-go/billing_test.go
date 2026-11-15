@@ -194,6 +194,83 @@ func TestWaitForCheckoutEnds(t *testing.T) {
 	}
 }
 
+func TestWaitForCheckoutKeepsPollingThroughFailuresForNow(t *testing.T) {
+	api := newFakeAPI(t)
+	var polls atomic.Int32
+	api.handle("GET /api/billing/checkouts/"+checkoutID, func(w http.ResponseWriter, r *http.Request) {
+		switch polls.Add(1) {
+		case 1:
+			writeJSON(w, http.StatusServiceUnavailable, map[string]any{"error": "busy"})
+		case 2:
+			writeJSON(w, http.StatusTooManyRequests, map[string]any{"error": "slow down"})
+		case 3:
+			writeJSON(w, http.StatusBadGateway, map[string]any{"error": "bad gateway"})
+		default:
+			writeJSON(w, http.StatusOK, checkoutAnswer("paid"))
+		}
+	})
+	// No retries of the client's own: the wait itself asks again.
+	client := api.client(webhookscc.WithRetry(webhookscc.RetryOptions{MaxAttempts: 1}))
+	link, err := client.Billing.WaitForCheckout(context.Background(), checkoutID, webhookscc.WaitForCheckoutOptions{PollInterval: time.Second, Timeout: 10 * time.Second})
+	if err != nil || link.Status != "paid" {
+		t.Fatalf("link = %+v, err = %v", link, err)
+	}
+	if n := polls.Load(); n != 4 {
+		t.Fatalf("polls = %d, want 4", n)
+	}
+}
+
+func TestWaitForCheckoutKeepsPollingThroughTheNetwork(t *testing.T) {
+	api := newFakeAPI(t)
+	url := api.server.URL
+	api.server.Close() // every poll fails to connect
+	client, err := webhookscc.New(webhookscc.WithAPIKey("whcc_test"), webhookscc.WithBaseURL(url+"/"),
+		webhookscc.WithRetry(webhookscc.RetryOptions{MaxAttempts: 1}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = client.Billing.WaitForCheckout(context.Background(), checkoutID, webhookscc.WaitForCheckoutOptions{PollInterval: time.Second, Timeout: 1500 * time.Millisecond})
+	if !errors.Is(err, webhookscc.ErrTimeout) {
+		t.Fatalf("err = %v, want ErrTimeout once the deadline passed", err)
+	}
+}
+
+func TestWaitForCheckoutEndsOnARefusal(t *testing.T) {
+	api := newFakeAPI(t)
+	var polls atomic.Int32
+	api.handle("GET /api/billing/checkouts/"+checkoutID, func(w http.ResponseWriter, r *http.Request) {
+		polls.Add(1)
+		writeJSON(w, http.StatusNotFound, map[string]any{"error": "Checkout link not found"})
+	})
+	_, err := api.client().Billing.WaitForCheckout(context.Background(), checkoutID, webhookscc.WaitForCheckoutOptions{PollInterval: time.Second, Timeout: 10 * time.Second})
+	if !errors.Is(err, webhookscc.ErrNotFound) || polls.Load() != 1 {
+		t.Fatalf("err = %v after %d polls, want ErrNotFound at once", err, polls.Load())
+	}
+}
+
+func TestWaitForCheckoutSaysAnUnsettledLinkMayHaveBeenPaid(t *testing.T) {
+	api := newFakeAPI(t)
+	api.handle("GET /api/billing/checkouts/"+checkoutID, func(w http.ResponseWriter, r *http.Request) {
+		answer := checkoutAnswer("expired")
+		link := answer["checkout"].(map[string]any)
+		link["expiredReason"] = "unsettled"
+		// A day past its expiry: no more polling.
+		link["expiresAt"] = time.Now().Add(-25 * time.Hour).UTC().Format(time.RFC3339Nano)
+		writeJSON(w, http.StatusOK, answer)
+	})
+	_, err := api.client().Billing.WaitForCheckout(context.Background(), checkoutID, webhookscc.WaitForCheckoutOptions{})
+	if !errors.Is(err, webhookscc.ErrCheckoutUnsettled) || !errors.Is(err, webhookscc.ErrCheckoutExpired) {
+		t.Fatalf("err = %v, want ErrCheckoutUnsettled, which is also ErrCheckoutExpired", err)
+	}
+	if msg := err.Error(); !strings.Contains(msg, "if the person paid, it is still applied") || !strings.Contains(msg, "has been alerted") {
+		t.Fatalf("err = %q", msg)
+	}
+	link, err := api.client().Billing.GetCheckout(context.Background(), checkoutID)
+	if err != nil || link.ExpiredReason != "unsettled" {
+		t.Fatalf("link = %+v, err = %v", link, err)
+	}
+}
+
 func TestCancelCheckout(t *testing.T) {
 	api := newFakeAPI(t)
 	api.handle("DELETE /api/billing/checkouts/"+checkoutID, func(w http.ResponseWriter, r *http.Request) {
