@@ -52,7 +52,9 @@ type Phase =
   | { kind: "loading" }
   | { kind: "review"; review: Review }
   | { kind: "approved"; code: string }
-  | { kind: "done"; summary: string }
+  | { kind: "done"; summary: string; note?: string }
+  | { kind: "unchanged"; reason: string }
+  | { kind: "unknown"; reason: string }
   | { kind: "withdrawn" }
   | { kind: "collected" }
   | { kind: "denied" }
@@ -78,6 +80,7 @@ const GOOGLE_LATE =
 const WORKING: Record<string, string> = {
   "ai.assist": "Running AI setup, this can take up to a minute...",
   "google.connect": "Opening Google...",
+  "billing.change": "Making the change...",
   "google.pick": "Choose a spreadsheet in Google's window...",
 };
 
@@ -165,8 +168,24 @@ function ApproveContent() {
           ...(input ? { input } : {}),
         }),
       });
-      const result = (await response.json()) as { status?: string; error?: string; url?: string };
+      const result = (await response.json()) as {
+        status?: string;
+        error?: string;
+        url?: string;
+        reason?: string;
+        note?: string;
+      };
       if (!response.ok) throw new Error(result.error || "That did not work. Try again.");
+      // A billing change refused on a fresh quote: nothing was changed.
+      if (result.status === "unchanged") {
+        setPhase({ kind: "unchanged", reason: result.reason ?? "Nothing was changed." });
+        return;
+      }
+      // Polar was asked and then something failed: it may have happened.
+      if (result.status === "unknown") {
+        setPhase({ kind: "unknown", reason: result.reason ?? "Check billing." });
+        return;
+      }
       // A Google connection: on to Google, which comes back to this page.
       if (result.status === "redirect" && result.url) {
         window.location.assign(result.url);
@@ -175,7 +194,7 @@ function ApproveContent() {
       if (!approve) setPhase({ kind: "denied" });
       // "done": it ran on approval (a share link, a domain removed); else the
       // asker collects it (a new key) and it can still be withdrawn.
-      else if (result.status === "done") setPhase({ kind: "done", summary });
+      else if (result.status === "done") setPhase({ kind: "done", summary, note: result.note });
       else setPhase({ kind: "approved", code: userCode });
     } catch (err) {
       setProblem(err instanceof Error ? err.message : "That did not work. Try again.");
@@ -285,7 +304,25 @@ function ApproveContent() {
               <span className="block my-3 font-medium text-foreground ph-no-capture">
                 {phase.summary}
               </span>
+              {phase.note && (
+                <span className="block mb-3 font-medium text-foreground">{phase.note}</span>
+              )}
               Whoever asked can see the result now. You can close this page.
+            </Notice>
+          )}
+
+          {phase.kind === "unknown" && (
+            <Notice title="Check billing">
+              <span className="block my-3 font-medium text-foreground">{phase.reason}</span>
+              Look at the plan and invoices on the billing page before anyone asks again. Whoever
+              asked sees this too.
+            </Notice>
+          )}
+
+          {phase.kind === "unchanged" && (
+            <Notice title="Nothing was changed">
+              <span className="block my-3 font-medium text-foreground">{phase.reason}</span>
+              Whoever asked sees this too, and can ask again for a new quote.
             </Notice>
           )}
 
@@ -398,6 +435,19 @@ function ago(timestamp: number): string {
   return minutes === 1 ? "1 minute ago" : `${minutes} minutes ago`;
 }
 
+/** What approving a billing change does to the card, on its button. */
+function billingApproveLabel(page: Record<string, unknown> | null): string {
+  // Overage: nothing now, at most this much at the end of each period.
+  if (typeof page?.maxPeriodCents === "number") {
+    return `Approve up to $${(page.maxPeriodCents / 100).toFixed(2)} per period`;
+  }
+  const cents = typeof page?.dueNowCents === "number" ? page.dueNowCents : 0;
+  if (page?.applies === "checkout") return "Approve and continue to the checkout";
+  if (cents <= 0) return "Approve";
+  const amount = `$${(cents / 100).toFixed(2)}`;
+  return `Approve and pay ${page?.approximate ? "about " : ""}${amount}`;
+}
+
 function ReviewPanel(props: {
   review: Review;
   email: string | null;
@@ -500,7 +550,9 @@ function ReviewPanel(props: {
               ? "Approve and continue to Google"
               : review.action === "google.pick"
                 ? "Approve and choose the spreadsheet"
-                : "Approve"}
+                : review.action === "billing.change"
+                  ? billingApproveLabel(review.page)
+                  : "Approve"}
         </Button>
         <Button
           variant="surface"

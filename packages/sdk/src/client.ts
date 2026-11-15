@@ -15,6 +15,8 @@
  */
 import { apiUserAgent } from "./user-agent";
 import type {
+  BillingChangeResult,
+  BillingTarget,
   BillingSummary,
   CapacityResource,
   CapacityState,
@@ -338,6 +340,18 @@ export function validatePathSegment(segment: string, name: string): void {
       `Invalid ${name}: must contain only alphanumeric characters, hyphens, and underscores`
     );
   }
+}
+
+/**
+ * The team a billing call names: undefined only when `teamId` was left out
+ * (the account's own billing). Any value given, an empty string included,
+ * must be a valid id, so a bad one never falls back to the account.
+ */
+function billingTeamId(options: { teamId?: string } | undefined): string | undefined {
+  if (!options || options.teamId === undefined) return undefined;
+  if (typeof options.teamId !== "string") throw new Error("Invalid teamId: must be a string");
+  validatePathSegment(options.teamId, "teamId");
+  return options.teamId;
 }
 
 /**
@@ -1986,6 +2000,57 @@ export class WebhooksCC {
           description: "What changing a team's seat count would cost (owner only)",
           params: { teamId: "string", seats: "number" },
         },
+        changePlan: {
+          description:
+            "Change the plan or interval (pro/business, or team/team_business with teamId). With an API key the owner approves the quote first (PendingApproval; the result's executed is false when the quote changed)",
+          params: {
+            plan: '"pro" | "business" | "team" | "team_business"',
+            interval: '"month" | "year"?',
+            teamId: "string?",
+          },
+        },
+        keepPlan: {
+          description:
+            "Drop a plan change waiting for the renewal (PendingApproval with an API key)",
+          params: { teamId: "string?" },
+        },
+        setSeats: {
+          description:
+            "Change a team's seat count: more now (charged pro rata), fewer at the renewal (PendingApproval with an API key)",
+          params: { teamId: "string", seats: "number" },
+        },
+        setMonthlyBlocks: {
+          description:
+            "Set the add-on blocks renewed every period; 0 ends them; more are paid at a checkout (PendingApproval with an API key)",
+          params: {
+            blocks: "number",
+            resource: '"requests" | "pages" | "domains"?',
+            teamId: "string?",
+          },
+        },
+        buyBlocks: {
+          description: "Buy one-time blocks, paid at a checkout (PendingApproval with an API key)",
+          params: { blocks: "number", resource: '"requests" | "pages"?', teamId: "string?" },
+        },
+        setOverage: {
+          description:
+            "Turn overage on (maxBlocks a period) or off (PendingApproval with an API key)",
+          params: {
+            enabled: "boolean",
+            maxBlocks: "number?",
+            resource: '"requests" | "pages"?',
+            teamId: "string?",
+          },
+        },
+        cancel: {
+          description:
+            "Cancel the subscription at the period end (PendingApproval with an API key)",
+          params: { teamId: "string?" },
+        },
+        resubscribe: {
+          description: "Undo a cancellation (PendingApproval with an API key)",
+          params: { teamId: "string?" },
+        },
       },
       apiKeys: {
         list: { description: "List the account's API keys", params: {} },
@@ -2507,12 +2572,9 @@ export class WebhooksCC {
       options: { resource?: CapacityResource; teamId?: string } = {}
     ): Promise<CapacityState> => {
       const query = `?resource=${encodeURIComponent(options.resource ?? "requests")}`;
-      if (options.teamId) {
-        validatePathSegment(options.teamId, "teamId");
-        return this.request<CapacityState>(
-          "GET",
-          `/teams/${options.teamId}/billing/capacity${query}`
-        );
+      const teamId = billingTeamId(options);
+      if (teamId !== undefined) {
+        return this.request<CapacityState>("GET", `/teams/${teamId}/billing/capacity${query}`);
       }
       return this.request<CapacityState>("GET", `/billing/capacity${query}`);
     },
@@ -2538,7 +2600,145 @@ export class WebhooksCC {
         `/teams/${teamId}/billing/seats?seats=${encodeURIComponent(String(seats))}`
       );
     },
+
+    /**
+     * Change the plan or its interval: "pro" or "business" for the account,
+     * "team" or "team_business" with `teamId`. With an API key the owner
+     * approves the quoted change first (what changes, when, what is charged
+     * now): show them `url`, then `wait()`. A browser session changes it at
+     * once.
+     */
+    changePlan: async (
+      options: BillingTarget & {
+        plan: "pro" | "business" | "team" | "team_business";
+        interval?: "month" | "year";
+      }
+    ): Promise<PendingApproval<BillingChangeResult>> => {
+      const team = options.plan === "team" || options.plan === "team_business";
+      const teamId = billingTeamId(options);
+      if (team !== (teamId !== undefined)) {
+        throw new Error(
+          team ? "a team plan needs teamId" : "pro and business are the account's own plans"
+        );
+      }
+      return this.billingChange(teamId, teamId !== undefined ? "plan" : "change-plan", {
+        plan: options.plan,
+        interval: options.interval ?? "month",
+      });
+    },
+
+    /** Drop a plan change waiting for the renewal. With an API key the owner approves first. */
+    keepPlan: async (
+      options: BillingTarget = {}
+    ): Promise<PendingApproval<BillingChangeResult>> => {
+      const teamId = billingTeamId(options);
+      return teamId !== undefined
+        ? this.billingChange(teamId, "plan", { action: "keep" })
+        : this.billingChange(undefined, "change-plan", null);
+    },
+
+    /**
+     * Change a team's seat count: more now (charged pro rata), fewer from the
+     * renewal. With an API key the team's owner approves the quote first.
+     */
+    setSeats: async (
+      teamId: string,
+      seats: number
+    ): Promise<PendingApproval<BillingChangeResult>> => {
+      if (!Number.isInteger(seats) || seats < 1) throw new Error("seats must be a whole number");
+      const team = billingTeamId({ teamId });
+      if (team === undefined) throw new Error("setSeats needs a teamId");
+      return this.billingChange(team, "seats", { seats });
+    },
+
+    /**
+     * Set the add-on blocks renewed every period (0 ends them at the
+     * renewal). More than now are paid at a checkout the owner is sent to on
+     * approval. With an API key the owner approves the quote first.
+     */
+    setMonthlyBlocks: async (
+      options: BillingTarget & { blocks: number; resource?: CapacityResource }
+    ): Promise<PendingApproval<BillingChangeResult>> => {
+      return this.billingChange(billingTeamId(options), "capacity", {
+        action: "set_monthly_blocks",
+        blocks: options.blocks,
+        resource: options.resource ?? "requests",
+      });
+    },
+
+    /** Buy one-time blocks that never expire, paid at a checkout. With an API key the owner approves first. */
+    buyBlocks: async (
+      options: BillingTarget & { blocks: number; resource?: "requests" | "pages" }
+    ): Promise<PendingApproval<BillingChangeResult>> => {
+      return this.billingChange(billingTeamId(options), "capacity", {
+        action: "buy_blocks",
+        blocks: options.blocks,
+        resource: options.resource ?? "requests",
+      });
+    },
+
+    /**
+     * Turn overage on, with a maximum a period in blocks, or off. With an API
+     * key the owner approves first.
+     */
+    setOverage: async (
+      options: BillingTarget & {
+        enabled: boolean;
+        maxBlocks?: number;
+        resource?: "requests" | "pages";
+      }
+    ): Promise<PendingApproval<BillingChangeResult>> => {
+      return this.billingChange(billingTeamId(options), "capacity", {
+        action: "set_overage",
+        enabled: options.enabled,
+        ...(options.maxBlocks !== undefined ? { maxBlocks: options.maxBlocks } : {}),
+        resource: options.resource ?? "requests",
+      });
+    },
+
+    /** Cancel the subscription at the end of the period. With an API key the owner approves first. */
+    cancel: async (options: BillingTarget = {}): Promise<PendingApproval<BillingChangeResult>> => {
+      return this.billingChange(billingTeamId(options), "cancel", {});
+    },
+
+    /** Undo a cancellation, so the subscription renews. With an API key the owner approves first. */
+    resubscribe: async (
+      options: BillingTarget = {}
+    ): Promise<PendingApproval<BillingChangeResult>> => {
+      return this.billingChange(billingTeamId(options), "resubscribe", {});
+    },
   };
+
+  /**
+   * Sends a billing change to the account's billing route (or the team's);
+   * `body` null is a DELETE. An API key gets the owner's approval back.
+   */
+  private async billingChange(
+    teamId: string | undefined,
+    route: string,
+    body: Record<string, unknown> | null
+  ): Promise<PendingApproval<BillingChangeResult>> {
+    if (teamId !== undefined) validatePathSegment(teamId, "teamId");
+    const path = teamId !== undefined ? `/teams/${teamId}/billing/${route}` : `/billing/${route}`;
+    const answer = await this.request<Record<string, unknown> | undefined>(
+      body === null ? "DELETE" : "POST",
+      path,
+      body ?? undefined,
+      { repeatable: false }
+    );
+    return this.pendingOr(
+      answer as { approval?: Approval } | undefined,
+      "billing.change",
+      "Made the billing change.",
+      (): BillingChangeResult =>
+        typeof answer?.url === "string"
+          ? { executed: true, applied: "checkout", checkout: "opened", checkoutUrl: answer.url }
+          : {
+              executed: true,
+              applied: answer?.applied === "renewal" ? "renewal" : "now",
+            }
+    );
+  }
 
   /**
    * An answer that is either an approval (an API key or agent asked) or what

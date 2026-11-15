@@ -127,7 +127,7 @@ await client.teams.share(active.id, "my-stripe");
 const shared = await client.endpoints.list({ team: active.name });
 ```
 
-Deleting a team ends its subscription at once and cannot be undone, so when an API key or agent asks for it, you [approve it](/docs/agents#approvals) first; with your own signed-in session it happens at once. An invite emails the address the asker names, so one asked for with an API key or agent token (from the CLI, the SDK or the MCP server's `invite_to_team`) also waits for your approval. Accepting an invite claims one of the team's paid seats. Subscribing a team, changing its plan or seats, and paying stay in the browser; billing routes reject API keys. `whk teams quote` and `quote_team_change` price a change first.
+Deleting a team ends its subscription at once and cannot be undone, so when an API key or agent asks for it, you [approve it](/docs/agents#approvals) first; with your own signed-in session it happens at once. An invite emails the address the asker names, so one asked for with an API key or agent token (from the CLI, the SDK or the MCP server's `invite_to_team`) also waits for your approval. Accepting an invite claims one of the team's paid seats. Subscribing a team stays in the browser. Changing its plan or seats, its add-ons, or cancelling it, asked with an API key of the owner, is an [approval](/docs/agents#billing-changes) shown with its price (`whk billing seats 5 --team Payments`, `set_seats`, `change_plan`); `whk teams quote` and `quote_team_change` price a change without asking for it.
 
 **Quota.** `whk usage` and the MCP `get_usage` tool show each subscribed team's pool under your personal plan. In the SDK, `teams.list()` returns `requestsUsed`, `requestLimit`, `seats`, and `periodEnd` per team.
 

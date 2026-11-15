@@ -14,6 +14,7 @@ import { errors } from "@polar-sh/sdk/2026-10";
 import { ENTITLEMENTS, teamRequestLimit } from "@/lib/entitlements";
 import {
   creditBalanceFromOrders,
+  pastApprovedPeriod,
   quotePlanChange,
   quoteSeatChange,
   type PlanChangeQuote,
@@ -605,15 +606,66 @@ export async function resubscribeTeam(userId: string, teamId: string): Promise<v
   await updateTeamById(team.id, { cancel_at_period_end: false });
 }
 
+/**
+ * What an approved seat change was priced on (a `billing.change`
+ * approval): the seats it changes from, the end of the period a prorated
+ * charge covers, and which way the quote said it goes. An increase refuses,
+ * right before Polar is asked, when the seats or the period moved, because
+ * Polar would then charge for another period. A change quoted as an
+ * increase or a reduction refuses when this database would take it the
+ * other way (the quote reads Polar's seats, the change the database's, and
+ * the two can disagree after a failed write), so a change quoted as a
+ * reduction at the renewal is never charged now as an increase, nor an
+ * increase quoted with its charge scheduled as a reduction instead. A
+ * change quoted as the same count Polar bills already goes either way: it
+ * sets this database to Polar's count, as its sentence says
+ * (sameSeatsSentence in lib/billing/change.ts), and charges nothing.
+ */
+export interface ApprovedSeatChange {
+  /** The team's seats as this database had them when it was priced. */
+  currentSeats: number;
+  periodEnd: string;
+  /** The way the quote priced it: more seats now, the same, or fewer at the renewal. */
+  direction: SeatDirection;
+}
+
+export type SeatDirection = "increase" | "same" | "reduction";
+
+/** Which way going from `from` seats to `to` goes. */
+export function seatDirection(from: number, to: number): SeatDirection {
+  return to > from ? "increase" : to < from ? "reduction" : "same";
+}
+
+/**
+ * What an approved plan switch was priced on (a `billing.change`
+ * approval): the end of the period its prorated charge covers. A switch
+ * made now refuses, right before Polar is asked, within a minute of that
+ * end or once past it, as a seat increase does.
+ */
+export interface ApprovedPlanSwitch {
+  periodEnd: string;
+}
+
 export async function updateTeamSeats(
   userId: string,
   teamId: string,
-  seats: number
+  seats: number,
+  approved?: ApprovedSeatChange
 ): Promise<void> {
   const team = await getTeamForOwner(userId, teamId);
   assertValidSeatCount(seats, team.seats);
   if (!team.polar_subscription_id) {
     throw new TeamBillingError("no_subscription", "No active subscription");
+  }
+  if (
+    approved &&
+    approved.direction !== "same" &&
+    seatDirection(team.seats, seats) !== approved.direction
+  ) {
+    throw new TeamBillingError(
+      "quote_changed",
+      "The team's seats are not what this was priced on, so it would change another way"
+    );
   }
 
   // Increases are charged now and raise capacity now. Reductions take effect
@@ -638,6 +690,20 @@ export async function updateTeamSeats(
     const polar = createPolarClient();
     let increased: Record<string, unknown>;
     let increasedAt: Date;
+    // Checked right before the update: a renewal crossed since the
+    // approval's quote (or seats changed meanwhile) would charge a price
+    // nobody approved. The guarded Polar call still awaits the lease
+    // renewal after this check (lib/billing/polar-guard.ts), which the
+    // minute's margin before the period end covers.
+    if (
+      approved &&
+      (team.seats !== approved.currentSeats || pastApprovedPeriod(approved.periodEnd))
+    ) {
+      throw new TeamBillingError(
+        "quote_changed",
+        "The billing period or the seats moved since this was priced"
+      );
+    }
     try {
       increased = (await polar.subscriptions.update(team.polar_subscription_id, {
         seats,
@@ -777,6 +843,24 @@ export async function quoteTeamSeatChange(
   teamId: string,
   seats: number
 ): Promise<SeatChangeQuote> {
+  return (await loadTeamSeatQuote(userId, teamId, seats)).at(Date.now());
+}
+
+/**
+ * What a seat quote is computed from, read once from the team and Polar,
+ * with the quote at any moment (`at`): an approval prices it when asked and
+ * again, from a fresh read, at the moment it was asked, to see that nothing
+ * but the clock moved. `basis` is the subscription state behind it.
+ */
+export async function loadTeamSeatQuote(
+  userId: string,
+  teamId: string,
+  seats: number
+): Promise<{
+  team: BillingTeam;
+  basis: Record<string, string | number | boolean | null>;
+  at(nowMs: number): SeatChangeQuote;
+}> {
   const team = await getTeamForOwner(userId, teamId);
   assertValidSeatCount(seats, team.seats);
   if (!team.polar_subscription_id) {
@@ -802,16 +886,32 @@ export async function quoteTeamSeatChange(
   }
 
   const pendingSeats = subscription.pending_update?.seats ?? null;
+  const creditBalanceCents = creditBalanceFromOrders(orders);
 
-  return quoteSeatChange({
-    currentSeats,
-    pendingSeats,
-    newSeats: seats,
-    pricePerSeatCents: Math.round(subscription.amount / currentSeats),
-    periodStartMs: Date.parse(subscription.current_period_start),
-    periodEndMs: Date.parse(subscription.current_period_end),
-    creditBalanceCents: creditBalanceFromOrders(orders),
-  });
+  return {
+    team,
+    basis: {
+      subscriptionId: subscription.id,
+      status: subscription.status,
+      cancelAtPeriodEnd: subscription.cancel_at_period_end,
+      productId: subscription.product_id,
+      amount: subscription.amount,
+      teamSeats: team.seats,
+      teamPendingSeats: team.pending_seats,
+      pendingProduct: subscription.pending_update?.product_id ?? null,
+    },
+    at: (nowMs) =>
+      quoteSeatChange({
+        currentSeats,
+        pendingSeats,
+        newSeats: seats,
+        pricePerSeatCents: Math.round(subscription.amount / currentSeats),
+        periodStartMs: Date.parse(subscription.current_period_start),
+        periodEndMs: Date.parse(subscription.current_period_end),
+        creditBalanceCents,
+        nowMs,
+      }),
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -821,12 +921,14 @@ export async function quoteTeamSeatChange(
 /** The Polar error a declined charge maps to, or null for any other error. */
 function declinedCharge(error: unknown, what: string): TeamBillingError | null {
   // 402 covers a declined card (PaymentFailed) and a charge that needs the
-  // cardholder to authenticate (PaymentActionRequired); neither changes the
-  // subscription.
+  // cardholder to authenticate (PaymentActionRequired, its own code: Polar
+  // emails a link to confirm it, so the change may still go through once
+  // they do).
   if (!(error instanceof errors.SubscriptionsUpdate402Error)) return null;
+  const action = error.error.error === "PaymentActionRequired";
   return new TeamBillingError(
-    "payment_failed",
-    error.error.error === "PaymentActionRequired"
+    action ? "payment_action_required" : "payment_failed",
+    action
       ? `Your bank needs you to approve this payment, so ${what} yet. Approve it from the link in your Polar receipt email, or update the payment method under Invoices and payment method, and try again.`
       : `Your payment method was declined, so ${what}. Update the payment method under Invoices and payment method and try again.`
   );
@@ -900,13 +1002,22 @@ export async function changeTeamPlan(
   userId: string,
   teamId: string,
   plan: TeamPlan,
-  interval: BillingInterval
+  interval: BillingInterval,
+  approved?: ApprovedPlanSwitch
 ): Promise<{ applied: "now" | "renewal"; seatReductionLost?: number }> {
   const { team, productId, applies } = await teamForPlanChange(userId, teamId, plan, interval);
   const polar = createPolarClient();
 
   let updated: Record<string, unknown>;
   let updatedAt: Date;
+  // Checked right before the update: a switch made now is charged for the
+  // rest of the period, so one that crossed the renewal since the
+  // approval's quote would charge for a period nobody approved. The guarded
+  // Polar call still awaits the lease renewal after this check, which the
+  // minute's margin before the period end covers.
+  if (approved && applies === "now" && pastApprovedPeriod(approved.periodEnd)) {
+    throw new TeamBillingError("quote_changed", "The billing period moved since this was priced");
+  }
   try {
     updated = (await polar.subscriptions.update(team.polar_subscription_id, {
       product_id: productId,
@@ -1057,6 +1168,21 @@ export async function quoteTeamPlanChange(
   plan: TeamPlan,
   interval: BillingInterval
 ): Promise<PlanChangeQuote> {
+  return (await loadTeamPlanQuote(userId, teamId, plan, interval)).at(Date.now());
+}
+
+/** A plan quote's inputs, read once, priced at any moment (as loadTeamSeatQuote). */
+export async function loadTeamPlanQuote(
+  userId: string,
+  teamId: string,
+  plan: TeamPlan,
+  interval: BillingInterval
+): Promise<{
+  team: BillingTeam;
+  current: { plan: TeamPlan; interval: BillingInterval };
+  basis: Record<string, string | number | boolean | null>;
+  at(nowMs: number): PlanChangeQuote;
+}> {
   const { team, current, productId, applies } = await teamForPlanChange(
     userId,
     teamId,
@@ -1089,18 +1215,35 @@ export async function quoteTeamPlanChange(
     creditBalanceCents = creditBalanceFromOrders(orders);
   }
 
-  return quotePlanChange({
-    plan,
-    interval,
-    seats,
-    currentInterval: current.interval,
-    currentAmountCents: subscription.amount,
-    newPricePerSeatCents: pricePerSeat,
-    applies,
-    periodStartMs: Date.parse(subscription.current_period_start),
-    periodEndMs: Date.parse(subscription.current_period_end),
-    creditBalanceCents,
-  });
+  return {
+    team,
+    current,
+    basis: {
+      subscriptionId: subscription.id,
+      status: subscription.status,
+      cancelAtPeriodEnd: subscription.cancel_at_period_end,
+      productId: subscription.product_id,
+      teamPendingSeats: team.pending_seats,
+      pendingProduct: subscription.pending_update?.product_id ?? null,
+      pendingSeats: subscription.pending_update?.seats ?? null,
+      // The period a switch made now is charged for (ApprovedPlanSwitch).
+      periodEnd: new Date(Date.parse(subscription.current_period_end)).toISOString(),
+    },
+    at: (nowMs) =>
+      quotePlanChange({
+        plan,
+        interval,
+        seats,
+        currentInterval: current.interval,
+        currentAmountCents: subscription.amount,
+        newPricePerSeatCents: pricePerSeat,
+        applies,
+        periodStartMs: Date.parse(subscription.current_period_start),
+        periodEndMs: Date.parse(subscription.current_period_end),
+        creditBalanceCents,
+        nowMs,
+      }),
+  };
 }
 
 /** Cancels immediately. Used by team deletion, which revokes before deleting the row. */

@@ -544,7 +544,7 @@
       "sdk": ["billing.get"],
       "python": "testing-focused SDK: added on demand",
       "go": "testing-focused SDK: added on demand",
-      "cli": ["billing"],
+      "cli": ["billing show"],
       "mcp": ["get_billing"]
     },
     {
@@ -558,23 +558,48 @@
       "mcp": "get_billing returns every add-on"
     },
     {
-      "id": "billing.manage",
-      "does": "Subscribe, change plan, buy extra capacity, open the billing portal, cancel",
-      "routes": [
-        "POST /api/billing/checkout",
-        "POST /api/billing/change-plan",
-        "DELETE /api/billing/change-plan",
-        "POST /api/billing/capacity",
-        "POST /api/billing/portal",
-        "POST /api/billing/cancel",
-        "POST /api/billing/resubscribe"
-      ],
-      "sessionOnly": "payment stays with a person; planned: checkout links an agent hands over",
+      "id": "billing.checkout",
+      "does": "Subscribe to a first plan, or open the billing portal (invoices and the payment method)",
+      "routes": ["POST /api/billing/checkout", "POST /api/billing/portal"],
+      "sessionOnly": "payment stays with a person, and a portal link signs its holder in as the customer; planned: checkout links an agent hands over",
       "sdk": "session only",
       "python": "session only",
       "go": "session only",
       "cli": "session only",
       "mcp": "session only"
+    },
+    {
+      "id": "billing.change",
+      "does": "Change the plan or its interval, add-on blocks and overage, cancel or keep the plan",
+      "routes": [
+        "POST /api/billing/change-plan",
+        "DELETE /api/billing/change-plan",
+        "POST /api/billing/capacity",
+        "POST /api/billing/cancel",
+        "POST /api/billing/resubscribe"
+      ],
+      "approval": "a change can charge the account's card, so the account's owner approves each one an API key or agent asks for, shown with its quote (what changes, when, and what is charged now); approving makes it only while a fresh quote still matches",
+      "sdk": [
+        "billing.changePlan",
+        "billing.keepPlan",
+        "billing.setMonthlyBlocks",
+        "billing.buyBlocks",
+        "billing.setOverage",
+        "billing.cancel",
+        "billing.resubscribe"
+      ],
+      "python": "testing-focused SDK: added on demand",
+      "go": "testing-focused SDK: added on demand",
+      "cli": [
+        "billing plan",
+        "billing keep-plan",
+        "billing blocks",
+        "billing buy",
+        "billing overage",
+        "billing cancel",
+        "billing resume"
+      ],
+      "mcp": ["change_plan", "change_addons", "cancel_subscription", "resume_subscription"]
     },
     {
       "id": "support.tickets",
@@ -908,23 +933,59 @@
       "mcp": ["quote_team_change"]
     },
     {
-      "id": "team.billing",
-      "does": "Subscribe a team, change its plan or seats, buy capacity, open its billing portal, cancel",
+      "id": "team.billing-checkout",
+      "does": "Subscribe a team, or open its billing portal",
       "routes": [
         "POST /api/teams/[teamId]/billing/checkout",
-        "POST /api/teams/[teamId]/billing/plan",
-        "POST /api/teams/[teamId]/billing/seats",
-        "POST /api/teams/[teamId]/billing/capacity",
-        "POST /api/teams/[teamId]/billing/portal",
-        "POST /api/teams/[teamId]/billing/cancel",
-        "POST /api/teams/[teamId]/billing/resubscribe"
+        "POST /api/teams/[teamId]/billing/portal"
       ],
-      "sessionOnly": "payment stays with a person; planned: checkout links an agent hands over",
+      "sessionOnly": "payment stays with a person, and a portal link signs its holder in as the team's customer; planned: checkout links an agent hands over",
       "sdk": "session only",
       "python": "session only",
       "go": "session only",
       "cli": "session only",
       "mcp": "session only"
+    },
+    {
+      "id": "team.billing-change",
+      "does": "Change a team's plan or seats, its add-on blocks and overage, cancel or keep its subscription (the owner only)",
+      "routes": [
+        "POST /api/teams/[teamId]/billing/plan",
+        "POST /api/teams/[teamId]/billing/seats",
+        "POST /api/teams/[teamId]/billing/capacity",
+        "POST /api/teams/[teamId]/billing/cancel",
+        "POST /api/teams/[teamId]/billing/resubscribe"
+      ],
+      "approval": "a change can charge the team's card, so the team's owner approves each one an API key or agent of theirs asks for, shown with its quote; approving makes it only while a fresh quote still matches, and members' keys are refused",
+      "sdk": [
+        "billing.changePlan",
+        "billing.keepPlan",
+        "billing.setSeats",
+        "billing.setMonthlyBlocks",
+        "billing.buyBlocks",
+        "billing.setOverage",
+        "billing.cancel",
+        "billing.resubscribe"
+      ],
+      "python": "testing-focused SDK: added on demand",
+      "go": "testing-focused SDK: added on demand",
+      "cli": [
+        "billing plan",
+        "billing keep-plan",
+        "billing seats",
+        "billing blocks",
+        "billing buy",
+        "billing overage",
+        "billing cancel",
+        "billing resume"
+      ],
+      "mcp": [
+        "change_plan",
+        "set_seats",
+        "change_addons",
+        "cancel_subscription",
+        "resume_subscription"
+      ]
     },
     {
       "id": "sandbox",

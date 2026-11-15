@@ -2900,8 +2900,8 @@ paths:
         What the account pays for, read only: the plan and its subscription (status, interval,
         when it renews, a change waiting for the renewal, whether it cancels at the period's
         end), the add-ons (extra requests, parsed pages, domains), and every team the account
-        belongs to with its subscription and add-ons. Works with an API key. Changing a plan,
-        seats or add-ons takes a browser session.
+        belongs to with its subscription and add-ons. Works with an API key. A change asked with
+        an API key or agent token (the routes below) is a quoted approval for the owner.
       responses:
         "200":
           description: The billing summary
@@ -2966,6 +2966,387 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "500":
           $ref: "#/components/responses/InternalError"
+
+  /api/billing/change-plan:
+    post:
+      operationId: changePlan
+      tags: [Usage]
+      summary: Change the plan
+      description: >-
+        Moves a paying account to another plan or interval: Pro to Business monthly applies now
+        and charges the difference for the rest of the period, anything else at the renewal.
+        A browser session makes the change at once. An API key or agent token gets a quoted
+        approval (202) for the account's owner, who approves it on its page; approving makes
+        the change only while a fresh quote still matches the one shown, else nothing changes
+        and the approval's result says why (`executed: false`).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [plan, interval]
+              properties:
+                plan:
+                  type: string
+                  enum: [pro, business]
+                interval:
+                  type: string
+                  enum: [month, year]
+      responses:
+        "200":
+          description: Changed at once (a browser session)
+        "202":
+          $ref: "#/components/responses/BillingChangeAsked"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "409":
+          description: Not possible for this subscription now (no subscription, unchanged, set to end, a change waiting)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+    delete:
+      operationId: keepPlan
+      tags: [Usage]
+      summary: Keep the plan
+      description: >-
+        Drops a plan change waiting for the renewal.
+        A browser session makes the change at once. An API key or agent token gets a quoted
+        approval (202) for the account's owner, who approves it on its page; approving makes
+        the change only while a fresh quote still matches the one shown, else nothing changes
+        and the approval's result says why (`executed: false`).
+      responses:
+        "200":
+          description: Changed at once (a browser session)
+        "202":
+          $ref: "#/components/responses/BillingChangeAsked"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "409":
+          description: Not possible for this subscription now (no subscription, unchanged, set to end, a change waiting)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+
+  /api/billing/capacity:
+    post:
+      operationId: changeCapacity
+      tags: [Usage]
+      summary: Change add-ons
+      description: >-
+        Monthly blocks (0 ends them at the renewal; more than now are paid at a checkout), one-time
+        blocks (a checkout), or overage on with a maximum a period, or off. A session gets `{ url }`
+        for a checkout or `{ state }`.
+        A browser session makes the change at once. An API key or agent token gets a quoted
+        approval (202) for the account's owner, who approves it on its page; approving makes
+        the change only while a fresh quote still matches the one shown, else nothing changes
+        and the approval's result says why (`executed: false`).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CapacityChangeRequest"
+      responses:
+        "200":
+          description: >-
+            Changed at once (a browser session): `{ url }` for a change paid at a Polar checkout
+            (send the person there), else `{ state }`, the add-ons as they are now.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CapacityChanged"
+        "202":
+          $ref: "#/components/responses/BillingChangeAsked"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "409":
+          description: Not possible for this subscription now (no subscription, unchanged, set to end, a change waiting)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+
+  /api/billing/cancel:
+    post:
+      operationId: cancelPlan
+      tags: [Usage]
+      summary: Cancel the plan
+      description: >-
+        Cancels the plan at the end of the period.
+        A browser session makes the change at once. An API key or agent token gets a quoted
+        approval (202) for the account's owner, who approves it on its page; approving makes
+        the change only while a fresh quote still matches the one shown, else nothing changes
+        and the approval's result says why (`executed: false`).
+      responses:
+        "200":
+          description: Changed at once (a browser session)
+        "202":
+          $ref: "#/components/responses/BillingChangeAsked"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "409":
+          description: Not possible for this subscription now (no subscription, unchanged, set to end, a change waiting)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+
+  /api/billing/resubscribe:
+    post:
+      operationId: resumePlan
+      tags: [Usage]
+      summary: Resume the plan
+      description: >-
+        Undoes a cancellation, so the plan renews.
+        A browser session makes the change at once. An API key or agent token gets a quoted
+        approval (202) for the account's owner, who approves it on its page; approving makes
+        the change only while a fresh quote still matches the one shown, else nothing changes
+        and the approval's result says why (`executed: false`).
+      responses:
+        "200":
+          description: Changed at once (a browser session)
+        "202":
+          $ref: "#/components/responses/BillingChangeAsked"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "409":
+          description: Not possible for this subscription now (no subscription, unchanged, set to end, a change waiting)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+
+  /api/teams/{teamId}/billing/plan:
+    parameters:
+      - $ref: "#/components/parameters/teamId"
+    post:
+      operationId: changeTeamPlan
+      tags: [Teams]
+      summary: Change a team's plan
+      description: >-
+        Moves the team to Teams or Team Business, monthly or annual: up applies now and is
+        charged at once, down at the renewal. `{ action: "keep" }` drops a change waiting for
+        the renewal.
+        The team's owner only. A browser session makes the change at once. An API key or agent
+        token of the owner gets a quoted approval (202), approved on its page; approving makes
+        the change only while a fresh quote still matches, else nothing changes and the
+        approval's result says why (`executed: false`). Members' keys are refused.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                plan:
+                  type: string
+                  enum: [team, team_business]
+                interval:
+                  type: string
+                  enum: [month, year]
+                  default: month
+                action:
+                  type: string
+                  enum: [keep]
+                  description: Keep the current plan, dropping a change waiting for the renewal
+      responses:
+        "200":
+          description: Changed at once (a browser session)
+        "202":
+          $ref: "#/components/responses/BillingChangeAsked"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: Not possible for this subscription now (no subscription, unchanged, set to end, a change waiting)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+
+  /api/teams/{teamId}/billing/seats:
+    parameters:
+      - $ref: "#/components/parameters/teamId"
+    post:
+      operationId: changeTeamSeats
+      tags: [Teams]
+      summary: Change a team's seats
+      description: >-
+        More seats apply now and are charged pro rata; fewer take effect at the renewal.
+        The team's owner only. A browser session makes the change at once. An API key or agent
+        token of the owner gets a quoted approval (202), approved on its page; approving makes
+        the change only while a fresh quote still matches, else nothing changes and the
+        approval's result says why (`executed: false`). Members' keys are refused.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [seats]
+              properties:
+                seats:
+                  type: integer
+                  minimum: 1
+                  maximum: 1000
+      responses:
+        "204":
+          description: Changed at once (a browser session)
+        "202":
+          $ref: "#/components/responses/BillingChangeAsked"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: Not possible for this subscription now (no subscription, unchanged, set to end, a change waiting)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+
+  /api/teams/{teamId}/billing/capacity:
+    parameters:
+      - $ref: "#/components/parameters/teamId"
+    post:
+      operationId: changeTeamCapacity
+      tags: [Teams]
+      summary: Change a team's add-ons
+      description: >-
+        As POST /api/billing/capacity, for the team's pool.
+        The team's owner only. A browser session makes the change at once. An API key or agent
+        token of the owner gets a quoted approval (202), approved on its page; approving makes
+        the change only while a fresh quote still matches, else nothing changes and the
+        approval's result says why (`executed: false`). Members' keys are refused.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CapacityChangeRequest"
+      responses:
+        "200":
+          description: >-
+            Changed at once (a browser session): `{ url }` for a change paid at a Polar checkout
+            (send the person there), else `{ state }`, the add-ons as they are now.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CapacityChanged"
+        "202":
+          $ref: "#/components/responses/BillingChangeAsked"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: Not possible for this subscription now (no subscription, unchanged, set to end, a change waiting)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+
+  /api/teams/{teamId}/billing/cancel:
+    parameters:
+      - $ref: "#/components/parameters/teamId"
+    post:
+      operationId: cancelTeamSubscription
+      tags: [Teams]
+      summary: Cancel a team's subscription
+      description: >-
+        Cancels the team's subscription at the end of the period.
+        The team's owner only. A browser session makes the change at once. An API key or agent
+        token of the owner gets a quoted approval (202), approved on its page; approving makes
+        the change only while a fresh quote still matches, else nothing changes and the
+        approval's result says why (`executed: false`). Members' keys are refused.
+      responses:
+        "204":
+          description: Changed at once (a browser session)
+        "202":
+          $ref: "#/components/responses/BillingChangeAsked"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: Not possible for this subscription now (no subscription, unchanged, set to end, a change waiting)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+
+  /api/teams/{teamId}/billing/resubscribe:
+    parameters:
+      - $ref: "#/components/parameters/teamId"
+    post:
+      operationId: resumeTeamSubscription
+      tags: [Teams]
+      summary: Resume a team's subscription
+      description: >-
+        Undoes a cancellation, so the team's subscription renews.
+        The team's owner only. A browser session makes the change at once. An API key or agent
+        token of the owner gets a quoted approval (202), approved on its page; approving makes
+        the change only while a fresh quote still matches, else nothing changes and the
+        approval's result says why (`executed: false`). Members' keys are refused.
+      responses:
+        "204":
+          description: Changed at once (a browser session)
+        "202":
+          $ref: "#/components/responses/BillingChangeAsked"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: Not possible for this subscription now (no subscription, unchanged, set to end, a change waiting)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "429":
+          $ref: "#/components/responses/RateLimited"
 
   # -- Teams -------------------------------------------------------------------
 
@@ -5133,6 +5514,148 @@ components:
         type: string
 
   schemas:
+    CapacityChangeRequest:
+      description: >-
+        One add-on change. `resource` is requests when left out; extra domains (`domains`) take
+        only set_monthly_blocks, a block being one domain.
+      oneOf:
+        - type: object
+          title: Monthly blocks
+          required: [action, blocks]
+          properties:
+            action:
+              type: string
+              const: set_monthly_blocks
+            resource:
+              type: string
+              enum: [requests, pages, domains]
+              default: requests
+            blocks:
+              type: integer
+              minimum: 0
+              description: Blocks renewed every period; 0 ends them at the renewal.
+        - type: object
+          title: One-time blocks
+          required: [action, blocks]
+          properties:
+            action:
+              type: string
+              const: buy_blocks
+            resource:
+              type: string
+              enum: [requests, pages]
+              default: requests
+            blocks:
+              type: integer
+              minimum: 1
+        - type: object
+          title: Overage
+          required: [action, enabled]
+          properties:
+            action:
+              type: string
+              const: set_overage
+            resource:
+              type: string
+              enum: [requests, pages]
+              default: requests
+            enabled:
+              type: boolean
+            maxBlocks:
+              type: integer
+              minimum: 1
+              description: The most a period may use, in blocks; the kept or default maximum when left out.
+      discriminator:
+        propertyName: action
+    CapacityChanged:
+      oneOf:
+        - type: object
+          title: Checkout
+          required: [url]
+          properties:
+            url:
+              type: string
+              format: uri
+              description: The Polar checkout the change is paid at; nothing changes until it is paid.
+        - type: object
+          title: Changed
+          required: [state]
+          properties:
+            state:
+              $ref: "#/components/schemas/CapacityState"
+    CapacityState:
+      type: object
+      description: >-
+        An account's or team's add-ons for one resource. For pages and domains the request
+        names count pages or domains.
+      required:
+        [
+          offered,
+          eligible,
+          planEnding,
+          periodStart,
+          periodEnd,
+          planRequests,
+          blockRequests,
+          used,
+          creditRequests,
+          blocks,
+          overage,
+        ]
+      properties:
+        offered:
+          type: boolean
+        eligible:
+          type: boolean
+        planEnding:
+          type: boolean
+        periodStart:
+          type: [string, "null"]
+          format: date-time
+        periodEnd:
+          type: [string, "null"]
+          format: date-time
+        planRequests:
+          type: integer
+        blockRequests:
+          type: integer
+        used:
+          type: integer
+        creditRequests:
+          type: integer
+        blocks:
+          oneOf:
+            - type: "null"
+            - type: object
+              required: [units, pendingUnits, cancelAtPeriodEnd, pastDue, periodEnd]
+              properties:
+                units:
+                  type: integer
+                pendingUnits:
+                  type: [integer, "null"]
+                cancelAtPeriodEnd:
+                  type: boolean
+                pastDue:
+                  type: boolean
+                periodEnd:
+                  type: [string, "null"]
+                  format: date-time
+        overage:
+          type: object
+          required: [subscribed, active, cancelAtPeriodEnd, pastDue, maxRequests, usedRequests]
+          properties:
+            subscribed:
+              type: boolean
+            active:
+              type: boolean
+            cancelAtPeriodEnd:
+              type: boolean
+            pastDue:
+              type: boolean
+            maxRequests:
+              type: integer
+            usedRequests:
+              type: integer
     Approval:
       type: object
       required: [id, status, action, summary, code, url, expiresAt]
@@ -8343,6 +8866,27 @@ components:
               description: Unix timestamp (seconds) when the id was issued
 
   responses:
+    BillingChangeAsked:
+      description: >-
+        Asked by an API key or agent token: the change is quoted and the account's owner (the
+        team's owner) approves it at `url`, comparing `code`. The summary says what changes and
+        what is charged now. Poll `GET /api/approvals/{id}`: its result is `{ executed: true,
+        applied: "now" | "renewal" }` (with `seatReductionLost` when a waiting seat reduction was
+        dropped), `{ executed: true, applied: "checkout", checkout: "opened" }` when a Polar
+        checkout was opened in the owner's browser (nothing is bought until it is paid; the
+        link never reaches the asker), `{ executed: false, code, reason }` when nothing was
+        changed (`quote_changed` when the price or the subscription moved, or the refusal's own
+        code, such as `payment_failed`), or `{ executed: null, code: "outcome_unknown", reason }`
+        when Polar was asked and then something failed: check billing before asking again.
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [approval]
+            properties:
+              approval:
+                $ref: "#/components/schemas/Approval"
+
     ApprovalAsked:
       description: >-
         Asked by an API key or agent token: the account's owner approves it at `url` (the page

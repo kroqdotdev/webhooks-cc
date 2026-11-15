@@ -15,6 +15,7 @@ export const ERROR_STATUS: Record<string, number> = {
   not_scheduled: 409,
   seats_below_members: 409,
   payment_failed: 402,
+  payment_action_required: 402,
   not_offered: 404,
   unchanged: 409,
   plan_ending: 409,

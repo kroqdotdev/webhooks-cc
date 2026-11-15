@@ -105,8 +105,11 @@ import {
   addonStatus,
   applyCapacityWebhookEvent,
   changeMonthlyBlocks,
+  createOneTimeBlocksCheckout,
   reconcileAddonsWithPlan,
+  setOverage,
 } from "./capacity-billing";
+import { withPolarMutationGuard } from "@/lib/billing/polar-guard";
 
 const USER = { kind: "user" as const, userId: "user_1" };
 
@@ -177,6 +180,21 @@ describe("changeMonthlyBlocks", () => {
     });
     expect(mockFns.checkoutsCreate).toHaveBeenCalledWith(
       expect.objectContaining({ products: ["prod_monthly"], units: 3, customer_id: "cus_user" })
+    );
+  });
+
+  it("pins an approval's checkouts to the approved count; a session's stays adjustable", async () => {
+    await changeMonthlyBlocks(USER, "user_1", 3, "requests", { exactUnits: true });
+    expect(mockFns.checkoutsCreate).toHaveBeenLastCalledWith(
+      expect.objectContaining({ units: 3, min_units: 3, max_units: 3 })
+    );
+    await createOneTimeBlocksCheckout(USER, "user_1", 4, "requests", { exactUnits: true });
+    expect(mockFns.checkoutsCreate).toHaveBeenLastCalledWith(
+      expect.objectContaining({ products: ["prod_one_time"], units: 4, min_units: 4, max_units: 4 })
+    );
+    await createOneTimeBlocksCheckout(USER, "user_1", 4);
+    expect(mockFns.checkoutsCreate).toHaveBeenLastCalledWith(
+      expect.objectContaining({ units: 4, min_units: 1, max_units: 400 })
     );
   });
 
@@ -346,6 +364,76 @@ describe("changeMonthlyBlocks", () => {
     await expect(changeMonthlyBlocks(USER, "user_1", 1)).rejects.toMatchObject({
       code: "plan_required",
     });
+  });
+});
+
+describe("setOverage: the maximum and the Polar call go together", () => {
+  function overageRow(overrides: Record<string, unknown> = {}) {
+    return blocksRow({
+      id: "row_overage",
+      kind: "overage",
+      polar_subscription_id: "sub_overage",
+      units: null,
+      ...overrides,
+    });
+  }
+  const maxWrites = () =>
+    updates.filter((u) => u.table === "users" && "overage_max" in u.patch).map((u) => u.patch);
+
+  it("checks an approval's guard before writing the maximum, so a refusal changed nothing", async () => {
+    tables.users = proAccount({ overage_max: 50_000 });
+    tables.capacity_subscriptions = [overageRow()];
+    const refused = new Error("Nothing was changed: its lease ran out");
+    const guard = { beforeMutation: vi.fn().mockRejectedValue(refused) };
+    await expect(
+      withPolarMutationGuard(guard, () => setOverage(USER, "user_1", { enabled: false }))
+    ).rejects.toBe(refused);
+    expect(guard.beforeMutation).toHaveBeenCalledWith("overage.max");
+    expect(maxWrites()).toEqual([]);
+    expect(mockFns.subscriptionsUpdate).not.toHaveBeenCalled();
+
+    await expect(
+      withPolarMutationGuard(guard, () =>
+        setOverage(USER, "user_1", { enabled: true, maxRequests: 100_000 })
+      )
+    ).rejects.toBe(refused);
+    expect(maxWrites()).toEqual([]);
+  });
+
+  it("puts the previous maximum back when Polar refuses to end overage", async () => {
+    tables.users = proAccount({ overage_max: 50_000 });
+    tables.capacity_subscriptions = [overageRow()];
+    mockFns.subscriptionsUpdate.mockRejectedValueOnce(
+      Object.assign(new Error("Unprocessable"), { statusCode: 422 })
+    );
+    await expect(setOverage(USER, "user_1", { enabled: false })).rejects.toThrow("Unprocessable");
+    expect(maxWrites()).toEqual([{ overage_max: 0 }, { overage_max: 50_000 }]);
+    expect(updates.some((u) => u.table === "capacity_subscriptions")).toBe(false);
+  });
+
+  it("keeps overage at 0 when ending it may have gone through (a timeout)", async () => {
+    tables.users = proAccount({ overage_max: 50_000 });
+    tables.capacity_subscriptions = [overageRow()];
+    mockFns.subscriptionsUpdate.mockRejectedValueOnce(new Error("The operation timed out"));
+    await expect(setOverage(USER, "user_1", { enabled: false })).rejects.toThrow("timed out");
+    expect(maxWrites()).toEqual([{ overage_max: 0 }]);
+  });
+
+  it("puts the previous maximum back when the overage checkout cannot be made", async () => {
+    tables.users = proAccount({ overage_max: 25_000 });
+    mockFns.checkoutsCreate.mockRejectedValueOnce(new Error("Polar is down"));
+    await expect(
+      setOverage(USER, "user_1", { enabled: true, maxRequests: 100_000 })
+    ).rejects.toThrow("Polar is down");
+    expect(maxWrites()).toEqual([{ overage_max: 100_000 }, { overage_max: 25_000 }]);
+  });
+
+  it("keeps the new maximum when Polar takes the change", async () => {
+    tables.users = proAccount({ overage_max: 25_000 });
+    await expect(
+      setOverage(USER, "user_1", { enabled: true, maxRequests: 100_000 })
+    ).resolves.toEqual({ kind: "checkout", url: "https://polar.test/checkout" });
+    expect(maxWrites()).toEqual([{ overage_max: 100_000 }]);
   });
 });
 

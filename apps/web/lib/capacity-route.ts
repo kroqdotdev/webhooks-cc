@@ -17,6 +17,7 @@ import {
   getCapacityState,
   setOverage,
   type CapacityAccount,
+  type CheckoutUnits,
   type CapacityResource,
 } from "@/lib/supabase/capacity-billing";
 import { TeamBillingError } from "@/lib/supabase/team-billing";
@@ -117,54 +118,80 @@ export async function handleCapacityGet(
   }
 }
 
-/** POST: changes extra capacity. Teams: the owner only. Audited either way. */
-export async function handleCapacityPost(
-  request: Request,
+/**
+ * Makes a capacity change for `userId` (the account itself, or the team's
+ * owner): a checkout's link when the change is paid at a checkout, else
+ * null, and `unchanged` when the monthly blocks already renewed at that
+ * count, so nothing was asked of Polar. Shared by the route and the billing
+ * approval, whose checkouts are pinned to the approved count
+ * (`units.exactUnits`).
+ */
+export async function applyCapacityAction(
   account: CapacityAccount,
-  userId: string
-): Promise<Response> {
-  const teamId = account.kind === "team" ? account.teamId : undefined;
+  userId: string,
+  action: CapacityAction,
+  units: CheckoutUnits = {}
+): Promise<{ url: string | null; unchanged?: true }> {
+  await assertCanManage(account, userId);
+  const resource = action.resource ?? "requests";
+  const blockSize = resource === "pages" ? BLOCK_PAGES : BLOCK_REQUESTS;
+  if (action.action === "buy_blocks") {
+    return {
+      url: await createOneTimeBlocksCheckout(account, userId, action.blocks, resource, units),
+    };
+  }
+  if (action.action === "set_monthly_blocks") {
+    const result = await changeMonthlyBlocks(account, userId, action.blocks, resource, units);
+    if (result.kind === "unchanged") return { url: null, unchanged: true };
+    return { url: result.kind === "checkout" ? result.url : null };
+  }
+  const result = await setOverage(
+    account,
+    userId,
+    {
+      enabled: action.enabled,
+      maxRequests: action.maxBlocks === undefined ? undefined : action.maxBlocks * blockSize,
+    },
+    resource
+  );
+  return { url: result.kind === "checkout" ? result.url : null };
+}
+
+/** The capacity change a POST asks for, or the 400 answer for one it cannot read. */
+export async function readCapacityAction(request: Request): Promise<CapacityAction | Response> {
   let body: unknown;
   try {
     body = await request.json();
   } catch {
     body = null;
   }
-  const action = parseCapacityAction(body);
-  if (!action) {
-    return Response.json(
+  return (
+    parseCapacityAction(body) ??
+    Response.json(
       { error: "Unknown action or resource, or a block count outside what it allows" },
       { status: 400 }
-    );
-  }
+    )
+  );
+}
 
+/**
+ * POST: changes extra capacity for a session (an API key's ask is an
+ * approval, askForBillingChange). Teams: the owner only. Audited either way.
+ */
+export async function handleCapacityPost(
+  request: Request,
+  account: CapacityAccount,
+  userId: string,
+  action: CapacityAction
+): Promise<Response> {
+  const teamId = account.kind === "team" ? account.teamId : undefined;
   const auditAction = `billing.capacity.${action.action}` as const;
   const metadata: Record<string, unknown> = { ...action };
   delete metadata.action;
   const resource = action.resource ?? "requests";
-  const blockSize = resource === "pages" ? BLOCK_PAGES : BLOCK_REQUESTS;
 
   try {
-    await assertCanManage(account, userId);
-
-    let url: string | null = null;
-    if (action.action === "buy_blocks") {
-      url = await createOneTimeBlocksCheckout(account, userId, action.blocks, resource);
-    } else if (action.action === "set_monthly_blocks") {
-      const result = await changeMonthlyBlocks(account, userId, action.blocks, resource);
-      if (result.kind === "checkout") url = result.url;
-    } else {
-      const result = await setOverage(
-        account,
-        userId,
-        {
-          enabled: action.enabled,
-          maxRequests: action.maxBlocks === undefined ? undefined : action.maxBlocks * blockSize,
-        },
-        resource
-      );
-      if (result.kind === "checkout") url = result.url;
-    }
+    const { url } = await applyCapacityAction(account, userId, action);
 
     await auditUserAction(request, userId, {
       action: auditAction,

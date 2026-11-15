@@ -21,6 +21,7 @@ import {
   loggablePolarError,
   type CapacityProductIds,
 } from "@/lib/polar";
+import { currentPolarMutationGuard } from "@/lib/billing/polar-guard";
 import { recordRefund, type RefundTarget } from "@/lib/billing/refunds";
 import { reportError } from "@/lib/observability";
 import { planEntitlements, teamAllowance, teamEntitlements } from "@/lib/entitlements";
@@ -687,12 +688,28 @@ async function domainState(account: CapacityAccount, row: AccountRow): Promise<C
 // Customer actions
 // ---------------------------------------------------------------------------
 
+/**
+ * How a checkout may change its count: a session's own checkout lets the
+ * customer adjust it there; one an approval opens (`exactUnits`) is pinned
+ * to the count the owner approved, so the checkout cannot sell more.
+ */
+export interface CheckoutUnits {
+  exactUnits?: boolean;
+}
+
+function unitBounds(blocks: number, maxBlocks: number, { exactUnits }: CheckoutUnits) {
+  return exactUnits
+    ? { min_units: blocks, max_units: blocks }
+    : { min_units: 1, max_units: maxBlocks };
+}
+
 /** A checkout for one-time blocks. */
 export async function createOneTimeBlocksCheckout(
   account: CapacityAccount,
   actingUserId: string,
   blocks: number,
-  resource: CapacityResource = "requests"
+  resource: CapacityResource = "requests",
+  units: CheckoutUnits = {}
 ): Promise<string> {
   const spec = RESOURCES[resource];
   const { oneTime } = requireProducts(resource);
@@ -703,8 +720,7 @@ export async function createOneTimeBlocksCheckout(
   const checkout = await createPolarClient().checkouts.create({
     products: [oneTime],
     units: blocks,
-    min_units: 1,
-    max_units: spec.maxBlocks,
+    ...unitBounds(blocks, spec.maxBlocks, units),
     customer_id: customerId,
     success_url: await successUrl(account, "blocks", spec),
     metadata: { capacity: "one_time", resource },
@@ -724,7 +740,8 @@ export async function changeMonthlyBlocks(
   account: CapacityAccount,
   actingUserId: string,
   blocks: number,
-  resource: CapacityResource = "requests"
+  resource: CapacityResource = "requests",
+  units: CheckoutUnits = {}
 ): Promise<MonthlyBlocksResult> {
   const spec = RESOURCES[resource];
   // Ending them never needs the plan, and only a checkout needs the products:
@@ -739,8 +756,7 @@ export async function changeMonthlyBlocks(
     const checkout = await polar.checkouts.create({
       products: [requireProducts(resource).monthly],
       units: blocks,
-      min_units: 1,
-      max_units: spec.maxBlocks,
+      ...unitBounds(blocks, spec.maxBlocks, units),
       customer_id: customerId,
       success_url: await successUrl(account, "monthly", spec),
       metadata: { capacity: "monthly", resource },
@@ -844,11 +860,15 @@ export async function setOverage(
   const polar = createPolarClient();
 
   if (!options.enabled) {
-    await writeOverageMax(account, 0, resource);
+    const previousMax = await readOverageMax(account, resource);
+    await changeOverageMax(account, 0, previousMax, resource, async () => {
+      if (current && !current.cancel_at_period_end) {
+        await polar.subscriptions.update(current.polar_subscription_id, {
+          cancel_at_period_end: true,
+        });
+      }
+    });
     if (current && !current.cancel_at_period_end) {
-      await polar.subscriptions.update(current.polar_subscription_id, {
-        cancel_at_period_end: true,
-      });
       await markSubscription(current.id, { cancel_at_period_end: true, canceled_with_plan: false });
     } else if (current?.canceled_with_plan) {
       // Ending with the plan already: turned off, it must not come back with it.
@@ -878,26 +898,102 @@ export async function setOverage(
       "The last overage payment failed. Update your payment method under Invoices and payment method first."
     );
   }
-  await writeOverageMax(account, maxRequests, resource);
+  // The customer first: making one is a Polar call, and the maximum is
+  // written only once nothing but the change itself is left to fail.
+  const customerId = current ? null : await ensureCustomer(account, actingUserId);
+  const checkoutUrl = await changeOverageMax(
+    account,
+    maxRequests,
+    storedMax,
+    resource,
+    async () => {
+      if (customerId !== null) {
+        const checkout = await polar.checkouts.create({
+          products: [overageProduct],
+          customer_id: customerId,
+          success_url: await successUrl(account, "overage", spec),
+          metadata: { capacity: "overage", resource },
+        });
+        return checkout.url;
+      }
+      if (current?.cancel_at_period_end) {
+        await polar.subscriptions.update(current.polar_subscription_id, {
+          cancel_at_period_end: false,
+        });
+      }
+      return null;
+    }
+  );
+  if (checkoutUrl !== null) return { kind: "checkout", url: checkoutUrl };
 
-  if (!current) {
-    const customerId = await ensureCustomer(account, actingUserId);
-    const checkout = await polar.checkouts.create({
-      products: [overageProduct],
-      customer_id: customerId,
-      success_url: await successUrl(account, "overage", spec),
-      metadata: { capacity: "overage", resource },
-    });
-    return { kind: "checkout", url: checkout.url };
-  }
-
-  if (current.cancel_at_period_end) {
-    await polar.subscriptions.update(current.polar_subscription_id, {
-      cancel_at_period_end: false,
-    });
+  if (current?.cancel_at_period_end) {
     await markSubscription(current.id, { cancel_at_period_end: false, canceled_with_plan: false });
   }
   return { kind: "updated" };
+}
+
+/**
+ * Writes the overage maximum, then makes the Polar call that goes with it
+ * (`polarCall`, which may make none). Under a billing change an owner
+ * approved, the change's lease is checked before the write (the Polar
+ * mutation guard), so a refusal there leaves the maximum as it was and
+ * "nothing was changed" stays true. When the Polar call fails, the
+ * previous maximum is written back: Polar did not take the change, so the
+ * account must not count against a maximum nobody got.
+ */
+async function changeOverageMax<T>(
+  account: CapacityAccount,
+  max: number,
+  previousMax: number,
+  resource: CapacityResource,
+  polarCall: () => Promise<T>
+): Promise<T> {
+  await currentPolarMutationGuard()?.beforeMutation("overage.max");
+  await writeOverageMax(account, max, resource);
+  try {
+    return await polarCall();
+  } catch (error) {
+    // Put the old maximum back when that can only charge less (it was
+    // lower), or when Polar certainly did not take the change. After a
+    // timeout Polar may have turned overage off, and a higher old maximum
+    // would let the account keep spending past what the owner approved.
+    if (previousMax !== max && (previousMax < max || polarCertainlyRefused(error))) {
+      try {
+        await writeOverageMax(account, previousMax, resource);
+      } catch (restoreError) {
+        reportError("Restoring the overage maximum after a failed Polar call failed", restoreError);
+      }
+    }
+    throw error;
+  }
+}
+
+/**
+ * Whether a failed Polar call certainly left Polar unchanged: the mutation
+ * guard refused before the call went out (a BillingChangeRetry), or Polar
+ * answered with a 4xx. A timeout, a network error or a 5xx may have been
+ * applied.
+ */
+export function polarCertainlyRefused(error: unknown): boolean {
+  if (!error || typeof error !== "object") return false;
+  if ((error as { name?: unknown }).name === "BillingChangeRetry") return true;
+  const status = (error as { statusCode?: unknown }).statusCode;
+  return typeof status === "number" && status >= 400 && status < 500;
+}
+
+async function readOverageMax(
+  account: CapacityAccount,
+  resource: CapacityResource
+): Promise<number> {
+  const admin = createAdminClient();
+  const column = resource === "pages" ? "page_overage_max" : "overage_max";
+  const { data, error } =
+    account.kind === "team"
+      ? await admin.from("teams").select(column).eq("id", account.teamId).maybeSingle()
+      : await admin.from("users").select(column).eq("id", account.userId).maybeSingle();
+  if (error) throw error;
+  const value = (data as Record<string, unknown> | null)?.[column];
+  return typeof value === "number" ? value : 0;
 }
 
 async function writeOverageMax(

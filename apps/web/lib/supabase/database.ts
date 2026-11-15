@@ -422,7 +422,8 @@ export interface Database {
             | "google.pick"
             | "ai.assist"
             | "teams.delete"
-            | "teams.invite";
+            | "teams.invite"
+            | "billing.change";
           params: Json;
           summary: string;
           user_code: string;
@@ -451,7 +452,8 @@ export interface Database {
             | "google.pick"
             | "ai.assist"
             | "teams.delete"
-            | "teams.invite";
+            | "teams.invite"
+            | "billing.change";
           params?: Json;
           summary: string;
           user_code: string;
@@ -480,7 +482,8 @@ export interface Database {
             | "google.pick"
             | "ai.assist"
             | "teams.delete"
-            | "teams.invite";
+            | "teams.invite"
+            | "billing.change";
           params?: Json;
           summary?: string;
           user_code?: string;
@@ -2047,6 +2050,12 @@ export interface Database {
       };
       // Staff, support tickets and ops metrics (migration 00087).
       /** Sessions a site switch carried the second factor to (migration 00088). */
+      billing_change_locks: {
+        Row: { account_key: string; holder: string; expires_at: string };
+        Insert: { account_key: string; holder: string; expires_at: string };
+        Update: { account_key?: string; holder?: string; expires_at?: string };
+        Relationships: [];
+      };
       mfa_trusted_sessions: {
         Row: { session_id: string; user_id: string; created_at: string };
         Insert: { session_id: string; user_id: string; created_at?: string };
@@ -3084,6 +3093,18 @@ export interface Database {
       };
       cancel_request_search: {
         Args: { p_token: string };
+        Returns: undefined;
+      };
+      claim_billing_change_lock: {
+        Args: { p_account_key: string; p_holder: string; p_seconds: number };
+        Returns: boolean;
+      };
+      extend_billing_change_lock: {
+        Args: { p_account_key: string; p_holder: string; p_seconds: number };
+        Returns: boolean;
+      };
+      release_billing_change_lock: {
+        Args: { p_account_key: string; p_holder: string };
         Returns: undefined;
       };
       claim_quota_exhausted_users: {

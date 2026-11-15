@@ -2,6 +2,7 @@ import { auditUserAction } from "@/lib/audit";
 import { authenticateRequestRequireUser } from "@/lib/api-auth";
 import { ApprovalError, pollApproval } from "@/lib/approvals/store";
 import { reportError } from "@/lib/observability";
+import { loggablePolarError } from "@/lib/polar";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { ApiKeyLimitError } from "@/lib/supabase/api-keys";
 
@@ -52,7 +53,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
         { status: 409 }
       );
     }
-    reportError("GET /api/approvals/[id] failed", err);
+    reportError("GET /api/approvals/[id] failed", loggablePolarError(err));
     return Response.json({ error: "Internal server error" }, { status: 500 });
   }
 }

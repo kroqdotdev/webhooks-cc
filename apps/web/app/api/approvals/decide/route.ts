@@ -9,6 +9,7 @@ import {
 } from "@/lib/approvals/store";
 import { authorizationUrl, browserCookie, googleConfig } from "@/lib/integrations/google";
 import { reportError } from "@/lib/observability";
+import { auditActionFor, parseBillingChangeRequest } from "@/lib/billing/change";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { parseJsonBodyWith } from "@/lib/request-validation";
 import { z } from "zod";
@@ -67,6 +68,29 @@ export async function POST(request: Request) {
       metadata: { action: decided.action },
     });
     if (decided.done) await auditDone(request, approver.userId, decided);
+    if (decided.done && decided.action === "billing.change") {
+      const outcome = (decided.result ?? {}) as Record<string, unknown>;
+      // Refused on a fresh quote: nothing changed, and the page says why.
+      if (outcome.executed === false) {
+        return Response.json({ status: "unchanged", reason: outcome.reason });
+      }
+      // Polar was asked and then something failed: it may have happened.
+      if (outcome.executed === null) {
+        return Response.json({ status: "unknown", reason: outcome.reason });
+      }
+      // Paid at a checkout: this browser (and only it) goes on to pay it.
+      const checkoutUrl = decided.forBrowser?.checkoutUrl;
+      if (typeof checkoutUrl === "string") {
+        return Response.json({ status: "redirect", url: checkoutUrl });
+      }
+      // Made, but a waiting seat reduction was dropped with the plan change.
+      if (typeof outcome.seatReductionLost === "number") {
+        return Response.json({
+          status: "done",
+          note: `The reduction to ${outcome.seatReductionLost} seats was dropped with the plan change. Set the seats again to remove them at the renewal.`,
+        });
+      }
+    }
     // "done": the action ran on approval; "approved": the asker collects it.
     return Response.json({ status: approve ? (decided.done ? "done" : "approved") : "denied" });
   } catch (err) {
@@ -136,6 +160,34 @@ async function auditDone(
         samples: Array.isArray(params.requestIds) ? params.requestIds.length : 0,
         proposed: Array.isArray(result.fields) ? result.fields.length : 0,
         dropped: result.dropped,
+      },
+    });
+  } else if (decided.action === "billing.change") {
+    const asked = parseBillingChangeRequest(params);
+    if (!asked) return;
+    // Made (200), refused with nothing changed (409), or outcome unknown
+    // after Polar was asked (500: check billing).
+    const status = result.executed === true ? 200 : result.executed === null ? 500 : 409;
+    await auditUserAction(request, userId, {
+      action: auditActionFor(asked),
+      status,
+      reason: status === 200 ? undefined : String(result.reason ?? ""),
+      teamId: asked.teamId,
+      metadata: {
+        ...via,
+        change: asked.change.kind,
+        ...(asked.change.kind === "plan"
+          ? { plan: asked.change.plan, interval: asked.change.interval }
+          : asked.change.kind === "seats"
+            ? { seats: asked.change.seats }
+            : asked.change.kind === "capacity"
+              ? { ...asked.change.capacity }
+              : {}),
+        applied: result.applied,
+        code: result.code,
+        ...(typeof result.seatReductionLost === "number"
+          ? { seatReductionLost: result.seatReductionLost }
+          : {}),
       },
     });
   } else if (decided.action === "account.rename") {

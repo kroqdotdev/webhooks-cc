@@ -72,14 +72,14 @@ Puts your local site at a public link on sharehooks.cc, for showing work in prog
 | Status | Code | Meaning |
 | --- | --- | --- |
 | 0 | | Success |
-| 1 | `error`, `bad_request`, `delivery_failed` | Any other failure, the server refused the input, or a destination did not accept `whk destinations test` |
+| 1 | `error`, `bad_request`, `delivery_failed`, `billing_refused`, `outcome_unknown` | Any other failure, the server refused the input, a destination did not accept `whk destinations test`, an approved billing change was refused with nothing changed (the server's code in the JSON error's `reason`), or it may or may not have been made (check billing before asking again) |
 | 2 | `usage` | Bad arguments |
 | 3 | `not_logged_in`, `unauthorized`, `connection_revoked`, `login_expired`, `login_denied` | No credentials, they were refused, an agent's connection was revoked, or a login code expired or was refused on its page |
 | 4 | `not_found` | No such endpoint, request, team or share |
 | 5 | `forbidden` | Not allowed by the plan, a limit or a permission |
 | 6 | `rate_limited` | Too many requests: wait and retry |
 | 7 | `server_error`, `network_error`, `request_timeout` | Our side or the network failed: retry |
-| 8 | `timeout`, `approval_expired` | A wait ran out of time, or an approval was not answered in time |
+| 8 | `timeout`, `approval_expired`, `quote_changed` | A wait ran out of time, an approval was not answered in time, or an approved billing change was not made because its price or the subscription changed (ask again) |
 | 9 | `confirmation_required`, `cancelled`, `approval_denied` | A destructive command was not confirmed, or the account's owner refused an approval |
 
 - Nothing waits for input without a terminal. `whk delete` and `whk requests clear` ask first in a terminal; anywhere else they stop with `confirmation_required` unless you pass `--yes`.

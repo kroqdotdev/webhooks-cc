@@ -69,8 +69,11 @@ pub struct Cli {
 pub const AFTER_HELP: &str = "\
 Exit status:
   0  success
-  1  any other failure, the server refused the input (bad_request), or a test
-     delivery was not accepted by the destination (delivery_failed)
+  1  any other failure, the server refused the input (bad_request), a test
+     delivery was not accepted by the destination (delivery_failed), an approved
+     billing change was refused with nothing changed (billing_refused, the
+     server's code in \"reason\"), or it may or may not have been made; check
+     billing before asking again (outcome_unknown)
   2  bad arguments (usage)
   3  not logged in, or the credentials were refused (not_logged_in, unauthorized,
      connection_revoked, login_expired, login_denied)
@@ -78,7 +81,8 @@ Exit status:
   5  not allowed by the plan, a limit or a permission (forbidden)
   6  rate limited; wait and retry (rate_limited)
   7  server or network failure; retry (server_error, network_error, request_timeout)
-  8  a wait ran out of time, or an approval expired (timeout, approval_expired)
+  8  a wait ran out of time, an approval expired, or an approved billing change was
+     not made because its quote changed (timeout, approval_expired, quote_changed)
   9  a destructive command was not confirmed; pass --yes (confirmation_required, cancelled),
      or the account's owner refused an approval (approval_denied)
 
@@ -464,8 +468,11 @@ deletion) refuse API keys.")]
         action: DeliveriesAction,
     },
 
-    /// What the account pays for: the plan, its subscription, add-ons, and every team's (read only)
-    Billing,
+    /// What the account pays for, and changes to it (each change is quoted and the account's owner approves it)
+    Billing {
+        #[command(subcommand)]
+        action: Option<BillingAction>,
+    },
 
     /// Manage the account's API keys (a new one needs the account's owner to approve it)
     Keys {
@@ -1173,6 +1180,110 @@ pub enum TeamsAction {
         /// Billing interval for --plan (default month)
         #[arg(long, value_parser = ["month", "year"], requires = "plan", conflicts_with = "seats")]
         interval: Option<String>,
+    },
+}
+
+/// The account's own billing, or a team's with --team.
+#[derive(clap::Args, Debug)]
+pub struct BillingTarget {
+    /// A team you own (id or name); the account's own billing when left out
+    #[arg(long)]
+    pub team: Option<String>,
+
+    #[command(flatten)]
+    pub approval: ApprovalArgs,
+}
+
+#[derive(Subcommand, Debug)]
+pub enum BillingAction {
+    /// The plan, its subscription, add-ons, and every team's (what `whk billing` shows)
+    Show,
+
+    /// Change the plan or its interval (pro or business; team or team_business with --team)
+    Plan {
+        /// The plan to move to
+        #[arg(value_parser = ["pro", "business", "team", "team_business"])]
+        plan: String,
+
+        /// Billing interval (default month)
+        #[arg(long, value_parser = ["month", "year"], default_value = "month")]
+        interval: String,
+
+        #[command(flatten)]
+        target: BillingTarget,
+    },
+
+    /// Drop a plan change waiting for the renewal
+    KeepPlan {
+        #[command(flatten)]
+        target: BillingTarget,
+    },
+
+    /// Change a team's seat count (more now, charged pro rata; fewer at the renewal)
+    Seats {
+        /// The new seat count
+        #[arg(value_parser = clap::value_parser!(u32).range(1..))]
+        seats: u32,
+
+        #[command(flatten)]
+        target: BillingTarget,
+    },
+
+    /// Set the add-on blocks renewed every period (0 ends them at the renewal)
+    Blocks {
+        /// Blocks: 25,000 requests, 1,000 parsed pages, or one domain each
+        blocks: u32,
+
+        /// What the blocks add to
+        #[arg(long, value_parser = ["requests", "pages", "domains"], default_value = "requests")]
+        resource: String,
+
+        #[command(flatten)]
+        target: BillingTarget,
+    },
+
+    /// Buy one-time blocks that never expire (paid at a checkout)
+    Buy {
+        /// Blocks: 25,000 requests or 1,000 parsed pages each
+        #[arg(value_parser = clap::value_parser!(u32).range(1..))]
+        blocks: u32,
+
+        /// What the blocks add to
+        #[arg(long, value_parser = ["requests", "pages"], default_value = "requests")]
+        resource: String,
+
+        #[command(flatten)]
+        target: BillingTarget,
+    },
+
+    /// Turn overage on (with a maximum a period) or off
+    Overage {
+        /// on or off
+        #[arg(value_parser = ["on", "off"])]
+        state: String,
+
+        /// The most a period may add, in blocks
+        #[arg(long, value_parser = clap::value_parser!(u32).range(1..))]
+        max: Option<u32>,
+
+        /// What overage adds to
+        #[arg(long, value_parser = ["requests", "pages"], default_value = "requests")]
+        resource: String,
+
+        #[command(flatten)]
+        target: BillingTarget,
+    },
+
+    /// Cancel the subscription at the end of the period
+    Cancel {
+        #[command(flatten)]
+        target: BillingTarget,
+    },
+
+    /// Undo a cancellation, so the subscription renews
+    Resume {
+        #[command(flatten)]
+        target: BillingTarget,
     },
 }
 

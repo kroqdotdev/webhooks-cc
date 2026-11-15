@@ -1,4 +1,5 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import { timedFetch } from "./call-timeout";
 import type { Database } from "./database";
 
 let _admin: SupabaseClient<Database> | null = null;
@@ -18,6 +19,7 @@ export function createAdminClient(): SupabaseClient<Database> {
       autoRefreshToken: false,
       persistSession: false,
     },
+    global: { fetch: timedFetch },
   });
 
   return _admin;

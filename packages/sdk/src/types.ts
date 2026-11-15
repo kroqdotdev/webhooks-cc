@@ -2162,6 +2162,53 @@ export interface TeamPlanQuote {
   periodEnd: string;
 }
 
+/**
+ * What an approved billing change did.
+ *
+ * - `executed: true`: made, at once or from the renewal. `applied:
+ *   "checkout"` means only that a Polar checkout was opened for the owner
+ *   (`checkout: "opened"`): nothing is bought until it is paid there. The
+ *   checkout's link goes to the owner's browser, never to the asker;
+ *   `checkoutUrl` is set only for a browser session's own call.
+ * - `executed: false`: nothing was changed. `code` is `quote_changed` when
+ *   the price or the subscription moved after it was asked for (ask again
+ *   for a new quote), or the refusal's own code (`payment_failed`,
+ *   `seats_below_members`, ...), with `reason` in plain words.
+ * - `executed: null` (`code: "outcome_unknown"`): Polar was asked to make
+ *   it and then something failed, the bank wants the cardholder to confirm
+ *   the payment (3-D Secure, from the link in Polar's email), or the run
+ *   was cut off before its result was recorded, so it may or may not have
+ *   happened. Check billing before asking again.
+ */
+export type BillingChangeResult =
+  | {
+      executed: true;
+      /** "now": made at once; "renewal": from the period end; "checkout": a checkout was opened for the owner. */
+      applied: "now" | "renewal" | "checkout";
+      /** The change, in one sentence. */
+      change?: string;
+      /** "opened" for a checkout: nothing is bought until it is paid. */
+      checkout?: "opened";
+      /** A browser session's own checkout link (never on an approval's result). */
+      checkoutUrl?: string;
+      /** A scheduled seat reduction that was dropped (set the seats again). */
+      seatReductionLost?: number;
+      [field: string]: unknown;
+    }
+  | { executed: false; code: string; reason: string; change?: string; [field: string]: unknown }
+  | {
+      executed: null;
+      code: "outcome_unknown";
+      reason: string;
+      change?: string;
+      [field: string]: unknown;
+    };
+
+/** Where a billing change goes: the account's own billing, or a team you own. */
+export interface BillingTarget {
+  teamId?: string;
+}
+
 /** The price of changing a team's seat count (the team's owner only). */
 export interface TeamSeatQuote {
   currentSeats: number;

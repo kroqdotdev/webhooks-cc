@@ -39,6 +39,22 @@ import {
   spreadsheetUrl,
 } from "@/lib/integrations/google";
 import { googleRefreshToken, listGoogleConnections } from "@/lib/supabase/google-connections";
+import {
+  BILLING_OUTCOME_UNKNOWN,
+  billingChangeStillRunning,
+  BillingChangeRetry,
+  cleanTeamName,
+  loadBillingQuote,
+  loadTeamIdentity,
+  teamAccountLine,
+  parseBillingChangeRequest,
+  refusalOf,
+  runBillingChange,
+  type BillingChangeOutcome,
+  type BillingChangeRequest,
+  type BillingQuote,
+} from "@/lib/billing/change";
+import { formatCents } from "@/lib/team-pricing";
 
 /**
  * What an approval can ask for. Each action checks its parameters when the
@@ -65,7 +81,8 @@ export type ApprovalAction =
   | "google.pick"
   | "ai.assist"
   | "teams.delete"
-  | "teams.invite";
+  | "teams.invite"
+  | "billing.change";
 
 export interface ActionDetail {
   label: string;
@@ -101,10 +118,49 @@ interface ActionSpec<P> {
   run(
     userId: string,
     params: P,
-    input?: unknown
-  ): Promise<{ result: Record<string, unknown>; stored: Json }>;
+    input?: unknown,
+    context?: RunContext
+  ): Promise<{
+    result: Record<string, unknown>;
+    stored: Json;
+    /**
+     * What only the approving browser gets, never stored nor handed to the
+     * asker ("approve" only): the checkout a billing change is paid at.
+     */
+    browser?: Record<string, unknown>;
+  }>;
   /** Takes back what `run` did, when the owner withdrew while it ran ("collect" only). */
   undo?(userId: string, stored: Json): Promise<void>;
+  /**
+   * What the asker reads for an approval that ran ("approve" only) and has
+   * no recorded result once its run is over (`running` says it no longer
+   * can be going: a crash mid-run, or a result that could not be written).
+   * Without it the asker reads "approved" until the row expires.
+   */
+  unrecorded?: {
+    running(run: UnrecordedRun<P>): Promise<boolean>;
+    result(params: P): Record<string, unknown>;
+  };
+}
+
+/** What a run knows of the approval it runs for. */
+export interface RunContext {
+  approvalId: string;
+  /**
+   * Keeps `stored` as the approval's result now, before the run returns
+   * (the store records it again after): a billing change records it while
+   * it still holds its lease.
+   */
+  recordResult(stored: Json): Promise<void>;
+}
+
+/** An approval that ran and has no result yet, as `unrecorded.running` reads it. */
+export interface UnrecordedRun<P> {
+  approvalId: string;
+  userId: string;
+  params: P;
+  /** When the run started (the approval completed). */
+  startedAtMs: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -392,7 +448,7 @@ const deleteTeamAction: ActionSpec<TeamDeleteParams> = {
     return { ok: true, params: { teamId, name: team.name } };
   },
   summary: ({ name }) =>
-    `Delete the team "${name}": its members lose the endpoints shared with it, and this cannot be undone.`,
+    `Delete the team "${cleanTeamName(name)}": its members lose the endpoints shared with it, and this cannot be undone.`,
   async details({ teamId }, userId) {
     // Read now, not when it was asked: a rename since then needed no approval.
     const team = await ownedTeam(userId, teamId);
@@ -401,7 +457,7 @@ const deleteTeamAction: ActionSpec<TeamDeleteParams> = {
     }
     const others = Math.max(team.memberCount - 1, 0);
     return [
-      { label: "Team", value: team.name },
+      { label: "Team", value: cleanTeamName(team.name) },
       { label: "Created", value: new Date(team.createdAt).toISOString().slice(0, 10) },
       { label: "Team id", value: team.id },
       {
@@ -464,11 +520,11 @@ const inviteToTeam: ActionSpec<TeamInviteParams> = {
     return { ok: true, params: { teamId, name: team.name, email } };
   },
   summary: ({ name, email }) =>
-    `Invite ${email} to the team "${name}": webhooks.cc emails them, and accepting takes one of its seats.`,
+    `Invite ${email} to the team "${cleanTeamName(name)}": webhooks.cc emails them, and accepting takes one of its seats.`,
   async details({ teamId, name, email }, userId) {
     const team = await ownedTeam(userId, teamId);
     return [
-      { label: "Team", value: name },
+      { label: "Team", value: cleanTeamName(team?.name ?? name) },
       { label: "Invite goes to", value: email },
       {
         label: "Seats",
@@ -659,6 +715,174 @@ const aiAssist: ActionSpec<AssistParams> = {
   },
 };
 
+// ---------------------------------------------------------------------------
+// A billing change: a plan, seats, add-ons, cancelling or keeping a plan
+// ---------------------------------------------------------------------------
+
+interface BillingParams extends BillingChangeRequest {
+  teamName: string | null;
+  quote: BillingQuote;
+}
+
+function longDay(isoTime: string | null | undefined): string {
+  if (!isoTime) return "the end of the period";
+  return new Date(isoTime).toLocaleDateString("en-US", {
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+    timeZone: "UTC",
+  });
+}
+
+function chargeWords(quote: BillingQuote): string {
+  if (typeof quote.maxPeriodCents === "number") {
+    return `Up to ${formatCents(quote.maxPeriodCents)} per period, billed at the end of each period for what was used; nothing now`;
+  }
+  if (quote.dueNowCents <= 0) {
+    return quote.applies === "checkout"
+      ? "Nothing is charged at the checkout"
+      : "Nothing is charged now";
+  }
+  const amount = `${quote.approximate ? "about " : ""}${formatCents(quote.dueNowCents)}`;
+  return quote.applies === "checkout"
+    ? `${amount}, paid at a checkout`
+    : `${amount}, charged to the card on file when you approve`;
+}
+
+/**
+ * The Account row for a team: its name (the asker can change it) with the
+ * facts the asker cannot, read when the page loads.
+ */
+async function teamAccountValue(
+  userId: string,
+  teamId: string,
+  askedName: string | null
+): Promise<string> {
+  const fallback = `A team you own, named ${askedName ?? "(no name)"}`;
+  try {
+    const identity = await loadTeamIdentity(userId, teamId);
+    return identity
+      ? teamAccountLine(identity)
+      : `${fallback}, which is gone or no longer yours: approving changes nothing`;
+  } catch (error) {
+    reportError("Reading a team for a billing approval failed", error);
+    return `${fallback} (its other details could not be read just now; reload to see them)`;
+  }
+}
+
+const billingChange: ActionSpec<BillingParams> = {
+  runAt: "approve",
+  async parse(input, userId) {
+    const request = parseBillingChangeRequest(input);
+    if (!request) return { ok: false, error: "Unknown billing change" };
+    try {
+      const loaded = await loadBillingQuote(userId, request);
+      return {
+        ok: true,
+        params: { ...request, teamName: loaded.teamName, quote: loaded.at(Date.now()) },
+      };
+    } catch (error) {
+      const refusal = refusalOf(error);
+      if (!refusal) throw error;
+      return { ok: false, error: refusal.message, status: refusal.status };
+    }
+  },
+  // The sentence never holds the team's name (the asker controls it); the
+  // Account row names the team.
+  summary: ({ quote }) => {
+    const money =
+      typeof quote.maxPeriodCents === "number"
+        ? " Nothing is charged now."
+        : quote.dueNowCents > 0
+          ? ` ${quote.approximate ? "About " : ""}${formatCents(quote.dueNowCents)} ${quote.applies === "checkout" ? "is paid at a checkout" : "is charged now"}.`
+          : " Nothing is charged now.";
+    return `${quote.change}${money}`;
+  },
+  details: async ({ quote, teamId, teamName }, userId) => {
+    const facts: ActionDetail[] = [
+      {
+        label: "Account",
+        value: teamId ? await teamAccountValue(userId, teamId, teamName) : "Your account",
+      },
+      { label: "Change", value: quote.change },
+      {
+        label: "When",
+        value:
+          quote.applies === "renewal"
+            ? `At the renewal on ${longDay(quote.effectiveAt)}`
+            : quote.applies === "checkout"
+              ? "Once paid at the checkout that approving opens"
+              : "At once, when you approve",
+      },
+      { label: "Charged", value: chargeWords(quote) },
+    ];
+    if (quote.renewalCents !== null) {
+      facts.push({
+        label: "Then renews at",
+        value:
+          quote.renewalCents > 0
+            ? `${formatCents(quote.renewalCents)}${quote.renewsAt ? ` on ${longDay(quote.renewsAt)}` : ""}`
+            : "Nothing (it ends)",
+      });
+    }
+    if (quote.notes.length > 0) facts.push({ label: "Details", value: quote.notes.join(" ") });
+    facts.push(
+      { label: "Prices", value: "VAT included where it applies" },
+      {
+        label: "If anything changed",
+        value: "Approving changes nothing when the price or the subscription moved since the ask",
+      }
+    );
+    return facts;
+  },
+  // The approve button names what approving costs.
+  page: ({ quote }) => ({
+    applies: quote.applies,
+    dueNowCents: quote.dueNowCents,
+    approximate: quote.approximate,
+    ...(typeof quote.maxPeriodCents === "number" ? { maxPeriodCents: quote.maxPeriodCents } : {}),
+  }),
+  // The run holds the account's lease under the approval's id, and records
+  // its result before giving the lease back: with no result, no lease and
+  // the start well past, the process died mid-run, after Polar may have
+  // made the change.
+  unrecorded: {
+    running: ({ approvalId, userId, params, startedAtMs }) =>
+      billingChangeStillRunning(userId, params.teamId, approvalId, startedAtMs),
+    result: ({ quote }) => ({ ...BILLING_OUTCOME_UNKNOWN, change: quote.change }),
+  },
+  async run(userId, { teamId, change, quote }, _input, context) {
+    // The checkout's link goes to the approving browser only: the asker
+    // never gets a link that pays on the owner's card.
+    const resultOf = (outcome: BillingChangeOutcome) =>
+      ({ ...outcome, change: quote.change }) as Record<string, unknown>;
+    let run;
+    try {
+      run = await runBillingChange(
+        userId,
+        { teamId, change },
+        quote,
+        context
+          ? {
+              holder: context.approvalId,
+              whileHeld: (made) => context.recordResult(resultOf(made.outcome) as Json),
+            }
+          : {}
+      );
+    } catch (error) {
+      // Nothing was touched: the approval goes back to pending.
+      if (error instanceof BillingChangeRetry) throw new ActionError(error.status, error.message);
+      throw error;
+    }
+    const result = resultOf(run.outcome);
+    return {
+      result,
+      stored: result as Json,
+      ...(run.checkoutUrl ? { browser: { checkoutUrl: run.checkoutUrl } } : {}),
+    };
+  },
+};
+
 function days(count: number): string {
   if (count === 1) return "1 day";
   if (count % 365 === 0) return count === 365 ? "1 year" : `${count / 365} years`;
@@ -675,6 +899,7 @@ const ACTIONS: Record<ApprovalAction, ActionSpec<unknown>> = {
   "ai.assist": aiAssist as ActionSpec<unknown>,
   "teams.delete": deleteTeamAction as ActionSpec<unknown>,
   "teams.invite": inviteToTeam as ActionSpec<unknown>,
+  "billing.change": billingChange as ActionSpec<unknown>,
 };
 
 export function actionSpec(action: ApprovalAction): ActionSpec<unknown> {

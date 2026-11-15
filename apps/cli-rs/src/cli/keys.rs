@@ -188,6 +188,9 @@ pub(crate) async fn collect(
                     .into());
                 };
                 print_result(result, Some(&answer.raw["approval"]), json);
+                if let Some(error) = crate::cli::billing::outcome_error(result) {
+                    return Err(error.into());
+                }
                 return Ok(());
             }
             "denied" => return Err(CliError::ApprovalDenied.into()),
@@ -229,6 +232,8 @@ fn print_result(result: &Value, approval: Option<&Value>, json: bool) {
                 sanitize(&tabs)
             ))
         );
+    } else if let Some(executed) = result.get("executed") {
+        crate::cli::billing::print_outcome(result, executed.as_bool() == Some(true));
     } else if result.get("fields").is_some() {
         println!(
             "\n  {} AI setup proposed (nothing is saved until you apply it):\n",
