@@ -139,6 +139,43 @@ export async function isLiveSubscription(id: string): Promise<boolean> {
   return isLiveSubscriptionState(asRecord(await createPolarClient().subscriptions.get(id)));
 }
 
+/** When a Polar subscription started (else was created), in ms; null when Polar left both out. */
+export function subscriptionStartMs(subscription: Record<string, unknown>): number | null {
+  const value =
+    asNonEmptyString(subscription.started_at) ?? asNonEmptyString(subscription.created_at);
+  const ms = value === null ? Number.NaN : Date.parse(value);
+  return Number.isFinite(ms) ? ms : null;
+}
+
+/**
+ * How close two subscriptions' starts must be to count as twin checkouts:
+ * a Polar checkout session lives one hour, so two sessions open at once are
+ * paid at most that far apart; two hours leaves room for a slow payment.
+ */
+export const TWIN_CHECKOUT_WINDOW_MS = 2 * 60 * 60 * 1000;
+
+/**
+ * What to do with a second live plan subscription (`event`) beside the one
+ * the account or team holds (`stored`). "end" (refund and revoke it) when it
+ * started after the stored one, or within TWIN_CHECKOUT_WINDOW_MS of it
+ * either way: two sessions paid together, whose events may arrive in either
+ * order (a 5xx retry delivers the first one's late), so the one that arrives
+ * second is the extra one. "report" for a person otherwise, or when Polar
+ * left out when either started: one that started well before may be the plan
+ * used all along (its row cleared by a revoked event while it stayed live),
+ * and a full refund would pay back months that were used.
+ */
+export function duplicateVerdict(
+  event: Record<string, unknown>,
+  stored: Record<string, unknown>
+): "end" | "report" {
+  const started = subscriptionStartMs(event);
+  const storedStarted = subscriptionStartMs(stored);
+  if (started === null || storedStarted === null) return "report";
+  if (started > storedStarted) return "end";
+  return storedStarted - started <= TWIN_CHECKOUT_WINDOW_MS ? "end" : "report";
+}
+
 /** Revokes a subscription; one an earlier delivery already ended is fine. */
 export async function revokeSubscriptionQuietly(id: string): Promise<void> {
   try {

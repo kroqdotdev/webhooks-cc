@@ -29,11 +29,13 @@ const POLAR_CHECKOUT_ID = /^[A-Za-z0-9_-]{1,128}$/;
  * Called before the subscription is revoked: a redelivery after a revoke
  * reads it as ended and never comes back here.
  *
- * Those are the links that follow the session (`checkoutId`), and the link
- * the session's `metadata` names, which may never have stored the session's
- * id (the write after minting failed): that one unless another session was
- * moved onto it or it was let go of a moved session (detached_at), the same
- * rule that keeps such a link from being paid through the metadata.
+ * Those are the links that follow the session (`checkoutId`), a link that
+ * replaced it with a new session and is not paid or cancelled
+ * (previous_checkout_ids), and the link the session's `metadata` names,
+ * which may never have stored the session's id (the write after minting
+ * failed): that one unless another session was moved onto it or it was let
+ * go of a moved session (detached_at), the same rule that keeps such a link
+ * from being paid through the metadata.
  */
 export async function supersedeCheckoutLinks(
   checkoutId: string | null,
@@ -56,6 +58,16 @@ export async function supersedeCheckoutLinks(
       .eq("polar_checkout_id", checkoutId)
       .is("paid_at", null);
     if (stampError) throw stampError;
+  }
+  if (checkoutId && POLAR_CHECKOUT_ID.test(checkoutId)) {
+    // Only while the link is not paid by its own later session.
+    const { error } = await admin
+      .from("billing_checkouts")
+      .update({ status: "superseded", paid_at: paidAt })
+      .contains("previous_checkout_ids", [checkoutId])
+      .in("status", ["open", "expired"])
+      .is("cancelled_at", null);
+    if (error) throw error;
   }
   if (named && (!checkoutId || POLAR_CHECKOUT_ID.test(checkoutId))) {
     let query = admin

@@ -850,7 +850,7 @@ async function waitForCheckoutText(client: WebhooksCC, id: string, ms: number): 
     return `Paid: ${paid.summary} It is applied to the account within a minute; get_billing shows it.${differs}`;
   } catch (error) {
     if (error instanceof CheckoutSupersededError) {
-      return "The person paid, but by then the account already had what the link buys (or what it added to had ended), so the purchase was undone and the payment goes back to their card (monthly blocks bought twice stay on the account as one-time blocks). Nothing else to do; get_billing shows what the account keeps.";
+      return "The person paid, but by then the account already had what the link buys (or what it added to had ended), so the purchase was undone: its subscription was ended and a refund of what it charged is under review (monthly blocks bought twice stay on the account as one-time blocks, and a second overage subscription was ended before it charged anything). Do not promise the person a refund; get_billing shows what the account keeps.";
     }
     if (error instanceof CheckoutExpiredError) {
       return "The checkout link expired before it was paid. If the person still wants it, make a new one with create_checkout.";

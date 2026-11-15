@@ -88,17 +88,21 @@ class CheckoutExpiredError(WebhooksCCError):
 class CheckoutSupersededError(CheckoutExpiredError):
     """A checkout link was paid, but the purchase was undone as a duplicate: the
     account already had that plan or add-on (or what it added to had ended), so
-    the payment goes back (monthly blocks bought twice stay as one-time blocks). A
-    :class:`CheckoutExpiredError` too, so code that handles a link that bought
-    nothing handles this one. Raised by ``billing.wait_for_checkout()``."""
+    its subscription was ended and a refund of what it charged is under review
+    (monthly blocks bought twice stay as one-time blocks; a second overage
+    subscription charged nothing). A :class:`CheckoutExpiredError` too, so code
+    that handles a link that bought nothing handles this one. Raised by
+    ``billing.wait_for_checkout()``."""
 
     def __init__(self, checkout_id: str) -> None:
         super().__init__(
             checkout_id,
             "By the time this checkout was paid, the account already had what it buys "
-            "(or what it added to had ended), so the purchase was undone and the "
-            "payment goes back; monthly blocks bought twice stay as one-time blocks "
-            "instead.",
+            "(or what it added to had ended), so the purchase was undone: its "
+            "subscription was ended and a refund of what it charged is under review. "
+            "Monthly blocks bought twice stay on the account as one-time blocks "
+            "instead, and a second overage subscription was ended before it charged "
+            "anything.",
         )
 
 

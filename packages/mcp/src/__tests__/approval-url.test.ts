@@ -186,9 +186,10 @@ describe("checkout links opened by the client (URL elicitation)", () => {
         matches: false,
       });
     const handlers = tools({ billing: { waitForCheckout } as unknown as WebhooksCC["billing"] });
-    expect((await handlers.wait_for_checkout({ id: CHECKOUT })).content[0].text).toContain(
-      "the payment goes back"
-    );
+    const superseded = (await handlers.wait_for_checkout({ id: CHECKOUT })).content[0].text;
+    // Refunds are reviewed: the agent is told never to promise one.
+    expect(superseded).toContain("a refund of what it charged is under review");
+    expect(superseded).not.toMatch(/goes back|back to their card/);
     expect((await handlers.wait_for_checkout({ id: CHECKOUT })).content[0].text).toContain(
       "expired"
     );

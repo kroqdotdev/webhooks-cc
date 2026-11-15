@@ -50,6 +50,10 @@ export async function POST(request: Request) {
     const data = event.data as unknown as Record<string, unknown>;
     const teamId = extractTeamIdFromWebhook(data);
     try {
+      // Whether a checkout link may be settled from this event: not when an
+      // add-on found no account to apply to, since the link would read paid
+      // for something nobody got.
+      let settleLink = true;
       // The add-on products (extra requests) have their own subscriptions and
       // orders on the same customer; the plan handlers would read their events
       // as the plan's.
@@ -58,7 +62,10 @@ export async function POST(request: Request) {
         const account = await webhookAccount(teamId, data);
         if (account) {
           await applyCapacityWebhookEvent(event.type, account, capacityKind, data);
-        } else if (!event.type.startsWith("checkout.")) {
+        } else {
+          settleLink = false;
+        }
+        if (!account && !event.type.startsWith("checkout.")) {
           // Paid for, or charging, with no account to give it to. A
           // checkout's own events pay for nothing (its order or
           // subscription does), and a team's often name no team: normal.
@@ -84,7 +91,7 @@ export async function POST(request: Request) {
       // just ended its subscription as a duplicate (superseded, which this
       // never overwrites). Idempotent, so a redelivery after a later failure
       // changes nothing.
-      await settleCheckoutLinkFromWebhook(event.type, data);
+      if (settleLink) await settleCheckoutLinkFromWebhook(event.type, data);
     } catch (applyError) {
       // Polar redelivers on a 5xx, so a failed apply shows up as an error row
       // followed by the retry's row.

@@ -83,15 +83,17 @@ export class CheckoutExpiredError extends WebhooksCCError {
 /**
  * A checkout link was paid, but the webhook undid the purchase as a
  * duplicate: the account already had that plan or add-on (or the
- * subscription it added to had ended), so the payment goes back (monthly
- * blocks bought twice stay as one-time blocks). A CheckoutExpiredError too, so code that handles a link that did not buy
+ * subscription it added to had ended), so its subscription was ended and a
+ * refund of what it charged is under review (monthly blocks bought twice
+ * stay as one-time blocks; a second overage subscription charged nothing).
+ * A CheckoutExpiredError too, so code that handles a link that did not buy
  * anything handles this one.
  */
 export class CheckoutSupersededError extends CheckoutExpiredError {
   constructor(checkoutId: string) {
     super(
       checkoutId,
-      "By the time this checkout was paid, the account already had what it buys (or what it added to had ended), so the purchase was undone and the payment goes back; monthly blocks bought twice stay as one-time blocks instead."
+      "By the time this checkout was paid, the account already had what it buys (or what it added to had ended), so the purchase was undone: its subscription was ended and a refund of what it charged is under review. Monthly blocks bought twice stay on the account as one-time blocks instead, and a second overage subscription was ended before it charged anything."
     );
     this.name = "CheckoutSupersededError";
   }

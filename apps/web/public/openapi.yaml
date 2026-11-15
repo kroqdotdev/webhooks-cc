@@ -3462,11 +3462,14 @@ paths:
       description: >-
         Where a checkout link stands (open, paid, expired, or superseded when the purchase was
         undone as a duplicate by the time it was paid, because the account already had that plan
-        or add-on or what it added to had ended, so the payment goes back) and what it buys, for
-        the person who asked for it, with any of their keys, agents or sessions, and for a team
-        link also the team's owner now, while the person who asked still owns the team. `url` is
-        only there while it is open; Polar's checkout never is. A paid link carries `bought` and
-        `matches`. Poll every two seconds at most.
+        or add-on or what it added to had ended: its subscription was ended and a refund of what it
+        charged is under review; monthly blocks bought twice stay as one-time blocks, and a second
+        overage subscription charged nothing) and what it buys, for the person who asked for it,
+        with any of their keys, agents or sessions, and for a team link also the team's owner now,
+        while the person who asked still owns the team. `url` is only there while it is open and
+        before its expiry; Polar's checkout never is. A paid link carries `bought` and `matches`.
+        Poll every two seconds at most. Once the account or team is deleted, its links go with it
+        and this answers 404.
       parameters:
         - name: id
           in: path

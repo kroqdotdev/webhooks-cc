@@ -994,6 +994,59 @@ describe("checkout links", () => {
     expect(stranger.body.code).toBe("wrong_account");
   });
 
+  it("reads paid, not matching, when a session it replaced is the one paid", async () => {
+    const userId = await makeUser("replaced");
+    const key = await makeKey(userId);
+    const token = await sessionToken(userId);
+    const id = (await create(key.raw, { kind: "plan", plan: "pro" })).body.checkout.id;
+    expect((await open(token, id)).body.status).toBe("redirect");
+    const first = String((await stored(id)).polar_checkout_id);
+
+    // Polar's session no longer sells what the link asks: a reopen replaces it.
+    Object.assign(polar.sessions.get(first)!, { product_id: "prod_business_test" });
+    expect((await open(token, id)).body.status).toBe("redirect");
+    const second = String((await stored(id)).polar_checkout_id);
+    expect(second).not.toBe(first);
+    expect((await stored(id)).previous_checkout_ids).toEqual([first]);
+
+    // The person pays the old one anyway (Polar cannot end it).
+    await deliver("order.paid", {
+      id: `order_replaced_${ts}`,
+      checkout_id: first,
+      product_id: "prod_business_test",
+      status: "paid",
+      net_amount: 2900,
+      currency: "usd",
+      metadata: { checkout_link: id },
+    });
+    expect(await stored(id)).toMatchObject({ status: "paid", mismatch: "replaced" });
+    expect((await read(key.raw, id)).body.checkout).toMatchObject({
+      status: "paid",
+      bought: { product: "prod_business_test" },
+      matches: false,
+    });
+  });
+
+  it("never pays a cancelled link through a session's metadata", async () => {
+    const userId = await makeUser("cancel-paid");
+    const key = await makeKey(userId);
+    const id = (await create(key.raw, { kind: "plan", plan: "pro" })).body.checkout.id;
+    expect((await cancel(key.raw, id)).status).toBe(200);
+    expect((await stored(id)).cancelled_at).toBeTruthy();
+
+    // A session another tab made meanwhile names it, and is paid.
+    await deliver("order.paid", {
+      id: `order_cancelled_${ts}`,
+      checkout_id: `polar_checkout_cancelled_${ts}`,
+      product_id: "prod_pro_test",
+      status: "paid",
+      net_amount: 800,
+      currency: "usd",
+      metadata: { checkout_link: id },
+    });
+    expect(await stored(id)).toMatchObject({ status: "expired", polar_checkout_id: null });
+  });
+
   it("cancels a link nobody opened, and refuses one already opened", async () => {
     const userId = await makeUser("cancel");
     const key = await makeKey(userId);

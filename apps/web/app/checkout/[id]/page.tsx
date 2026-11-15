@@ -9,6 +9,7 @@ import { SiteHeader } from "@/components/nav/site-header";
 import { SupabaseAuthProvider, useAuth } from "@/components/providers/supabase-auth-provider";
 import { MfaGate } from "@/components/auth/mfa-challenge";
 import { CheckoutReview, type CheckoutReviewData } from "@/components/billing/checkout-review";
+import { supersededExplanation } from "@/lib/billing/superseded-copy";
 import { createClient } from "@/lib/supabase/client";
 
 // A checkout link's page (lib/billing/checkout-links.ts): an agent or tool
@@ -37,7 +38,7 @@ type Phase =
   | { kind: "paid"; summary: string }
   | { kind: "processing"; summary: string }
   | { kind: "expired"; summary: string }
-  | { kind: "superseded"; summary: string }
+  | { kind: "superseded"; summary: string; explanation: string }
   | { kind: "wrong_account"; message: string }
   | { kind: "gone"; message: string }
   | { kind: "refused"; message: string }
@@ -94,7 +95,13 @@ function CheckoutLinkContent() {
       if (review.status === "open" && review.unavailable) {
         setPhase({ kind: "refused", message: review.unavailable });
       } else if (review.status === "open") setPhase({ kind: "review", review, opening: false });
-      else setPhase({ kind: review.status, summary: review.summary });
+      else if (review.status === "superseded") {
+        setPhase({
+          kind: "superseded",
+          summary: review.summary,
+          explanation: supersededExplanation(review.kind, review.resource),
+        });
+      } else setPhase({ kind: review.status, summary: review.summary });
     } catch {
       setPhase({ kind: "failed", message: failed, retry: "review" });
     }
@@ -125,12 +132,13 @@ function CheckoutLinkContent() {
         }
         if (response.ok) {
           const kind = result.status;
-          if (
-            kind === "paid" ||
-            kind === "processing" ||
-            kind === "expired" ||
-            kind === "superseded"
-          ) {
+          if (kind === "superseded") {
+            setPhase({
+              kind,
+              summary,
+              explanation: supersededExplanation(review?.kind, review?.resource),
+            });
+          } else if (kind === "paid" || kind === "processing" || kind === "expired") {
             setPhase({ kind, summary });
           } else {
             setPhase({ kind: "failed", message: failed, retry: "open" });
@@ -212,10 +220,8 @@ function CheckoutLinkContent() {
           )}
 
           {phase.kind === "superseded" && (
-            <Notice title="Undone and refunded" summary={phase.summary}>
-              By the time this payment went through, the account already had what it buys (or what
-              it added to had ended), so it was undone. The payment goes back to your card; monthly
-              blocks bought twice stay on the account as one-time blocks instead.
+            <Notice title="Undone as a duplicate" summary={phase.summary}>
+              {phase.explanation}
             </Notice>
           )}
 

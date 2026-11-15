@@ -14,11 +14,13 @@ var ErrCheckoutExpired = errors.New("webhooks.cc: the checkout link expired befo
 
 // ErrCheckoutSuperseded: a checkout link was paid, but the purchase was
 // undone as a duplicate: the account already had that plan or add-on (or
-// what it added to had ended), so the payment goes back (monthly blocks
-// bought twice stay as one-time blocks). It also matches ErrCheckoutExpired, so code that handles a
-// link that bought nothing handles this one. Returned by
+// what it added to had ended), so its subscription was ended and a refund of
+// what it charged is under review (monthly blocks bought twice stay as
+// one-time blocks; a second overage subscription charged nothing). It also
+// matches ErrCheckoutExpired, so code that handles a link that bought
+// nothing handles this one. Returned by
 // BillingService.WaitForCheckout.
-var ErrCheckoutSuperseded = fmt.Errorf("%w: the account already had what it buys, so the purchase was undone and the payment goes back", ErrCheckoutExpired)
+var ErrCheckoutSuperseded = fmt.Errorf("%w: the account already had what it buys, so the purchase was undone: its subscription was ended and a refund is under review", ErrCheckoutExpired)
 
 // BillingService makes checkout links. Paying stays with the person: an
 // agent hands them a ready Polar checkout instead of sending them to find
@@ -72,7 +74,7 @@ type CheckoutBought struct {
 // signed in as the account's owner (the team's owner for a team) and pays on
 // Polar's page. URL is our page, empty once the link is no longer open;
 // Polar's checkout is never in it. Status is "open", "paid", "expired" or
-// "superseded" (paid, but undone as a duplicate and refunded);
+// "superseded" (paid, but undone as a duplicate, a refund under review);
 // Summary says in one sentence what it buys. Once paid, Bought is what the
 // order or subscription holds and Matches whether that is what the link
 // asked for (nil when unknown).
@@ -146,7 +148,7 @@ type WaitForCheckoutOptions struct {
 
 // WaitForCheckout waits until the person pays and returns the paid link. It
 // returns an error matching ErrCheckoutExpired when the link expires first,
-// ErrCheckoutSuperseded when its payment goes back as a duplicate, and a *TimeoutError when opts.Timeout passes first.
+// ErrCheckoutSuperseded when its purchase was undone as a duplicate, and a *TimeoutError when opts.Timeout passes first.
 func (s *BillingService) WaitForCheckout(ctx context.Context, id string, opts WaitForCheckoutOptions) (*CheckoutLink, error) {
 	if err := validateSegment(id, "checkout id"); err != nil {
 		return nil, err

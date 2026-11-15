@@ -1247,7 +1247,9 @@ export interface Database {
           polar_checkout_id: string | null;
           expected: Json | null;
           bought: Json | null;
-          mismatch: "base" | null;
+          mismatch: "base" | "replaced" | null;
+          previous_checkout_ids: string[];
+          cancelled_at: string | null;
           detached_at: string | null;
           opening_at: string | null;
           polar_checked_at: string | null;
@@ -1271,7 +1273,9 @@ export interface Database {
           polar_checkout_id?: string | null;
           expected?: Json | null;
           bought?: Json | null;
-          mismatch?: "base" | null;
+          mismatch?: "base" | "replaced" | null;
+          previous_checkout_ids?: string[];
+          cancelled_at?: string | null;
           detached_at?: string | null;
           opening_at?: string | null;
           polar_checked_at?: string | null;
@@ -1284,7 +1288,9 @@ export interface Database {
           polar_checkout_id?: string | null;
           expected?: Json | null;
           bought?: Json | null;
-          mismatch?: "base" | null;
+          mismatch?: "base" | "replaced" | null;
+          previous_checkout_ids?: string[];
+          cancelled_at?: string | null;
           detached_at?: string | null;
           opening_at?: string | null;
           polar_checked_at?: string | null;

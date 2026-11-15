@@ -2076,7 +2076,7 @@ export class WebhooksCC {
         },
         waitForCheckout: {
           description:
-            "Wait until the person pays; resolves with the paid link, throws CheckoutExpiredError when it expires first and CheckoutSupersededError when its payment goes back as a duplicate (polls at least a second apart)",
+            "Wait until the person pays; resolves with the paid link, throws CheckoutExpiredError when it expires first and CheckoutSupersededError when its purchase was undone as a duplicate (polls at least a second apart)",
           params: { id: "string", timeout: "number?", pollInterval: "number?" },
         },
         cancelCheckout: {
@@ -2778,7 +2778,7 @@ export class WebhooksCC {
     /**
      * Wait until the person pays. Resolves with the paid link; throws
      * CheckoutExpiredError when it expires first, CheckoutSupersededError
-     * when its payment goes back as the account's second plan, TimeoutError
+     * when its purchase was undone as a duplicate, TimeoutError
      * when `timeout` passes first.
      */
     waitForCheckout: async (

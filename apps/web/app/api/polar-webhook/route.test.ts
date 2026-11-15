@@ -147,6 +147,23 @@ describe("POST /api/polar-webhook", () => {
     expect(mockFns.reportError).toHaveBeenCalledTimes(1);
     expect(mockFns.reportError.mock.calls[0][0]).toBe(
       "[capacity] add-on event for a customer with no account"
+    ); // Applied to nobody: no checkout link reads paid for it, a checkout's
+    // own events included.
+    expect(mockFns.settleCheckoutLinkFromWebhook).not.toHaveBeenCalled();
+  });
+
+  test("settles a checkout link once an add-on was applied to its account", async () => {
+    mockFns.resolveWebhookUserId.mockResolvedValue("user_1");
+    mockFns.validateEvent.mockResolvedValue({
+      type: "order.paid",
+      data: { id: "ord_1", product_id: "prod_one_time", customer_id: "cus_1", checkout_id: "co_1" },
+    });
+    const { POST } = await import("./route");
+    expect((await POST(webhookRequest())).status).toBe(200);
+    expect(mockFns.applyCapacityWebhookEvent).toHaveBeenCalled();
+    expect(mockFns.settleCheckoutLinkFromWebhook).toHaveBeenCalledWith(
+      "order.paid",
+      expect.objectContaining({ checkout_id: "co_1" })
     );
   });
 

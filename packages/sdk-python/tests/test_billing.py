@@ -108,12 +108,15 @@ def test_wait_for_checkout_raises_when_it_expires_or_runs_out() -> None:
         client_for(Api([(200, link("open"))])).billing.wait_for_checkout(ID, timeout=0)
 
 
-def test_wait_for_checkout_raises_when_the_payment_goes_back() -> None:
+def test_wait_for_checkout_raises_when_the_purchase_was_undone() -> None:
     with pytest.raises(CheckoutSupersededError) as superseded:
         client_for(Api([(200, link("superseded"))])).billing.wait_for_checkout(ID)
     # Handled wherever an expired link is.
     assert isinstance(superseded.value, CheckoutExpiredError)
     assert superseded.value.checkout_id == ID
+    # It never promises a refund: refunds are reviewed.
+    assert "a refund of what it charged is under review" in str(superseded.value)
+    assert "goes back" not in str(superseded.value)
 
 
 def test_cancel_checkout_expires_a_link_nobody_opened() -> None:

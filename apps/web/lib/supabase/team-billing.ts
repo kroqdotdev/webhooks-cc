@@ -24,6 +24,7 @@ import { addMonthsUtc, annualQuotaWindow, MIN_ANNUAL_WINDOW_MS, remainingShare }
 import {
   asNonEmptyString,
   asRecord,
+  duplicateVerdict,
   isLiveSubscriptionState,
   normalizeStoredSubscriptionStatus,
   parseEventTimestamp,
@@ -1829,12 +1830,14 @@ async function endOrphanTeamSubscription(
  * link's and the dashboard's, or two links for different plans or seats).
  * Then the event's subscription is for a team plan (Teams or Team Business,
  * any interval), live, on the same Polar customer as the stored one, the
- * stored one is live too, and the event's subscription started after it:
- * the team keeps the one it holds, and the newer one ends before it charges
- * again; what it charged goes back through the refund queue
+ * stored one is live too, and duplicateVerdict() says "end": the event's
+ * subscription started after the stored one, or within two hours of it
+ * either way (twin checkouts whose events arrived out of order, say after a
+ * 5xx retry). The team keeps the one it holds, and the other ends before it
+ * charges again; what it charged goes back through the refund queue
  * (lib/billing/refunds.ts), and a checkout link whose session made it reads
- * superseded, never paid. One that started first, or when Polar left out
- * when either started, is reported for a person and neither ended nor
+ * superseded, never paid. One that started well before, or when Polar left
+ * out when either started, is reported for a person and neither ended nor
  * refunded: it may be the plan the team has been using all along (its row
  * cleared by a revoked event while it stayed live), and a full refund would
  * pay back months that were used. A late event for an ended subscription is
@@ -1866,11 +1869,9 @@ async function settleForeignTeamSubscription(
       customerId !== null &&
       customerId === asNonEmptyString(stored.customer_id)
     ) {
-      const started = subscriptionStartMs(current);
-      const storedStarted = subscriptionStartMs(stored);
-      if (started === null || storedStarted === null || started <= storedStarted) {
+      if (duplicateVerdict(current, stored) === "report") {
         reportError(
-          "[team-billing] a team has a second live team plan subscription that did not start after the one it holds",
+          "[team-billing] a team has a second live team plan subscription that started well before the one it holds",
           undefined,
           { teamId, eventType, storedSubscriptionId, eventSubscriptionId: subscriptionId }
         );
@@ -1914,14 +1915,6 @@ async function settleForeignTeamSubscription(
     undefined,
     details
   );
-}
-
-/** When a Polar subscription started (else was created), in ms; null when Polar left both out. */
-function subscriptionStartMs(subscription: Record<string, unknown>): number | null {
-  const value =
-    asNonEmptyString(subscription.started_at) ?? asNonEmptyString(subscription.created_at);
-  const ms = value === null ? Number.NaN : Date.parse(value);
-  return Number.isFinite(ms) ? ms : null;
 }
 
 async function applyTeamSubscriptionState(
@@ -2215,9 +2208,12 @@ async function applyTeamSubscriptionState(
     // Two subscriptions activating the same unsubscribed team at once (two
     // paid checkout sessions, their subscription.created events handled
     // together): both read no subscription, and the write above, fenced on
-    // polar_subscription_id being null, lets only one through. This one is
-    // read again at once, so the guard above settles it (ends and refunds a
-    // second live subscription) without waiting for Polar to redeliver.
+    // polar_subscription_id being null, lets only one through, whichever
+    // started first. This one is read again at once, so
+    // settleForeignTeamSubscription() settles it without waiting for Polar
+    // to redeliver: twin checkouts start within two hours of each other, so
+    // the loser is ended and refunded even when it started first
+    // (duplicateVerdict()); one that started well before is reported.
     await applyTeamSubscriptionState(eventType, teamId, event, true);
     return;
   }

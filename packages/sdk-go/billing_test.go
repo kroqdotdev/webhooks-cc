@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -100,6 +101,10 @@ func TestWaitForCheckoutEnds(t *testing.T) {
 	_, superseded := client.Billing.WaitForCheckout(context.Background(), checkoutID, webhookscc.WaitForCheckoutOptions{})
 	if !errors.Is(superseded, webhookscc.ErrCheckoutSuperseded) || !errors.Is(superseded, webhookscc.ErrCheckoutExpired) {
 		t.Fatalf("err = %v, want ErrCheckoutSuperseded, which is also ErrCheckoutExpired", superseded)
+	}
+	// It never promises a refund: refunds are reviewed.
+	if msg := superseded.Error(); !strings.Contains(msg, "a refund is under review") || strings.Contains(msg, "goes back") {
+		t.Fatalf("err = %q, want the refund under review", msg)
 	}
 	status = "open"
 	_, err := client.Billing.WaitForCheckout(context.Background(), checkoutID, webhookscc.WaitForCheckoutOptions{Timeout: time.Millisecond})

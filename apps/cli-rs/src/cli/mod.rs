@@ -84,7 +84,7 @@ Exit status:
   7  server or network failure; retry (server_error, network_error, request_timeout)
   8  a wait ran out of time, an approval or checkout link expired, an approved
      billing change was not made because its quote changed, or a checkout's
-     payment went back as a duplicate (timeout, approval_expired, quote_changed,
+     purchase was undone as a duplicate (timeout, approval_expired, quote_changed,
      checkout_expired, checkout_superseded)
   9  a destructive command was not confirmed; pass --yes (confirmation_required, cancelled),
      or the account's owner refused an approval (approval_denied)
@@ -1436,7 +1436,7 @@ needs the team's owner.")]
         id: String,
 
         /// Wait until the person pays (exits with checkout_expired if it expires
-        /// first, checkout_superseded if its payment went back as a duplicate)
+        /// first, checkout_superseded if its purchase was undone as a duplicate)
         #[arg(long)]
         wait: bool,
 

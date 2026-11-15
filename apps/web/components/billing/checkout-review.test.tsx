@@ -5,6 +5,8 @@ import { CheckoutReview, type CheckoutReviewData } from "./checkout-review";
 const review: CheckoutReviewData = {
   id: "11111111-2222-4333-8444-555555555555",
   status: "open",
+  kind: "team_plan",
+  resource: null,
   summary: "Teams for the team, 3 seats, billed monthly.",
   price: "3 × $12/seat/mo = $36/mo",
   email: "owner@example.com",
@@ -27,6 +29,8 @@ describe("CheckoutReview", () => {
     expect(html).toContain("Acme");
     expect(html).toContain(review.summary);
     expect(html).toContain("$36/mo");
+    // The price is ours; the charge is Polar's.
+    expect(html).toContain("Polar&#x27;s page shows the final amount");
     // The name the key chose stands apart, in its own element, never quoted.
     expect(html).toContain(
       'An API key named <span class="font-mono text-foreground" data-testid="checkout-requester-name">deploy</span>'

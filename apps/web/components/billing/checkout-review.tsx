@@ -8,7 +8,10 @@ import { networkNotice } from "@/lib/device-login-notice";
 /** What GET /api/billing/checkouts/{id}/review answers. */
 export interface CheckoutReviewData {
   id: string;
-  status: "open" | "paid" | "expired" | "superseded";
+  status: "open" | "paid" | "expired" | "superseded" | "processing";
+  kind: "plan" | "team_plan" | "blocks" | "monthly_blocks" | "overage";
+  /** What blocks or overage are of (requests, pages, domains); null for a plan. */
+  resource: string | null;
   summary: string;
   price: string | null;
   email: string | null;
@@ -68,7 +71,9 @@ export function CheckoutReview(props: {
         {review.price && (
           <div className="flex justify-between gap-4">
             <dt className="text-muted-foreground shrink-0">Price</dt>
-            <dd className="text-right">{review.price}, plus any tax Polar adds</dd>
+            <dd className="text-right">
+              {review.price}, plus any tax Polar adds. Polar&apos;s page shows the final amount.
+            </dd>
           </div>
         )}
         <div className="flex justify-between gap-4">

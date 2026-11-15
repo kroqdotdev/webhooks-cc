@@ -43,8 +43,8 @@ subscription, blocks or overage, `create_checkout` makes a link to
 webhooks.cc that they open signed in as the account's owner (the team's
 owner for a team) and pay with their own card on Polar's page; follow it
 with `wait_for_checkout`, which says when what was bought differs from what
-was asked, or when the payment went back because the account already had
-what it buys. `cancel_checkout` cancels a link they have not opened yet
+was asked, or when the purchase was undone because the account already had
+what it buys (its subscription ended, a refund under review: never promise one). `cancel_checkout` cancels a link they have not opened yet
 (when they change their mind).
 
 CLI: `whk billing checkout|checkout-status|checkout-cancel`.

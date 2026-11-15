@@ -19,7 +19,9 @@
 -- order or subscription arrives, recording what it actually holds (bought);
 -- a read past expires_at settles it from Polar, at most every 30 seconds
 -- (polar_checked_at). A link whose subscription was ended as the account's
--- second plan subscription (and refunded) is superseded, never paid.
+-- second plan subscription (a refund queued for review) is superseded, never
+-- paid. A link answers 404 once its account or team is deleted: the rows
+-- cascade with it.
 --
 -- Rows are written only by the web app's routes (service role); clients have
 -- no access. reserve_billing_checkout() makes a link under a per-account
@@ -58,8 +60,19 @@ create table if not exists public.billing_checkouts (
   bought              jsonb,
   -- Why what was bought differs from what the link asked for, when the
   -- webhook can tell and the order alone cannot show it ('base': a monthly
-  -- top-up paid on another starting count than the session was made for).
-  mismatch            text check (mismatch in ('base')),
+  -- top-up paid on another starting count than the session was made for;
+  -- 'replaced': a session the link had replaced with a new one was paid).
+  mismatch            text check (mismatch in ('base', 'replaced')),
+  -- The sessions this link followed before a reopen replaced them (the
+  -- purchase moved, say a top-up's starting count): Polar cannot end a
+  -- session, so a payment of one still marks the link paid, with mismatch
+  -- 'replaced', rather than leave it open to expire.
+  previous_checkout_ids text[] not null default '{}'
+                        check (cardinality(previous_checkout_ids) <= 20),
+  -- When the asker cancelled the link. A tab that was opening it meanwhile
+  -- may still have made a team's session that names it in its metadata, and
+  -- a payment of that session never marks a cancelled link paid.
+  cancelled_at        timestamptz,
   -- When a team's open session this link followed was moved to another
   -- purchase: the session's metadata may still name the link, so a payment
   -- of that session never marks it paid through the metadata.
@@ -79,6 +92,10 @@ create table if not exists public.billing_checkouts (
 -- The webhook finds a link by its session.
 create index if not exists billing_checkouts_polar_checkout
   on public.billing_checkouts (polar_checkout_id) where polar_checkout_id is not null;
+-- And by a session it replaced.
+create index if not exists billing_checkouts_previous_checkouts
+  on public.billing_checkouts using gin (previous_checkout_ids)
+  where previous_checkout_ids <> '{}';
 -- The limits count an account's recent rows.
 create index if not exists billing_checkouts_user_created
   on public.billing_checkouts (user_id, created_at) where user_id is not null;

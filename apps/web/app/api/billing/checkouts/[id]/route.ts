@@ -10,14 +10,15 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /**
  * GET /api/billing/checkouts/{id}: where a checkout link stands (open, paid,
- * expired, or superseded when the webhook undid its purchase as a duplicate
- * and refunded it) and what it buys, for the person who asked for it, with
+ * expired, or superseded when the webhook undid its purchase as a duplicate:
+ * its subscription ended and a refund queued for review) and what it buys, for the person who asked for it, with
  * any of their keys, agents or sessions, and for a team link also the
  * team's owner now, while the asker still owns the team. The link (our
  * page) is only in the answer while it is open; Polar's checkout never is.
  * A paid link carries what was bought and whether it matches what was asked
  * for; its amount only for a browser session (null for a key or agent
- * token). Anyone else gets 404.
+ * token). Anyone else gets 404, and so does everyone once the account or
+ * team is deleted (its links go with it).
  */
 export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
   // Two a second at most: the SDKs poll at least a second apart.

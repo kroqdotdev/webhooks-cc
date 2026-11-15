@@ -18,6 +18,7 @@ import {
   createBillingCheckout,
   keepBillingPlan,
   planName,
+  PLAN_PRICES,
   type BillingInterval,
   type PaidPlan,
 } from "@/lib/billing-api";
@@ -70,7 +71,7 @@ function optionsFor(profile: AccountProfile): Option[] {
         interval: "month",
         when: "now",
         kind: "button",
-        label: named("Upgrade", "pro", "$8 a month"),
+        label: named("Upgrade", "pro", PLAN_PRICES.pro.month),
       },
       {
         plan: "business",
@@ -78,14 +79,14 @@ function optionsFor(profile: AccountProfile): Option[] {
         when: "now",
         kind: "button",
         primary: true,
-        label: named("Upgrade", "business", "$29 a month"),
+        label: named("Upgrade", "business", PLAN_PRICES.business.month),
       },
       {
         plan: "business",
         interval: "year",
         when: "now",
         kind: "link",
-        label: "or $290 a year",
+        label: `or ${PLAN_PRICES.business.year}`,
       },
     ];
   }
@@ -97,14 +98,14 @@ function optionsFor(profile: AccountProfile): Option[] {
         when: "now",
         kind: "button",
         primary: true,
-        label: named("Switch", "business", "$29 a month"),
+        label: named("Switch", "business", PLAN_PRICES.business.month),
       },
       {
         plan: "business",
         interval: "year",
         when: "renewal",
         kind: "link",
-        label: "or $290 a year, from the renewal",
+        label: `or ${PLAN_PRICES.business.year}, from the renewal`,
       },
     ];
   }

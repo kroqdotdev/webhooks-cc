@@ -288,7 +288,7 @@ pub async fn checkout(
 
 /// `whk billing checkout-status`: where a link stands; with `wait`, waits
 /// until it is paid (checkout_expired if it expires first, checkout_superseded
-/// if its payment went back as a duplicate plan).
+/// if its purchase was undone as a duplicate).
 pub async fn checkout_status(
     client: &ApiClient,
     id: &str,
@@ -386,11 +386,11 @@ fn print_status(link: &Value) {
             }
         }
         Some("superseded") => {
-            println!("  Refunded: {summary}");
+            println!("  Undone as a duplicate: {summary}");
             println!(
                 "  {}",
                 dim(
-                    "By the time it was paid, the account already had what it buys (or what it added to had ended), so it was undone and the payment goes back; monthly blocks bought twice stay as one-time blocks."
+                    "By the time it was paid, the account already had what it buys (or what it added to had ended), so it was undone: its subscription was ended and a refund of what it charged is under review. Monthly blocks bought twice stay as one-time blocks, and a second overage subscription charged nothing."
                 )
             );
         }
@@ -748,6 +748,13 @@ mod tests {
             .unwrap_err();
         let c = crate::error::classify(&error);
         assert_eq!((c.code, c.exit), ("checkout_superseded", 8));
+        // It never promises a refund: refunds are reviewed.
+        let message = error.to_string();
+        assert!(
+            message.contains("a refund of what it charged is under review"),
+            "{message}"
+        );
+        assert!(!message.contains("goes back"), "{message}");
     }
 
     #[test]

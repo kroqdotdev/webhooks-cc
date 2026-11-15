@@ -338,7 +338,9 @@ function view(row: Row): CheckoutLinkView {
     summary: checkoutSummary(item),
     item,
     teamId: row.team_id,
-    url: row.status === "open" ? row.url : null,
+    // Past its expiry an open link is being settled (from Polar, at most
+    // every 30 seconds): never handed out again.
+    url: row.status === "open" && !isPastExpiry(row) ? row.url : null,
     createdAt: row.created_at,
     expiresAt: row.expires_at,
     paidAt: row.paid_at,
@@ -394,7 +396,7 @@ async function purchaseFor(
 }
 
 const COLUMNS =
-  "id, user_id, team_id, created_by, requested_by_key, requested_by_agent, network, country, kind, item, url, polar_checkout_id, expected, bought, mismatch, detached_at, opening_at, polar_checked_at, status, created_at, expires_at, paid_at";
+  "id, user_id, team_id, created_by, requested_by_key, requested_by_agent, network, country, kind, item, url, polar_checkout_id, previous_checkout_ids, expected, bought, mismatch, detached_at, cancelled_at, opening_at, polar_checked_at, status, created_at, expires_at, paid_at";
 
 /**
  * Checks the purchase and makes the link (the limits). Nothing in Polar is
@@ -539,7 +541,13 @@ export async function expireCheckoutLink(id: string, userId: string): Promise<Ch
   const leaseCutoff = new Date(Date.now() - OPENING_LEASE_MS).toISOString();
   const { data: expired, error } = await createAdminClient()
     .from("billing_checkouts")
-    .update({ status: "expired", expires_at: new Date().toISOString() })
+    .update({
+      status: "expired",
+      expires_at: new Date().toISOString(),
+      // A tab opening it meanwhile may still make a team's session that
+      // names it; that session's payment never marks it paid (settlePaid()).
+      cancelled_at: new Date().toISOString(),
+    })
     .eq("id", row.id)
     .eq("status", "open")
     .is("polar_checkout_id", null)
@@ -646,8 +654,14 @@ export function checkoutPrice(item: StoredCheckoutItem, have = 0): string | null
 /** What the checkout page shows before the person continues to payment. */
 export interface CheckoutLinkReview {
   id: string;
-  status: BillingCheckoutStatus;
+  /**
+   * processing: past its expiry with a Polar session not settled yet (the
+   * 30-second check, or Polar unreachable), which may still be being paid.
+   */
+  status: BillingCheckoutStatus | "processing";
   kind: BillingCheckoutKind;
+  /** What blocks or overage are of; null for a plan. */
+  resource: string | null;
   summary: string;
   price: string | null;
   /** The account that pays: the signed-in person's email. */
@@ -687,7 +701,7 @@ export async function reviewCheckoutLink(
   await assertOwner(data, userId);
   const row = await settleIfExpired(data);
   const item = storedItem(row);
-  const status = isPastExpiry(row) ? "expired" : row.status;
+  const status = isPastExpiry(row) ? pastExpiryKind(row) : row.status;
   const admin = createAdminClient();
   const [{ data: user, error: userError }, team] = await Promise.all([
     admin.from("users").select("email").eq("id", userId).maybeSingle(),
@@ -703,6 +717,7 @@ export async function reviewCheckoutLink(
     id: row.id,
     status,
     kind: row.kind,
+    resource: "resource" in item ? item.resource : null,
     summary: checkoutSummary(item, check.have),
     price: checkoutPrice(item, check.have),
     email: user?.email ?? null,
@@ -743,6 +758,17 @@ async function purchaseCheck(
 
 function isPastExpiry(row: Row): boolean {
   return row.status === "open" && Date.parse(row.expires_at) <= Date.now();
+}
+
+/**
+ * What a link still open past its expiry (settleIfExpired() left it so)
+ * reads as: expired when no session was made, else processing, since its
+ * Polar session was not settled yet (asked under 30 seconds ago, Polar
+ * unreachable, or a payment Polar is confirming) and may have been paid.
+ * Never "nothing was charged" before Polar has said so.
+ */
+function pastExpiryKind(row: Row): "expired" | "processing" {
+  return row.polar_checkout_id ? "processing" : "expired";
 }
 
 /** Settles an open link past its expiry: from Polar when it has a session, else expired. */
@@ -871,7 +897,7 @@ export async function openCheckoutLink(id: string, userId: string): Promise<Open
   const item = storedItem(row);
   const summary = checkoutSummary(item);
   if (row.status !== "open") return { kind: row.status, summary };
-  if (isPastExpiry(row)) return { kind: "expired", summary };
+  if (isPastExpiry(row)) return { kind: pastExpiryKind(row), summary };
 
   let storedSession: Record<string, unknown> | null = null;
   if (row.polar_checkout_id) {
@@ -915,10 +941,15 @@ export async function openCheckoutLink(id: string, userId: string): Promise<Open
     .eq("id", row.id)
     .eq("status", "open")
     .or(`opening_at.is.null,opening_at.lt."${leaseCutoff}"`)
-    .select("id")
+    .select("id, polar_checkout_id, previous_checkout_ids")
     .maybeSingle();
   if (claimError) throw claimError;
   if (!claimed) return settledSince(row.id, summary);
+  // The session this one replaces, as the row holds it under the lease.
+  const replaced = asNonEmptyString(claimed.polar_checkout_id);
+  const previous = Array.isArray(claimed.previous_checkout_ids)
+    ? claimed.previous_checkout_ids
+    : [];
 
   try {
     const successUrl = `${await accountHomeOrigin(userId)}${CHECKOUT_COMPLETE_PATH}`;
@@ -939,6 +970,15 @@ export async function openCheckoutLink(id: string, userId: string): Promise<Open
       .from("billing_checkouts")
       .update({
         polar_checkout_id: session.id,
+        // Polar cannot end the session replaced here, so it may still be
+        // paid: kept so its payment finds the link (settlePaid()).
+        ...(replaced && replaced !== session.id
+          ? {
+              previous_checkout_ids: [...previous.filter((id) => id !== replaced), replaced].slice(
+                -MAX_PREVIOUS_CHECKOUTS
+              ),
+            }
+          : {}),
         expected: purchase.expected as unknown as Json,
         // The session is the link's own now, made for it after any detach.
         detached_at: null,
@@ -981,7 +1021,7 @@ async function settledSince(id: string, summary: string): Promise<OpenCheckoutRe
     throw new CheckoutLinkError("not_found", "This checkout link does not exist.", 404);
   }
   if (now.status !== "open") return { kind: now.status, summary };
-  if (isPastExpiry(now)) return { kind: "expired", summary };
+  if (isPastExpiry(now)) return { kind: pastExpiryKind(now), summary };
   throw new CheckoutLinkError(
     "opening",
     "This checkout is being prepared in another tab. Try again in a moment.",
@@ -1012,20 +1052,26 @@ async function assertOwner(row: Row, userId: string): Promise<void> {
 }
 
 const ACTIVE_SUBSCRIPTION = new Set(["active", "trialing"]);
+/** The replaced sessions a link keeps (migration 00104 caps the column at 20). */
+const MAX_PREVIOUS_CHECKOUTS = 20;
 const CHECKOUT_ID = /^[A-Za-z0-9_-]{1,128}$/;
 
 /**
  * Marks paid the links a paid Polar session belongs to: those that follow
- * it, and the link its metadata names (in case the link could not store the
- * session's id), with what the order, subscription or checkout holds. An
- * order's amounts are the payment's, so a paid link takes them even when a
- * subscription event marked it paid first.
+ * it, a link that replaced it with a new session (previous_checkout_ids,
+ * paid with mismatch "replaced", so it reads paid and not matching rather
+ * than open until it expires), and the link its metadata names (in case the
+ * link could not store the session's id), with what the order,
+ * subscription or checkout holds. Links already paid by the session take
+ * what each later event adds (mergeBought()): an order's amount, and a
+ * subscription's seats, which a team plan's order leaves out.
  *
- * A link known only from the metadata is paid only while the subscription
- * the payment made is still live in Polar: the plan and add-on handlers,
- * which run first, may just have ended it as a duplicate, and a link must
- * never read paid for a purchase that was undone (they supersede it too;
- * this covers an end that could not).
+ * A link known only from a replaced session or the metadata is paid only
+ * while the subscription the payment made is still live in Polar: the plan
+ * and add-on handlers, which run first, may just have ended it as a
+ * duplicate, and a link must never read paid for a purchase that was undone
+ * (they supersede it too; this covers an end that could not). A link its
+ * asker cancelled is never paid through either.
  */
 async function settlePaid(
   checkoutId: string,
@@ -1035,10 +1081,46 @@ async function settlePaid(
   const bought = boughtFrom(data);
   await markPaid({ polarCheckoutId: checkoutId }, bought);
   const admin = createAdminClient();
+  const subscriptionId =
+    source === "subscription" ? asNonEmptyString(data.id) : asNonEmptyString(data.subscription_id);
+  let live: boolean | null = null;
+  const stillLive = async () => {
+    if (subscriptionId === null) return true;
+    live ??= await isLiveSubscription(subscriptionId);
+    return live;
+  };
+  const safeId = CHECKOUT_ID.test(checkoutId);
+
+  if (safeId) {
+    // A link that went on to a new session after this one; read first, so
+    // only that case asks Polar anything.
+    const { data: replacedBy, error: replacedError } = await admin
+      .from("billing_checkouts")
+      .select("id")
+      .contains("previous_checkout_ids", [checkoutId])
+      .in("status", ["open", "expired"])
+      .is("cancelled_at", null);
+    if (replacedError) throw replacedError;
+    if ((replacedBy ?? []).length > 0 && (await stillLive())) {
+      const { error } = await admin
+        .from("billing_checkouts")
+        .update({
+          status: "paid",
+          paid_at: new Date().toISOString(),
+          bought: bought as unknown as Json,
+          mismatch: "replaced",
+        })
+        .contains("previous_checkout_ids", [checkoutId])
+        .in("status", ["open", "expired"])
+        .is("cancelled_at", null);
+      if (error) throw error;
+    }
+  }
+
   const named = checkoutLinkNamedBy(data.metadata);
-  if (named && CHECKOUT_ID.test(checkoutId)) {
+  if (named && safeId) {
     // A link that follows the session was paid above; this is one that
-    // never stored it. Reading it first keeps the Polar call to that case.
+    // never stored it.
     const { data: waiting, error: readError } = await admin
       .from("billing_checkouts")
       .select("id")
@@ -1049,14 +1131,11 @@ async function settlePaid(
       // metadata still names the link: Polar's types do not say whether a
       // metadata update replaces or merges.
       .is("detached_at", null)
+      .is("cancelled_at", null)
       .is("polar_checkout_id", null)
       .maybeSingle();
     if (readError) throw readError;
-    const subscriptionId =
-      source === "subscription"
-        ? asNonEmptyString(data.id)
-        : asNonEmptyString(data.subscription_id);
-    if (waiting && (subscriptionId === null || (await isLiveSubscription(subscriptionId)))) {
+    if (waiting && (await stillLive())) {
       const { error } = await admin
         .from("billing_checkouts")
         .update({
@@ -1068,25 +1147,72 @@ async function settlePaid(
         .eq("id", named)
         .in("status", ["open", "expired"])
         .is("detached_at", null)
+        .is("cancelled_at", null)
         .is("polar_checkout_id", null);
       if (error) throw error;
     }
   }
-  if (source === "order") {
+
+  // Links the session paid before this event: what it adds.
+  let paid = admin.from("billing_checkouts").select("id, bought").eq("status", "paid");
+  paid = safeId
+    ? paid.or(`polar_checkout_id.eq.${checkoutId},previous_checkout_ids.cs.{${checkoutId}}`)
+    : paid.eq("polar_checkout_id", checkoutId);
+  const { data: paidRows, error: paidError } = await paid;
+  if (paidError) throw paidError;
+  for (const paidRow of (paidRows ?? []) as Array<{ id: string; bought: Json | null }>) {
+    const existing = asBought(paidRow.bought);
+    const merged = mergeBought(existing, bought, source);
+    if (existing && sameBought(existing, merged)) continue;
     const { error } = await admin
       .from("billing_checkouts")
-      .update({ bought: bought as unknown as Json })
-      .eq("polar_checkout_id", checkoutId)
+      .update({ bought: merged as unknown as Json })
+      .eq("id", paidRow.id)
       .eq("status", "paid");
     if (error) throw error;
   }
 }
 
 /**
+ * What a paid link holds once another event for its session arrives. The
+ * product, seats and units are the latest event's where it has them, else
+ * kept (a team plan's order leaves out the seats its subscription has). The
+ * amount and currency are the order's, the payment's own; a subscription
+ * or checkout event only fills them in when none is known.
+ */
+export function mergeBought(
+  existing: CheckoutBought | null,
+  incoming: CheckoutBought,
+  source: "order" | "subscription" | "checkout"
+): CheckoutBought {
+  if (!existing) return incoming;
+  const payment = source === "order";
+  return {
+    product: incoming.product ?? existing.product,
+    seats: incoming.seats ?? existing.seats,
+    units: incoming.units ?? existing.units,
+    amount: payment ? (incoming.amount ?? existing.amount) : (existing.amount ?? incoming.amount),
+    currency: payment
+      ? (incoming.currency ?? existing.currency)
+      : (existing.currency ?? incoming.currency),
+  };
+}
+
+function sameBought(a: CheckoutBought, b: CheckoutBought): boolean {
+  return (
+    a.product === b.product &&
+    a.seats === b.seats &&
+    a.units === b.units &&
+    a.amount === b.amount &&
+    a.currency === b.currency
+  );
+}
+
+/**
  * The Polar webhook's part: a paid order or a live subscription that came
  * from a link's session marks the link paid, and a checkout Polar reports
  * succeeded or expired settles it too. A link already superseded (the
- * webhook undid its purchase as a duplicate and refunded it) stays so. Every other
+ * webhook undid its purchase as a duplicate, queueing a refund for review) stays so. Every other
  * event, and every session no link follows, changes nothing.
  */
 export async function settleCheckoutLinkFromWebhook(

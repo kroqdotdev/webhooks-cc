@@ -1949,8 +1949,8 @@ class CheckoutLink:
     is never in it. ``item`` is what it buys, as the API took it, and ``summary``
     says so in one sentence. Once paid, ``bought`` is what the order or subscription
     holds and ``matches`` whether that is what the link asked for (``None`` when
-    unknown). ``status`` ``"superseded"``: it was paid, but its subscription was
-    ended as the account's second plan and the payment goes back.
+    unknown). ``status`` ``"superseded"``: it was paid, but the purchase was undone
+    as a duplicate: its subscription was ended and a refund is under review.
     """
 
     id: str

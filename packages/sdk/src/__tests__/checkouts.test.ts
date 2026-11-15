@@ -75,7 +75,7 @@ describe("billing checkout links", () => {
     await expect(client().billing.waitForCheckout(ID, { timeout: 0 })).rejects.toThrow("Timed out");
   });
 
-  it("throws when the payment goes back as a duplicate plan", async () => {
+  it("throws when the purchase was undone as a duplicate plan", async () => {
     globalThis.fetch = vi.fn().mockResolvedValue(answer(link("superseded")));
     const error = await client()
       .billing.waitForCheckout(ID)
@@ -83,6 +83,9 @@ describe("billing checkout links", () => {
     expect(error).toBeInstanceOf(CheckoutSupersededError);
     // Handled wherever an expired link is.
     expect(error).toBeInstanceOf(CheckoutExpiredError);
+    // It never promises a refund: refunds are reviewed.
+    expect((error as Error).message).toContain("a refund of what it charged is under review");
+    expect((error as Error).message).not.toContain("goes back");
   });
 
   it("cancels a link nobody has opened", async () => {

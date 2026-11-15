@@ -13,7 +13,7 @@
 //! | 5      | `forbidden`             | Not allowed: the plan, a limit, or a permission  |
 //! | 6      | `rate_limited`          | Too many requests; wait and retry                |
 //! | 7      | `server_error`, `network_error`, `request_timeout` | Our side or the network failed; retry |
-//! | 8      | `timeout`, `approval_expired`, `quote_changed`, `checkout_expired`, `checkout_superseded` | `whk wait` (or another wait) ran out of time, an approval or checkout link expired, an approved billing change was not made because its quote changed, or a checkout's payment went back as a duplicate |
+//! | 8      | `timeout`, `approval_expired`, `quote_changed`, `checkout_expired`, `checkout_superseded` | `whk wait` (or another wait) ran out of time, an approval or checkout link expired, an approved billing change was not made because its quote changed, or a checkout's purchase was undone as a duplicate |
 //! | 9      | `confirmation_required`, `cancelled`, `approval_denied` | A destructive command was not confirmed, or an approval was refused |
 
 use serde_json::{Value, json};
@@ -60,8 +60,8 @@ pub enum CliError {
     /// A checkout link expired before the person paid.
     CheckoutExpired,
     /// A checkout link was paid, but the purchase was undone as a duplicate
-    /// (the account already had it, or what it added to had ended) and the
-    /// payment goes back.
+    /// (the account already had it, or what it added to had ended): its
+    /// subscription was ended and a refund is under review.
     CheckoutSuperseded,
     /// Arguments that parse but make no sense together.
     Usage(String),
@@ -104,7 +104,7 @@ impl std::fmt::Display for CliError {
                 f.write_str("The checkout link expired before it was paid.")
             }
             CliError::CheckoutSuperseded => f.write_str(
-                "By the time the checkout was paid, the account already had what it buys (or what it added to had ended), so the purchase was undone and the payment goes back.",
+                "By the time this checkout was paid, the account already had what it buys (or what it added to had ended), so the purchase was undone: its subscription was ended and a refund of what it charged is under review. Monthly blocks bought twice stay on the account as one-time blocks instead, and a second overage subscription was ended before it charged anything.",
             ),
         }
     }

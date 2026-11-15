@@ -2122,8 +2122,9 @@ export type CheckoutItem =
 /**
  * Where a checkout link stands. `superseded`: it was paid, but the purchase
  * was undone as a duplicate (the account already had that plan or add-on,
- * or what it added to had ended) and the payment goes back. A link
- * cancelled before it was opened reads `expired`.
+ * or what it added to had ended): its subscription was ended and a refund
+ * of what it charged is under review. A link cancelled before it was
+ * opened reads `expired`.
  */
 export type CheckoutStatus = "open" | "paid" | "expired" | "superseded";
 

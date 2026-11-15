@@ -2090,7 +2090,7 @@ class Billing:
     ) -> CheckoutLink:
         """Wait until the person pays and return the paid link. Raises
         :class:`CheckoutExpiredError` when it expires first,
-        :class:`CheckoutSupersededError` when its payment goes back as a duplicate,
+        :class:`CheckoutSupersededError` when its purchase was undone as a duplicate,
         and :class:`TimeoutError` when ``timeout`` passes first (default:
         until it expires). Polls at least a second apart."""
         _validate_segment(checkout_id, "checkout id")
