@@ -486,6 +486,49 @@ async fn run(args: Cli) -> Result<()> {
                     cli::billing::show(&client, args.json).await?;
                     return Ok(());
                 }
+                Some(B::Checkout {
+                    kind,
+                    plan,
+                    interval,
+                    seats,
+                    blocks,
+                    resource,
+                    team,
+                    wait,
+                    timeout,
+                }) => {
+                    let item = cli::billing::CheckoutArgs {
+                        kind,
+                        plan,
+                        interval,
+                        seats,
+                        blocks,
+                        resource,
+                        team,
+                    };
+                    cli::billing::checkout(
+                        &client,
+                        item,
+                        wait.then_some(timeout.as_str()),
+                        args.json,
+                    )
+                    .await?;
+                    return Ok(());
+                }
+                Some(B::CheckoutCancel { id }) => {
+                    cli::billing::checkout_cancel(&client, &id, args.json).await?;
+                    return Ok(());
+                }
+                Some(B::CheckoutStatus { id, wait, timeout }) => {
+                    cli::billing::checkout_status(
+                        &client,
+                        &id,
+                        wait.then_some(timeout.as_str()),
+                        args.json,
+                    )
+                    .await?;
+                    return Ok(());
+                }
                 Some(B::Plan {
                     plan,
                     interval,

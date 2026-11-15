@@ -544,7 +544,7 @@
       "sdk": ["billing.get"],
       "python": "testing-focused SDK: added on demand",
       "go": "testing-focused SDK: added on demand",
-      "cli": ["billing show"],
+      "cli": ["billing", "billing show"],
       "mcp": ["get_billing"]
     },
     {
@@ -561,7 +561,7 @@
       "id": "billing.checkout",
       "does": "Subscribe to a first plan, or open the billing portal (invoices and the payment method)",
       "routes": ["POST /api/billing/checkout", "POST /api/billing/portal"],
-      "sessionOnly": "payment stays with a person, and a portal link signs its holder in as the customer; planned: checkout links an agent hands over",
+      "sessionOnly": "payment stays with a person, and a portal link signs its holder in as the customer; an agent hands them a checkout link instead (billing.checkout-links)",
       "sdk": "session only",
       "python": "session only",
       "go": "session only",
@@ -638,6 +638,35 @@
       "go": "session only",
       "cli": "session only",
       "mcp": "session only"
+    },
+    {
+      "id": "billing.checkout-links",
+      "does": "Make a checkout link for the person to pay (a plan, a team subscription, extra capacity), which they open signed in, follow it until it is paid or expires, and cancel it before it is opened",
+      "routes": [
+        "POST /api/billing/checkouts",
+        "GET /api/billing/checkouts/[id]",
+        "DELETE /api/billing/checkouts/[id]"
+      ],
+      "sdk": [
+        "billing.createCheckout",
+        "billing.getCheckout",
+        "billing.waitForCheckout",
+        "billing.cancelCheckout"
+      ],
+      "python": [
+        "billing.create_checkout",
+        "billing.get_checkout",
+        "billing.wait_for_checkout",
+        "billing.cancel_checkout"
+      ],
+      "go": [
+        "Billing.CreateCheckout",
+        "Billing.GetCheckout",
+        "Billing.WaitForCheckout",
+        "Billing.CancelCheckout"
+      ],
+      "cli": ["billing checkout", "billing checkout-status", "billing checkout-cancel"],
+      "mcp": ["create_checkout", "wait_for_checkout", "cancel_checkout"]
     },
     {
       "id": "support.tickets",
@@ -977,7 +1006,7 @@
         "POST /api/teams/[teamId]/billing/checkout",
         "POST /api/teams/[teamId]/billing/portal"
       ],
-      "sessionOnly": "payment stays with a person, and a portal link signs its holder in as the team's customer; planned: checkout links an agent hands over",
+      "sessionOnly": "payment stays with a person, and a portal link signs its holder in as the team's customer; an agent hands them a checkout link instead (billing.checkout-links)",
       "sdk": "session only",
       "python": "session only",
       "go": "session only",
@@ -1083,7 +1112,9 @@
     "/api/account/analytics-consent": "the browser's cookie banner",
     "/api/account/mfa/*": "two-factor sign-in, which belongs to the browser",
     "/api/approvals/review": "the approval page, for the person answering it",
-    "/api/approvals/decide": "the approval page, for the person answering it"
+    "/api/approvals/decide": "the approval page, for the person answering it",
+    "/api/billing/checkouts/[id]/open": "a checkout link's page, for the account's owner who pays it",
+    "/api/billing/checkouts/[id]/review": "a checkout link's page, for the account's owner who pays it"
   },
   "local": {
     "sdk": {

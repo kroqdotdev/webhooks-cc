@@ -7,9 +7,13 @@ const mockFns = vi.hoisted(() => ({
   getPolarCheckoutConfig: vi.fn(),
   reconcileAddonsWithPlan: vi.fn(),
   recordRefund: vi.fn(),
+  supersedeCheckoutLinks: vi.fn(),
 }));
 
 vi.mock("@/lib/billing/refunds", () => ({ recordRefund: mockFns.recordRefund }));
+vi.mock("@/lib/billing/checkout-link-rows", () => ({
+  supersedeCheckoutLinks: mockFns.supersedeCheckoutLinks,
+}));
 
 vi.mock("@/lib/polar", async (importOriginal) => ({
   // The real product matching reads the product env vars set in each test.
@@ -742,9 +746,14 @@ describe("plan events apply Polar's current state", () => {
     );
     polarSubscriptions.sub_first = subscriptionEvent({ id: "sub_first" });
 
-    await apply("subscription.created", subscriptionEvent({ id: "sub_second" }));
+    await apply(
+      "subscription.created",
+      subscriptionEvent({ id: "sub_second", checkout_id: "co_link" })
+    );
 
     expect(polarRevoke).toHaveBeenCalledWith("sub_second");
+    // A checkout link its session made reads superseded, never paid.
+    expect(mockFns.supersedeCheckoutLinks).toHaveBeenCalledWith("co_link", undefined);
     expect(userUpdatePayload()).toBeUndefined();
     expect(mockFns.recordRefund).toHaveBeenCalledWith({
       target: { subscription: "sub_second" },
@@ -754,6 +763,24 @@ describe("plan events apply Polar's current state", () => {
     expect(mockFns.recordRefund.mock.invocationCallOrder[0]).toBeLessThan(
       polarRevoke.mock.invocationCallOrder[0]
     );
+    // Superseded before the revoke too: a redelivery after a failed
+    // supersede must not find the subscription ended and the link paid.
+    expect(mockFns.supersedeCheckoutLinks.mock.invocationCallOrder[0]).toBeLessThan(
+      polarRevoke.mock.invocationCallOrder[0]
+    );
+  });
+
+  test("a failed supersede leaves the duplicate live, so the redelivery tries again", async () => {
+    mockFns.createAdminClient.mockReturnValue(
+      createFakeAdmin({ "users:select": [storedUser({ polar_subscription_id: "sub_first" })] })
+    );
+    polarSubscriptions.sub_first = subscriptionEvent({ id: "sub_first" });
+    mockFns.supersedeCheckoutLinks.mockRejectedValueOnce(new Error("connection reset"));
+
+    await expect(
+      apply("subscription.created", subscriptionEvent({ id: "sub_second", checkout_id: "co_link" }))
+    ).rejects.toThrow("connection reset");
+    expect(polarRevoke).not.toHaveBeenCalled();
   });
 
   test("a new subscription replaces one Polar no longer has live", async () => {

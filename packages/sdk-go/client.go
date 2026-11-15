@@ -81,6 +81,8 @@ type Client struct {
 	Shares *SharesService
 	// Names manages reserved preview names.
 	Names *NamesService
+	// Billing makes checkout links for the person to pay.
+	Billing *BillingService
 }
 
 // RetryOptions controls how API calls are retried. By default they are not
@@ -216,6 +218,7 @@ func configure(opts []Option) (*Client, error) {
 	c.Destinations = &DestinationsService{c: c}
 	c.Shares = &SharesService{c: c}
 	c.Names = &NamesService{c: c}
+	c.Billing = &BillingService{c: c}
 	return c, nil
 }
 

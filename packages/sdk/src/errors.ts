@@ -69,6 +69,34 @@ export class ApprovalExpiredError extends WebhooksCCError {
   }
 }
 
+/** A checkout link expired before the person paid. Make a new one if they still want it. */
+export class CheckoutExpiredError extends WebhooksCCError {
+  constructor(
+    public readonly checkoutId: string,
+    message = "The checkout link expired before it was paid. Make a new one if the person still wants it."
+  ) {
+    super(0, message);
+    this.name = "CheckoutExpiredError";
+  }
+}
+
+/**
+ * A checkout link was paid, but the webhook undid the purchase as a
+ * duplicate: the account already had that plan or add-on (or the
+ * subscription it added to had ended), so the payment goes back (monthly
+ * blocks bought twice stay as one-time blocks). A CheckoutExpiredError too, so code that handles a link that did not buy
+ * anything handles this one.
+ */
+export class CheckoutSupersededError extends CheckoutExpiredError {
+  constructor(checkoutId: string) {
+    super(
+      checkoutId,
+      "By the time this checkout was paid, the account already had what it buys (or what it added to had ended), so the purchase was undone and the payment goes back; monthly blocks bought twice stay as one-time blocks instead."
+    );
+    this.name = "CheckoutSupersededError";
+  }
+}
+
 /** Rate limit metadata from X-RateLimit-* response headers. */
 export interface RateLimitMeta {
   /** Maximum number of requests allowed in the current window. */

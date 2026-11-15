@@ -1909,3 +1909,82 @@ class TunnelNameList:
             else [],
             raw=dict(data),
         )
+
+
+CheckoutStatus = Literal["open", "paid", "expired", "superseded"]
+
+_CHECKOUT_STATUSES = ("open", "paid", "expired", "superseded")
+
+
+@dataclass(frozen=True)
+class CheckoutBought:
+    """What a paid checkout link's order or subscription holds, as Polar reported
+    it. ``amount`` is in cents, before tax, and None for an API key or agent
+    token: only a browser session reads what was paid."""
+
+    product: str | None
+    seats: int | None
+    units: int | None
+    amount: int | None
+    currency: str | None
+
+    @classmethod
+    def from_dict(cls, data: Mapping[str, Any]) -> CheckoutBought:
+        return cls(
+            product=_str_or_none(data.get("product")),
+            seats=_int_or_none(data.get("seats")),
+            units=_int_or_none(data.get("units")),
+            amount=_int_or_none(data.get("amount")),
+            currency=_str_or_none(data.get("currency")),
+        )
+
+
+@dataclass(frozen=True)
+class CheckoutLink:
+    """A checkout link from ``billing.create_checkout()``: hand ``url`` to the person,
+    who opens it signed in as the account's owner and pays on Polar's page with their
+    own card. Nothing is charged until they do.
+
+    ``url`` is our page, ``None`` once the link is no longer open; Polar's checkout
+    is never in it. ``item`` is what it buys, as the API took it, and ``summary``
+    says so in one sentence. Once paid, ``bought`` is what the order or subscription
+    holds and ``matches`` whether that is what the link asked for (``None`` when
+    unknown). ``status`` ``"superseded"``: it was paid, but its subscription was
+    ended as the account's second plan and the payment goes back.
+    """
+
+    id: str
+    status: CheckoutStatus
+    kind: str
+    summary: str
+    item: dict[str, Any]
+    team_id: str | None
+    url: str | None
+    created_at: str
+    expires_at: str
+    paid_at: str | None
+    bought: CheckoutBought | None = None
+    matches: bool | None = None
+    raw: dict[str, Any] = field(default_factory=dict, repr=False, compare=False)
+
+    @classmethod
+    def from_dict(cls, data: Mapping[str, Any]) -> CheckoutLink:
+        status = data.get("status")
+        item = data.get("item")
+        bought = data.get("bought")
+        matches = data.get("matches")
+        return cls(
+            id=str(data.get("id") or ""),
+            status=cast(CheckoutStatus, status if status in _CHECKOUT_STATUSES else "open"),
+            kind=str(data.get("kind") or ""),
+            summary=str(data.get("summary") or ""),
+            item=dict(item) if isinstance(item, Mapping) else {},
+            team_id=_str_or_none(data.get("teamId")),
+            url=_str_or_none(data.get("url")),
+            created_at=str(data.get("createdAt") or ""),
+            expires_at=str(data.get("expiresAt") or ""),
+            paid_at=_str_or_none(data.get("paidAt")),
+            bought=CheckoutBought.from_dict(bought) if isinstance(bought, Mapping) else None,
+            matches=matches if isinstance(matches, bool) else None,
+            raw=dict(data),
+        )

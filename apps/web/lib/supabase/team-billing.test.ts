@@ -4,9 +4,15 @@ const mockFns = vi.hoisted(() => ({
   createAdminClient: vi.fn(),
   createPolarClient: vi.fn(),
   recordRefund: vi.fn(),
+  detachCheckoutLinks: vi.fn(),
+  supersedeCheckoutLinks: vi.fn(),
 }));
 
 vi.mock("@/lib/billing/refunds", () => ({ recordRefund: mockFns.recordRefund }));
+vi.mock("@/lib/billing/checkout-link-rows", () => ({
+  detachCheckoutLinks: mockFns.detachCheckoutLinks,
+  supersedeCheckoutLinks: mockFns.supersedeCheckoutLinks,
+}));
 
 vi.mock("@/lib/polar", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/polar")>();
@@ -41,6 +47,7 @@ import {
   createTeamCustomerPortal,
   ensureOwnerSeat,
   extractTeamIdFromWebhook,
+  teamPlanPurchase,
   keepTeamPlan,
   quoteTeamSeatChange,
   resubscribeTeam,
@@ -456,7 +463,11 @@ describe("createTeamCheckout", () => {
     expect(checkoutUpdate).toHaveBeenCalledWith("co_1", {
       product_id: "prod_team_business_year_123",
       seats: 5,
+      // Moved by the dashboard, it names no checkout link.
+      metadata: {},
     });
+    // Links that followed it no longer do.
+    expect(mockFns.detachCheckoutLinks).toHaveBeenCalledWith("co_1", undefined);
     // The cache follows, fenced on the session it read.
     expect(recorded).toContainEqual({
       table: "teams",
@@ -474,6 +485,189 @@ describe("createTeamCheckout", () => {
     });
     const cacheWrite = recordedFilters.find((c) => c.table === "teams" && c.op === "update");
     expect(cacheWrite?.filters).toContainEqual(["eq", "pending_checkout->>created_at", createdAt]);
+  });
+
+  describe("for a checkout link", () => {
+    const LINK = { id: "link_1", successUrl: "https://mailhooks.cc/checkout/complete" };
+    const createdAt = () => new Date(Date.now() - 60_000).toISOString();
+    const openTeam = (at: string, extra: Record<string, unknown> = {}) =>
+      teamRow({
+        polar_customer_id: "cus_team_1",
+        pending_checkout: {
+          id: "co_1",
+          url: "https://sandbox.polar.sh/checkout/cached",
+          seats: 3,
+          product: "prod_teams_123",
+          created_at: at,
+          expires_at: "2099-01-01T00:00:00.000Z",
+          ...extra,
+        },
+      });
+
+    test("is checked without Polar, and refuses a member", async () => {
+      mockFns.createAdminClient.mockReturnValue(
+        createFakeAdmin({
+          "team_members:select": [OWNER_MEMBERSHIP],
+          "teams:select": [openTeam(createdAt())],
+        })
+      );
+      const purchase = await teamPlanPurchase("user_1", "team_1", 3, "team", "month");
+      expect(purchase.expected).toEqual({ product: "prod_teams_123", seats: 3 });
+      expect(mockFns.createPolarClient).not.toHaveBeenCalled();
+
+      mockFns.createAdminClient.mockReturnValue(
+        createFakeAdmin({ "team_members:select": [{ data: null }] })
+      );
+      await expect(teamPlanPurchase("user_2", "team_1", 3)).rejects.toMatchObject({
+        code: "not_owner",
+      });
+    });
+
+    test("reuses the open session when it buys the same plan and seats, naming the link", async () => {
+      mockFns.createAdminClient.mockReturnValue(
+        createFakeAdmin({
+          "team_members:select": [OWNER_MEMBERSHIP],
+          "teams:select": [openTeam(createdAt())],
+        })
+      );
+      const checkoutUpdate = vi.fn().mockResolvedValue({});
+      const checkoutCreate = vi.fn();
+      mockFns.createPolarClient.mockReturnValue({
+        checkouts: { create: checkoutCreate, update: checkoutUpdate },
+      });
+      const purchase = await teamPlanPurchase("user_1", "team_1", 3, "team", "month");
+      await expect(purchase.mint(LINK)).resolves.toEqual({
+        id: "co_1",
+        url: "https://sandbox.polar.sh/checkout/cached",
+        expiresAt: "2099-01-01T00:00:00.000Z",
+      });
+      expect(checkoutCreate).not.toHaveBeenCalled();
+      expect(checkoutUpdate).toHaveBeenCalledWith("co_1", {
+        metadata: { checkout_link: "link_1" },
+      });
+    });
+
+    test("with none open, mints a session for its plan and exactly its seats, cached as fixed", async () => {
+      mockFns.createAdminClient.mockReturnValue(
+        createFakeAdmin({
+          "team_members:select": [OWNER_MEMBERSHIP],
+          "teams:select": [teamRow({ polar_customer_id: "cus_team_1" })],
+          // The lease claim, then the session cached.
+          "teams:update": [{ data: { id: "team_1" } }, {}],
+        })
+      );
+      const checkoutCreate = vi.fn().mockResolvedValue({
+        id: "co_2",
+        url: "https://sandbox.polar.sh/checkout/link",
+        expires_at: "2026-10-05T13:30:00Z",
+      });
+      mockFns.createPolarClient.mockReturnValue({ checkouts: { create: checkoutCreate } });
+
+      const purchase = await teamPlanPurchase("user_1", "team_1", 4, "team_business", "year");
+      await expect(purchase.mint(LINK)).resolves.toEqual({
+        id: "co_2",
+        url: "https://sandbox.polar.sh/checkout/link",
+        expiresAt: "2026-10-05T13:30:00.000Z",
+      });
+      expect(checkoutCreate).toHaveBeenCalledWith({
+        products: ["prod_team_business_year_123"],
+        seats: 4,
+        min_seats: 4,
+        max_seats: 4,
+        success_url: "https://mailhooks.cc/checkout/complete",
+        customer_id: "cus_team_1",
+        metadata: { checkout_link: "link_1" },
+      });
+      const cached = recorded.filter((c) => c.table === "teams" && c.op === "update")[1]
+        ?.payload as { pending_checkout: Record<string, unknown> };
+      expect(cached.pending_checkout).toMatchObject({ id: "co_2", seats: 4, fixed: true });
+    });
+
+    test("moves the dashboard's open session to its plan and seats, letting other links go", async () => {
+      const at = createdAt();
+      mockFns.createAdminClient.mockReturnValue(
+        createFakeAdmin({
+          "team_members:select": [OWNER_MEMBERSHIP],
+          "teams:select": [openTeam(at)],
+        })
+      );
+      const checkoutUpdate = vi.fn().mockResolvedValue({});
+      const checkoutCreate = vi.fn();
+      mockFns.createPolarClient.mockReturnValue({
+        checkouts: { create: checkoutCreate, update: checkoutUpdate },
+      });
+
+      const purchase = await teamPlanPurchase("user_1", "team_1", 5, "team", "month");
+      await expect(purchase.mint(LINK)).resolves.toMatchObject({ id: "co_1" });
+      expect(checkoutCreate).not.toHaveBeenCalled();
+      expect(checkoutUpdate).toHaveBeenCalledWith("co_1", {
+        product_id: "prod_teams_123",
+        seats: 5,
+        metadata: { checkout_link: "link_1" },
+      });
+      expect(mockFns.detachCheckoutLinks).toHaveBeenCalledWith("co_1", "link_1");
+    });
+
+    test("the dashboard replaces a link's fixed session rather than move it", async () => {
+      const at = createdAt();
+      mockFns.createAdminClient.mockReturnValue(
+        createFakeAdmin({
+          "team_members:select": [OWNER_MEMBERSHIP],
+          "teams:select": [openTeam(at, { fixed: true })],
+          // The slot taken from the old session, then the new session cached.
+          "teams:update": [{ data: { id: "team_1" } }, {}],
+        })
+      );
+      const checkoutCreate = vi.fn().mockResolvedValue({
+        id: "co_2",
+        url: "https://sandbox.polar.sh/checkout/new",
+        expires_at: "2026-10-05T13:30:00Z",
+      });
+      const checkoutUpdate = vi.fn();
+      mockFns.createPolarClient.mockReturnValue({
+        checkouts: { create: checkoutCreate, update: checkoutUpdate },
+      });
+
+      await expect(createTeamCheckout("user_1", "team_1", 5)).resolves.toBe(
+        "https://sandbox.polar.sh/checkout/new"
+      );
+      // The link's session keeps buying what the link says.
+      expect(checkoutUpdate).not.toHaveBeenCalled();
+      expect(mockFns.detachCheckoutLinks).not.toHaveBeenCalled();
+      expect(checkoutCreate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          seats: 5,
+          customer_id: "cus_team_1",
+          products: ["prod_teams_123", "prod_team_business_123", "prod_team_business_year_123"],
+        })
+      );
+      const teamWrites = recorded
+        .map((call, i) => ({ call, filters: recordedFilters[i].filters }))
+        .filter(({ call }) => call.table === "teams" && call.op === "update");
+      expect(teamWrites).toHaveLength(2);
+      // Taken from the old session only while it is still the cached one.
+      expect(teamWrites[0].filters).toContainEqual(["eq", "pending_checkout->>created_at", at]);
+      expect(teamWrites[1].call.payload).toMatchObject({
+        pending_checkout: { id: "co_2", seats: 5, fixed: false },
+      });
+    });
+
+    test("reports a checkout in progress when the fixed session was replaced meanwhile", async () => {
+      mockFns.createAdminClient.mockReturnValue(
+        createFakeAdmin({
+          "team_members:select": [OWNER_MEMBERSHIP],
+          "teams:select": [openTeam(createdAt(), { fixed: true })],
+          "teams:update": [{ data: null }],
+        })
+      );
+      const checkoutCreate = vi.fn();
+      mockFns.createPolarClient.mockReturnValue({ checkouts: { create: checkoutCreate } });
+
+      await expect(createTeamCheckout("user_1", "team_1", 5)).rejects.toMatchObject({
+        code: "checkout_in_progress",
+      });
+      expect(checkoutCreate).not.toHaveBeenCalled();
+    });
   });
 
   test("does not open a second session when the open one cannot change", async () => {
@@ -1589,7 +1783,328 @@ describe("subscription event guards", () => {
     });
   });
 
-  test("ignores events for a foreign subscription while another is live", async () => {
+  describe("a second live subscription", () => {
+    const liveTeam = {
+      data: {
+        polar_subscription_id: "sub_live",
+        subscription_status: "active",
+        seats: 5,
+        period_start: "2026-08-01T00:00:00.000Z",
+      },
+    };
+    // A live Teams subscription on the team's customer, started after the stored one.
+    const TEAM_SUB = {
+      status: "active",
+      ended_at: null,
+      product_id: "prod_teams_123",
+      customer_id: "cus_team_1",
+      started_at: "2026-08-10T00:00:00Z",
+    };
+    const polarState = (states: Record<string, Record<string, unknown>>) => {
+      const revoke = vi.fn().mockResolvedValue({});
+      mockFns.createPolarClient.mockReturnValue({
+        subscriptions: {
+          get: vi.fn(async (id: string) => states[id] ?? { id, status: "canceled" }),
+          revoke,
+        },
+      });
+      return revoke;
+    };
+
+    test("is refunded and revoked, and the team keeps the one it has", async () => {
+      vi.spyOn(console, "warn").mockImplementation(() => {});
+      mockFns.createAdminClient.mockReturnValue(createFakeAdmin({ "teams:select": [liveTeam] }));
+      const revoke = polarState({
+        sub_live: { ...TEAM_SUB, id: "sub_live", started_at: "2026-08-01T00:00:00Z" },
+        sub_2: { ...TEAM_SUB, id: "sub_2", checkout_id: "co_2" },
+      });
+
+      await applyTeamPolarWebhookEvent(
+        "subscription.created",
+        "team_1",
+        subscriptionEvent("sub_2")
+      );
+
+      expect(mockFns.recordRefund).toHaveBeenCalledWith({
+        target: { subscription: "sub_2" },
+        reason: "duplicate_plan",
+        teamId: "team_1",
+      });
+      expect(revoke).toHaveBeenCalledWith("sub_2");
+      expect(revoke).not.toHaveBeenCalledWith("sub_live");
+      // A checkout link its session made reads superseded, never paid.
+      expect(mockFns.supersedeCheckoutLinks).toHaveBeenCalledWith("co_2", undefined);
+      // Recorded and superseded before the revoke: a redelivery after it
+      // reads an ended one and never comes back here.
+      expect(mockFns.recordRefund.mock.invocationCallOrder[0]).toBeLessThan(
+        revoke.mock.invocationCallOrder[0]
+      );
+      expect(mockFns.supersedeCheckoutLinks.mock.invocationCallOrder[0]).toBeLessThan(
+        revoke.mock.invocationCallOrder[0]
+      );
+      expect(recorded.filter((call) => call.op !== "select")).toEqual([]);
+    });
+
+    test("is not recorded again when the event is delivered after the revoke", async () => {
+      const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+      const consoleWarn = vi.spyOn(console, "warn").mockImplementation(() => {});
+      mockFns.createAdminClient.mockReturnValue(createFakeAdmin({ "teams:select": [liveTeam] }));
+      // The event still carries the live copy; Polar's current state is ended.
+      const revoke = polarState({
+        sub_live: { ...TEAM_SUB, id: "sub_live", started_at: "2026-08-01T00:00:00Z" },
+        sub_2: { id: "sub_2", status: "canceled", ended_at: "2026-08-02T00:00:00Z" },
+      });
+
+      await applyTeamPolarWebhookEvent(
+        "subscription.created",
+        "team_1",
+        subscriptionEvent("sub_2")
+      );
+
+      expect(mockFns.recordRefund).not.toHaveBeenCalled();
+      expect(revoke).not.toHaveBeenCalled();
+      expect(teamsUpdates()).toEqual([]);
+      // An ended subscription's event needs nobody: a log line, no report.
+      expect(consoleError).not.toHaveBeenCalled();
+      expect(consoleWarn).toHaveBeenCalledWith(
+        "[team-billing] ignored an event for an ended subscription the team does not hold",
+        expect.objectContaining({ eventSubscriptionId: "sub_2" })
+      );
+    });
+
+    test("an old, ended subscription's late event refunds nothing", async () => {
+      const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+      vi.spyOn(console, "warn").mockImplementation(() => {});
+      mockFns.createAdminClient.mockReturnValue(createFakeAdmin({ "teams:select": [liveTeam] }));
+      const revoke = polarState({
+        sub_live: { ...TEAM_SUB, id: "sub_live", started_at: "2026-08-01T00:00:00Z" },
+        sub_old: { id: "sub_old", status: "active", ended_at: "2026-07-01T00:00:00Z" },
+      });
+
+      await applyTeamPolarWebhookEvent(
+        "subscription.updated",
+        "team_1",
+        subscriptionEvent("sub_old")
+      );
+
+      expect(mockFns.recordRefund).not.toHaveBeenCalled();
+      expect(revoke).not.toHaveBeenCalled();
+      expect(teamsUpdates()).toEqual([]);
+      expect(consoleError).not.toHaveBeenCalled();
+    });
+
+    test("refunds nothing while the stored subscription is no longer live in Polar", async () => {
+      const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+      mockFns.createAdminClient.mockReturnValue(createFakeAdmin({ "teams:select": [liveTeam] }));
+      const revoke = polarState({
+        sub_live: { id: "sub_live", status: "canceled", ended_at: "2026-08-02T00:00:00Z" },
+        sub_2: { ...TEAM_SUB, id: "sub_2", checkout_id: "co_2" },
+      });
+
+      await applyTeamPolarWebhookEvent(
+        "subscription.created",
+        "team_1",
+        subscriptionEvent("sub_2")
+      );
+
+      expect(mockFns.recordRefund).not.toHaveBeenCalled();
+      expect(revoke).not.toHaveBeenCalled();
+      expect(teamsUpdates()).toEqual([]);
+      expect(consoleError).toHaveBeenCalled();
+    });
+
+    test("activating at the same moment as the first: the loser is read again and refunded", async () => {
+      vi.spyOn(console, "warn").mockImplementation(() => {});
+      const unsubscribed = {
+        data: {
+          polar_subscription_id: null,
+          subscription_status: null,
+          seats: 0,
+          period_start: null,
+        },
+      };
+      mockFns.createAdminClient.mockReturnValue(
+        createFakeAdmin({
+          // Read before the other activation wrote, then after it.
+          "teams:select": [unsubscribed, liveTeam],
+          // The activation fenced on no subscription matches no row.
+          "teams:update": [{ data: [] }],
+        })
+      );
+      const revoke = polarState({
+        sub_live: { ...TEAM_SUB, id: "sub_live", started_at: "2026-08-01T00:00:00Z" },
+        sub_2: { ...TEAM_SUB, id: "sub_2", checkout_id: "co_2" },
+      });
+
+      await applyTeamPolarWebhookEvent(
+        "subscription.created",
+        "team_1",
+        subscriptionEvent("sub_2")
+      );
+
+      const activation = recordedFilters.find((c) => c.table === "teams" && c.op === "update");
+      expect(activation?.filters).toContainEqual(["is", "polar_subscription_id", null]);
+      expect(teamsUpdates()).toHaveLength(1);
+      expect(mockFns.recordRefund).toHaveBeenCalledWith({
+        target: { subscription: "sub_2" },
+        reason: "duplicate_plan",
+        teamId: "team_1",
+      });
+      expect(revoke).toHaveBeenCalledWith("sub_2");
+    });
+
+    test("a second lost write still fails, so Polar delivers the event again", async () => {
+      const unsubscribed = {
+        data: {
+          polar_subscription_id: null,
+          subscription_status: null,
+          seats: 0,
+          period_start: null,
+        },
+      };
+      mockFns.createAdminClient.mockReturnValue(
+        createFakeAdmin({
+          "teams:select": [unsubscribed, unsubscribed],
+          "teams:update": [{ data: [] }, { data: [] }],
+        })
+      );
+      polarState({ sub_2: { ...TEAM_SUB, id: "sub_2", checkout_id: "co_2" } });
+
+      await expect(
+        applyTeamPolarWebhookEvent("subscription.created", "team_1", subscriptionEvent("sub_2"))
+      ).rejects.toMatchObject({ code: "concurrent_update" });
+      expect(teamsUpdates()).toHaveLength(2);
+      expect(mockFns.recordRefund).not.toHaveBeenCalled();
+    });
+    test("is left alone when its product is not a configured team plan", async () => {
+      const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+      mockFns.createAdminClient.mockReturnValue(createFakeAdmin({ "teams:select": [liveTeam] }));
+      // An add-on product this deployment does not configure reaches the plan handlers.
+      const revoke = polarState({
+        sub_live: { ...TEAM_SUB, id: "sub_live", started_at: "2026-08-01T00:00:00Z" },
+        sub_addon: { ...TEAM_SUB, id: "sub_addon", product_id: "prod_unconfigured_addon" },
+      });
+
+      await applyTeamPolarWebhookEvent(
+        "subscription.created",
+        "team_1",
+        subscriptionEvent("sub_addon")
+      );
+
+      expect(mockFns.recordRefund).not.toHaveBeenCalled();
+      expect(revoke).not.toHaveBeenCalled();
+      expect(mockFns.supersedeCheckoutLinks).not.toHaveBeenCalled();
+      expect(teamsUpdates()).toEqual([]);
+      expect(consoleError).toHaveBeenCalledWith(
+        "[team-billing] ignored an event for a subscription the team does not hold",
+        expect.objectContaining({ eventSubscriptionId: "sub_addon" })
+      );
+    });
+
+    test("an older one is reported for a person, neither ended nor refunded", async () => {
+      const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+      mockFns.createAdminClient.mockReturnValue(createFakeAdmin({ "teams:select": [liveTeam] }));
+      // It started before the stored one, so it may be the plan the team
+      // used all along (its row cleared by a revoked event while it stayed
+      // live): refunding it in full would pay back months that were used.
+      const revoke = polarState({
+        sub_live: { ...TEAM_SUB, id: "sub_live", started_at: "2026-08-10T00:00:00Z" },
+        sub_older: {
+          ...TEAM_SUB,
+          id: "sub_older",
+          started_at: "2026-07-01T00:00:00Z",
+          checkout_id: "co_older",
+        },
+      });
+
+      await applyTeamPolarWebhookEvent(
+        "subscription.updated",
+        "team_1",
+        subscriptionEvent("sub_older")
+      );
+
+      expect(mockFns.recordRefund).not.toHaveBeenCalled();
+      expect(revoke).not.toHaveBeenCalled();
+      expect(mockFns.supersedeCheckoutLinks).not.toHaveBeenCalled();
+      expect(teamsUpdates()).toEqual([]);
+      expect(consoleError).toHaveBeenCalledWith(
+        "[team-billing] a team has a second live team plan subscription that did not start after the one it holds",
+        expect.objectContaining({ eventSubscriptionId: "sub_older" })
+      );
+    });
+
+    test("a newer one is ended whichever event arrives, by when each started", async () => {
+      vi.spyOn(console, "warn").mockImplementation(() => {});
+      mockFns.createAdminClient.mockReturnValue(createFakeAdmin({ "teams:select": [liveTeam] }));
+      // Polar left out started_at: created_at says which came first.
+      const revoke = polarState({
+        sub_live: {
+          ...TEAM_SUB,
+          id: "sub_live",
+          started_at: null,
+          created_at: "2026-08-01T00:00:00Z",
+        },
+        sub_2: { ...TEAM_SUB, id: "sub_2", started_at: null, created_at: "2026-08-02T00:00:00Z" },
+      });
+
+      await applyTeamPolarWebhookEvent(
+        "subscription.created",
+        "team_1",
+        subscriptionEvent("sub_2")
+      );
+
+      expect(revoke).toHaveBeenCalledWith("sub_2");
+      expect(mockFns.recordRefund).toHaveBeenCalledTimes(1);
+    });
+
+    test("is reported, not ended, when Polar left out when either started", async () => {
+      const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+      mockFns.createAdminClient.mockReturnValue(createFakeAdmin({ "teams:select": [liveTeam] }));
+      const revoke = polarState({
+        sub_live: { ...TEAM_SUB, id: "sub_live", started_at: null },
+        sub_2: { ...TEAM_SUB, id: "sub_2", started_at: null },
+      });
+
+      await applyTeamPolarWebhookEvent(
+        "subscription.created",
+        "team_1",
+        subscriptionEvent("sub_2")
+      );
+
+      expect(revoke).not.toHaveBeenCalled();
+      expect(mockFns.recordRefund).not.toHaveBeenCalled();
+      expect(consoleError).toHaveBeenCalled();
+    });
+
+    test("is left alone when it is on another Polar customer", async () => {
+      vi.spyOn(console, "error").mockImplementation(() => {});
+      mockFns.createAdminClient.mockReturnValue(createFakeAdmin({ "teams:select": [liveTeam] }));
+      // Not this team's customer: not a second checkout of the team's.
+      const revoke = polarState({
+        sub_live: { ...TEAM_SUB, id: "sub_live" },
+        sub_other: { ...TEAM_SUB, id: "sub_other", customer_id: "cus_someone_else" },
+        sub_none: { ...TEAM_SUB, id: "sub_none", customer_id: null },
+      });
+
+      await applyTeamPolarWebhookEvent(
+        "subscription.updated",
+        "team_1",
+        subscriptionEvent("sub_other")
+      );
+      mockFns.createAdminClient.mockReturnValue(createFakeAdmin({ "teams:select": [liveTeam] }));
+      await applyTeamPolarWebhookEvent(
+        "subscription.updated",
+        "team_1",
+        subscriptionEvent("sub_none")
+      );
+
+      expect(mockFns.recordRefund).not.toHaveBeenCalled();
+      expect(revoke).not.toHaveBeenCalled();
+      expect(teamsUpdates()).toEqual([]);
+    });
+  });
+
+  test("ignores events for a foreign subscription Polar does not report live", async () => {
     const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
     mockFns.createAdminClient.mockReturnValue(
       createFakeAdmin({

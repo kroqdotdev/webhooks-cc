@@ -18,6 +18,9 @@ import type {
   BillingChangeResult,
   BillingTarget,
   BillingSummary,
+  CheckoutItem,
+  CheckoutLink,
+  WaitForCheckoutOptions,
   CapacityResource,
   CapacityState,
   TeamPlanQuote,
@@ -121,6 +124,8 @@ import { isEmailRequest, matchEmail } from "./matchers";
 import {
   ApprovalDeniedError,
   ApprovalExpiredError,
+  CheckoutExpiredError,
+  CheckoutSupersededError,
   WebhooksCCError,
   UnauthorizedError,
   NotFoundError,
@@ -2051,6 +2056,34 @@ export class WebhooksCC {
           description: "Undo a cancellation (PendingApproval with an API key)",
           params: { teamId: "string?" },
         },
+        createCheckout: {
+          description:
+            "A checkout link for a plan, a team subscription (owner only) or extra capacity; hand its url to the person, who opens it signed in as the account's owner and pays with their own card. No approval: nothing is charged until they pay",
+          params: {
+            kind: '"plan" | "team_plan" | "blocks" | "monthly_blocks" | "overage"',
+            plan: '"pro" | "business" | "team" | "team_business"?',
+            interval: '"month" | "year"?',
+            seats: "number? (team_plan)",
+            blocks: "number? (blocks, monthly_blocks: in all)",
+            resource: '"requests" | "pages" | "domains"?',
+            teamId: "string?",
+          },
+        },
+        getCheckout: {
+          description:
+            "Where a checkout link stands: open, paid, expired or superseded, what it buys and, once paid, what was bought",
+          params: { id: "string" },
+        },
+        waitForCheckout: {
+          description:
+            "Wait until the person pays; resolves with the paid link, throws CheckoutExpiredError when it expires first and CheckoutSupersededError when its payment goes back as a duplicate (polls at least a second apart)",
+          params: { id: "string", timeout: "number?", pollInterval: "number?" },
+        },
+        cancelCheckout: {
+          description:
+            "Cancel a checkout link the person has not opened yet, so it can no longer be paid (it then reads expired); one already opened expires on its own",
+          params: { id: "string" },
+        },
       },
       apiKeys: {
         list: { description: "List the account's API keys", params: {} },
@@ -2558,8 +2591,9 @@ export class WebhooksCC {
 
   /**
    * What the account pays for: the plan, its subscription, the add-ons and
-   * every team's. Reads only; changing a plan, seats or add-ons takes a
-   * person in a browser.
+   * every team's, and checkout links to hand the person. Paying stays with
+   * them: a checkout link charges nothing until they enter their card on
+   * Polar's page, and changing or cancelling a plan takes a browser.
    */
   billing = {
     /** The plan, its subscription and add-ons, and every team's. */
@@ -2706,6 +2740,85 @@ export class WebhooksCC {
       options: BillingTarget = {}
     ): Promise<PendingApproval<BillingChangeResult>> => {
       return this.billingChange(billingTeamId(options), "resubscribe", {});
+    },
+
+    /**
+     * A checkout link for something the account can buy: a plan, a team
+     * subscription (the team's owner only), or extra capacity. Hand `url` to
+     * the person: they open it signed in as the account's owner (the team's
+     * owner for a team) and pay on Polar's page with their own card, so no
+     * approval is asked for. At most 5 links an hour and 3 open at once per
+     * account. Follow it with `waitForCheckout()`.
+     */
+    createCheckout: async (item: CheckoutItem): Promise<CheckoutLink> => {
+      const answer = await this.request<{ checkout: CheckoutLink }>(
+        "POST",
+        "/billing/checkouts",
+        item
+      );
+      return answer.checkout;
+    },
+
+    /**
+     * Where a checkout link stands: open, paid, expired or superseded, and
+     * what it buys. A paid link carries what was bought (`bought`) and
+     * whether that is what it asked for (`matches`).
+     */
+    getCheckout: async (id: string, options: { timeout?: number } = {}): Promise<CheckoutLink> => {
+      validatePathSegment(id, "id");
+      const answer = await this.request<{ checkout: CheckoutLink }>(
+        "GET",
+        `/billing/checkouts/${id}`,
+        undefined,
+        { timeoutMs: options.timeout }
+      );
+      return answer.checkout;
+    },
+
+    /**
+     * Wait until the person pays. Resolves with the paid link; throws
+     * CheckoutExpiredError when it expires first, CheckoutSupersededError
+     * when its payment goes back as the account's second plan, TimeoutError
+     * when `timeout` passes first.
+     */
+    waitForCheckout: async (
+      id: string,
+      options: WaitForCheckoutOptions = {}
+    ): Promise<CheckoutLink> => {
+      // At least a second apart: the status route allows two a second.
+      const interval = Math.max(1_000, options.pollInterval ?? 3_000);
+      const deadline = options.timeout === undefined ? Infinity : Date.now() + options.timeout;
+      const timedOut = () =>
+        new TimeoutError(options.timeout ?? 0, "Timed out waiting for the checkout to be paid");
+      for (;;) {
+        options.signal?.throwIfAborted();
+        const left = deadline - Date.now();
+        if (left <= 0) throw timedOut();
+        const checkout = await this.billing.getCheckout(id, {
+          timeout: Number.isFinite(left) ? left : undefined,
+        });
+        if (checkout.status === "paid") return checkout;
+        if (checkout.status === "expired") throw new CheckoutExpiredError(id);
+        if (checkout.status === "superseded") throw new CheckoutSupersededError(id);
+        const remaining = deadline - Date.now();
+        if (remaining <= 0) throw timedOut();
+        await sleep(Math.min(interval, remaining));
+      }
+    },
+
+    /**
+     * Cancels a checkout link nobody has opened yet, so it can no longer be
+     * paid; resolves with the link, now `expired`. One the person already
+     * opened has a Polar checkout that cannot be ended: that is a 409 (it
+     * expires on its own), as is a paid link.
+     */
+    cancelCheckout: async (id: string): Promise<CheckoutLink> => {
+      validatePathSegment(id, "id");
+      const answer = await this.request<{ checkout: CheckoutLink }>(
+        "DELETE",
+        `/billing/checkouts/${id}`
+      );
+      return answer.checkout;
     },
   };
 

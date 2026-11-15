@@ -24,3 +24,18 @@ export async function rememberHomeSite(userId: string, site: SiteKey): Promise<v
 export function homeOrigin(homeSite: string | null | undefined): string {
   return siteOrigin(parseSite(homeSite));
 }
+
+/**
+ * The origin of the site an account last signed in on (users.home_site), for
+ * a browser sent back outside a request of theirs, such as the page Polar
+ * returns a checkout link's payer to. A missing account reads as webhooks.cc.
+ */
+export async function accountHomeOrigin(userId: string): Promise<string> {
+  const { data, error } = await createAdminClient()
+    .from("users")
+    .select("home_site")
+    .eq("id", userId)
+    .maybeSingle();
+  if (error) throw error;
+  return homeOrigin(data?.home_site);
+}

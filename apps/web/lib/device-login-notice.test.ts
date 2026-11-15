@@ -24,4 +24,11 @@ describe("networkNotice", () => {
     expect(networkNotice("different", false, "request")?.text).toMatch(/^This request came/);
     expect(networkNotice("unknown", false, "request")?.text).toContain("this request came");
   });
+
+  it("asks the person to pay only for a checkout link they started", () => {
+    const notice = networkNotice("different", false, "checkout link", "Pay for");
+    expect(notice?.text).toMatch(/^This checkout link came from a different network/);
+    expect(notice?.text).toContain("Pay for it only if you started it yourself");
+    expect(networkNotice("same", false, "checkout link", "Pay for")).toBeNull();
+  });
 });

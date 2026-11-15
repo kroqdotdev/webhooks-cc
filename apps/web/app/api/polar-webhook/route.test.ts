@@ -8,6 +8,13 @@ const mockFns = vi.hoisted(() => ({
   applyCapacityWebhookEvent: vi.fn(),
   reconcileAddonsWithPlan: vi.fn(),
   auditPolarEvent: vi.fn(),
+  reportError: vi.fn(),
+  settleCheckoutLinkFromWebhook: vi.fn(),
+}));
+
+vi.mock("@/lib/observability", () => ({ reportError: mockFns.reportError }));
+vi.mock("@/lib/billing/checkout-links", () => ({
+  settleCheckoutLinkFromWebhook: mockFns.settleCheckoutLinkFromWebhook,
 }));
 
 vi.mock("@/lib/audit", () => ({
@@ -115,6 +122,32 @@ describe("POST /api/polar-webhook", () => {
     );
     expect(mockFns.applyPolarWebhookEvent).not.toHaveBeenCalled();
     expect(mockFns.reconcileAddonsWithPlan).not.toHaveBeenCalled();
+  });
+
+  test("reports an add-on payment with no account, but not a checkout's own event", async () => {
+    mockFns.resolveWebhookUserId.mockResolvedValue(null);
+    const { POST } = await import("./route");
+
+    // A team's add-on checkout often names no team: normal, and it pays for nothing.
+    for (const type of ["checkout.created", "checkout.updated", "checkout.expired"]) {
+      mockFns.validateEvent.mockResolvedValue({
+        type,
+        data: { id: "co_1", product_id: "prod_one_time", customer_id: null },
+      });
+      expect((await POST(webhookRequest())).status).toBe(200);
+    }
+    expect(mockFns.reportError).not.toHaveBeenCalled();
+    expect(mockFns.applyCapacityWebhookEvent).not.toHaveBeenCalled();
+
+    mockFns.validateEvent.mockResolvedValue({
+      type: "order.paid",
+      data: { id: "ord_1", product_id: "prod_one_time", customer_id: "cus_gone" },
+    });
+    expect((await POST(webhookRequest())).status).toBe(200);
+    expect(mockFns.reportError).toHaveBeenCalledTimes(1);
+    expect(mockFns.reportError.mock.calls[0][0]).toBe(
+      "[capacity] add-on event for a customer with no account"
+    );
   });
 
   test("routes a team's one-time block order to the capacity handler for the team", async () => {

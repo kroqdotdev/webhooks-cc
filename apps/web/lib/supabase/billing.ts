@@ -1,8 +1,6 @@
 import {
   createPolarClient,
   getPolarCheckoutConfig,
-  isEndedSubscriptionError,
-  loggablePolarError,
   planForProduct,
   planProductId,
   polarAppUrl,
@@ -18,14 +16,21 @@ import {
   prorateProductSwitch,
   type ProductSwitchPrice,
 } from "@/lib/team-pricing";
-import { reportError } from "@/lib/observability";
+import { supersedeCheckoutLinks } from "@/lib/billing/checkout-link-rows";
 import { returnOrigin } from "@/lib/site-server";
 import { createAdminClient } from "./admin";
 import {
   asNonEmptyString,
   asRecord,
+  checkoutSession,
+  isLiveSubscription,
+  isLiveSubscriptionState,
+  LIVE_SUBSCRIPTION_STATUSES,
   normalizeStoredSubscriptionStatus,
   parseEventTimestamp,
+  revokeSubscriptionQuietly,
+  CHECKOUT_LINK_METADATA_KEY,
+  type LinkPurchase,
 } from "./billing-shared";
 import type { Database } from "./database";
 
@@ -202,6 +207,21 @@ export async function createCheckoutForUser(
   plan: PaidPlan = "pro",
   interval: BillingInterval = "month"
 ): Promise<string> {
+  const { user, productId } = await checkPlanPurchase(userId, plan, interval);
+  const { appUrl } = getPolarCheckoutConfig();
+  const checkout = await createPolarClient().checkouts.create({
+    products: [productId],
+    success_url: `${await returnOrigin(appUrl)}/account/plan?upgraded=${plan}`,
+    customer_id: await ensurePolarCustomerId(user),
+  });
+  return checkout.url;
+}
+
+async function checkPlanPurchase(
+  userId: string,
+  plan: PaidPlan,
+  interval: BillingInterval
+): Promise<{ user: BillingUser; productId: string }> {
   const user = await getBillingUser(userId);
   if (user.plan !== "free" && user.polar_subscription_id) {
     throw new BillingActionError(
@@ -213,18 +233,32 @@ export async function createCheckoutForUser(
   if (!productId) {
     throw new BillingActionError("not_offered", "That plan is not available");
   }
+  return { user, productId };
+}
 
-  const polar = createPolarClient();
-  const { appUrl } = getPolarCheckoutConfig();
-  const customerId = await ensurePolarCustomerId(user);
-
-  const checkout = await polar.checkouts.create({
-    products: [productId],
-    success_url: `${await returnOrigin(appUrl)}/account/plan?upgraded=${plan}`,
-    customer_id: customerId,
-  });
-
-  return checkout.url;
+/**
+ * A plan bought through a checkout link (lib/billing/checkout-links.ts): the
+ * same rules as createCheckoutForUser(), a session that sells only that plan
+ * and names the link in its metadata.
+ */
+export async function planPurchase(
+  userId: string,
+  plan: PaidPlan,
+  interval: BillingInterval
+): Promise<LinkPurchase> {
+  const { user, productId } = await checkPlanPurchase(userId, plan, interval);
+  return {
+    expected: { product: productId },
+    mint: async (link) =>
+      checkoutSession(
+        await createPolarClient().checkouts.create({
+          products: [productId],
+          success_url: link.successUrl,
+          customer_id: await ensurePolarCustomerId(user),
+          metadata: { [CHECKOUT_LINK_METADATA_KEY]: link.id },
+        })
+      ),
+  };
 }
 
 const PLAN_RANK: Record<string, number> = { free: 0, pro: 1, business: 2 };
@@ -468,8 +502,6 @@ export async function resubscribeForUser(userId: string): Promise<void> {
   });
 }
 
-const LIVE_STATUSES = new Set(["active", "trialing", "past_due"]);
-
 /** The subscription as Polar has it now; the event's own copy for one without an id. */
 async function currentSubscription(
   event: Record<string, unknown>
@@ -478,25 +510,6 @@ async function currentSubscription(
   if (!id) return event;
   const current = await createPolarClient().subscriptions.get(id);
   return (asRecord(current) ?? event) as Record<string, unknown>;
-}
-
-/** Polar's errors propagate, so the event is delivered again later. */
-async function isLiveSubscription(id: string): Promise<boolean> {
-  const subscription = asRecord(await createPolarClient().subscriptions.get(id));
-  return LIVE_STATUSES.has(String(subscription?.status));
-}
-
-async function revokeSubscriptionQuietly(id: string): Promise<void> {
-  try {
-    await createPolarClient().subscriptions.revoke(id);
-  } catch (error) {
-    // Revoked by an earlier delivery of the same event.
-    if (isEndedSubscriptionError(error)) return;
-    reportError("[billing] could not revoke a plan subscription", loggablePolarError(error), {
-      subscriptionId: id,
-    });
-    throw error;
-  }
 }
 
 /**
@@ -625,15 +638,10 @@ async function applyPlanSubscription(
     // Read again before acting: the copy the event was applied from may
     // predate the deletion's own revoke.
     const now =
-      orphanId && LIVE_STATUSES.has(String(data.status)) && !asNonEmptyString(data.ended_at)
+      orphanId && isLiveSubscriptionState(data)
         ? asRecord(await createPolarClient().subscriptions.get(orphanId))
         : null;
-    if (
-      orphanId &&
-      now &&
-      LIVE_STATUSES.has(String(now.status)) &&
-      !asNonEmptyString(now.ended_at)
-    ) {
+    if (orphanId && isLiveSubscriptionState(now)) {
       // Recorded first: once revoked, a redelivery reads it as ended and
       // would never record it.
       await recordRefund({
@@ -664,7 +672,7 @@ async function applyPlanSubscription(
   if (isNewSubscription) {
     // An ended subscription that is not the account's (an old one's late
     // event) changes nothing.
-    if (!LIVE_STATUSES.has(String(data.status))) return true;
+    if (!LIVE_SUBSCRIPTION_STATUSES.has(String(data.status))) return true;
     // A second live plan subscription (two checkouts completed in two
     // tabs): the account keeps the one it has, and the new one ends
     // before it charges again. What it charged goes back.
@@ -676,6 +684,11 @@ async function applyPlanSubscription(
         reason: "duplicate_plan",
         userId,
       });
+      // A checkout link whose session made it reads superseded, not paid.
+      // Before the revoke too: a redelivery after it reads the subscription
+      // as ended and never comes back here, so a failed supersede would
+      // leave the link to be marked paid.
+      await supersedeCheckoutLinks(asNonEmptyString(data.checkout_id), data.metadata);
       await revokeSubscriptionQuietly(subscriptionId);
       return true;
     }

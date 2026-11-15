@@ -168,6 +168,8 @@ const MAILHOOKS_PREFIXES = [
   "/api",
   "/s",
   "/support",
+  // Where Polar returns a checkout link's payer, on the site they use.
+  "/checkout",
   // The docs search index, which the support form suggests articles from.
   "/_pagefind",
   "/mailhooks",
@@ -196,6 +198,7 @@ export const WEBHOOKS_TOP_LEVEL = [
   "auth.md",
   "blog",
   "changelog",
+  "checkout",
   "cli",
   "compare",
   "dashboard",

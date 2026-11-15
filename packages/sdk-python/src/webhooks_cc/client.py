@@ -50,6 +50,8 @@ from .email import (
     is_valid_email_tag,
 )
 from .errors import (
+    CheckoutExpiredError,
+    CheckoutSupersededError,
     InvalidCursorError,
     NotFoundError,
     RateLimitError,
@@ -61,6 +63,7 @@ from .matchers import Matcher, is_email_request, match_email
 from .models import (
     AttachmentDownload,
     BuiltRequest,
+    CheckoutLink,
     CountPage,
     Destination,
     DestinationAttachments,
@@ -425,6 +428,7 @@ class WebhooksCC:
         self.destinations = Destinations(self)
         self.shares = Shares(self)
         self.names = Names(self)
+        self.billing = Billing(self)
 
     @classmethod
     def _for_agent(
@@ -2022,6 +2026,116 @@ class Names:
         if not named:
             raise ValueError(f"No team of yours is called {team!r}")
         raise ValueError(f"Several of your teams are called {team!r}: pass the team id")
+
+
+class Billing:
+    """Checkout links: paying stays with the person, and an agent hands them a ready
+    checkout instead of sending them to find the right page.
+
+    A link charges nothing until the person enters their own card on Polar's page,
+    so no approval is asked for. At most 5 links an hour and 3 open at once per
+    account; a team's purchases need the team's owner.
+    """
+
+    def __init__(self, client: WebhooksCC) -> None:
+        self._client = client
+
+    def create_checkout(
+        self,
+        kind: Literal["plan", "team_plan", "blocks", "monthly_blocks", "overage"],
+        *,
+        plan: Literal["pro", "business", "team", "team_business"] | None = None,
+        interval: Literal["month", "year"] | None = None,
+        seats: int | None = None,
+        blocks: int | None = None,
+        resource: Literal["requests", "pages", "domains"] | None = None,
+        team_id: str | None = None,
+    ) -> CheckoutLink:
+        """A Polar checkout link for something the account (or a team you own) can buy.
+
+        ``kind`` is ``"plan"`` (``plan`` pro or business), ``"team_plan"`` (``team_id``,
+        ``seats``, ``plan`` team or team_business), ``"blocks"`` (one-time, ``blocks``),
+        ``"monthly_blocks"`` (``blocks`` in all, only ever more than now) or
+        ``"overage"``. Show the person ``url``: they open it signed in as the
+        account's owner (the team's owner for a team) and pay on Polar's page.
+        Then call :meth:`wait_for_checkout`.
+        """
+        body: dict[str, Any] = {"kind": kind}
+        for key, value in (
+            ("plan", plan),
+            ("interval", interval),
+            ("seats", seats),
+            ("blocks", blocks),
+            ("resource", resource),
+            ("teamId", team_id),
+        ):
+            if value is not None:
+                body[key] = value
+        data = self._client._api("POST", "/billing/checkouts", body=body)
+        return CheckoutLink.from_dict(_checkout_of(data))
+
+    def get_checkout(self, checkout_id: str) -> CheckoutLink:
+        """Where a checkout link stands: open, paid, expired or superseded, what it
+        buys and, once paid, what was bought (``bought``, ``matches``)."""
+        _validate_segment(checkout_id, "checkout id")
+        data = self._client._api("GET", f"/billing/checkouts/{checkout_id}")
+        return CheckoutLink.from_dict(_checkout_of(data))
+
+    def wait_for_checkout(
+        self,
+        checkout_id: str,
+        *,
+        timeout: Duration | None = None,
+        poll_interval: Duration = 3000,
+    ) -> CheckoutLink:
+        """Wait until the person pays and return the paid link. Raises
+        :class:`CheckoutExpiredError` when it expires first,
+        :class:`CheckoutSupersededError` when its payment goes back as a duplicate,
+        and :class:`TimeoutError` when ``timeout`` passes first (default:
+        until it expires). Polls at least a second apart."""
+        _validate_segment(checkout_id, "checkout id")
+        interval = max(1000.0, parse_duration(poll_interval))
+        timeout_ms = None if timeout is None else parse_duration(timeout)
+        deadline = None if timeout_ms is None else time.monotonic() * 1000 + timeout_ms
+        while True:
+            if deadline is not None and time.monotonic() * 1000 >= deadline:
+                raise TimeoutError(timeout_ms or 0, "Timed out waiting for the checkout to be paid")
+            checkout = CheckoutLink.from_dict(
+                _checkout_of(
+                    self._client._api(
+                        "GET", f"/billing/checkouts/{checkout_id}", deadline_ms=deadline
+                    )
+                )
+            )
+            if checkout.status == "paid":
+                return checkout
+            if checkout.status == "expired":
+                raise CheckoutExpiredError(checkout_id)
+            if checkout.status == "superseded":
+                raise CheckoutSupersededError(checkout_id)
+            wait = interval
+            if deadline is not None:
+                left = deadline - time.monotonic() * 1000
+                if left <= 0:
+                    raise TimeoutError(
+                        timeout_ms or 0, "Timed out waiting for the checkout to be paid"
+                    )
+                wait = min(interval, left)
+            _sleep_ms(wait)
+
+    def cancel_checkout(self, checkout_id: str) -> CheckoutLink:
+        """Cancel a checkout link the person has not opened yet, so it can no longer
+        be paid, and return it (now ``expired``). One already opened has a Polar
+        checkout that cannot be ended, so the server answers 409 (it expires on its
+        own), as it does for a paid link."""
+        _validate_segment(checkout_id, "checkout id")
+        data = self._client._api("DELETE", f"/billing/checkouts/{checkout_id}")
+        return CheckoutLink.from_dict(_checkout_of(data))
+
+
+def _checkout_of(data: Any) -> Mapping[str, Any]:
+    checkout = data.get("checkout") if isinstance(data, Mapping) else None
+    return checkout if isinstance(checkout, Mapping) else {}
 
 
 def _layouts_body(layouts: Sequence[Mapping[str, Any] | Layout]) -> list[dict[str, Any]]:

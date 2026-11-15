@@ -71,6 +71,37 @@ class RateLimitError(WebhooksCCError):
         account already runs two searches or the server is at its limit."""
 
 
+class CheckoutExpiredError(WebhooksCCError):
+    """A checkout link expired before the person paid. Make a new one if they still
+    want it. Raised by ``billing.wait_for_checkout()``."""
+
+    def __init__(self, checkout_id: str, message: str | None = None) -> None:
+        super().__init__(
+            0,
+            message
+            or "The checkout link expired before it was paid. "
+            "Make a new one if the person still wants it.",
+        )
+        self.checkout_id = checkout_id
+
+
+class CheckoutSupersededError(CheckoutExpiredError):
+    """A checkout link was paid, but the purchase was undone as a duplicate: the
+    account already had that plan or add-on (or what it added to had ended), so
+    the payment goes back (monthly blocks bought twice stay as one-time blocks). A
+    :class:`CheckoutExpiredError` too, so code that handles a link that bought
+    nothing handles this one. Raised by ``billing.wait_for_checkout()``."""
+
+    def __init__(self, checkout_id: str) -> None:
+        super().__init__(
+            checkout_id,
+            "By the time this checkout was paid, the account already had what it buys "
+            "(or what it added to had ended), so the purchase was undone and the "
+            "payment goes back; monthly blocks bought twice stay as one-time blocks "
+            "instead.",
+        )
+
+
 class InvalidCursorError(WebhooksCCError):
     """The search cursor is not one the server issued for this search (400).
 

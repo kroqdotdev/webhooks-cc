@@ -85,6 +85,7 @@ Every route an API key can call. Timestamps are Unix milliseconds unless a field
 | `GET /api/approvals/:id`                                                 | [Poll an approval](#approvals)                                                                 |
 | `GET /api/billing`                                                       | What the account pays for, read only                                                           |
 | `POST` `DELETE /api/billing/change-plan`, `POST /api/billing/capacity`, `.../cancel`, `.../resubscribe` | [Billing changes](#billing-changes) (an approval, with its quote)       |
+| `POST /api/billing/checkouts`, `GET .../:id`                             | [Checkout links](#checkout-links): make one for the person to pay, follow it                   |
 | `PATCH /api/account`                                                     | [Set the display name](#display-name) (an approval)                                            |
 | `GET /api/agent/registrations`, `DELETE .../:id`                         | [Connected agents](#connected-agents): list, disconnect                                        |
 | `GET /api/request-shares`, `DELETE .../:id`, `GET` `POST /api/requests/:id/shares` | [Share links](#share-links): list, revoke, ask for one (an approval)                 |
@@ -1373,6 +1374,56 @@ Show the owner `url`; the page shows the same `code` to compare. Then poll `GET 
 
 Changing the plan (`POST /api/billing/change-plan` with `{ "plan": "pro" | "business", "interval": "month" | "year" }`, `DELETE` to keep the plan and drop a change waiting for the renewal), add-ons (`POST /api/billing/capacity` with `{ "action": "set_monthly_blocks" | "buy_blocks" | "set_overage", "resource", "blocks", "enabled", "maxBlocks" }`), cancelling (`POST /api/billing/cancel`) and undoing it (`POST /api/billing/resubscribe`), and the same for a team you own under `/api/teams/:teamId/billing/` (`plan`, with `{ "action": "keep" }` to keep it, `seats` with `{ "seats" }`, `capacity`, `cancel`, `resubscribe`), answer an API key or agent token with `202` and an approval whose summary is the quote: what changes, when, and what is charged now. The owner (the team's owner) approves it, and the change is made then, only while a fresh quote still matches. The poll's `result` is `{ "executed": true, "applied": "now" | "renewal" }` (with `seatReductionLost` when a waiting seat reduction was dropped and the seats need setting again), `{ "executed": true, "applied": "checkout", "checkout": "opened" }` when the owner's browser was sent to a Polar checkout (nothing is bought until it is paid there, and the checkout's link only ever goes to the owner), `{ "executed": false, "code", "reason" }` when nothing was changed (`quote_changed` when the price or the subscription moved, so ask again; otherwise the refusal's own code, such as `payment_failed`), or `{ "executed": null, "code": "outcome_unknown", "reason" }` when Polar was asked and then something failed, or the bank wants the cardholder to confirm the payment (3-D Secure, finished from the link in Polar's email), so the change may or may not have been made: check billing before asking again. The same holds for an approved change whose result was never recorded (the run was cut off): once it surely ended, the poll answers `outcome_unknown`. A checkout opened on approval is pinned to the approved count. A member's key gets `403`, and a change that is not possible now (no subscription, already so, set to end) `409` before anyone is asked.
 
+### Checkout links
+
+Paying stays with the person, but an agent can hand them a ready checkout. `POST /api/billing/checkouts` checks that the account (or a team you own) can buy what it names and answers `201` with a link at once. The link is a page on webhooks.cc (or mailhooks.cc, for someone who uses that), not Polar's checkout: the person opens it signed in as the account's owner (the team's owner for a team), past two-factor sign-in when the account has it, and the page checks the purchase again and goes on to Polar's checkout, where they pay with their own card. Nothing is charged until they do, so there is no approval. Someone signed out is asked to sign in first, and another account is refused. Opened again while Polar's checkout is still open, the link goes back to it. After paying, Polar sends them to a page that says the payment went through.
+
+```bash
+curl -X POST https://webhooks.cc/api/billing/checkouts \
+  -H "Authorization: Bearer whcc_..." \
+  -H "Content-Type: application/json" \
+  -d '{ "kind": "plan", "plan": "pro", "interval": "month" }'
+```
+
+```json
+{
+  "checkout": {
+    "id": "6f1c2a8e-...",
+    "status": "open",
+    "kind": "plan",
+    "summary": "The Pro plan, billed monthly.",
+    "item": { "kind": "plan", "plan": "pro", "interval": "month" },
+    "teamId": null,
+    "url": "https://webhooks.cc/checkout/6f1c2a8e-...",
+    "createdAt": "2026-11-14T10:00:00.000Z",
+    "expiresAt": "2026-11-14T11:00:00.000Z",
+    "paidAt": null,
+    "bought": null,
+    "matches": null
+  }
+}
+```
+
+The body names one of:
+
+| `kind`           | Fields                                                                         | Buys                                                                 |
+| ---------------- | ------------------------------------------------------------------------------ | -------------------------------------------------------------------- |
+| `plan`           | `plan` (`pro`, `business`), `interval` (`month`, `year`)                        | A plan, for an account on Free                                        |
+| `team_plan`      | `teamId`, `seats` (2 or more), `plan` (`team`, `team_business`), `interval`    | A subscription for a team that has none                               |
+| `blocks`         | `blocks`, `resource` (`requests`, `pages`), `teamId`                           | One-time blocks, which never expire                                   |
+| `monthly_blocks` | `blocks` (in all, more than now), `resource` (`requests`, `pages`, `domains`), `teamId` | Monthly blocks or extra domains, renewing with the plan       |
+| `overage`        | `resource` (`requests`, `pages`), `teamId`                                     | Overage, up to the account's stored maximum or the default (`item.max`), stored once the subscription starts |
+
+The same rules apply as in the dashboard: a plan the account already has, or add-ons the plan does not allow, are refused with `409`, and fewer monthly blocks or a change to live overage is not a purchase: ask for it as a [billing change](#billing-changes) instead. They are checked when the link is made and again when it is opened, since the account may have changed meanwhile. A team's purchase needs the team's owner; a member gets `403`, and so does a pre-claim agent token. At most 5 links an hour and 3 open at once per account (or team): past them, `429` and `409` (`code: "too_many_open"`). A link that is not opened expires after an hour. Refused and failed attempts make no link, so they do not count toward the 5, but each person asking has 30 attempts an hour in all before `429`. The link is on the site its asker last signed in on, webhooks.cc or mailhooks.cc, and so is the page after paying. A link's own Polar checkout sells exactly what it names: one plan, and exactly its seats or blocks. A team's link goes through the team's one open checkout, as the dashboard does: it is reused when it is for the same plan and seats, and moved to them otherwise; a checkout the dashboard opened still lets the person pick another plan or seat count on Polar's page.
+
+The page opens nothing by itself: it first shows the signed-in account (and the team, for a team link), what the link buys and what it costs, which key or agent asked for it, when, and from where, with a warning when the link was made from another network than the browser's. Only "Continue to payment" checks the purchase again and makes Polar's checkout; a reopen goes back to the same checkout only while it is open and still sells what the account would buy now (a monthly top-up made before blocks were added elsewhere gets a new one).
+
+`GET /api/billing/checkouts/:id` says where a link stands, for the person who asked for it with any of their keys, agents or sessions, and for a team link also the team's owner now, as long as the person who asked still owns the team (a former owner's keys get `404`): `status` is `open`, `paid` (with `paidAt`), `expired`, or `superseded` when the purchase was undone as a duplicate by the time it was paid (the account already had that plan or add-on, or the subscription it added to had ended), so the payment goes back; monthly blocks bought twice stay on the account as one-time blocks instead. `url` is only there while it is open, and Polar's checkout never is. A paid link carries `bought`, what the order or subscription holds (`product`, `seats`, `units`, `amount` in cents before tax, which is `null` for an API key or agent token since only a browser session reads what was paid, and `currency`), and `matches`, `false` when that differs from what the link asked for (a monthly top-up paid after the account's count moved reads `false` too). Poll it at most every two seconds.
+
+`DELETE /api/billing/checkouts/:id` cancels a link the person has not opened yet, for whoever may read it: it answers the link, now `expired`, and it can no longer be paid. A link already opened has a Polar checkout that cannot be ended, so it gets `409` (`code: "opened"`) and expires on its own; a paid one gets `409` (`code: "not_open"`).
+
+The TypeScript SDK (`client.billing.createCheckout()`, `waitForCheckout()`, `cancelCheckout()`), the Python and Go SDKs, `whk billing checkout`, `checkout-status` and `checkout-cancel`, and the MCP server's `create_checkout`, `wait_for_checkout` and `cancel_checkout` do it for you.
+
 ### API keys
 
 `GET /api/api-keys` lists the keys (`id`, `name`, `key_prefix`, `created_at`, `expires_at`, `last_used_at`); a key itself is never shown again. `POST /api/api-keys` with `{ "name": "GitHub Actions", "expiresInDays": 90 }` (1 to 365, default 90) asks for one: the result is `{ key, name, keyPrefix, expiresAt }`. `DELETE /api/api-keys?id=<id>` revokes one.
@@ -1411,7 +1462,7 @@ These answer `403` to an API key, because they are for a person at a browser:
 
 - `DELETE /api/account`: delete the account and all its data
 - `PATCH /api/account` with `approvalEmails`: whether approvals are emailed to the owner
-- `/api/billing/*` and `/api/teams/:id/billing/*` except reads and quotes: plans, seats, extra capacity, checkout and cancellation
+- `/api/billing/*` and `/api/teams/:id/billing/*` except reads, quotes and [checkout links](#checkout-links): plan changes, seats, extra capacity, the dashboard's checkout, the customer portal and cancellation
 
 ## Error handling
 

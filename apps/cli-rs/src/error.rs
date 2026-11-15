@@ -13,7 +13,7 @@
 //! | 5      | `forbidden`             | Not allowed: the plan, a limit, or a permission  |
 //! | 6      | `rate_limited`          | Too many requests; wait and retry                |
 //! | 7      | `server_error`, `network_error`, `request_timeout` | Our side or the network failed; retry |
-//! | 8      | `timeout`, `approval_expired`, `quote_changed` | `whk wait` (or another wait) ran out of time, an approval expired, or an approved billing change was not made because its quote changed |
+//! | 8      | `timeout`, `approval_expired`, `quote_changed`, `checkout_expired`, `checkout_superseded` | `whk wait` (or another wait) ran out of time, an approval or checkout link expired, an approved billing change was not made because its quote changed, or a checkout's payment went back as a duplicate |
 //! | 9      | `confirmation_required`, `cancelled`, `approval_denied` | A destructive command was not confirmed, or an approval was refused |
 
 use serde_json::{Value, json};
@@ -57,6 +57,12 @@ pub enum CliError {
     ApprovalDenied,
     /// An approval was not answered, or not collected, in time.
     ApprovalExpired,
+    /// A checkout link expired before the person paid.
+    CheckoutExpired,
+    /// A checkout link was paid, but the purchase was undone as a duplicate
+    /// (the account already had it, or what it added to had ended) and the
+    /// payment goes back.
+    CheckoutSuperseded,
     /// Arguments that parse but make no sense together.
     Usage(String),
     /// A test delivery reached its destination's server (or tried to) and
@@ -94,6 +100,12 @@ impl std::fmt::Display for CliError {
             CliError::ApprovalExpired => {
                 f.write_str("The approval expired before it was answered and collected.")
             }
+            CliError::CheckoutExpired => {
+                f.write_str("The checkout link expired before it was paid.")
+            }
+            CliError::CheckoutSuperseded => f.write_str(
+                "By the time the checkout was paid, the account already had what it buys (or what it added to had ended), so the purchase was undone and the payment goes back.",
+            ),
         }
     }
 }
@@ -175,6 +187,11 @@ pub fn classify(error: &anyhow::Error) -> Classified {
                     .hint("The account's owner refused it. Ask again only if they tell you to."),
                 CliError::ApprovalExpired => Classified::new("approval_expired", 8)
                     .hint("Nobody answered it in time. Ask again."),
+                CliError::CheckoutExpired => Classified::new("checkout_expired", 8).hint(
+                    "Make a new link with `whk billing checkout` if the person still wants it.",
+                ),
+                CliError::CheckoutSuperseded => Classified::new("checkout_superseded", 8)
+                    .hint("Nothing else to do: `whk billing` shows what the account keeps."),
                 CliError::LoginDenied => Classified::new("login_denied", 3).hint(
                     "Someone chose \"This wasn't me\". Run `whk auth login` again if it was you.",
                 ),

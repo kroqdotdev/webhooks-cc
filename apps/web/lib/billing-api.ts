@@ -71,10 +71,7 @@ export async function keepBillingPlan(accessToken: string): Promise<void> {
 }
 
 /** What each paid plan costs, for display (Polar holds the charged prices). */
-export const PLAN_PRICES: Record<PaidPlan, Partial<Record<BillingInterval, string>>> = {
-  pro: { month: "$8 a month" },
-  business: { month: "$29 a month", year: "$290 a year" },
-};
+export { PLAN_PRICES } from "@/lib/plan-prices";
 
 export function planName(plan: string): string {
   return plan === "business" ? "Business" : plan === "pro" ? "Pro" : "Free";

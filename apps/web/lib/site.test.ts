@@ -86,6 +86,7 @@ describe("servedOnMailhooks", () => {
       "/teams/1",
       "/api/endpoints",
       "/s/token",
+      "/checkout/complete",
       "/icon-192.png",
       // The docs, served from app/mailhooks/docs and canonical on webhooks.cc.
       "/docs",
@@ -118,5 +119,12 @@ describe("homeOrigin", () => {
     expect(homeOrigin("mailhooks")).toBe("https://mailhooks.cc");
     expect(homeOrigin("webhooks")).toBe("https://webhooks.cc");
     expect(homeOrigin(null)).toBe("https://webhooks.cc");
+  });
+
+  it("is webhooks.cc for a mailhooks account while one site is configured", async () => {
+    vi.stubEnv("NEXT_PUBLIC_APP_URL", "https://webhooks.cc");
+    vi.stubEnv("NEXT_PUBLIC_MAILHOOKS_URL", "");
+    const { homeOrigin } = await import("./supabase/home-site");
+    expect(homeOrigin("mailhooks")).toBe("https://webhooks.cc");
   });
 });

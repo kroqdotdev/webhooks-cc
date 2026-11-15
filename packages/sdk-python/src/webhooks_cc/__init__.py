@@ -24,6 +24,7 @@ __version__ = "0.9.0"
 
 from .agent import AgentAuthError, ClaimAttempt
 from .client import (
+    Billing,
     Destinations,
     Emails,
     Endpoints,
@@ -46,6 +47,8 @@ from .email import (
     is_valid_email_tag,
 )
 from .errors import (
+    CheckoutExpiredError,
+    CheckoutSupersededError,
     InvalidCursorError,
     NotFoundError,
     RateLimitError,
@@ -74,6 +77,9 @@ from .models import (
     AiAssistsUsage,
     AttachmentDownload,
     BuiltRequest,
+    CheckoutBought,
+    CheckoutLink,
+    CheckoutStatus,
     CountPage,
     DeliveryCounts,
     Destination,
@@ -171,7 +177,13 @@ __all__ = [
     "AgentAuthError",
     "AiAssistsUsage",
     "AttachmentDownload",
+    "Billing",
     "BuiltRequest",
+    "CheckoutBought",
+    "CheckoutExpiredError",
+    "CheckoutLink",
+    "CheckoutStatus",
+    "CheckoutSupersededError",
     "ClaimAttempt",
     "CountPage",
     "DeliveryCounts",
