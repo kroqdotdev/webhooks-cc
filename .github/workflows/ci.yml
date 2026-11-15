@@ -302,6 +302,38 @@ jobs:
         run: cargo clippy --all-targets -- -D warnings
         working-directory: apps/cli-rs
 
+  check-cli-macos:
+    name: Check Rust CLI (macOS)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - name: Cache cargo
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            apps/cli-rs/target
+          key: ${{ runner.os }}-cargo-cli-${{ hashFiles('apps/cli-rs/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-cli-
+
+      # The release build is the only other macOS build, and it runs when a
+      # version is tagged; this catches a macOS-only break (signals, paths)
+      # on every PR.
+      - name: Clippy
+        run: cargo clippy --all-targets -- -D warnings
+        working-directory: apps/cli-rs
+
+      - name: Run tests
+        run: cargo test
+        working-directory: apps/cli-rs
+
   test-cli:
     name: Test Rust CLI
     runs-on: ubuntu-latest

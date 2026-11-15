@@ -1803,8 +1803,9 @@ fn ctrl_c_during_a_shown_program_ends_the_program_and_not_whk() {
     let after = current();
 
     // The SIGINT sent to this process was queued before the program ended,
-    // but another thread may not have taken it yet. With SIGINT blocked here
-    // it stays visible to sigpending until a thread has, under the test's
+    // and the run discards it if no thread has taken it by then, so none
+    // should be left pending. With SIGINT blocked here one that was would
+    // stay visible to sigpending until a thread took it, under the test's
     // own handler; only then does the default come back.
     // SAFETY: a signal set emptied, then filled, for this thread's mask.
     let mut only_sigint: libc::sigset_t = unsafe { std::mem::zeroed() };

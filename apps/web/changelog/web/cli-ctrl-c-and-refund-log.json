@@ -1,0 +1,7 @@
+{
+  "title": "whk 1.20.1 and the refund worker's log line",
+  "items": [
+    "The changelog lists whk 1.20.1: a Ctrl-C at a program `whk setup agent` shows no longer ends whk afterwards, on Unix and on Windows",
+    "The refund worker's summary line counts a slow check of a live subscription that could not reach Polar as `unreachable`, apart from rows still waiting on Polar"
+  ]
+}

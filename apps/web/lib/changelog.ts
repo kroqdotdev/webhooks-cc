@@ -30,7 +30,7 @@ export const TRACK_LABELS: Record<ChangelogTrack, string> = {
 const RELEASE = release as { version: string | null; entries: ChangelogEntry[] };
 
 export const APP_VERSION: string = RELEASE.version ?? "dev";
-export const CLI_VERSION = "1.20.0";
+export const CLI_VERSION = "1.20.1";
 export const SDK_VERSION = "1.30.0";
 export const PYTHON_SDK_VERSION = "0.10.0";
 export const GO_SDK_VERSION = "0.10.0";
@@ -2144,6 +2144,17 @@ export const CHANGELOG: ChangelogEntry[] = [
   },
 
   // ─── CLI ────────────────────────────────────────────────────────────
+  {
+    version: "1.20.1",
+    date: "2026-11-15",
+    title: "Ctrl-C During Setup",
+    track: "cli",
+    items: [
+      "A Ctrl-C at a program `whk setup agent` shows (Codex's sign-in) no longer ends whk once that program has exited: a Ctrl-C still on its way to whk is discarded before its usual action comes back, without waiting for it",
+      "On Windows, when Ctrl-C ended that program, whk waits a moment before removing its own Ctrl-C handler, so the handler answers the event first and whk goes on to record what the program added",
+      "`whk --help` wraps the exit status 8 lines evenly",
+    ],
+  },
   {
     version: "1.20.0",
     date: "2026-11-15",
