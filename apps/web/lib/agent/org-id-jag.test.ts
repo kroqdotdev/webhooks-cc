@@ -99,17 +99,21 @@ vi.mock("./org-connect-notice", () => ({
     notices.push(input);
   }),
 }));
-// The token issued once linked.
+// The token issued once linked; failMint makes minting it fail.
+let failMint = false;
 vi.mock("./registrations", async (importOriginal) => {
   const original = await importOriginal<typeof import("./registrations")>();
   return {
     ...original,
-    issueClaimedAccessToken: async (registrationId: string) => ({
-      accessToken: "whcc_test",
-      expiresIn: 3600,
-      scope: "endpoints:read",
-      registration: { id: registrationId, user_id: "user-1", client_name: "client.example.com" },
-    }),
+    issueClaimedAccessToken: async (registrationId: string) => {
+      if (failMint) throw new Error("mint failed");
+      return {
+        accessToken: "whcc_test",
+        expiresIn: 3600,
+        scope: "endpoints:read",
+        registration: { id: registrationId, user_id: "user-1", client_name: "client.example.com" },
+      };
+    },
   };
 });
 // The token endpoint's budgets: every key asked for, and which are spent.
@@ -249,6 +253,7 @@ beforeEach(async () => {
   linkAnswer = { status: "not_member" };
   rateKeys.length = 0;
   exhausted.clear();
+  failMint = false;
 });
 
 describe("verifyOrgIdJag", () => {
@@ -766,6 +771,33 @@ describe("orgIdJagGrant", () => {
     linkAnswer = { ...linkAnswer, bound: false };
     await orgIdJagGrant(tokenRequest(), { client_id: CLIENT }, await mint());
     expect(notices).toHaveLength(1);
+  });
+
+  test("records the bind and emails the member even when minting the token fails", async () => {
+    linkAnswer = {
+      status: "linked",
+      registration_id: "reg-1",
+      team_id: "team-1",
+      trust_id: "trust-1",
+      bound: true,
+      windows_closed: [{ trust_id: "trust-2", team_id: "team-2" }],
+    };
+    failMint = true;
+    await expect(
+      orgIdJagGrant(tokenRequest(), { client_id: CLIENT }, await mint())
+    ).rejects.toThrow("mint failed");
+    expect(audited.map((row) => row.action)).toEqual([
+      "team.idjag_connect_bound",
+      "team.idjag_connect_closed",
+    ]);
+    expect(audited[0]).toMatchObject({
+      targetId: "reg-1",
+      targetUserId: "user-1",
+      teamId: "team-1",
+    });
+    expect(notices).toEqual([
+      { userId: "user-1", teamId: "team-1", clientName: "client.example.com", issuer: ISS },
+    ]);
   });
 
   test("records the windows a connected identity's link closed", async () => {

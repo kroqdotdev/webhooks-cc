@@ -298,22 +298,23 @@ export async function verifyOrgIdJag(jwt: string, clientId: string): Promise<Org
   return { ok: true, iss, sub, clientId, email, authTime };
 }
 
+/** What the database did when it linked an identity. */
+export type OrgIdJagLinked = {
+  registration: RegistrationRow;
+  teamId: string | null;
+  /** True when a member's open window bound the identity just now. */
+  bound: boolean;
+  /** The trust row whose window bound it. */
+  trustId: string | null;
+  /**
+   * Windows of the member's that closed because this identity was
+   * connected already (its trust rows), so nothing else binds in them.
+   */
+  windowsClosed: { trustId: string; teamId: string }[];
+};
+
 export type OrgIdJagLink =
-  | {
-      status: "linked";
-      registration: RegistrationRow;
-      teamId: string | null;
-      token: AccessToken;
-      /** True when a member's open window bound the identity just now. */
-      bound: boolean;
-      /** The trust row whose window bound it. */
-      trustId: string | null;
-      /**
-       * Windows of the member's that closed because this identity was
-       * connected already (its trust rows), so nothing else binds in them.
-       */
-      windowsClosed: { trustId: string; teamId: string }[];
-    }
+  | ({ status: "linked"; token: AccessToken } & OrgIdJagLinked)
   | {
       status: "interaction_required";
       registration: RegistrationRow;
@@ -352,7 +353,17 @@ async function readRegistration(id: string): Promise<RegistrationRow> {
  * ceremony. Once bound, later assertions for the same identity get an
  * access token at once.
  */
-export async function linkOrgIdJag(verified: OrgIdJagSuccess): Promise<OrgIdJagLink> {
+export async function linkOrgIdJag(
+  verified: OrgIdJagSuccess,
+  hooks: {
+    /**
+     * Runs once the database has linked the identity and before the token is
+     * minted, so what the link did (a window that bound, windows it closed)
+     * is recorded and the member told even when minting then fails.
+     */
+    linked?: (link: OrgIdJagLinked) => Promise<void>;
+  } = {}
+): Promise<OrgIdJagLink> {
   const email = verified.email;
   // Mail to the capture domain, or to a verified inbound domain, can be read
   // through webhooks.cc itself, so it never identifies anyone.
@@ -397,15 +408,9 @@ export async function linkOrgIdJag(verified: OrgIdJagSuccess): Promise<OrgIdJagL
   switch (result.status) {
     case "linked": {
       const registration = await readRegistration(result.registration_id!);
-      // A one-hour token only, never an assertion of ours: the next token
-      // takes a fresh ID-JAG. The registration is read again and the token
-      // capped as for the jwt-bearer grant.
-      const token = await issueClaimedAccessToken(registration.id);
-      return {
-        status: "linked",
+      const linked: OrgIdJagLinked = {
         registration,
         teamId: result.team_id ?? null,
-        token,
         bound: result.bound === true,
         trustId: result.trust_id ?? null,
         windowsClosed: (result.windows_closed ?? []).map((w) => ({
@@ -413,6 +418,12 @@ export async function linkOrgIdJag(verified: OrgIdJagSuccess): Promise<OrgIdJagL
           teamId: w.team_id,
         })),
       };
+      await hooks.linked?.(linked);
+      // A one-hour token only, never an assertion of ours: the next token
+      // takes a fresh ID-JAG. The registration is read again and the token
+      // capped as for the jwt-bearer grant.
+      const token = await issueClaimedAccessToken(registration.id);
+      return { status: "linked", ...linked, token };
     }
     case "pending": {
       const registration = await readRegistration(result.registration_id!);

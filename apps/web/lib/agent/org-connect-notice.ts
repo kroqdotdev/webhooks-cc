@@ -10,8 +10,9 @@ import { escapeHtml } from "@/lib/support/emails";
  * The window lets the first sign-in from the issuer with the member's email
  * connect at once, with no code to compare, so the member is told what
  * connected and where to disconnect it, in case it was not their agent. A
- * failure to send is reported, never thrown: the agent already has its
- * token, and the team page lists the connection either way.
+ * failure to send is reported, never thrown: the connection exists by the
+ * time this runs (it is sent before the token is minted), and the team page
+ * lists it either way.
  */
 
 export function buildConnectBoundEmail(params: {

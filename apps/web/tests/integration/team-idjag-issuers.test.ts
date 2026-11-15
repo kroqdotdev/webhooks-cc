@@ -11,7 +11,8 @@
  * as are: our own assertions still exchanging with the feature on (they
  * carry the ID-JAG typ too), no long-lived assertion of ours for an agent
  * bound through a team's issuer, a member of two teams trusting one issuer
- * keeping a connection the other team still covers, and a member leaving
+ * keeping a connection the other team still covers (and losing it when the
+ * team it connected through is deleted), and a member leaving
  * while a link holds their membership (driven through psql in a held
  * transaction, so it needs SUPABASE_DB_URL and psql on PATH).
  *
@@ -1247,6 +1248,52 @@ commit;`,
         .select("id", { count: "exact", head: true })
         .eq("agent_registration_id", row.id);
       expect(count).toBe(0);
+    });
+
+    it("revokes, never moves, when the team it connected through is deleted", async () => {
+      await joinBoth();
+      const sub = `team-deleted-${RUN}`;
+      const token = await bind(teamA, trustA, sub);
+      const bound = await registrationOf(sub);
+      expect(bound.idjag_team_issuer_id).toBe(trustA);
+
+      // The deletion's cascade removes the member's row and the trust row in
+      // the order of its foreign keys' trigger names, which differs between
+      // databases. A trigger whose name sorts before them forces the order
+      // that used to move the delegation: the member's row goes first, with
+      // the team row already gone and its trust row still there.
+      const { done } = await holdOpen(
+        `begin;
+create function public.idjag_test_members_first() returns trigger language plpgsql as $f$
+begin
+  delete from public.team_members where team_id = old.id;
+  return null;
+end;
+$f$;
+create trigger "A_idjag_test_members_first" after delete on public.teams
+  for each row execute function public.idjag_test_members_first();
+delete from public.teams where id = '${teamA}';
+drop trigger "A_idjag_test_members_first" on public.teams;
+drop function public.idjag_test_members_first();
+commit;
+select 'deleted';`,
+        "deleted"
+      );
+      expect(await done).toBe(0);
+      const { data: gone } = await admin.from("teams").select("id").eq("id", teamA);
+      expect(gone).toEqual([]);
+
+      const row = await registrationOf(sub);
+      expect(row.revoked_at).not.toBeNull();
+      expect(row.idjag_team_issuer_id).not.toBe(trustB);
+      expect(await tokenWorks(token)).toBe(false);
+      const { data: moved } = await admin
+        .from("audit_events")
+        .select("id")
+        .eq("action", "agent.registration.moved")
+        .eq("target_id", bound.id);
+      expect(moved).toEqual([]);
+      expect(await revokedAudit(bound.id)).not.toEqual([]);
     });
   });
 

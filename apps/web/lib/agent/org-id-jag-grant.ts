@@ -6,7 +6,12 @@ import { MAX_CLAIM_ATTEMPTS, POST_CLAIM_SCOPES } from "./constants";
 import { NO_STORE_HEADERS, oauthError, oauthJson } from "./errors";
 import { issuer } from "./http";
 import { maxAuthAgeSeconds } from "./id-jag";
-import { linkOrgIdJag, MAX_LIFETIME_WITHOUT_AUTH_TIME_SECS, verifyOrgIdJag } from "./org-id-jag";
+import {
+  linkOrgIdJag,
+  MAX_LIFETIME_WITHOUT_AUTH_TIME_SECS,
+  type OrgIdJagLinked,
+  verifyOrgIdJag,
+} from "./org-id-jag";
 import { notifyConnectBound } from "./org-connect-notice";
 import { refusalAuditGate } from "./refusal-audit";
 import { claimEndpointUrl } from "./registrations";
@@ -142,7 +147,60 @@ export async function orgIdJagGrant(
     });
   }
 
-  const link = await linkOrgIdJag(verified);
+  // Recorded, and the member emailed, as soon as the database has bound the
+  // identity: a failure to mint the token afterwards must not hide a
+  // connection that now exists. Neither call throws.
+  const recordLink = async ({
+    registration,
+    teamId,
+    bound,
+    trustId,
+    windowsClosed,
+  }: OrgIdJagLinked) => {
+    if (bound) {
+      await auditAgentEvent(request, {
+        action: "team.idjag_connect_bound",
+        status: 200,
+        targetId: registration.id,
+        targetUserId: registration.user_id,
+        teamId,
+        metadata: {
+          source: SOURCE,
+          issuer: verified.iss,
+          trust_id: trustId,
+          client: registration.client_name,
+        },
+      });
+      // No code was compared, so the member hears what connected.
+      if (registration.user_id) {
+        await notifyConnectBound({
+          userId: registration.user_id,
+          teamId,
+          clientName: registration.client_name,
+          issuer: verified.iss,
+        });
+      }
+    }
+    // A window the member opened while this identity was connected
+    // already: closed by the link, so no other identity binds in it.
+    for (const closed of windowsClosed) {
+      await auditAgentEvent(request, {
+        action: "team.idjag_connect_closed",
+        status: 200,
+        targetId: closed.trustId,
+        targetUserId: registration.user_id,
+        teamId: closed.teamId,
+        metadata: {
+          source: SOURCE,
+          issuer: verified.iss,
+          reason: "already_connected",
+          registration_id: registration.id,
+        },
+      });
+    }
+  };
+
+  const link = await linkOrgIdJag(verified, { linked: recordLink });
   const refused = async (status: number, code: string, description: string) => {
     await auditAgentEvent(request, {
       action: "agent.registration.refused",
@@ -235,47 +293,6 @@ export async function orgIdJagGrant(
     }
     case "linked": {
       const { token, teamId } = link;
-      if (link.bound) {
-        await auditAgentEvent(request, {
-          action: "team.idjag_connect_bound",
-          status: 200,
-          targetId: token.registration.id,
-          targetUserId: token.registration.user_id,
-          teamId,
-          metadata: {
-            source: SOURCE,
-            issuer: verified.iss,
-            trust_id: link.trustId,
-            client: token.registration.client_name,
-          },
-        });
-        // No code was compared, so the member hears what connected.
-        if (token.registration.user_id) {
-          await notifyConnectBound({
-            userId: token.registration.user_id,
-            teamId,
-            clientName: token.registration.client_name,
-            issuer: verified.iss,
-          });
-        }
-      }
-      // A window the member opened while this identity was connected
-      // already: closed by the link, so no other identity binds in it.
-      for (const closed of link.windowsClosed) {
-        await auditAgentEvent(request, {
-          action: "team.idjag_connect_closed",
-          status: 200,
-          targetId: closed.trustId,
-          targetUserId: token.registration.user_id,
-          teamId: closed.teamId,
-          metadata: {
-            source: SOURCE,
-            issuer: verified.iss,
-            reason: "already_connected",
-            registration_id: token.registration.id,
-          },
-        });
-      }
       await auditAgentEvent(request, {
         action: "agent.token.issued",
         status: 200,

@@ -107,7 +107,8 @@ revoke all on table public.team_idjag_connect_windows from public, anon, authent
 -- team trusting the same issuer (for its client) is not revoked: it moves to
 -- that team's oldest such trust row, which the person's membership still
 -- justifies. Only a member leaving (or being removed) rehomes; an owner
--- removing an issuer, and a member's own Disconnect, revoke outright.
+-- removing an issuer, a member's own Disconnect and the team's deletion
+-- revoke outright.
 --
 -- Locks, in this order: the affected registrations (by id), then for each
 -- one the candidate trust rows of its issuer and the person's memberships of
@@ -792,8 +793,13 @@ begin
   if v_trust_ids is not null then
     delete from public.team_idjag_connect_windows
      where trust_id = any(v_trust_ids) and user_id = old.user_id;
+    -- A member leaving rehomes; the team's own deletion never does. Its
+    -- cascade deletes the members and the trust rows in no promised order,
+    -- and the team row is already gone when a member's row goes, so a
+    -- member deleted first would otherwise move the agent to another team.
     perform public.revoke_team_idjag_delegations(
-      v_trust_ids, old.user_id, old.team_id, 'team_member_left', true
+      v_trust_ids, old.user_id, old.team_id, 'team_member_left',
+      exists (select 1 from public.teams where id = old.team_id)
     );
   end if;
   return null;
