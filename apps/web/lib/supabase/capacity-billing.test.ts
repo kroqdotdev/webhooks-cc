@@ -403,10 +403,20 @@ describe("setOverage: the maximum and the Polar call go together", () => {
   it("puts the previous maximum back when Polar refuses to end overage", async () => {
     tables.users = proAccount({ overage_max: 50_000 });
     tables.capacity_subscriptions = [overageRow()];
-    mockFns.subscriptionsUpdate.mockRejectedValueOnce(new Error("Polar is down"));
-    await expect(setOverage(USER, "user_1", { enabled: false })).rejects.toThrow("Polar is down");
+    mockFns.subscriptionsUpdate.mockRejectedValueOnce(
+      Object.assign(new Error("Unprocessable"), { statusCode: 422 })
+    );
+    await expect(setOverage(USER, "user_1", { enabled: false })).rejects.toThrow("Unprocessable");
     expect(maxWrites()).toEqual([{ overage_max: 0 }, { overage_max: 50_000 }]);
     expect(updates.some((u) => u.table === "capacity_subscriptions")).toBe(false);
+  });
+
+  it("keeps overage at 0 when ending it may have gone through (a timeout)", async () => {
+    tables.users = proAccount({ overage_max: 50_000 });
+    tables.capacity_subscriptions = [overageRow()];
+    mockFns.subscriptionsUpdate.mockRejectedValueOnce(new Error("The operation timed out"));
+    await expect(setOverage(USER, "user_1", { enabled: false })).rejects.toThrow("timed out");
+    expect(maxWrites()).toEqual([{ overage_max: 0 }]);
   });
 
   it("puts the previous maximum back when the overage checkout cannot be made", async () => {

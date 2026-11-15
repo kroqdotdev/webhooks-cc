@@ -953,7 +953,11 @@ async function changeOverageMax<T>(
   try {
     return await polarCall();
   } catch (error) {
-    if (previousMax !== max) {
+    // Put the old maximum back when that can only charge less (it was
+    // lower), or when Polar certainly did not take the change. After a
+    // timeout Polar may have turned overage off, and a higher old maximum
+    // would let the account keep spending past what the owner approved.
+    if (previousMax !== max && (previousMax < max || polarCertainlyRefused(error))) {
       try {
         await writeOverageMax(account, previousMax, resource);
       } catch (restoreError) {
@@ -962,6 +966,19 @@ async function changeOverageMax<T>(
     }
     throw error;
   }
+}
+
+/**
+ * Whether a failed Polar call certainly left Polar unchanged: the mutation
+ * guard refused before the call went out (a BillingChangeRetry), or Polar
+ * answered with a 4xx. A timeout, a network error or a 5xx may have been
+ * applied.
+ */
+export function polarCertainlyRefused(error: unknown): boolean {
+  if (!error || typeof error !== "object") return false;
+  if ((error as { name?: unknown }).name === "BillingChangeRetry") return true;
+  const status = (error as { statusCode?: unknown }).statusCode;
+  return typeof status === "number" && status >= 400 && status < 500;
 }
 
 async function readOverageMax(
