@@ -30,11 +30,11 @@ export const TRACK_LABELS: Record<ChangelogTrack, string> = {
 const RELEASE = release as { version: string | null; entries: ChangelogEntry[] };
 
 export const APP_VERSION: string = RELEASE.version ?? "dev";
-export const CLI_VERSION = "1.19.0";
-export const SDK_VERSION = "1.29.0";
-export const PYTHON_SDK_VERSION = "0.9.0";
-export const GO_SDK_VERSION = "0.9.0";
-export const MCP_VERSION = "2.3.0";
+export const CLI_VERSION = "1.20.0";
+export const SDK_VERSION = "1.30.0";
+export const PYTHON_SDK_VERSION = "0.10.0";
+export const GO_SDK_VERSION = "0.10.0";
+export const MCP_VERSION = "2.4.0";
 
 export const CHANGELOG: ChangelogEntry[] = [
   ...RELEASE.entries,
@@ -2145,6 +2145,25 @@ export const CHANGELOG: ChangelogEntry[] = [
 
   // ─── CLI ────────────────────────────────────────────────────────────
   {
+    version: "1.20.0",
+    date: "2026-11-15",
+    title: "Billing Changes, Checkout Links And Setup Agent",
+    track: "cli",
+    items: [
+      "`whk setup agent` connects the coding agents on this machine (Claude Code, Codex, Claude Desktop, Cursor, VS Code and Devin Desktop) to webhooks.cc in one step: the remote MCP server in each one's user config, signed in with OAuth in the browser so no key is written anywhere, and the agent skill. `--local` installs the local server instead, `--agent` picks agents, `--dry-run` says what would change, and `--remove` takes out what it installed and nothing else",
+      "`whk setup agent` backs a config file up to `<file>.bak` the first time it changes it, keeps its indentation, line endings and key order, leaves a file it cannot write back exactly alone, changes nothing on a re-run, and leaves Claude Code alone when the webhooks.cc plugin already brings the server and the skill; without a terminal it needs `--yes`, and Codex, which signs in while it is added, is reported as `needs_sign_in` with the command to run",
+      "`whk billing plan`, `keep-plan`, `seats`, `blocks`, `buy`, `overage`, `cancel` and `resume` ask for a billing change, the account's or with `--team` a team's you own: each is quoted, and the account's owner approves it through a link and a code, or the agent budget pays for it (more seats, a monthly move up a tier). `whk billing` on its own, or `whk billing show`, still shows what the account pays for",
+      "`whk billing checkout plan|team-plan|blocks|monthly-blocks|overage` makes a checkout link for the person to pay with their own card, with no approval since nothing is charged until they pay; `--wait` waits for the payment (with `--json`, one NDJSON line when the link is made and one when it settles), `whk billing checkout-status <id> [--wait]` says where a link stands, and `whk billing checkout-cancel <id>` cancels one nobody has opened",
+      "`whk billing budget` shows the agent spend budget, and `whk billing budget <dollars|off>` sets it (at most 500): a key lowers it at once, and a raise is approved by the owner",
+      "New error codes for billing: `billing_refused` (exit 1, the server's code in `reason`) when a change was refused with nothing changed, `outcome_unknown` (exit 1) when it may or may not have been made, a payment the bank wants the cardholder to confirm included, and `quote_changed`, `checkout_expired` and `checkout_superseded` (exit 8); `whk approvals wait` on a billing change exits with them too",
+      "`whk alerts get <slug>` shows an endpoint's alert settings and recent alerts, open ones first, and `whk alerts set <slug>` changes only the settings given (missing fields, silence, failed deliveries, who is told)",
+      "`whk mock preview <slug>` and `whk layouts preview <slug>` are dry runs: which response rule answers a captured request and the response with its placeholders filled in, or which layout an email matches and the fields, line items and attachments it reads. `--mock-response`, `--response-rules` and `--layouts` try settings that are not saved; nothing is sent and no pages are used",
+      "`whk send-email <slug>` has webhooks.cc deliver a sample email with a code and a link, to `{slug}+{tag}@` with `--tag`, or a ready-made layout's sample with `--template`",
+      "`whk requests download <id>` saves an email's exact message, or with `--attachment <n>` one decoded attachment, to the file `-o` names and never to a name the sender chose; it refuses to write to a terminal, writes through a temporary file renamed into place, and replaces a link at the path rather than following it",
+      "`whk requests replay <id>` and `whk requests replay-range <slug> --since 2h` run requests through their endpoint again on the server (layouts, then every destination that takes them), at most 500 a call, and when a range stops at the limit whk prints the command that goes on from there; `whk replay` still sends one from this machine, and each command's help names the other",
+    ],
+  },
+  {
     version: "1.19.0",
     date: "2026-11-14",
     title: "Destinations And Deliveries",
@@ -2515,6 +2534,22 @@ export const CHANGELOG: ChangelogEntry[] = [
   },
 
   // ─── SDK ────────────────────────────────────────────────────────────
+  {
+    version: "1.30.0",
+    date: "2026-11-15",
+    title: "Billing Changes, Checkout Links And The Agent Budget",
+    track: "sdk",
+    items: [
+      "`billing.changePlan()`, `keepPlan()`, `setSeats()`, `setMonthlyBlocks()`, `buyBlocks()`, `setOverage()`, `cancel()` and `resubscribe()` ask for a billing change, the account's or a team's with `teamId`. With an API key or agent token each returns a `PendingApproval` the owner approves with its quote, and `wait()` resolves with a `BillingChangeResult`: `executed: true` (`applied` now, at the renewal, or at a checkout opened for the owner), `false` with a `code` such as `quote_changed` and nothing changed, or `null` with `outcome_unknown`, when billing should be checked before asking again",
+      "When the agent budget pays for a change (more seats, Pro to Business or Teams to Team Business monthly), it is made at once without an approval; when it could have but did not, `budget` on the pending approval says why (`over_budget`, `budget_off`, ...)",
+      "`billing.getBudget()` reads the agent spend budget, what is left and the spends it counts, and `billing.setBudget({ budgetCents })` sets it (0 to 50000 cents, 0 is off): lowering applies at once, and a raise is a `PendingApproval`",
+      "`billing.createCheckout(item)` makes a checkout link for a plan, a team subscription or extra capacity, whose `url` the person opens signed in as the account's owner to pay with their own card; `getCheckout()` reads where it stands, `cancelCheckout()` cancels one nobody has opened, and `waitForCheckout()` resolves once it is paid",
+      '`waitForCheckout()` throws `CheckoutExpiredError` when the link expires first (`reason: "unsettled"` when it may still have been paid) and `CheckoutSupersededError`, a `CheckoutExpiredError` too, when the purchase was undone as a duplicate; it keeps polling for a minute after a link the person opened expires, since a payment Polar confirms late still turns it paid, and through ten failures in a row that are only for now',
+      "`emails.sendTest()` takes `template`, a ready-made layout's id, to send that layout's sample email",
+      "`endpoints.redeliver()` answers `limit`, `appliedUntil` and, when requests in the range are left, `nextSince` to go on from",
+      "An error's `code` also comes from a `code` beside the message in the answer (`outcome_unknown`, `quote_changed`), and a body that fails to read after the headers arrived counts as a network failure, so waits keep polling instead of failing",
+    ],
+  },
   {
     version: "1.29.0",
     date: "2026-11-14",
@@ -2976,6 +3011,17 @@ export const CHANGELOG: ChangelogEntry[] = [
 
   // ─── Python SDK ─────────────────────────────────────────────────────
   {
+    version: "0.10.0",
+    date: "2026-11-15",
+    title: "Checkout Links",
+    track: "python",
+    items: [
+      "`client.billing.create_checkout(kind=...)` makes a checkout link for a plan, a team subscription (`team_id`, `seats`) or extra capacity (`blocks`, `monthly_blocks`, `overage`), whose `url` the person opens signed in as the account's owner to pay with their own card; nothing is charged until they do",
+      "`billing.get_checkout()` reads where a link stands (`CheckoutLink`, with `CheckoutBought` once paid), and `billing.cancel_checkout()` cancels one nobody has opened",
+      '`billing.wait_for_checkout()` returns the paid link, or raises `CheckoutExpiredError` (`reason` `"unsettled"` when it may still have been paid) or `CheckoutSupersededError` when the purchase was undone as a duplicate; it keeps polling for a minute after a link the person opened expires (`expired_grace`), and through failures that are only for now',
+    ],
+  },
+  {
     version: "0.9.0",
     date: "2026-11-14",
     title: "Agent Repository And Destination Tests",
@@ -3107,6 +3153,17 @@ export const CHANGELOG: ChangelogEntry[] = [
 
   // ─── Go SDK ─────────────────────────────────────────────────────────
   {
+    version: "0.10.0",
+    date: "2026-11-15",
+    title: "Checkout Links",
+    track: "go",
+    items: [
+      "`client.Billing.CreateCheckout()` makes a checkout link from a `CheckoutItem` (`CheckoutPlan`, `CheckoutTeamPlan`, `CheckoutBlocks`, `CheckoutMonthlyBlocks`, `CheckoutOverage`), whose `URL` the person opens signed in as the account's owner to pay with their own card; nothing is charged until they do",
+      "`Billing.GetCheckout()` reads where a link stands (`CheckoutLink`, with `Bought` once paid), and `Billing.CancelCheckout()` cancels one nobody has opened",
+      "`Billing.WaitForCheckout()` returns the paid link, or an error that matches `ErrCheckoutExpired`: `ErrCheckoutUnsettled` when it may still have been paid, `ErrCheckoutSuperseded` when the purchase was undone as a duplicate. It keeps polling for a minute after a link the person opened expires (`ExpiredGrace`), and through failures that are only for now",
+    ],
+  },
+  {
     version: "0.9.0",
     date: "2026-11-14",
     title: "Agent Repository And Destination Tests",
@@ -3215,6 +3272,19 @@ export const CHANGELOG: ChangelogEntry[] = [
   },
 
   // ─── MCP ────────────────────────────────────────────────────────────
+  {
+    version: "2.4.0",
+    date: "2026-11-15",
+    title: "Billing Changes, Checkout Links And The Agent Budget",
+    track: "mcp",
+    items: [
+      "`change_plan` (or `keep: true`), `set_seats`, `change_addons` (`set_monthly_blocks`, `buy_blocks`, `set_overage`), `cancel_subscription` and `resume_subscription` ask for a billing change, the account's or with `teamId` a team's you own: each returns a link and a code for the owner, who approves the quoted change, and `wait_for_approval` says what was done, or that nothing changed because the quote moved",
+      "`get_agent_budget` and `set_agent_budget` read and set the agent spend budget; more seats and a monthly move up a tier are made at once on it, the answer saying what was charged and counted and what is left, or why the change went to the owner instead",
+      "`create_checkout` makes a checkout link for a plan, a team subscription or extra capacity for the person to pay with their own card, with no approval; a client that can open links opens it for them, and `wait_for_checkout` waits for the payment and says when what was bought differs from what was asked for. `cancel_checkout` cancels a link nobody has opened",
+      "The account group's description covers billing changes and checkout links, and `quote_team_change` names `set_seats` and `change_plan` as the way to make the change it prices",
+      "The agent skill the server serves covers billing changes, the agent budget and checkout links, and the CLI's alerts, previews, `send-email`, downloads, server-side replay and `whk setup agent`",
+    ],
+  },
   {
     version: "2.3.0",
     date: "2026-11-14",

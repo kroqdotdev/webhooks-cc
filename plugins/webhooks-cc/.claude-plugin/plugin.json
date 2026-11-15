@@ -1,7 +1,7 @@
 {
   "name": "webhooks-cc",
   "displayName": "webhooks.cc",
-  "version": "2.1.0",
+  "version": "2.2.0",
   "description": "Everything webhooks.cc does, for coding agents: capture URLs and inboxes, provider-signed test webhooks and signature checks, signup and code emails, mock responses, forwarding, email parsing, tunnels and preview links, and the webhooks.cc MCP server.",
   "author": {
     "name": "webhooks.cc",
