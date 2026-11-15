@@ -36,7 +36,7 @@ With the [CLI](/docs/cli) installed, one command adds the server to every coding
 whk setup agent
 ```
 
-It finds Claude Code, Codex, Cursor, VS Code, Claude Desktop and Devin Desktop, writes no key anywhere, and `--dry-run` shows what it would change first. [`whk setup agent`](/docs/cli/commands#setup-agent) has the details. To add the server by hand instead, client menus change, so treat these paths as a guide.
+It finds Claude Code, Codex, Cursor, VS Code, Claude Desktop and Devin Desktop, writes no key anywhere, and `--dry-run` shows what it would change first. Claude Desktop gets the [local server](#local-server), the only kind its config file runs, which starts in the [agent sandbox](#without-an-api-key-the-agent-sandbox) unless a connection was saved on the machine before; for the remote server in Claude Desktop, add a custom connector with `https://webhooks.cc/mcp` under Settings, Connectors. [`whk setup agent`](/docs/cli/commands#setup-agent) has the details. To add the server by hand instead, client menus change, so treat these paths as a guide.
 
 **Claude Code:**
 

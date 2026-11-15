@@ -16,7 +16,12 @@
 //!
 //! What it writes is recorded in `setup-agent.json` beside `token.json`, so
 //! `--remove` deletes exactly that and nothing a person or another tool put
-//! there, and a re-run can replace its own older entry. A file is backed up
+//! there, and a re-run can replace its own older entry. The record is saved
+//! after every change, and before each one with a note of what is about to
+//! be written (`pending`), so a run that ends early or cannot save the
+//! record afterwards leaves a re-run what it needs to record the change; a
+//! record that cannot be written at all stops the run before anything
+//! changes. A file is backed up
 //! to `<file>.bak` the first time it is changed (never over an existing
 //! backup), written through a temporary file and a rename with the file's
 //! own mode, and left alone when it is not valid JSON, is read-only, or
@@ -459,6 +464,10 @@ impl Runner for ProcessRunner {
                 Stdio::inherit()
             });
             command.stderr(Stdio::inherit());
+            // Ctrl-C at the program's prompt (Codex's sign-in) is the
+            // person's answer to that program: it ends the program, not
+            // whk, which still records what the program added.
+            let _interrupt = IgnoreInterrupt::new();
             let status = command.status()?;
             return Ok(RunOutput {
                 success: status.success(),
@@ -471,6 +480,88 @@ impl Runner for ProcessRunner {
             stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
             stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
         })
+    }
+}
+
+/// Keeps SIGINT from ending whk while it lasts, and restores what was there
+/// before when dropped. A handler that does nothing, not `SIG_IGN`: an
+/// ignored signal stays ignored across `exec`, so the program whk runs
+/// would ignore Ctrl-C too, while a handled one is reset to the default
+/// there. On Windows a console control handler that answers Ctrl-C does
+/// the same, and handlers are not inherited either. Should whk end all the
+/// same, the record was saved before the program ran with what whk was
+/// about to add, so a re-run finds it.
+struct IgnoreInterrupt {
+    #[cfg(unix)]
+    saved: Option<libc::sigaction>,
+    #[cfg(windows)]
+    added: bool,
+}
+
+#[cfg(unix)]
+extern "C" fn on_interrupt(_: libc::c_int) {}
+
+#[cfg(windows)]
+unsafe extern "system" fn on_console_control(kind: u32) -> windows_sys::core::BOOL {
+    use windows_sys::Win32::System::Console::{CTRL_BREAK_EVENT, CTRL_C_EVENT};
+    (kind == CTRL_C_EVENT || kind == CTRL_BREAK_EVENT) as windows_sys::core::BOOL
+}
+
+impl IgnoreInterrupt {
+    fn new() -> Self {
+        #[cfg(unix)]
+        {
+            // SAFETY: sigaction with zeroed, then filled structs; the
+            // handler does nothing, so it is async-signal-safe.
+            unsafe {
+                let mut saved: libc::sigaction = std::mem::zeroed();
+                if libc::sigaction(libc::SIGINT, std::ptr::null(), &mut saved) != 0
+                    || saved.sa_sigaction == libc::SIG_IGN
+                {
+                    // Already ignored (started with nohup, say): kept so.
+                    return IgnoreInterrupt { saved: None };
+                }
+                let mut quiet: libc::sigaction = std::mem::zeroed();
+                quiet.sa_sigaction = on_interrupt as extern "C" fn(libc::c_int) as usize;
+                quiet.sa_flags = libc::SA_RESTART;
+                libc::sigemptyset(&mut quiet.sa_mask);
+                if libc::sigaction(libc::SIGINT, &quiet, std::ptr::null_mut()) != 0 {
+                    return IgnoreInterrupt { saved: None };
+                }
+                IgnoreInterrupt { saved: Some(saved) }
+            }
+        }
+        #[cfg(windows)]
+        {
+            use windows_sys::Win32::System::Console::SetConsoleCtrlHandler;
+            // SAFETY: adds a handler that only answers the event.
+            let added = unsafe { SetConsoleCtrlHandler(Some(on_console_control), 1) } != 0;
+            IgnoreInterrupt { added }
+        }
+        #[cfg(not(any(unix, windows)))]
+        {
+            IgnoreInterrupt {}
+        }
+    }
+}
+
+impl Drop for IgnoreInterrupt {
+    fn drop(&mut self) {
+        #[cfg(unix)]
+        if let Some(saved) = &self.saved {
+            // SAFETY: restores the action read in `new`.
+            unsafe {
+                libc::sigaction(libc::SIGINT, saved, std::ptr::null_mut());
+            }
+        }
+        #[cfg(windows)]
+        if self.added {
+            use windows_sys::Win32::System::Console::SetConsoleCtrlHandler;
+            // SAFETY: removes the handler `new` added.
+            unsafe {
+                SetConsoleCtrlHandler(Some(on_console_control), 0);
+            }
+        }
     }
 }
 
@@ -581,9 +672,12 @@ enum Kind {
     Command {
         tool: Tool,
         server: Server,
+        /// The configuration the command changes, as recorded.
+        config: PathBuf,
         entry: Value,
         ours: Vec<Value>,
-        /// Why it is left out.
+        /// Why it is left out: an entry whk added before is then taken
+        /// out (the Claude Code plugin brings its own).
         skip: Option<String>,
     },
     /// The agent skill, in `<dir>/webhooks-cc`.
@@ -625,12 +719,17 @@ impl Target {
     }
 
     /// Whether `setup-agent.json` records something whk wrote here.
+    /// A note of what whk was about to write counts too.
     fn recorded(&self, manifest: &Manifest) -> bool {
-        match &self.kind {
-            Kind::JsonFile { path, .. } => manifest.mcp_files.contains_key(&key(path)),
-            Kind::Command { tool, .. } => manifest.mcp_commands.contains_key(tool.id()),
-            Kind::Skill { dir, .. } => manifest.skills.contains_key(&key(&dir.join(skill::NAME))),
-        }
+        [&manifest.records, &manifest.pending]
+            .into_iter()
+            .any(|records| match &self.kind {
+                Kind::JsonFile { path, .. } => records.mcp_files.contains_key(&key(path)),
+                Kind::Command { tool, config, .. } => records.command(*tool, config).is_some(),
+                Kind::Skill { dir, .. } => {
+                    records.skills.contains_key(&key(&dir.join(skill::NAME)))
+                }
+            })
     }
 }
 
@@ -662,6 +761,7 @@ fn targets(agent: Agent, asked: Server, env: &Env) -> Vec<Target> {
                 Target::new(Kind::Command {
                     tool: Tool::Claude,
                     server,
+                    config: env.claude_json(),
                     entry: pick(remote_entry(), local_entry()),
                     ours: vec![remote_entry(), local_entry()],
                     skip: skip.clone(),
@@ -703,6 +803,7 @@ fn targets(agent: Agent, asked: Server, env: &Env) -> Vec<Target> {
             Target::new(Kind::Command {
                 tool: Tool::Codex,
                 server,
+                config: env.codex_home(),
                 entry: pick(remote_entry(), local_entry()),
                 ours: vec![remote_entry(), local_entry()],
                 skip: None,
@@ -747,20 +848,63 @@ fn targets(agent: Agent, asked: Server, env: &Env) -> Vec<Target> {
 // ---------------------------------------------------------------------------
 // The record of what was written
 
+/// What whk wrote, by where it wrote it.
+#[derive(Debug, Default, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+struct Records {
+    /// Config file path -> the entry written there.
+    #[serde(default)]
+    mcp_files: BTreeMap<String, FileRecord>,
+    /// Agent -> the configuration its `mcp add` changed (`CODEX_HOME`,
+    /// Claude Code's settings file under `CLAUDE_CONFIG_DIR`) -> the entry
+    /// it made. A record made for one configuration says nothing about an
+    /// identical entry in another.
+    #[serde(default)]
+    mcp_commands: BTreeMap<String, BTreeMap<String, Value>>,
+    /// Skill directory -> its files and their SHA-256.
+    #[serde(default)]
+    skills: BTreeMap<String, BTreeMap<String, String>>,
+}
+
+impl Records {
+    fn is_empty(&self) -> bool {
+        self.mcp_files.is_empty() && self.mcp_commands.is_empty() && self.skills.is_empty()
+    }
+
+    fn command(&self, tool: Tool, config: &Path) -> Option<&Value> {
+        self.mcp_commands.get(tool.id())?.get(&key(config))
+    }
+
+    fn set_command(&mut self, tool: Tool, config: &Path, entry: Value) {
+        self.mcp_commands
+            .entry(tool.id().to_string())
+            .or_default()
+            .insert(key(config), entry);
+    }
+
+    fn take_command(&mut self, tool: Tool, config: &Path) -> Option<Value> {
+        let configs = self.mcp_commands.get_mut(tool.id())?;
+        let entry = configs.remove(&key(config));
+        if configs.is_empty() {
+            self.mcp_commands.remove(tool.id());
+        }
+        entry
+    }
+}
+
 #[derive(Debug, Default, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 struct Manifest {
     #[serde(default)]
     version: u32,
-    /// Config file path -> the entry written there.
-    #[serde(default)]
-    mcp_files: BTreeMap<String, FileRecord>,
-    /// Agent -> the entry its `mcp add` made.
-    #[serde(default)]
-    mcp_commands: BTreeMap<String, Value>,
-    /// Skill directory -> its files and their SHA-256.
-    #[serde(default)]
-    skills: BTreeMap<String, BTreeMap<String, String>>,
+    #[serde(flatten)]
+    records: Records,
+    /// What whk is about to write, saved before it writes it: should the
+    /// record not be saved afterwards (whk was ended, or the file could
+    /// not be written), a re-run that finds exactly this in place records
+    /// it, and drops the note otherwise.
+    #[serde(default, skip_serializing_if = "Records::is_empty")]
+    pending: Records,
 }
 
 impl Manifest {
@@ -778,7 +922,7 @@ impl Manifest {
     }
 
     fn is_empty(&self) -> bool {
-        self.mcp_files.is_empty() && self.mcp_commands.is_empty() && self.skills.is_empty()
+        self.records.is_empty() && self.pending.is_empty()
     }
 
     fn save(&self, path: &Path) -> Result<()> {
@@ -796,6 +940,35 @@ impl Manifest {
         write_atomic(path, text.as_bytes())
             .with_context(|| format!("could not write {}", path.display()))
     }
+}
+
+/// Whether the record can be written where it lives, checked before any
+/// agent's file is changed: the directory takes a new file, and the
+/// record, if there is one, is not read-only.
+fn preflight(path: &Path) -> io::Result<()> {
+    let target = atomic_target(path)?;
+    let dir = target
+        .parent()
+        .ok_or_else(|| io::Error::other("the path has no directory"))?;
+    fs::create_dir_all(dir)?;
+    match fs::symlink_metadata(&target) {
+        Ok(meta) if !meta.is_file() => {
+            return Err(io::Error::other("it is not a file"));
+        }
+        Ok(_) if !writable(&target) => {
+            return Err(io::Error::new(
+                io::ErrorKind::PermissionDenied,
+                "the file is read-only",
+            ));
+        }
+        _ => {}
+    }
+    let probe = dir.join(format!(
+        ".setup-agent.{:016x}.whk-tmp",
+        rand::random::<u64>()
+    ));
+    create_new(&probe, None)?;
+    fs::remove_file(&probe)
 }
 
 /// An entry whk wrote into a config file.
@@ -861,16 +1034,21 @@ fn writable(path: &Path) -> bool {
     }
 }
 
+/// Where [`write_atomic`] writes `path`: at its target when it is a link.
+fn atomic_target(path: &Path) -> io::Result<PathBuf> {
+    match fs::symlink_metadata(path) {
+        Ok(meta) if meta.file_type().is_symlink() => fs::canonicalize(path),
+        _ => Ok(path.to_path_buf()),
+    }
+}
+
 /// Writes through a temporary file in the same directory and a rename, so a
 /// crash never leaves half a file. A symlinked file is written at its
 /// target. The temporary file has a random name, is created only if nothing
 /// is there, and has the file's mode from the start. A read-only file is
 /// refused: the rename would replace it whatever its mode says.
 fn write_atomic(path: &Path, bytes: &[u8]) -> io::Result<()> {
-    let target = match fs::symlink_metadata(path) {
-        Ok(meta) if meta.file_type().is_symlink() => fs::canonicalize(path)?,
-        _ => path.to_path_buf(),
-    };
+    let target = atomic_target(path)?;
     let dir = target
         .parent()
         .ok_or_else(|| io::Error::other("the path has no directory"))?;
@@ -1178,6 +1356,8 @@ pub enum Step {
     Install,
     Update,
     Remove,
+    /// Removed though no `--remove` asked for it, for the reason given.
+    Retire(String),
     Unchanged,
     /// Nothing to remove.
     Absent,
@@ -1193,7 +1373,14 @@ pub enum Step {
 
 impl Step {
     fn is_change(&self) -> bool {
-        matches!(self, Step::Install | Step::Update | Step::Remove)
+        matches!(
+            self,
+            Step::Install | Step::Update | Step::Remove | Step::Retire(_)
+        )
+    }
+
+    fn removes(&self) -> bool {
+        matches!(self, Step::Remove | Step::Retire(_))
     }
 
     /// Whether it stops the agent's other changes.
@@ -1203,7 +1390,11 @@ impl Step {
 
     fn message(&self) -> Option<&str> {
         match self {
-            Step::Skip(m) | Step::Blocked(m) | Step::Fail(m) | Step::NeedsSignIn(m) => Some(m),
+            Step::Retire(m)
+            | Step::Skip(m)
+            | Step::Blocked(m)
+            | Step::Fail(m)
+            | Step::NeedsSignIn(m) => Some(m),
             _ => None,
         }
     }
@@ -1232,8 +1423,10 @@ fn decide_entry(
 ) -> Step {
     if remove {
         return match (current, recorded) {
-            (_, None) => Step::Absent,
             (None, _) => Step::Absent,
+            (Some(_), None) => Step::Skip(format!(
+                "the {SERVER_NAME} entry in {place} was not written by whk, so it was left as it is"
+            )),
             (Some(current), Some(recorded)) if same(current, recorded) => Step::Remove,
             _ => Step::Skip(format!(
                 "the {SERVER_NAME} entry in {place} changed since whk wrote it, so it was left as it is"
@@ -1273,6 +1466,49 @@ struct Cx<'a> {
     terminal: bool,
     /// Whether the agent being processed was named with `--agent`.
     named: bool,
+    /// Where the record is saved while changes are made; none while
+    /// planning, which changes nothing.
+    store: Option<&'a Path>,
+}
+
+impl Cx<'_> {
+    /// Saves the record now, so it never lags behind a change.
+    fn save(&self) -> Result<(), String> {
+        match self.store {
+            Some(path) => self.manifest.save(path).map_err(|e| format!("{e:#}")),
+            None => Ok(()),
+        }
+    }
+
+    /// Notes what whk is about to write in `place`, and saves the note
+    /// before anything is written there. When it cannot be saved, nothing
+    /// is written.
+    fn note(&mut self, place: &str, note: impl FnOnce(&mut Records)) -> Result<(), Step> {
+        if self.store.is_none() {
+            return Ok(());
+        }
+        note(&mut self.manifest.pending);
+        self.save().map_err(|e| {
+            Step::Fail(format!(
+                "whk could not save its record before changing {place}, so it was left as it is: {e}"
+            ))
+        })
+    }
+}
+
+/// Takes the note of what whk was about to write at `name`, and records it
+/// when `in_place` says it is there exactly as noted.
+fn adopt<T>(
+    records: &mut BTreeMap<String, T>,
+    pending: &mut BTreeMap<String, T>,
+    name: &str,
+    in_place: impl FnOnce(&T) -> bool,
+) {
+    if let Some(noted) = pending.remove(name)
+        && in_place(&noted)
+    {
+        records.insert(name.to_string(), noted);
+    }
 }
 
 /// Decides what happens to `target` and, with `execute`, does it. Planning
@@ -1289,17 +1525,20 @@ fn process(target: &Target, cx: &mut Cx, execute: bool) -> Step {
         Kind::Command {
             tool,
             server,
+            config,
             entry,
             ours,
             skip,
-        } => {
-            if let Some(reason) = skip
-                && !cx.remove
-            {
-                return Step::Skip(reason.clone());
-            }
-            command(*tool, *server, entry, ours, cx, execute)
-        }
+        } => command(
+            *tool,
+            *server,
+            config,
+            entry,
+            ours,
+            skip.as_deref(),
+            cx,
+            execute,
+        ),
         Kind::Skill { dir, skip } => {
             skill_dir(&dir.join(skill::NAME), skip.as_deref(), cx, execute)
         }
@@ -1334,7 +1573,13 @@ fn json_file(
         }
     };
     let record = key(path);
-    let recorded = cx.manifest.mcp_files.get(&record).cloned();
+    adopt(
+        &mut cx.manifest.records.mcp_files,
+        &mut cx.manifest.pending.mcp_files,
+        &record,
+        |noted| current.as_ref().is_some_and(|c| same(c, &noted.entry)),
+    );
+    let recorded = cx.manifest.records.mcp_files.get(&record).cloned();
     let step = decide_entry(
         current.as_ref(),
         entry,
@@ -1345,7 +1590,7 @@ fn json_file(
         &path.display().to_string(),
     );
     if cx.remove && step == Step::Absent && current.is_none() {
-        cx.manifest.mcp_files.remove(&record);
+        cx.manifest.records.mcp_files.remove(&record);
     }
     if !step.is_change() {
         return step;
@@ -1386,7 +1631,7 @@ fn json_file(
         if let Err(e) = fs::remove_file(path) {
             return Step::Fail(format!("could not remove {}: {e}", path.display()));
         }
-        cx.manifest.mcp_files.remove(&record);
+        cx.manifest.records.mcp_files.remove(&record);
         return step;
     }
     let bytes = match doc.render() {
@@ -1399,19 +1644,26 @@ fn json_file(
     {
         return Step::Fail(format!("could not back up {}: {e}", path.display()));
     }
-    if let Err(e) = write_atomic(path, &bytes) {
+    let written = FileRecord {
+        entry: prune(entry),
+        created,
+    };
+    if step != Step::Remove
+        && let Err(failed) = cx.note(&path.display().to_string(), |p| {
+            p.mcp_files.insert(record.clone(), written.clone());
+        })
+    {
+        return failed;
+    }
+    let result = write_atomic(path, &bytes);
+    cx.manifest.pending.mcp_files.remove(&record);
+    if let Err(e) = result {
         return Step::Fail(format!("could not write {}: {e}", path.display()));
     }
     if step == Step::Remove {
-        cx.manifest.mcp_files.remove(&record);
+        cx.manifest.records.mcp_files.remove(&record);
     } else {
-        cx.manifest.mcp_files.insert(
-            record,
-            FileRecord {
-                entry: prune(entry),
-                created,
-            },
-        );
+        cx.manifest.records.mcp_files.insert(record, written);
     }
     step
 }
@@ -1446,6 +1698,16 @@ fn codex_entry(get: &Value) -> Value {
     }
     if get["enabled"] == json!(false) {
         out.insert("enabled".into(), json!(false));
+    }
+    // Set on the server, not its transport: which tools it offers and how
+    // long Codex waits for it. An entry with any of them is the person's.
+    for name in [
+        "enabled_tools",
+        "disabled_tools",
+        "startup_timeout_sec",
+        "tool_timeout_sec",
+    ] {
+        out.insert(name.into(), get[name].clone());
     }
     prune(&Value::Object(out))
 }
@@ -1516,19 +1778,26 @@ fn missing_program(tool: Tool, server: Server, remove: bool) -> String {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn command(
     tool: Tool,
     server: Server,
+    config: &Path,
     entry: &Value,
     ours: &[Value],
+    retire: Option<&str>,
     cx: &mut Cx,
     execute: bool,
 ) -> Step {
+    // `retire` holds only while installing; --remove goes by the record.
+    let retire = retire.filter(|_| !cx.remove);
     let program = cx.env.which(tool.program());
     // Without the program, an agent the person named fails with the command
     // to run; one only found on this machine is skipped.
     let no_program = |cx: &Cx| {
-        if cx.named {
+        if let Some(reason) = retire {
+            Step::Skip(reason.to_string())
+        } else if cx.named {
             Step::Fail(not_on_path(tool, (!cx.remove).then_some(server)))
         } else {
             Step::Skip(missing_program(tool, server, cx.remove))
@@ -1541,22 +1810,37 @@ fn command(
         Ok(current) => current,
         Err(message) => return Step::Fail(message),
     };
-    let recorded = cx.manifest.mcp_commands.get(tool.id()).cloned();
+    if let Some(noted) = cx.manifest.pending.take_command(tool, config)
+        && current.as_ref().is_some_and(|c| same(c, &noted))
+    {
+        cx.manifest.records.set_command(tool, config, noted);
+    }
+    let recorded = cx.manifest.records.command(tool, config).cloned();
     let place = match tool {
         Tool::Claude => format!("Claude Code ({})", cx.env.claude_json().display()),
-        Tool::Codex => "Codex".to_string(),
+        Tool::Codex => format!("Codex ({})", cx.env.codex_home().display()),
     };
-    let step = decide_entry(
-        current.as_ref(),
-        entry,
-        ours,
-        recorded.as_ref(),
-        cx.remove,
-        cx.named,
-        &place,
-    );
+    let step = match retire {
+        // The Claude Code plugin brings the server: whk's own earlier entry
+        // would list every tool twice, so it goes; anything else stays.
+        Some(reason) => match (&current, &recorded) {
+            (Some(current), Some(recorded)) if same(current, recorded) => Step::Retire(format!(
+                "the {SERVER_NAME} Claude Code plugin is installed and brings its own MCP server, so whk took out the one it added before, which would list every tool twice"
+            )),
+            _ => Step::Skip(reason.to_string()),
+        },
+        None => decide_entry(
+            current.as_ref(),
+            entry,
+            ours,
+            recorded.as_ref(),
+            cx.remove,
+            cx.named,
+            &place,
+        ),
+    };
     if cx.remove && step == Step::Absent && current.is_none() {
-        cx.manifest.mcp_commands.remove(tool.id());
+        cx.manifest.records.take_command(tool, config);
     }
     if !step.is_change() {
         return step;
@@ -1564,10 +1848,11 @@ fn command(
     let Some(program) = program else {
         return no_program(cx);
     };
+    let removing = step.removes();
     // `codex mcp add --url` writes the entry and then waits for a sign-in in
     // the browser, with no flag to skip it; without a terminal it would wait
     // for good, so the person runs it instead.
-    if tool == Tool::Codex && server == Server::Remote && !cx.remove && !cx.terminal {
+    if tool == Tool::Codex && server == Server::Remote && !removing && !cx.terminal {
         return Step::NeedsSignIn(format!(
             "Codex signs in to the remote server while adding it, in your browser, and no terminal is attached, so it was not added; run `{}` in a terminal",
             command_line(tool.program(), &tool.add_args(server))
@@ -1578,14 +1863,19 @@ fn command(
     }
     let mut runs = Vec::new();
     // `claude mcp add` refuses a name it has; `codex mcp add` replaces it.
-    if step == Step::Remove || (step == Step::Update && tool == Tool::Claude) {
+    if removing || (step == Step::Update && tool == Tool::Claude) {
         runs.push((tool.remove_args(), false));
     }
-    if step != Step::Remove {
+    if !removing {
         // Codex signs in to a remote server as part of `mcp add`, in the
         // browser, so the person sees what it prints.
         let show = tool == Tool::Codex && server == Server::Remote;
         runs.push((tool.add_args(server), show));
+        // Saved before the agent's command runs, so that whatever ends
+        // whk meanwhile, a re-run finds the entry and records it.
+        if let Err(failed) = cx.note(&place, |p| p.set_command(tool, config, prune(entry))) {
+            return failed;
+        }
     }
     for (args, show) in runs {
         let line = command_line(tool.program(), &args);
@@ -1601,28 +1891,26 @@ fn command(
             }
             Err(e) => format!("could not run `{line}`: {e}"),
         };
+        cx.manifest.pending.take_command(tool, config);
         // A failed add may still have written the entry (Codex writes it,
         // then signs in): when it is the one whk asked for, record it, so
         // a re-run or --remove knows it is whk's.
-        if step != Step::Remove
+        if !removing
             && let Ok(Some(now)) = command_state(tool, Some(&program), cx)
             && same(&now, entry)
         {
-            cx.manifest
-                .mcp_commands
-                .insert(tool.id().to_string(), prune(entry));
+            cx.manifest.records.set_command(tool, config, prune(entry));
             return Step::Fail(format!(
                 "{failure}; the entry it added is in place, and --remove takes it out"
             ));
         }
         return Step::Fail(failure);
     }
-    if step == Step::Remove {
-        cx.manifest.mcp_commands.remove(tool.id());
+    cx.manifest.pending.take_command(tool, config);
+    if removing {
+        cx.manifest.records.take_command(tool, config);
     } else {
-        cx.manifest
-            .mcp_commands
-            .insert(tool.id().to_string(), prune(entry));
+        cx.manifest.records.set_command(tool, config, prune(entry));
     }
     step
 }
@@ -1631,9 +1919,20 @@ fn sha256(bytes: &[u8]) -> String {
     hex::encode(Sha256::digest(bytes))
 }
 
-/// Every file under `dir`, by its path inside it with `/` separators.
-fn read_tree(dir: &Path) -> io::Result<BTreeMap<String, Vec<u8>>> {
-    fn walk(dir: &Path, prefix: &str, out: &mut BTreeMap<String, Vec<u8>>) -> io::Result<()> {
+/// A skill directory as read, without following any link inside it.
+struct Tree {
+    /// Every regular file, by its path inside the directory with `/`
+    /// separators.
+    files: BTreeMap<String, Vec<u8>>,
+    /// The first entry that is neither a file nor a directory: a link,
+    /// which whk never makes, or something stranger.
+    odd: Option<String>,
+}
+
+/// Reads `dir` (through a link, if `dir` itself is one) and everything
+/// under it, inspecting each entry without following it.
+fn read_tree(dir: &Path) -> io::Result<Tree> {
+    fn walk(dir: &Path, prefix: &str, tree: &mut Tree) -> io::Result<()> {
         for entry in fs::read_dir(dir)? {
             let entry = entry?;
             let name = entry.file_name().to_string_lossy().into_owned();
@@ -1642,18 +1941,36 @@ fn read_tree(dir: &Path) -> io::Result<BTreeMap<String, Vec<u8>>> {
             } else {
                 format!("{prefix}/{name}")
             };
-            let path = entry.path();
-            if fs::metadata(&path)?.is_dir() {
-                walk(&path, &rel, out)?;
+            let kind = entry.file_type()?;
+            if kind.is_dir() {
+                walk(&entry.path(), &rel, tree)?;
+            } else if kind.is_file() {
+                tree.files.insert(rel, fs::read(entry.path())?);
             } else {
-                out.insert(rel, fs::read(&path)?);
+                tree.odd.get_or_insert(rel);
+                return Ok(());
+            }
+            if tree.odd.is_some() {
+                return Ok(());
             }
         }
         Ok(())
     }
-    let mut out = BTreeMap::new();
-    walk(dir, "", &mut out)?;
-    Ok(out)
+    let mut tree = Tree {
+        files: BTreeMap::new(),
+        odd: None,
+    };
+    walk(dir, "", &mut tree)?;
+    Ok(tree)
+}
+
+/// Whether every file in `current` is one whk recorded, unchanged. Files
+/// the record lists that are gone (a removal that stopped part way) do
+/// not count against it.
+fn owned(current: &BTreeMap<String, String>, recorded: &BTreeMap<String, String>) -> bool {
+    current
+        .iter()
+        .all(|(rel, hash)| recorded.get(rel) == Some(hash))
 }
 
 fn hashes(tree: &BTreeMap<String, Vec<u8>>) -> BTreeMap<String, String> {
@@ -1714,7 +2031,6 @@ fn skills_cli_owner(dir: &Path, env: &Env) -> Option<String> {
 
 fn skill_dir(dir: &Path, skip: Option<&str>, cx: &mut Cx, execute: bool) -> Step {
     let record = key(dir);
-    let recorded = cx.manifest.skills.get(&record).cloned();
     let meta = match fs::symlink_metadata(dir) {
         Ok(meta) => Some(meta),
         Err(e) if e.kind() == io::ErrorKind::NotFound => None,
@@ -1730,20 +2046,37 @@ fn skill_dir(dir: &Path, skip: Option<&str>, cx: &mut Cx, execute: bool) -> Step
             ));
         }
         Some(_) => match read_tree(dir) {
-            Ok(tree) => Some(hashes(&tree)),
+            Ok(Tree { odd: Some(rel), .. }) => {
+                return Step::Skip(format!(
+                    "{} holds {rel}, a link or other entry that whk never writes, so it was left as it is",
+                    dir.display()
+                ));
+            }
+            Ok(tree) => Some(hashes(&tree.files)),
             Err(e) => return Step::Fail(format!("could not read {}: {e}", dir.display())),
         },
     };
+    adopt(
+        &mut cx.manifest.records.skills,
+        &mut cx.manifest.pending.skills,
+        &record,
+        |noted| !link && current.as_ref() == Some(noted),
+    );
+    let recorded = cx.manifest.records.skills.get(&record).cloned();
     let wanted = embedded_hashes();
 
     let step = if cx.remove {
         match (&current, &recorded) {
-            (_, None) | (None, _) => Step::Absent,
+            (None, _) => Step::Absent,
+            (Some(_), None) => Step::Skip(format!(
+                "{} was not written by whk, so it was left as it is",
+                dir.display()
+            )),
             (Some(_), Some(_)) if link => Step::Skip(format!(
                 "{} is a link, which whk never makes, so it was left as it is",
                 dir.display()
             )),
-            (Some(current), Some(recorded)) if current == recorded => Step::Remove,
+            (Some(current), Some(recorded)) if owned(current, recorded) => Step::Remove,
             _ => Step::Skip(format!(
                 "{} changed since whk wrote it, so it was left as it is",
                 dir.display()
@@ -1759,7 +2092,7 @@ fn skill_dir(dir: &Path, skip: Option<&str>, cx: &mut Cx, execute: bool) -> Step
                 "{} is a link to another copy of the skill (`npx skills add` makes these), so it was left as it is",
                 dir.display()
             )),
-            Some(current) if recorded.as_ref() == Some(current) => Step::Update,
+            Some(current) if recorded.as_ref().is_some_and(|r| owned(current, r)) => Step::Update,
             Some(_) if recorded.is_some() => Step::Skip(format!(
                 "{} changed since whk wrote it, so it was left as it is",
                 dir.display()
@@ -1776,7 +2109,7 @@ fn skill_dir(dir: &Path, skip: Option<&str>, cx: &mut Cx, execute: bool) -> Step
             Some(reason) => {
                 if cx.remove {
                     // No longer whk's to remove, so no longer whk's record.
-                    cx.manifest.skills.remove(&record);
+                    cx.manifest.records.skills.remove(&record);
                 }
                 Step::Skip(reason)
             }
@@ -1785,50 +2118,137 @@ fn skill_dir(dir: &Path, skip: Option<&str>, cx: &mut Cx, execute: bool) -> Step
         step => step,
     };
     if cx.remove && current.is_none() {
-        cx.manifest.skills.remove(&record);
+        cx.manifest.records.skills.remove(&record);
     }
     if !execute || !step.is_change() {
         return step;
     }
     if step == Step::Remove {
-        for rel in recorded.unwrap_or_default().keys() {
-            if let Err(e) = fs::remove_file(dir.join(rel)) {
-                return Step::Fail(format!("could not remove {}: {e}", dir.join(rel).display()));
+        // The record loses each file as it goes, so a removal that stops
+        // part way is taken up again by the next one.
+        let mut left = recorded.unwrap_or_default();
+        let files: Vec<String> = left.keys().cloned().collect();
+        for rel in files {
+            let path = dir.join(&rel);
+            match fs::remove_file(&path) {
+                Ok(()) => {}
+                Err(e) if e.kind() == io::ErrorKind::NotFound => {}
+                Err(e) => {
+                    cx.manifest.records.skills.insert(record, left);
+                    return Step::Fail(format!("could not remove {}: {e}", path.display()));
+                }
             }
+            left.remove(&rel);
         }
         remove_empty_dirs(dir);
         // The agent's skills directory too, when whk's skill was all it held.
         if let Some(parent) = dir.parent() {
             let _ = fs::remove_dir(parent);
         }
-        cx.manifest.skills.remove(&record);
+        cx.manifest.records.skills.remove(&record);
         return step;
     }
-    for (rel, text) in skill::FILES {
-        let path = dir.join(rel);
-        if let Err(e) = write_atomic(&path, text.as_bytes()) {
-            return Step::Fail(format!("could not write {}: {e}", path.display()));
-        }
+    if let Err(failed) = cx.note(&dir.display().to_string(), |p| {
+        p.skills.insert(record.clone(), wanted.clone());
+    }) {
+        return failed;
     }
-    // Files an older whk wrote that this version no longer has.
-    for rel in recorded.unwrap_or_default().keys() {
-        if !wanted.contains_key(rel) {
-            let _ = fs::remove_file(dir.join(rel));
-        }
+    let result = put_skill(dir, step == Step::Update);
+    cx.manifest.pending.skills.remove(&record);
+    if let Err(e) = result {
+        return Step::Fail(format!(
+            "could not write the skill to {}: {e}; it was left as it was",
+            dir.display()
+        ));
     }
-    remove_empty_subdirs(dir);
-    cx.manifest.skills.insert(record, wanted);
+    cx.manifest.records.skills.insert(record, wanted);
     step
 }
 
-fn remove_empty_subdirs(dir: &Path) {
-    if let Ok(entries) = fs::read_dir(dir) {
-        for entry in entries.flatten() {
-            if entry.file_type().is_ok_and(|t| t.is_dir()) {
-                remove_empty_dirs(&entry.path());
+/// Writes the skill into a new directory beside `dir`, then puts that in
+/// its place, so `dir` is never half written and never mixes two versions.
+/// The copy being replaced (`update`) is moved aside first and put back if
+/// the new one cannot take its place. A failure removes what was written,
+/// the directories made for it included.
+fn put_skill(dir: &Path, update: bool) -> io::Result<()> {
+    let parent = dir
+        .parent()
+        .ok_or_else(|| io::Error::other("the path has no directory"))?;
+    let made_from = parent
+        .ancestors()
+        .take_while(|p| !p.exists())
+        .last()
+        .map(Path::to_path_buf);
+    let aside = |what: &str| {
+        parent.join(format!(
+            ".{}.{:016x}.whk-{what}",
+            skill::NAME,
+            rand::random::<u64>()
+        ))
+    };
+    let stage = aside("tmp");
+    let result = (|| {
+        fs::create_dir_all(parent)?;
+        fs::create_dir(&stage)?;
+        write_skill_files(&stage)?;
+        if !update {
+            return fs::rename(&stage, dir);
+        }
+        let old = aside("old");
+        fs::rename(dir, &old)?;
+        if let Err(e) = fs::rename(&stage, dir) {
+            let _ = fs::rename(&old, dir);
+            return Err(e);
+        }
+        // The old copy held only files whk recorded, so it is whk's.
+        let _ = fs::remove_dir_all(&old);
+        Ok(())
+    })();
+    if result.is_err() {
+        let _ = fs::remove_dir_all(&stage);
+        if let Some(top) = made_from {
+            for made in parent.ancestors() {
+                if fs::remove_dir(made).is_err() || made == top {
+                    break;
+                }
             }
         }
     }
+    result
+}
+
+#[cfg(test)]
+thread_local! {
+    /// Makes [`write_skill_files`] fail at this file, in tests.
+    static FAIL_SKILL_FILE: std::cell::Cell<Option<usize>> =
+        const { std::cell::Cell::new(None) };
+}
+
+#[cfg(test)]
+fn fails_at(file: usize) -> bool {
+    FAIL_SKILL_FILE.with(|f| f.get()) == Some(file)
+}
+
+#[cfg(not(test))]
+fn fails_at(_: usize) -> bool {
+    false
+}
+
+/// The skill's files in `dir`, which is new and empty; each is private.
+fn write_skill_files(dir: &Path) -> io::Result<()> {
+    for (at, (rel, text)) in skill::FILES.iter().enumerate() {
+        if fails_at(at) {
+            return Err(io::Error::other("a write failed"));
+        }
+        let path = dir.join(rel);
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        let mut file = create_new(&path, None)?;
+        file.write_all(text.as_bytes())?;
+        file.sync_all()?;
+    }
+    Ok(())
 }
 
 // ---------------------------------------------------------------------------
@@ -1891,10 +2311,10 @@ impl Report {
         match (step, self.applied) {
             (Step::Install, true) => "installed",
             (Step::Update, true) => "updated",
-            (Step::Remove, true) => "removed",
+            (Step::Remove | Step::Retire(_), true) => "removed",
             (Step::Install, false) => "would_install",
             (Step::Update, false) => "would_update",
-            (Step::Remove, false) => "would_remove",
+            (Step::Remove | Step::Retire(_), false) => "would_remove",
             (Step::Unchanged, _) => "unchanged",
             (Step::Absent, _) => "absent",
             (Step::Skip(_) | Step::Blocked(_), _) => "skipped",
@@ -2014,7 +2434,7 @@ impl Report {
                 "Reload the VS Code window and start webhooks-cc from its MCP servers; it asks you to sign in."
             }
             (Agent::ClaudeDesktop, _) => {
-                "Restart Claude Desktop. Its config file runs local servers only; for the remote server, add a custom connector with https://webhooks.cc/mcp under Settings, Connectors."
+                "Restart Claude Desktop. It runs the local server, the only kind its config file runs, which starts in the agent sandbox until the agent connects your account (connect_account), or uses a connection saved before; for the remote server, add a custom connector with https://webhooks.cc/mcp under Settings, Connectors."
             }
             (Agent::Devin, Server::Remote) => {
                 "Run `devin mcp login webhooks-cc` to sign in to webhooks.cc, then restart Devin Desktop."
@@ -2155,8 +2575,11 @@ fn stopped_because(agent: Agent, step: &Step) -> String {
 /// one of those has it or gets it in this run.
 fn skip_skills_read_elsewhere(plans: &mut [Plan], env: &Env) {
     let shared = [env.codex_skills(), env.home_claude_skills()];
+    // A SKILL.md that can be read, not any entry: an empty directory or a
+    // dangling link gives the agent nothing.
     let has = |dir: &PathBuf, plans: &[Plan]| {
-        fs::symlink_metadata(dir.join(skill::NAME)).is_ok()
+        let skill_md = dir.join(skill::NAME).join("SKILL.md");
+        (fs::metadata(&skill_md).is_ok_and(|m| m.is_file()) && fs::read(&skill_md).is_ok())
             || plans.iter().flat_map(|p| &p.3).any(|(t, step)| {
                 matches!(&t.kind, Kind::Skill { dir: d, .. } if d == dir)
                     && matches!(step, Step::Install | Step::Update | Step::Unchanged)
@@ -2233,6 +2656,7 @@ pub fn execute(
             remove: opts.remove,
             terminal: opts.terminal,
             named: false,
+            store: None,
         };
         for (agent, detected, named) in &chosen {
             cx.named = *named;
@@ -2300,7 +2724,15 @@ pub fn execute(
     if opts.dry_run {
         return Ok(report_of(&plans, false));
     }
-    if changes && !opts.yes {
+    if !changes {
+        // Records of what is gone, or notes of what turned out to be in
+        // place, are all that changed.
+        if manifest != before {
+            manifest.save(&manifest_path)?;
+        }
+        return Ok(report_of(&plans, true));
+    }
+    if !opts.yes {
         let names: Vec<&str> = plans
             .iter()
             .filter(|(_, _, _, items)| items.iter().any(|(_, s)| s.is_change()))
@@ -2314,8 +2746,15 @@ pub fn execute(
         let question = format!("{verb} {}?", names.join(", "));
         gate(&report_of(&plans, false), &question)?;
     }
+    // A change whk could not record could not be removed later either.
+    preflight(&manifest_path).map_err(|e| {
+        anyhow!(
+            "whk records what it sets up in {}, and could not write there ({e}), so nothing was changed; make it writable and run this again",
+            manifest_path.display()
+        )
+    })?;
 
-    // Apply.
+    // Apply, saving the record after every change.
     {
         let mut cx = Cx {
             env,
@@ -2324,7 +2763,10 @@ pub fn execute(
             remove: opts.remove,
             terminal: opts.terminal,
             named: false,
+            store: Some(&manifest_path),
         };
+        // Once the record cannot be saved, nothing else is changed.
+        let mut unrecorded: Option<String> = None;
         for (agent, _, named, items) in plans.iter_mut() {
             cx.named = *named;
             let mut stopped: Option<String> = None;
@@ -2332,19 +2774,31 @@ pub fn execute(
                 if !step.is_change() {
                     continue;
                 }
-                if let Some(reason) = &stopped {
+                if let Some(reason) = unrecorded.as_ref().or(stopped.as_ref()) {
                     *step = Step::Skip(reason.clone());
                     continue;
                 }
                 *step = process(target, &mut cx, true);
-                if step.stops() {
+                if let Err(e) = cx.save() {
+                    let done = if step.is_change() {
+                        "the change was made"
+                    } else {
+                        "this may have been changed"
+                    };
+                    *step = Step::Fail(format!(
+                        "{done}, but whk could not save its record of it: {e}. Run this again once {} can be written: it finds what whk wrote and records it, so --remove can take it out",
+                        manifest_path.display()
+                    ));
+                    unrecorded = Some(format!(
+                        "not changed, because whk could not save its record in {}",
+                        manifest_path.display()
+                    ));
+                }
+                if step.stops() && stopped.is_none() {
                     stopped = Some(stopped_because(*agent, step));
                 }
             }
         }
-    }
-    if manifest != before {
-        manifest.save(&manifest_path)?;
     }
     Ok(report_of(&plans, true))
 }
