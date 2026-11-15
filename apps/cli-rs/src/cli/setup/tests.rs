@@ -28,7 +28,8 @@ struct Fake {
     /// a Ctrl-C that reached it during the sign-in (a panic stands in).
     codex_add_ends_whk: bool,
     /// A directory `claude mcp add` makes read-only once it has added the
-    /// entry, so the record cannot be saved after the change.
+    /// entry, so the record cannot be saved after the change (Unix only).
+    #[cfg_attr(not(unix), allow(dead_code))]
     lock_after_claude_add: Option<PathBuf>,
     calls: Vec<String>,
     /// The runs whose output goes to the person (Codex's sign-in).
@@ -908,8 +909,8 @@ fn the_claude_code_plugin_brings_the_server_and_the_skill_itself() {
     assert_eq!(report.to_json()["agents"][0]["status"], "skipped");
 
     // What whk added before the plugin: its server entry would list every
-    // tool twice beside the plugin's, so a plain run takes it out and says
-    // so. The skill stays until --remove.
+    // tool twice beside the plugin's, and its skill would load twice, so a
+    // plain run takes both out and says so.
     let dry = run(
         &mut h,
         &Options {
@@ -923,21 +924,36 @@ fn the_claude_code_plugin_brings_the_server_and_the_skill_itself() {
         "{:?}",
         steps(&dry)
     );
-    assert_eq!(
-        dry.to_json()["agents"][0]["items"][0]["status"],
-        "would_remove"
-    );
+    for item in 0..2 {
+        assert_eq!(
+            dry.to_json()["agents"][0]["items"][item]["status"],
+            "would_remove"
+        );
+        // A dry run says what whk would do, not what it did.
+        let message = message_of(&steps(&dry)[item]);
+        assert!(message.contains("whk would take out"), "{message}");
+        assert!(!message.contains("took out"), "{message}");
+    }
+    assert!(matches!(steps(&dry)[1], Step::Retire(_)));
     let report = run(&mut h, &yes(opts(Agent::ClaudeCode))).unwrap();
     let Step::Retire(message) = &steps(&report)[0] else {
         panic!("{:?}", steps(&report));
     };
     assert!(
-        message.contains("plugin") && message.contains("twice"),
+        message.contains("plugin") && message.contains("twice") && message.contains("took out"),
         "{message}"
     );
-    assert_eq!(steps(&report)[1], Step::Skip(PLUGIN_REASON.to_string()));
+    let Step::Retire(skill_message) = &steps(&report)[1] else {
+        panic!("{:?}", steps(&report));
+    };
+    assert!(
+        skill_message.contains("plugin") && skill_message.contains("took out the copy"),
+        "{skill_message}"
+    );
+    assert!(!skill_path(&h, Agent::ClaudeCode).unwrap().exists());
     let json = report.to_json();
     assert_eq!(json["agents"][0]["items"][0]["status"], "removed");
+    assert_eq!(json["agents"][0]["items"][1]["status"], "removed");
     assert_eq!(json["agents"][0]["items"][0]["message"], message.as_str());
     assert_eq!(json["agents"][0]["status"], "changed");
     assert_eq!(mcp_entry(&h, Agent::ClaudeCode), None);
@@ -955,6 +971,7 @@ fn the_claude_code_plugin_brings_the_server_and_the_skill_itself() {
             Step::Skip(PLUGIN_REASON.to_string())
         ]
     );
+    assert!(!h.env.manifest_path().exists());
 
     // An entry changed since whk wrote it is the person's, plugin or not.
     let mut h3 = home("plugin-changed");
@@ -967,13 +984,26 @@ fn the_claude_code_plugin_brings_the_server_and_the_skill_itself() {
         &h3.dir.join(".claude/plugins/installed_plugins.json"),
         &fs::read_to_string(plugins.join("installed_plugins.json")).unwrap(),
     );
+    // So is a skill changed since, which the plugin does not take out.
+    let skill = skill_path(&h3, Agent::ClaudeCode).unwrap();
+    fs::write(skill.join("SKILL.md"), "mine\n").unwrap();
     let report = run(&mut h3, &yes(opts(Agent::ClaudeCode))).unwrap();
-    assert_eq!(steps(&report)[0], Step::Skip(PLUGIN_REASON.to_string()));
+    assert_eq!(
+        steps(&report),
+        [
+            Step::Skip(PLUGIN_REASON.to_string()),
+            Step::Skip(PLUGIN_REASON.to_string())
+        ]
+    );
     assert!(mcp_entry(&h3, Agent::ClaudeCode).is_some());
+    assert_eq!(
+        fs::read_to_string(skill.join("SKILL.md")).unwrap(),
+        "mine\n"
+    );
 
-    // --remove takes out what is left of whk's.
+    // --remove takes out what is left of whk's: nothing here.
     let report = run(&mut h, &yes(opts(Agent::ClaudeCode)).clone_with_remove()).unwrap();
-    assert_eq!(steps(&report), [Step::Absent, Step::Remove]);
+    assert_eq!(steps(&report), [Step::Absent, Step::Absent]);
     assert!(!h.env.manifest_path().exists());
 }
 
@@ -1933,11 +1963,14 @@ fn a_command_record_holds_for_its_own_configuration_only() {
 fn a_codex_entry_with_its_tools_or_timeouts_set_is_the_persons() {
     for (field, value) in [
         ("enabled_tools", json!(["create_endpoint"])),
+        // An empty list is set too: it offers no tools at all.
+        ("enabled_tools", json!([])),
         ("disabled_tools", json!(["delete_endpoint"])),
+        ("disabled_tools", json!([])),
         ("startup_timeout_sec", json!(30)),
         ("tool_timeout_sec", json!(120)),
     ] {
-        let mut h = home(&format!("codex-{field}"));
+        let mut h = home(&format!("codex-{field}-{}", value.to_string().len()));
         let local = Options {
             local: true,
             ..yes(opts(Agent::Codex))
@@ -2147,5 +2180,189 @@ fn claude_desktop_is_told_it_runs_the_local_server_and_where_the_remote_one_goes
         REMOTE_URL,
     ] {
         assert!(next.contains(words), "{words}: {next}");
+    }
+}
+
+/// Cursor and VS Code, with Codex, whose copy in `~/.agents/skills` they read.
+fn cursor_vscode_codex() -> Options {
+    Options {
+        agents: vec![Agent::Cursor, Agent::Vscode, Agent::Codex],
+        local: true,
+        yes: true,
+        ..Options::default()
+    }
+}
+
+#[test]
+fn a_shared_skill_that_could_not_be_written_spares_no_one_their_copy() {
+    // The plan counts on Codex's copy in ~/.agents/skills, which then
+    // fails: Cursor and VS Code get their own instead of being told they
+    // read one that is not there.
+    let mut h = home("shared-fails");
+    let failing = FailSkillFile::at(0);
+    let report = run(&mut h, &cursor_vscode_codex()).unwrap();
+    drop(failing);
+    assert!(matches!(report.agents[2].items[1].step, Step::Fail(_)));
+    assert!(!h.dir.join(".agents/skills/webhooks-cc").exists());
+    for (a, agent) in report.agents[..2]
+        .iter()
+        .zip([Agent::Cursor, Agent::Vscode])
+    {
+        assert_eq!(a.items[1].step, Step::Install, "{:?}", a.items);
+        skill_is_embedded(&skill_path(&h, agent).unwrap());
+    }
+
+    // The plan says the shared copy is yet to be written.
+    let mut h = home("shared-plan");
+    let dry = run(
+        &mut h,
+        &Options {
+            dry_run: true,
+            ..cursor_vscode_codex()
+        },
+    )
+    .unwrap();
+    let message = message_of(&dry.agents[0].items[1].step);
+    assert!(message.contains("which whk copies there"), "{message}");
+}
+
+#[test]
+fn cursor_and_vs_code_lose_whks_own_copy_once_a_shared_one_is_there() {
+    let mut h = home("shared-retire");
+    run(
+        &mut h,
+        &Options {
+            agents: vec![Agent::Cursor, Agent::Vscode],
+            yes: true,
+            ..Options::default()
+        },
+    )
+    .unwrap();
+    let cursor = skill_path(&h, Agent::Cursor).unwrap();
+    let vscode = skill_path(&h, Agent::Vscode).unwrap();
+    skill_is_embedded(&cursor);
+
+    // While the shared copy cannot be written, theirs stays.
+    let failing = FailSkillFile::at(0);
+    let report = run(&mut h, &cursor_vscode_codex()).unwrap();
+    drop(failing);
+    assert!(matches!(report.agents[2].items[1].step, Step::Fail(_)));
+    assert_eq!(report.agents[0].items[1].step, Step::Unchanged);
+    assert_eq!(report.agents[1].items[1].step, Step::Unchanged);
+    skill_is_embedded(&cursor);
+    skill_is_embedded(&vscode);
+
+    let dry = run(
+        &mut h,
+        &Options {
+            dry_run: true,
+            ..cursor_vscode_codex()
+        },
+    )
+    .unwrap();
+    let message = message_of(&dry.agents[0].items[1].step);
+    assert!(
+        matches!(dry.agents[0].items[1].step, Step::Retire(_))
+            && message.contains("whk would take out the copy it added here before"),
+        "{message}"
+    );
+
+    let report = run(&mut h, &cursor_vscode_codex()).unwrap();
+    assert!(!report.failed());
+    assert_eq!(report.agents[2].items[1].step, Step::Install);
+    for a in &report.agents[..2] {
+        let Step::Retire(message) = &a.items[1].step else {
+            panic!("{:?}", a.items);
+        };
+        assert!(
+            slashes(message).contains("~/.agents/skills/webhooks-cc")
+                && message.contains("took out the copy it added here before"),
+            "{message}"
+        );
+    }
+    assert!(!cursor.exists());
+    assert!(!vscode.exists());
+    let skills = manifest_json(&h)["skills"].clone();
+    assert!(skills.get(key(&cursor)).is_none(), "{skills}");
+    assert!(skills.get(key(&vscode)).is_none(), "{skills}");
+
+    // A copy someone else put there is never taken out.
+    let mut h = home("shared-theirs");
+    write_file(
+        &h.dir.join(".agents/skills/webhooks-cc/SKILL.md"),
+        "shared\n",
+    );
+    write_file(
+        &h.dir.join(".cursor/skills/webhooks-cc/SKILL.md"),
+        "theirs\n",
+    );
+    let report = run(&mut h, &yes(opts(Agent::Cursor))).unwrap();
+    assert!(
+        matches!(steps(&report)[1], Step::Skip(_)),
+        "{:?}",
+        steps(&report)
+    );
+    assert_eq!(
+        fs::read_to_string(h.dir.join(".cursor/skills/webhooks-cc/SKILL.md")).unwrap(),
+        "theirs\n"
+    );
+}
+
+#[test]
+fn a_skill_copy_left_by_a_crash_is_cleared_and_nothing_else() {
+    let mut h = home("skill-crash-leftovers");
+    let skills = h.dir.join(".cursor/skills");
+    let stage = skills.join(".webhooks-cc.0123456789abcdef.whk-tmp");
+    let old = skills.join(".webhooks-cc.fedcba9876543210.whk-old");
+    write_file(&stage.join("SKILL.md"), "half\n");
+    write_file(&old.join("references/a.md"), "old\n");
+    // Named otherwise, or holding a file whk did not name: not whk's.
+    let other = skills.join(".webhooks-cc.backup");
+    let short = skills.join(".webhooks-cc.0123.whk-tmp");
+    write_file(&other.join("SKILL.md"), "mine\n");
+    write_file(&short.join("SKILL.md"), "mine\n");
+
+    // A dry run leaves them.
+    run(
+        &mut h,
+        &Options {
+            dry_run: true,
+            ..opts(Agent::Cursor)
+        },
+    )
+    .unwrap();
+    assert!(stage.exists() && old.exists());
+
+    let report = run(&mut h, &yes(opts(Agent::Cursor))).unwrap();
+    assert!(!report.failed());
+    assert!(!stage.exists() && !old.exists());
+    assert!(other.exists() && short.exists());
+    skill_is_embedded(&skill_path(&h, Agent::Cursor).unwrap());
+
+    // Also when nothing else changes.
+    write_file(&stage.join("SKILL.md"), "half\n");
+    let report = run(&mut h, &yes(opts(Agent::Cursor))).unwrap();
+    assert_eq!(steps(&report)[1], Step::Unchanged);
+    assert!(!stage.exists());
+
+    // One holding a link is left, and the link is not followed.
+    #[cfg(unix)]
+    {
+        let outside = h.dir.join("outside");
+        write_file(&outside.join("keep.txt"), "keep\n");
+        write_file(&stage.join("SKILL.md"), "half\n");
+        std::os::unix::fs::symlink(&outside, stage.join("link")).unwrap();
+        run(&mut h, &yes(opts(Agent::Cursor))).unwrap();
+        assert!(stage.join("SKILL.md").exists());
+        assert_eq!(
+            fs::read_to_string(outside.join("keep.txt")).unwrap(),
+            "keep\n"
+        );
+        // A link named as whk names its copies is left too.
+        let linked = skills.join(".webhooks-cc.aaaaaaaaaaaaaaaa.whk-old");
+        std::os::unix::fs::symlink(&outside, &linked).unwrap();
+        run(&mut h, &yes(opts(Agent::Cursor))).unwrap();
+        assert!(fs::symlink_metadata(&linked).is_ok());
+        assert!(outside.join("keep.txt").exists());
     }
 }

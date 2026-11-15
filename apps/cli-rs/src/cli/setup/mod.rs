@@ -683,9 +683,31 @@ enum Kind {
     /// The agent skill, in `<dir>/webhooks-cc`.
     Skill {
         dir: PathBuf,
-        /// Why it is left out.
-        skip: Option<String>,
+        /// Why it is left out: a copy whk added before is then taken out
+        /// (the Claude Code plugin brings its own).
+        skip: Option<Leave>,
     },
+}
+
+/// Why a skill is left out of a directory, and what is said when whk takes
+/// out the copy it added there before.
+#[derive(Debug, Clone)]
+struct Leave {
+    reason: String,
+    /// Said once whk took it out.
+    took_out: String,
+    /// Said in a dry run and in the plan shown before asking.
+    would_take_out: String,
+}
+
+impl Leave {
+    fn retired(&self, done: bool) -> String {
+        if done {
+            self.took_out.clone()
+        } else {
+            self.would_take_out.clone()
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -757,6 +779,15 @@ fn targets(agent: Agent, asked: Server, env: &Env) -> Vec<Target> {
             let skip = env
                 .claude_plugin_installed()
                 .then(|| PLUGIN_REASON.to_string());
+            let leave = skip.as_ref().map(|reason| Leave {
+                reason: reason.clone(),
+                took_out: format!(
+                    "the {SERVER_NAME} Claude Code plugin is installed and brings the skill, so whk took out the copy it added before, which would load the skill twice"
+                ),
+                would_take_out: format!(
+                    "the {SERVER_NAME} Claude Code plugin is installed and brings the skill, so whk would take out the copy it added before, which would otherwise load the skill twice"
+                ),
+            });
             vec![
                 Target::new(Kind::Command {
                     tool: Tool::Claude,
@@ -764,11 +795,11 @@ fn targets(agent: Agent, asked: Server, env: &Env) -> Vec<Target> {
                     config: env.claude_json(),
                     entry: pick(remote_entry(), local_entry()),
                     ours: vec![remote_entry(), local_entry()],
-                    skip: skip.clone(),
+                    skip,
                 }),
                 Target::new(Kind::Skill {
                     dir: env.claude_skills(),
-                    skip,
+                    skip: leave,
                 }),
             ]
         }
@@ -1098,17 +1129,30 @@ fn backup_once(path: &Path) -> io::Result<()> {
     file.sync_all()
 }
 
+/// Codex's settings on a server rather than its transport: which tools it
+/// offers and how long Codex waits for it. Set at all, even to an empty
+/// list (`enabled_tools = []` offers no tools), they make the entry the
+/// person's.
+const CODEX_SERVER_FIELDS: [&str; 4] = [
+    "enabled_tools",
+    "disabled_tools",
+    "startup_timeout_sec",
+    "tool_timeout_sec",
+];
+
 /// Null, `{}` and `[]` members say nothing, so `{"env": {}}` equals `{}`.
+/// Codex's server fields are the exception: only null says nothing there.
 fn prune(value: &Value) -> Value {
-    fn empty(v: &Value) -> bool {
+    fn empty(k: &str, v: &Value) -> bool {
         v.is_null()
-            || v.as_object().is_some_and(Map::is_empty)
-            || v.as_array().is_some_and(Vec::is_empty)
+            || (!CODEX_SERVER_FIELDS.contains(&k)
+                && (v.as_object().is_some_and(Map::is_empty)
+                    || v.as_array().is_some_and(Vec::is_empty)))
     }
     match value {
         Value::Object(map) => Value::Object(
             map.iter()
-                .filter(|(_, v)| !empty(v))
+                .filter(|(k, v)| !empty(k, v))
                 .map(|(k, v)| (k.clone(), prune(v)))
                 .collect(),
         ),
@@ -1539,9 +1583,7 @@ fn process(target: &Target, cx: &mut Cx, execute: bool) -> Step {
             cx,
             execute,
         ),
-        Kind::Skill { dir, skip } => {
-            skill_dir(&dir.join(skill::NAME), skip.as_deref(), cx, execute)
-        }
+        Kind::Skill { dir, skip } => skill_dir(&dir.join(skill::NAME), skip.as_ref(), cx, execute),
     }
 }
 
@@ -1699,17 +1741,14 @@ fn codex_entry(get: &Value) -> Value {
     if get["enabled"] == json!(false) {
         out.insert("enabled".into(), json!(false));
     }
-    // Set on the server, not its transport: which tools it offers and how
-    // long Codex waits for it. An entry with any of them is the person's.
-    for name in [
-        "enabled_tools",
-        "disabled_tools",
-        "startup_timeout_sec",
-        "tool_timeout_sec",
-    ] {
-        out.insert(name.into(), get[name].clone());
+    let mut out = prune(&Value::Object(out));
+    // Copied after pruning, so an empty list stays: it is set.
+    for name in CODEX_SERVER_FIELDS {
+        if !get[name].is_null() {
+            out[name] = get[name].clone();
+        }
     }
-    prune(&Value::Object(out))
+    out
 }
 
 /// The server's entry as the agent has it now.
@@ -1824,9 +1863,17 @@ fn command(
         // The Claude Code plugin brings the server: whk's own earlier entry
         // would list every tool twice, so it goes; anything else stays.
         Some(reason) => match (&current, &recorded) {
-            (Some(current), Some(recorded)) if same(current, recorded) => Step::Retire(format!(
-                "the {SERVER_NAME} Claude Code plugin is installed and brings its own MCP server, so whk took out the one it added before, which would list every tool twice"
-            )),
+            (Some(current), Some(recorded)) if same(current, recorded) => {
+                Step::Retire(if execute {
+                    format!(
+                        "the {SERVER_NAME} Claude Code plugin is installed and brings its own MCP server, so whk took out the one it added before, which would list every tool twice"
+                    )
+                } else {
+                    format!(
+                        "the {SERVER_NAME} Claude Code plugin is installed and brings its own MCP server, so whk would take out the one it added before, which would otherwise list every tool twice"
+                    )
+                })
+            }
             _ => Step::Skip(reason.to_string()),
         },
         None => decide_entry(
@@ -2029,7 +2076,7 @@ fn skills_cli_owner(dir: &Path, env: &Env) -> Option<String> {
         })
 }
 
-fn skill_dir(dir: &Path, skip: Option<&str>, cx: &mut Cx, execute: bool) -> Step {
+fn skill_dir(dir: &Path, skip: Option<&Leave>, cx: &mut Cx, execute: bool) -> Step {
     let record = key(dir);
     let meta = match fs::symlink_metadata(dir) {
         Ok(meta) => Some(meta),
@@ -2082,8 +2129,14 @@ fn skill_dir(dir: &Path, skip: Option<&str>, cx: &mut Cx, execute: bool) -> Step
                 dir.display()
             )),
         }
-    } else if let Some(reason) = skip {
-        Step::Skip(reason.to_string())
+    } else if let Some(leave) = skip {
+        // What whk copied here before goes, unchanged; anything else stays.
+        match (&current, &recorded) {
+            (Some(current), Some(recorded)) if !link && owned(current, recorded) => {
+                Step::Retire(leave.retired(execute))
+            }
+            _ => Step::Skip(leave.reason.clone()),
+        }
     } else {
         match &current {
             None => Step::Install,
@@ -2105,7 +2158,7 @@ fn skill_dir(dir: &Path, skip: Option<&str>, cx: &mut Cx, execute: bool) -> Step
     };
     // A copy whk wrote that the skills CLI has taken on since.
     let step = match step {
-        Step::Remove | Step::Update => match skills_cli_owner(dir, cx.env) {
+        Step::Remove | Step::Retire(_) | Step::Update => match skills_cli_owner(dir, cx.env) {
             Some(reason) => {
                 if cx.remove {
                     // No longer whk's to remove, so no longer whk's record.
@@ -2123,7 +2176,7 @@ fn skill_dir(dir: &Path, skip: Option<&str>, cx: &mut Cx, execute: bool) -> Step
     if !execute || !step.is_change() {
         return step;
     }
-    if step == Step::Remove {
+    if step.removes() {
         // The record loses each file as it goes, so a removal that stops
         // part way is taken up again by the next one.
         let mut left = recorded.unwrap_or_default();
@@ -2219,14 +2272,20 @@ fn put_skill(dir: &Path, update: bool) -> io::Result<()> {
 
 #[cfg(test)]
 thread_local! {
-    /// Makes [`write_skill_files`] fail at this file, in tests.
+    /// Makes the next [`write_skill_files`] fail at this file, in tests.
     static FAIL_SKILL_FILE: std::cell::Cell<Option<usize>> =
         const { std::cell::Cell::new(None) };
 }
 
 #[cfg(test)]
 fn fails_at(file: usize) -> bool {
-    FAIL_SKILL_FILE.with(|f| f.get()) == Some(file)
+    FAIL_SKILL_FILE.with(|f| {
+        let fails = f.get() == Some(file);
+        if fails {
+            f.set(None);
+        }
+        fails
+    })
 }
 
 #[cfg(not(test))]
@@ -2566,40 +2625,211 @@ fn stopped_because(agent: Agent, step: &Step) -> String {
     }
 }
 
-/// Cursor reads skills from `~/.agents/skills` and `~/.claude/skills` as well
-/// as its own directory, and VS Code (Copilot) from both as well as
-/// `~/.copilot/skills` (cursor.com/docs/context/skills,
+/// Whether `dir` holds a SKILL.md of the skill that can be read, not any
+/// entry: an empty directory or a dangling link gives an agent nothing.
+fn readable_skill(dir: &Path) -> bool {
+    let skill_md = dir.join(skill::NAME).join("SKILL.md");
+    fs::metadata(&skill_md).is_ok_and(|m| m.is_file()) && fs::read(&skill_md).is_ok()
+}
+
+/// The skill directories Cursor and VS Code read besides their own:
+/// `~/.agents/skills` and `~/.claude/skills` (cursor.com/docs/context/skills,
 /// code.visualstudio.com/docs/copilot/customization/agent-skills; the
-/// skills CLI installs both into `~/.agents/skills` for the same reason). A
-/// second copy would load the skill twice, so theirs is not installed when
-/// one of those has it or gets it in this run.
-fn skip_skills_read_elsewhere(plans: &mut [Plan], env: &Env) {
-    let shared = [env.codex_skills(), env.home_claude_skills()];
-    // A SKILL.md that can be read, not any entry: an empty directory or a
-    // dangling link gives the agent nothing.
-    let has = |dir: &PathBuf, plans: &[Plan]| {
-        let skill_md = dir.join(skill::NAME).join("SKILL.md");
-        (fs::metadata(&skill_md).is_ok_and(|m| m.is_file()) && fs::read(&skill_md).is_ok())
-            || plans.iter().flat_map(|p| &p.3).any(|(t, step)| {
-                matches!(&t.kind, Kind::Skill { dir: d, .. } if d == dir)
-                    && matches!(step, Step::Install | Step::Update | Step::Unchanged)
-            })
+/// skills CLI installs both into `~/.agents/skills` for the same reason).
+fn shared_skill_dirs(env: &Env) -> [PathBuf; 2] {
+    [env.codex_skills(), env.home_claude_skills()]
+}
+
+/// What Cursor or VS Code is told about its own copy while it reads the
+/// skill from `shared`: a second copy would load it twice.
+fn read_elsewhere(agent: Agent, shared: &Path, env: &Env) -> Leave {
+    let label = agent.label();
+    let there = env.show(&shared.join(skill::NAME));
+    Leave {
+        reason: format!(
+            "{label} reads the skill from {there} too, so it was not copied here as well"
+        ),
+        took_out: format!(
+            "{label} reads the skill from {there} too, so whk took out the copy it added here before, which would load the skill twice"
+        ),
+        would_take_out: format!(
+            "{label} reads the skill from {there} too, so whk would take out the copy it added here before, which would otherwise load the skill twice"
+        ),
+    }
+}
+
+/// The places in the plan of Cursor's and VS Code's skill, which
+/// [`plan_skills_read_elsewhere`] changed and the apply decides again.
+type Deferred = Vec<(usize, usize)>;
+
+/// Cursor and VS Code get no copy of their own while a shared directory has
+/// the skill or gets it in this run, and whk's own earlier copy there is
+/// taken out. Only planned here, from what is there now and what the rest
+/// of the plan writes; [`decide_skills_read_elsewhere`] decides again from
+/// the directories once the rest is applied, since a copy the plan counted
+/// on may not have been written.
+fn plan_skills_read_elsewhere(plans: &mut [Plan], cx: &mut Cx) -> Deferred {
+    let env = cx.env;
+    let planned = |dir: &Path, plans: &[Plan]| {
+        plans
+            .iter()
+            .flat_map(|p| &p.3)
+            .find(|(t, _)| matches!(&t.kind, Kind::Skill { dir: d, .. } if d == dir))
+            .map(|(_, step)| step.clone())
     };
-    let Some(covering) = shared.iter().find(|dir| has(dir, plans)).cloned() else {
-        return;
+    let mut copied_in_this_run = false;
+    let Some(covering) = shared_skill_dirs(env)
+        .into_iter()
+        .find(|dir| match planned(dir, plans) {
+            Some(Step::Install | Step::Update) => {
+                copied_in_this_run = !readable_skill(dir);
+                true
+            }
+            Some(step) if step.removes() => false,
+            _ => readable_skill(dir),
+        })
+    else {
+        return Vec::new();
     };
-    for (agent, _, _, items) in plans.iter_mut() {
-        if !matches!(agent, Agent::Cursor | Agent::Vscode) {
+    let mut deferred = Vec::new();
+    for (at, (agent, _, named, items)) in plans.iter_mut().enumerate() {
+        if !matches!(agent, Agent::Cursor | Agent::Vscode) || items.iter().any(|(_, s)| s.stops()) {
             continue;
         }
-        for (target, step) in items.iter_mut() {
-            if matches!(target.kind, Kind::Skill { .. }) && *step == Step::Install {
-                *step = Step::Skip(format!(
-                    "{} reads the skill from {} too, so it was not copied here as well",
-                    agent.label(),
-                    env.show(&covering.join(skill::NAME))
-                ));
+        cx.named = *named;
+        let leave = read_elsewhere(*agent, &covering, env);
+        for (index, (target, step)) in items.iter_mut().enumerate() {
+            let Kind::Skill { dir, .. } = &target.kind else {
+                continue;
+            };
+            match step {
+                Step::Install => {
+                    *step = Step::Skip(if copied_in_this_run {
+                        format!(
+                            "{} reads the skill from {} too, which whk copies there, so it is not copied here as well",
+                            agent.label(),
+                            env.show(&covering.join(skill::NAME))
+                        )
+                    } else {
+                        leave.reason.clone()
+                    });
+                }
+                Step::Unchanged | Step::Update => {
+                    let retire = skill_dir(&dir.join(skill::NAME), Some(&leave), cx, false);
+                    if !matches!(retire, Step::Retire(_)) {
+                        continue;
+                    }
+                    *step = retire;
+                }
+                _ => continue,
             }
+            deferred.push((at, index));
+        }
+    }
+    deferred
+}
+
+/// Decides Cursor's and VS Code's skill again from the shared directories
+/// as they are once the rest is applied: their own copy is skipped, or
+/// whk's earlier one taken out, only when a shared copy is there to read;
+/// otherwise it is what it would be without one.
+fn decide_skills_read_elsewhere(
+    plans: &mut [Plan],
+    deferred: &Deferred,
+    cx: &mut Cx,
+    stopped: &[Option<String>],
+    unrecorded: &mut Option<String>,
+) {
+    let env = cx.env;
+    let covering = shared_skill_dirs(env)
+        .into_iter()
+        .find(|dir| readable_skill(dir));
+    for &(at, index) in deferred {
+        let (agent, _, named, items) = &mut plans[at];
+        cx.named = *named;
+        let leave = covering
+            .as_ref()
+            .map(|shared| read_elsewhere(*agent, shared, env));
+        let (target, step) = &mut items[index];
+        let Kind::Skill { dir, .. } = &target.kind else {
+            continue;
+        };
+        let dir = dir.join(skill::NAME);
+        let decided = skill_dir(&dir, leave.as_ref(), cx, false);
+        if !decided.is_change() {
+            *step = decided;
+            continue;
+        }
+        if let Some(reason) = unrecorded.as_ref().or(stopped[at].as_ref()) {
+            *step = Step::Skip(reason.clone());
+            continue;
+        }
+        *step = skill_dir(&dir, leave.as_ref(), cx, true);
+        record_after(step, cx, unrecorded);
+    }
+}
+
+/// Saves the record after `step` was applied. When it cannot be saved, the
+/// step becomes a failure saying so, and `unrecorded` stops the rest.
+fn record_after(step: &mut Step, cx: &Cx, unrecorded: &mut Option<String>) {
+    let Err(e) = cx.save() else {
+        return;
+    };
+    let path = cx.store.map(Path::display).map(|p| p.to_string());
+    let path = path.unwrap_or_default();
+    let done = if step.is_change() {
+        "the change was made"
+    } else {
+        "this may have been changed"
+    };
+    *step = Step::Fail(format!(
+        "{done}, but whk could not save its record of it: {e}. Run this again once {path} can be written: it finds what whk wrote and records it, so --remove can take it out"
+    ));
+    *unrecorded = Some(format!(
+        "not changed, because whk could not save its record in {path}"
+    ));
+}
+
+/// Whether `name` is one whk gives a copy of the skill while it writes one
+/// (`put_skill`): `.webhooks-cc.<16 hex digits>.whk-tmp` or `.whk-old`.
+fn crash_leftover_name(name: &str) -> bool {
+    let Some(rest) = name.strip_prefix(&format!(".{}.", skill::NAME)) else {
+        return false;
+    };
+    let Some(hex) = rest
+        .strip_suffix(".whk-tmp")
+        .or_else(|| rest.strip_suffix(".whk-old"))
+    else {
+        return false;
+    };
+    hex.len() == 16 && hex.bytes().all(|b| b.is_ascii_hexdigit())
+}
+
+/// Removes what a run that was ended while writing the skill left beside it
+/// in `parent`: directories named as whk names them that hold only regular
+/// files. A link, or a directory holding one or anything stranger, is left
+/// as it is, and no link is followed.
+fn clear_crash_leftovers(parent: &Path) {
+    let Ok(entries) = fs::read_dir(parent) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let name = entry.file_name().to_string_lossy().into_owned();
+        if !crash_leftover_name(&name) || !entry.file_type().is_ok_and(|t| t.is_dir()) {
+            continue;
+        }
+        let path = entry.path();
+        if read_tree(&path).is_ok_and(|tree| tree.odd.is_none()) {
+            let _ = fs::remove_dir_all(&path);
+        }
+    }
+}
+
+/// Clears crash leftovers beside every skill directory of the plan.
+fn clear_skill_leftovers(plans: &[Plan]) {
+    for (target, _) in plans.iter().flat_map(|p| &p.3) {
+        if let Kind::Skill { dir, .. } = &target.kind {
+            clear_crash_leftovers(dir);
         }
     }
 }
@@ -2648,6 +2878,7 @@ pub fn execute(
     // Plan: decide every target without changing anything. A target that
     // fails (or finds a read-only file) stops its agent.
     let mut plans: Vec<Plan> = Vec::new();
+    let mut deferred: Deferred = Vec::new();
     {
         let mut cx = Cx {
             env,
@@ -2683,9 +2914,9 @@ pub fn execute(
             }
             plans.push((*agent, *detected, *named, items));
         }
-    }
-    if !opts.remove {
-        skip_skills_read_elsewhere(&mut plans, env);
+        if !opts.remove {
+            deferred = plan_skills_read_elsewhere(&mut plans, &mut cx);
+        }
     }
 
     let npx_missing = env.which(LOCAL_COMMAND).is_none();
@@ -2725,6 +2956,7 @@ pub fn execute(
         return Ok(report_of(&plans, false));
     }
     if !changes {
+        clear_skill_leftovers(&plans);
         // Records of what is gone, or notes of what turned out to be in
         // place, are all that changed.
         if manifest != before {
@@ -2753,6 +2985,7 @@ pub fn execute(
             manifest_path.display()
         )
     })?;
+    clear_skill_leftovers(&plans);
 
     // Apply, saving the record after every change.
     {
@@ -2767,38 +3000,25 @@ pub fn execute(
         };
         // Once the record cannot be saved, nothing else is changed.
         let mut unrecorded: Option<String> = None;
-        for (agent, _, named, items) in plans.iter_mut() {
+        let mut stopped: Vec<Option<String>> = vec![None; plans.len()];
+        for (at, (agent, _, named, items)) in plans.iter_mut().enumerate() {
             cx.named = *named;
-            let mut stopped: Option<String> = None;
-            for (target, step) in items.iter_mut() {
-                if !step.is_change() {
+            for (index, (target, step)) in items.iter_mut().enumerate() {
+                if !step.is_change() || deferred.contains(&(at, index)) {
                     continue;
                 }
-                if let Some(reason) = unrecorded.as_ref().or(stopped.as_ref()) {
+                if let Some(reason) = unrecorded.as_ref().or(stopped[at].as_ref()) {
                     *step = Step::Skip(reason.clone());
                     continue;
                 }
                 *step = process(target, &mut cx, true);
-                if let Err(e) = cx.save() {
-                    let done = if step.is_change() {
-                        "the change was made"
-                    } else {
-                        "this may have been changed"
-                    };
-                    *step = Step::Fail(format!(
-                        "{done}, but whk could not save its record of it: {e}. Run this again once {} can be written: it finds what whk wrote and records it, so --remove can take it out",
-                        manifest_path.display()
-                    ));
-                    unrecorded = Some(format!(
-                        "not changed, because whk could not save its record in {}",
-                        manifest_path.display()
-                    ));
-                }
-                if step.stops() && stopped.is_none() {
-                    stopped = Some(stopped_because(*agent, step));
+                record_after(step, &cx, &mut unrecorded);
+                if step.stops() && stopped[at].is_none() {
+                    stopped[at] = Some(stopped_because(*agent, step));
                 }
             }
         }
+        decide_skills_read_elsewhere(&mut plans, &deferred, &mut cx, &stopped, &mut unrecorded);
     }
     Ok(report_of(&plans, true))
 }
