@@ -51,17 +51,24 @@ fn stdout_id() -> Option<FileId> {
     None
 }
 
+/// The names that always mean this process's stdout.
+#[cfg(unix)]
+const STDOUT_NAMES: [&str; 3] = ["/dev/stdout", "/dev/fd/1", "/proc/self/fd/1"];
+
 /// Whether `path` (followed through links, as `/dev/stdout` and
-/// `/proc/self/fd/1` are) is the file stdout already is.
+/// `/proc/self/fd/1` are) is the file stdout already is. The descriptor's
+/// own names count by themselves: macOS gives a pipe or socket named
+/// through `/dev/fd` a stat of its own, not the descriptor's.
 fn is_stdout(path: &str, stdout: Option<FileId>) -> bool {
     #[cfg(unix)]
     {
         use std::os::unix::fs::MetadataExt;
-        stdout.is_some()
-            && std::fs::metadata(path)
-                .ok()
-                .map(|meta| (meta.dev(), meta.ino()))
-                == stdout
+        STDOUT_NAMES.contains(&path)
+            || stdout.is_some()
+                && std::fs::metadata(path)
+                    .ok()
+                    .map(|meta| (meta.dev(), meta.ino()))
+                    == stdout
     }
     #[cfg(not(unix))]
     {
@@ -664,9 +671,13 @@ mod tests {
             sink(Some(other.to_str().unwrap()), true, false, id).unwrap(),
             Sink::File(other.to_str().unwrap().into())
         );
-        // This process's own stdout by its device names.
+        // This process's own stdout by its device names, whatever stdout is
+        // (even with its file unknown).
+        for name in STDOUT_NAMES {
+            assert!(is_stdout(name, None), "{name}");
+        }
         if let Some(id) = stdout_id() {
-            for name in ["/dev/stdout", "/dev/fd/1", "/proc/self/fd/1"] {
+            for name in STDOUT_NAMES {
                 if std::path::Path::new(name).exists() {
                     assert!(is_stdout(name, Some(id)), "{name}");
                     assert!(sink(Some(name), true, false, Some(id)).is_err(), "{name}");
