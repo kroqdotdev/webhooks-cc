@@ -8,7 +8,7 @@ import { runForwardingBatch } from "@/lib/forwarding/worker";
 import { getObjectBytes, isObjectStorageConfigured, putObject } from "@/lib/storage/object-store";
 import { saveAlertSettings, DEFAULT_ALERT_SETTINGS } from "@/lib/supabase/alerts";
 import { runAlertChecks } from "@/lib/alerts/checker";
-import { replayRequests, requestIdsInRange } from "@/lib/replay";
+import { replayRequests, requestIdsInRange, requestsInRange } from "@/lib/replay";
 import { notifyAlerts } from "@/lib/alerts/notify";
 import { getLastMessageForEmail } from "@/lib/email/dev-transport";
 import { GET as attachmentLinkRoute } from "@/app/api/attachments/[id]/[index]/route";
@@ -248,6 +248,23 @@ describe("replay", () => {
     await captureEmail(target.slug, "In range");
     expect(await requestIdsInRange(target.id, { until: 0 })).toEqual([]);
     expect(await requestIdsInRange(target.id, { since: 0 })).toHaveLength(1);
+  });
+
+  it("ends a range without until at the server's now, and says so", async () => {
+    const target = await endpoint("replay pinned");
+    await captureEmail(target.slug, "Before the call");
+    const before = Date.now();
+    const first = await requestsInRange(target.id, {});
+    expect(first.appliedUntil).toBeGreaterThanOrEqual(before);
+    expect(first.appliedUntil).toBeLessThanOrEqual(Date.now());
+    expect(first.ids).toHaveLength(1);
+    // A continuation with that end never takes what was captured after it.
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    await captureEmail(target.slug, "After the call");
+    const again = await requestsInRange(target.id, { since: 0, until: first.appliedUntil });
+    expect(again.ids).toEqual(first.ids);
+    expect(again.appliedUntil).toBe(first.appliedUntil);
+    expect((await requestsInRange(target.id, {})).ids).toHaveLength(2);
   });
 });
 

@@ -1,7 +1,7 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { applyRequestRetention } from "@/lib/supabase/requests";
 import { queueRedelivery } from "@/lib/supabase/forwarding";
-import { cutAtLimit } from "./cut";
+import { cutAtLimit, pinUntil } from "./cut";
 
 /**
  * Replay: runs captured requests through the endpoint's destinations again,
@@ -30,12 +30,15 @@ export async function requestIdsInRange(endpointId: string, range: ReplayRange):
  * The ids in the range, oldest first and at most MAX_REPLAY, and, when more
  * are left, the `since` (epoch milliseconds, inclusive) that goes on with
  * them. A batch cut at the limit ends before the millisecond the next
- * request arrived in, so requests sharing it are all in the next call.
+ * request arrived in, so requests sharing it are all in the next call
+ * (unless more than MAX_REPLAY share one: see `cutAtLimit`). `appliedUntil`
+ * is the end the range had: the `until` asked for, else this server's now.
  */
 export async function requestsInRange(
   endpointId: string,
   range: ReplayRange
-): Promise<{ ids: string[]; nextSince: number | null }> {
+): Promise<{ ids: string[]; nextSince: number | null; appliedUntil: number }> {
+  const appliedUntil = pinUntil(range.until);
   let query = createAdminClient()
     .from("requests")
     .select("id, received_at")
@@ -45,7 +48,7 @@ export async function requestsInRange(
     .limit(MAX_REPLAY + 1);
   // A bound of 0 is a bound (until: 0 replays nothing), not a missing one.
   if (range.since != null) query = query.gte("received_at", new Date(range.since).toISOString());
-  if (range.until != null) query = query.lte("received_at", new Date(range.until).toISOString());
+  query = query.lte("received_at", new Date(appliedUntil).toISOString());
   if (range.kind) query = query.eq("kind", range.kind);
   // Never what retention has ended and the cleanup has not reached yet.
   await applyRequestRetention(query, endpointId);
@@ -55,7 +58,7 @@ export async function requestsInRange(
     (data ?? []) as { id: string; received_at: string }[],
     MAX_REPLAY
   );
-  return { ids: rows.map((row) => row.id), nextSince };
+  return { ids: rows.map((row) => row.id), nextSince, appliedUntil };
 }
 
 /**

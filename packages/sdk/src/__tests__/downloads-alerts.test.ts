@@ -54,7 +54,7 @@ describe("redelivery and alerts", () => {
         new Response(JSON.stringify(value), { headers: { "content-type": "application/json" } });
       if (path === "/requests/req-1/replay") return json({ queued: true });
       if (path === "/endpoints/orders/replay")
-        return json({ requests: 500, queued: 3, limit: 500, nextSince: 42 });
+        return json({ requests: 500, queued: 3, limit: 500, appliedUntil: 99, nextSince: 42 });
       if (path === "/endpoints/orders/alerts" && init?.method === "PUT") {
         return json({ settings: { ...body, enabled: true } });
       }
@@ -66,6 +66,7 @@ describe("redelivery and alerts", () => {
       requests: 500,
       queued: 3,
       limit: 500,
+      appliedUntil: 99,
       nextSince: 42,
     });
     expect((await c.alerts.get("orders")).events).toEqual([]);

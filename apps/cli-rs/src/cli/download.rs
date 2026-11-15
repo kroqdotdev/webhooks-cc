@@ -33,22 +33,78 @@ enum Sink {
     Stdout,
 }
 
+/// A file's device and inode: what tells two names for one file apart from
+/// two files.
+type FileId = (u64, u64);
+
+/// The file this process's stdout is, when it has one (Unix only).
+fn stdout_id() -> Option<FileId> {
+    #[cfg(unix)]
+    {
+        use std::os::fd::AsFd;
+        use std::os::unix::fs::MetadataExt;
+        let fd = std::io::stdout().as_fd().try_clone_to_owned().ok()?;
+        let meta = std::fs::File::from(fd).metadata().ok()?;
+        Some((meta.dev(), meta.ino()))
+    }
+    #[cfg(not(unix))]
+    None
+}
+
+/// Whether `path` (followed through links, as `/dev/stdout` and
+/// `/proc/self/fd/1` are) is the file stdout already is.
+fn is_stdout(path: &str, stdout: Option<FileId>) -> bool {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        stdout.is_some()
+            && std::fs::metadata(path)
+                .ok()
+                .map(|meta| (meta.dev(), meta.ino()))
+                == stdout
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = (path, stdout);
+        false
+    }
+}
+
 /// The sink for `-o`, refusing what would put the bytes on a terminal or
 /// mix them with `--json`'s output. Decided before anything is downloaded.
-fn sink(output: Option<&str>, json: bool, stdout_is_terminal: bool) -> Result<Sink> {
+/// `stdout` is the file stdout is (`stdout_id()`): a path that names it by
+/// another name (`/dev/stdout`, `/dev/fd/1`, the file a shell redirected
+/// stdout to) is stdout, under its rules, so the bytes and the status line
+/// never land in one place.
+fn sink(
+    output: Option<&str>,
+    json: bool,
+    stdout_is_terminal: bool,
+    stdout: Option<FileId>,
+) -> Result<Sink> {
     // Trimmed only to tell an empty or `-` value; the path is kept as given.
     match output {
         Some(path) if path.trim().is_empty() => {
             Err(CliError::Usage("-o needs a file name".into()).into())
         }
         // `-o -` is stdout, as for most tools, under the same rules.
-        Some("-") => sink(None, json, stdout_is_terminal),
+        Some("-") => sink(None, json, stdout_is_terminal, stdout),
         Some(path) if std::path::Path::new(path).is_dir() => Err(CliError::Usage(format!(
             "-o names a directory ({}): give the file to write, such as {}/message.eml",
             sanitize_line(path),
             sanitize_line(path.trim_end_matches('/'))
         ))
         .into()),
+        Some(path) if is_stdout(path, stdout) => {
+            if json {
+                return Err(CliError::Usage(format!(
+                    "-o {} is this command's stdout, which carries the JSON with --json: pass another file.",
+                    sanitize_line(path)
+                ))
+                .into());
+            }
+            sink(None, json, stdout_is_terminal, stdout)
+        }
         Some(path) => Ok(Sink::File(path.to_string())),
         None if json => Err(CliError::Usage(
             "With --json, stdout carries the JSON: pass -o <file> to say where the download goes."
@@ -136,22 +192,47 @@ fn temp_stem(name: &str) -> &str {
     &name[..end]
 }
 
+/// What `write_whole` wrote to.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Wrote {
+    /// A device, FIFO or socket: its reader may be someone's screen or a
+    /// pipe, so the status line goes to stderr.
+    Device,
+    /// A regular file.
+    File,
+}
+
 /// Writes the download to `path`. A device, FIFO or socket there (also
-/// behind a link, such as `/dev/stdout` or `/dev/null`) is opened and
-/// written as it is. Otherwise the file is written whole or not at all: to
-/// a temporary file beside it, then renamed over it, so a failed write never
-/// leaves a cut-off file or loses the one that was there.
-fn write_whole(path: &str, bytes: &[u8]) -> std::io::Result<()> {
+/// behind a link, such as `/dev/null`) is opened and written as it is,
+/// unless it is a terminal (`/dev/tty`, `/dev/pts/3`), which is refused as
+/// stdout is. Otherwise the file is written whole or not at all: to a
+/// temporary file beside it, then renamed over it, so a failed write never
+/// leaves a cut-off file or loses the one that was there (but see
+/// `write_in_place` for a directory that takes no new file).
+fn write_whole(path: &str, bytes: &[u8]) -> Result<Wrote> {
     let target = std::path::Path::new(path);
+    let failed = || format!("failed to write {path}");
     // Followed through links: what the bytes would land in.
     if let Ok(meta) = std::fs::metadata(target)
         && !meta.is_file()
         && !meta.is_dir()
     {
         use std::io::Write as _;
-        let mut file = std::fs::OpenOptions::new().write(true).open(target)?;
-        file.write_all(bytes)?;
-        return file.flush();
+        let mut file = std::fs::OpenOptions::new()
+            .write(true)
+            .open(target)
+            .with_context(failed)?;
+        if file.is_terminal() {
+            return Err(CliError::Usage(format!(
+                "-o {} is a terminal, and this would print a file to it: pass -o <file> to save it, or pipe the output.",
+                sanitize_line(path)
+            ))
+            .into());
+        }
+        file.write_all(bytes)
+            .and_then(|()| file.flush())
+            .with_context(failed)?;
+        return Ok(Wrote::Device);
     }
     let dir = target
         .parent()
@@ -181,7 +262,17 @@ fn write_whole(path: &str, bytes: &[u8]) -> std::io::Result<()> {
             Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists && attempt < 8 => {
                 attempt += 1;
             }
-            Err(e) => return Err(e),
+            Err(e) if e.kind() == std::io::ErrorKind::PermissionDenied => {
+                // Only an existing regular file of its own name (never a
+                // link) is written in place; anything else keeps the error.
+                return match std::fs::symlink_metadata(target) {
+                    Ok(seen) if seen.is_file() => write_in_place(target, &seen, bytes)
+                        .map(|()| Wrote::File)
+                        .with_context(failed),
+                    _ => Err(anyhow::Error::new(e)).with_context(failed),
+                };
+            }
+            Err(e) => return Err(anyhow::Error::new(e)).with_context(failed),
         }
     };
     let written = (|| {
@@ -208,7 +299,50 @@ fn write_whole(path: &str, bytes: &[u8]) -> std::io::Result<()> {
     if written.is_err() {
         let _ = std::fs::remove_file(&temp);
     }
-    written
+    written.with_context(failed)?;
+    Ok(Wrote::File)
+}
+
+/// Writes into an existing regular file itself, truncating it first: for
+/// when no temporary file can be made beside it, as in a shared directory
+/// you cannot write to holding a file you can. Replacing the file is
+/// impossible there, so this does what a shell's `>` or `cp` onto it would,
+/// which also keeps its inode, and with it its owner, group, mode and hard
+/// links (all of which a rename would change or break). The price is the
+/// whole-or-nothing write: a failure part way leaves the file cut off.
+/// Never through a link (`O_NOFOLLOW`), and only when the file opened is
+/// still the one `seen` looked at, so a swap in between writes nothing.
+fn write_in_place(
+    target: &std::path::Path,
+    seen: &std::fs::Metadata,
+    bytes: &[u8],
+) -> std::io::Result<()> {
+    use std::io::Write as _;
+    let mut options = std::fs::OpenOptions::new();
+    options.write(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        // Nonblocking too, so a FIFO swapped in never hangs the open.
+        options.custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK);
+    }
+    let mut file = options.open(target)?;
+    let opened = file.metadata()?;
+    #[cfg(unix)]
+    let same = {
+        use std::os::unix::fs::MetadataExt;
+        opened.is_file() && (opened.dev(), opened.ino()) == (seen.dev(), seen.ino())
+    };
+    #[cfg(not(unix))]
+    let same = opened.is_file() && seen.is_file();
+    if !same {
+        return Err(std::io::Error::other(
+            "the file changed while it was opened",
+        ));
+    }
+    file.set_len(0)?;
+    file.write_all(bytes)?;
+    file.sync_all()
 }
 
 pub async fn run(
@@ -218,7 +352,7 @@ pub async fn run(
     output: Option<&str>,
     json: bool,
 ) -> Result<()> {
-    let sink = sink(output, json, std::io::stdout().is_terminal())?;
+    let sink = sink(output, json, std::io::stdout().is_terminal(), stdout_id())?;
     let request_id = request_id.trim();
     if !crate::util::is_uuid(request_id) {
         return Err(CliError::Usage(format!(
@@ -245,7 +379,7 @@ pub async fn run(
         }
         Sink::File(path) => path,
     };
-    write_whole(&path, &answer.body).with_context(|| format!("failed to write {path}"))?;
+    let wrote = write_whole(&path, &answer.body)?;
     if json {
         println!(
             "{}",
@@ -262,12 +396,18 @@ pub async fn run(
         Download::Raw => "the message".to_string(),
         Download::Attachment(index) => format!("attachment {index}"),
     };
-    println!(
+    // Beside bytes sent to a device the status line goes to stderr: that
+    // device's reader may be stdout's too.
+    let say = |line: String| match wrote {
+        Wrote::Device => eprintln!("{line}"),
+        Wrote::File => println!("{line}"),
+    };
+    say(format!(
         "{} Saved {label} ({}) to {}",
         green("✓"),
         format_bytes(answer.body.len()),
         bold(&sanitize_line(&path))
-    );
+    ));
     let mut about = Vec::new();
     match (name, what) {
         (Some(name), Download::Attachment(_)) => {
@@ -282,7 +422,7 @@ pub async fn run(
         about.push(sanitize_line(&kind));
     }
     if !about.is_empty() {
-        println!("  {}", dim(&about.join(", ")));
+        say(format!("  {}", dim(&about.join(", "))));
     }
     Ok(())
 }
@@ -295,22 +435,22 @@ mod tests {
 
     #[test]
     fn never_prints_a_file_to_a_terminal() {
-        let error = sink(None, false, true).unwrap_err();
+        let error = sink(None, false, true, None).unwrap_err();
         assert_eq!(classify(&error).code, "usage");
         assert!(error.to_string().contains("-o"), "{error}");
-        assert_eq!(sink(None, false, false).unwrap(), Sink::Stdout);
+        assert_eq!(sink(None, false, false, None).unwrap(), Sink::Stdout);
     }
 
     #[test]
     fn json_needs_a_file() {
-        let error = sink(None, true, false).unwrap_err();
+        let error = sink(None, true, false, None).unwrap_err();
         assert_eq!(classify(&error).code, "usage");
         assert_eq!(
-            sink(Some("out.eml"), true, true).unwrap(),
+            sink(Some("out.eml"), true, true, None).unwrap(),
             Sink::File("out.eml".into())
         );
         assert_eq!(
-            classify(&sink(Some(" "), false, false).unwrap_err()).code,
+            classify(&sink(Some(" "), false, false, None).unwrap_err()).code,
             "usage"
         );
     }
@@ -482,6 +622,122 @@ mod tests {
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
+    #[cfg(unix)]
+    #[test]
+    fn a_path_that_is_stdout_is_held_to_the_stdout_rules() {
+        use std::os::unix::fs::MetadataExt;
+        let dir = scratch("stdout");
+        let out = dir.join("out.eml");
+        std::fs::write(&out, b"").unwrap();
+        let meta = std::fs::metadata(&out).unwrap();
+        let id = Some((meta.dev(), meta.ino()));
+        // Stdout redirected to out.eml: that name, a hard link to it and a
+        // symbolic one are all stdout.
+        let hard = dir.join("hard.eml");
+        std::fs::hard_link(&out, &hard).unwrap();
+        let soft = dir.join("soft.eml");
+        std::os::unix::fs::symlink(&out, &soft).unwrap();
+        for path in [&out, &hard, &soft] {
+            let path = path.to_str().unwrap();
+            assert_eq!(sink(Some(path), false, false, id).unwrap(), Sink::Stdout);
+            let error = sink(Some(path), true, false, id).unwrap_err();
+            assert_eq!(classify(&error).code, "usage");
+            assert!(error.to_string().contains("stdout"), "{error}");
+            // Stdout a terminal: refused as a bare download is.
+            let error = sink(Some(path), false, true, id).unwrap_err();
+            assert_eq!(classify(&error).code, "usage");
+        }
+        // Another file is a file.
+        let other = dir.join("other.eml");
+        assert_eq!(
+            sink(Some(other.to_str().unwrap()), true, false, id).unwrap(),
+            Sink::File(other.to_str().unwrap().into())
+        );
+        // This process's own stdout by its device names.
+        if let Some(id) = stdout_id() {
+            for name in ["/dev/stdout", "/dev/fd/1", "/proc/self/fd/1"] {
+                if std::path::Path::new(name).exists() {
+                    assert!(is_stdout(name, Some(id)), "{name}");
+                    assert!(sink(Some(name), true, false, Some(id)).is_err(), "{name}");
+                }
+            }
+        }
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_terminal_named_by_path_is_refused() {
+        // A pseudo-terminal of the test's own, as /dev/tty or /dev/pts/3
+        // would be.
+        let master = unsafe { libc::posix_openpt(libc::O_RDWR | libc::O_NOCTTY) };
+        if master < 0 {
+            eprintln!("no pseudo-terminals here; skipped");
+            return;
+        }
+        let name = unsafe {
+            assert_eq!(libc::grantpt(master), 0);
+            assert_eq!(libc::unlockpt(master), 0);
+            std::ffi::CStr::from_ptr(libc::ptsname(master))
+                .to_string_lossy()
+                .to_string()
+        };
+        let error = write_whole(&name, b"\x1b]0;owned\x07").unwrap_err();
+        assert_eq!(classify(&error).code, "usage");
+        assert!(error.to_string().contains("terminal"), "{error}");
+        // Behind a link too.
+        let dir = scratch("tty");
+        let link = dir.join("tty.eml");
+        std::os::unix::fs::symlink(&name, &link).unwrap();
+        let error = write_whole(link.to_str().unwrap(), b"x").unwrap_err();
+        assert_eq!(classify(&error).code, "usage");
+        unsafe { libc::close(master) };
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_file_in_a_directory_that_takes_no_new_file_is_written_in_place() {
+        use std::os::unix::fs::{MetadataExt, PermissionsExt};
+        if unsafe { libc::geteuid() } == 0 {
+            eprintln!("root writes anywhere; skipped");
+            return;
+        }
+        let dir = scratch("in-place");
+        let target = dir.join("m.eml");
+        std::fs::write(&target, b"the old, longer content").unwrap();
+        std::fs::set_permissions(&target, std::fs::Permissions::from_mode(0o640)).unwrap();
+        let other = dir.join("other-name.eml");
+        std::fs::hard_link(&target, &other).unwrap();
+        let victim =
+            std::env::temp_dir().join(format!("whk-in-place-victim-{}", std::process::id()));
+        std::fs::write(&victim, b"keep").unwrap();
+        let link = dir.join("link.eml");
+        std::os::unix::fs::symlink(&victim, &link).unwrap();
+        let before = std::fs::metadata(&target).unwrap();
+        std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o500)).unwrap();
+        let wrote = write_whole(target.to_str().unwrap(), b"new");
+        let through_link = write_whole(link.to_str().unwrap(), b"mail");
+        let missing = write_whole(dir.join("fresh.eml").to_str().unwrap(), b"x");
+        std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700)).unwrap();
+        assert_eq!(wrote.unwrap(), Wrote::File);
+        assert_eq!(std::fs::read(&target).unwrap(), b"new");
+        let after = std::fs::metadata(&target).unwrap();
+        // The same file: inode, group, mode and the other link kept.
+        assert_eq!((after.dev(), after.ino()), (before.dev(), before.ino()));
+        assert_eq!(after.gid(), before.gid());
+        assert_eq!(after.permissions().mode() & 0o7777, 0o640);
+        assert_eq!(after.nlink(), 2);
+        assert_eq!(std::fs::read(&other).unwrap(), b"new");
+        // A link is never written through, and no new file appears.
+        assert!(through_link.is_err());
+        assert_eq!(std::fs::read(&victim).unwrap(), b"keep");
+        assert!(missing.is_err());
+        assert_eq!(std::fs::read_dir(&dir).unwrap().count(), 3);
+        std::fs::remove_dir_all(&dir).unwrap();
+        std::fs::remove_file(&victim).unwrap();
+    }
+
     #[test]
     fn a_long_name_gets_a_temporary_name_that_fits() {
         // 85 two-byte characters: 170 bytes, under the usual 255 limit, which
@@ -502,14 +758,17 @@ mod tests {
 
     #[test]
     fn a_dash_is_stdout_and_a_directory_is_refused() {
-        assert_eq!(sink(Some("-"), false, false).unwrap(), Sink::Stdout);
-        assert!(sink(Some("-"), false, true).is_err(), "never to a terminal");
+        assert_eq!(sink(Some("-"), false, false, None).unwrap(), Sink::Stdout);
         assert!(
-            sink(Some("-"), true, false).is_err(),
+            sink(Some("-"), false, true, None).is_err(),
+            "never to a terminal"
+        );
+        assert!(
+            sink(Some("-"), true, false, None).is_err(),
             "never mixed with --json"
         );
         let dir = std::env::temp_dir();
-        let error = sink(dir.to_str(), false, false).unwrap_err();
+        let error = sink(dir.to_str(), false, false, None).unwrap_err();
         assert_eq!(classify(&error).code, "usage");
         assert!(error.to_string().contains("directory"), "{error}");
     }

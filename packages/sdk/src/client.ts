@@ -2150,14 +2150,23 @@ export class WebhooksCC {
     /**
      * Sends the endpoint's requests received in a time range through its
      * destinations again (at most 500, oldest first), after a pattern was
-     * fixed or a destination came back. Owner only. `nextSince` is there
-     * only when requests in the range are left: pass it as the next call's
-     * `since` to go on with them.
+     * fixed or a destination came back. Owner only. `appliedUntil` is the
+     * end the range had (ms): `until`, or without one the server's time.
+     * `nextSince` is there only when requests in the range are left: pass
+     * it as the next call's `since`, with `appliedUntil` as `until`, to go
+     * on with them. When more than 500 share one millisecond, the extra ones
+     * in it are skipped by that continuation.
      */
     redeliver: async (
       slug: string,
       range: { since?: number; until?: number; kind?: "http" | "email" } = {}
-    ): Promise<{ requests: number; queued: number; limit: number; nextSince?: number }> => {
+    ): Promise<{
+      requests: number;
+      queued: number;
+      limit: number;
+      appliedUntil: number;
+      nextSince?: number;
+    }> => {
       validatePathSegment(slug, "slug");
       return this.request("POST", `/endpoints/${slug}/replay`, range);
     },

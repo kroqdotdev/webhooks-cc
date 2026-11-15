@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { cutAtLimit } from "./cut";
+import { cutAtLimit, pinUntil } from "./cut";
 
 const at = (iso: string, id: string) => ({ id, received_at: iso });
 
@@ -40,5 +40,28 @@ describe("cutAtLimit", () => {
     const cut = cutAtLimit(rows, 2);
     expect(cut.rows.map((r) => r.id)).toEqual(["a", "b"]);
     expect(cut.nextSince).toBe(Date.parse("2026-11-15T10:00:00.005Z") + 1);
+  });
+
+  it("skips the extra rows of a millisecond holding more than the limit", () => {
+    // Documented: a and b replay, c (same millisecond) is past the
+    // continuation's start, d is next.
+    const rows = [
+      at("2026-11-15T10:00:00.005Z", "a"),
+      at("2026-11-15T10:00:00.005Z", "b"),
+      at("2026-11-15T10:00:00.005Z", "c"),
+      at("2026-11-15T10:00:00.006Z", "d"),
+    ];
+    const cut = cutAtLimit(rows, 2);
+    expect(cut.rows.map((r) => r.id)).toEqual(["a", "b"]);
+    expect(cut.nextSince).toBe(Date.parse("2026-11-15T10:00:00.006Z"));
+  });
+});
+
+describe("pinUntil", () => {
+  it("keeps an until given and pins a missing one to now", () => {
+    expect(pinUntil(42, 1000)).toBe(42);
+    expect(pinUntil(0, 1000)).toBe(0);
+    expect(pinUntil(null, 1000)).toBe(1000);
+    expect(pinUntil(undefined, 1000)).toBe(1000);
   });
 });

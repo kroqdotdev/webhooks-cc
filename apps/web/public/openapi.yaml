@@ -751,8 +751,9 @@ paths:
       summary: Send requests in a time range through the destinations again
       description: |
         Sends the requests received between `since` and `until` through the destinations again,
-        with their current settings: at most 500, oldest first. Owner only: anyone else gets
-        `404`. Rate limited to 10 requests per minute.
+        with their current settings: at most 500, oldest first. Without `until`, the range ends at
+        the server's time when the call runs, answered as `appliedUntil`. Owner only: anyone else
+        gets `404`. Rate limited to 10 requests per minute.
       requestBody:
         content:
           application/json:
@@ -783,9 +784,12 @@ paths:
                   limit:
                     type: integer
                     description: The most one call replays (500)
+                  appliedUntil:
+                    type: integer
+                    description: The end the range had, in milliseconds (inclusive) - the `until` sent, or without one the server's time when the call ran. Send it as `until` with `nextSince` so the rest of the range keeps the same end and never takes requests captured after this call
                   nextSince:
                     type: integer
-                    description: Present only when requests in the range are left after this call; send it as `since` (inclusive, milliseconds) to go on with the rest. A call cut at the limit ends before the millisecond the next request arrived in, so requests that share one are replayed together, and `requests` can be a little under the limit
+                    description: Present only when requests in the range are left after this call; send it as `since` (inclusive, milliseconds), with `appliedUntil` as `until`, to go on with the rest. A call cut at the limit ends before the millisecond the next request arrived in, so requests that share one are replayed together, and `requests` can be a little under the limit. When more than 500 requests share one millisecond, the call replays 500 of them and `nextSince` is the millisecond after, so the extra ones in that millisecond are skipped by the continuation (replay those one by one with `POST /api/requests/{id}/replay`)
         "400":
           $ref: "#/components/responses/BadRequest"
         "401":

@@ -139,20 +139,34 @@ fn range_words(body: &Value) -> String {
     }
 }
 
+/// The end a continuation keeps: the `appliedUntil` the server answered
+/// (the `--until` given, or without one the server's own time, so this
+/// machine's clock never moves the range), else, from a server that does
+/// not answer one, this run's `--until` or the `now` it started from.
+fn continuation_until(body: &Value, answer: &Value, now: i64) -> i64 {
+    let millis = |value: &Value, field: &str| {
+        value
+            .get(field)
+            .and_then(|v| v.as_i64().or_else(|| v.as_f64().map(|f| f.floor() as i64)))
+    };
+    millis(answer, "appliedUntil")
+        .or_else(|| millis(body, "until"))
+        .unwrap_or(now)
+}
+
 /// The command that replays the rest of a range cut off at the limit: on
-/// the server this run used, from `next`, and up to this run's `--until`,
-/// or without one the `now` this run started from, so a later run never
-/// takes requests captured after the first call. `--yes` when this run had
-/// it, since the person already agreed to the range.
+/// the server this run used, from `next`, and up to `until`
+/// (`continuation_until`), so a later run never takes requests captured
+/// after the first call. `--yes` when this run had it, since the person
+/// already agreed to the range.
 fn continue_command(
     base_url: &str,
     slug: &str,
     body: &Value,
-    now: i64,
+    until: i64,
     next: u64,
     yes: bool,
 ) -> String {
-    let until = body.get("until").and_then(Value::as_i64).unwrap_or(now);
     let mut command = format!(
         "whk requests replay-range --api-url={} {} --since={next} --until={until}",
         crate::cli::requests::shell_word(base_url),
@@ -209,7 +223,14 @@ pub async fn range(
             dim(&format!(
                 "That is the most one call takes ({limit}). For the rest:"
             )),
-            continue_command(client.base_url(), slug, &body, now, next, yes)
+            continue_command(
+                client.base_url(),
+                slug,
+                &body,
+                continuation_until(&body, &answer.value, now),
+                next,
+                yes
+            )
         );
     }
     if count("queued") < found {
@@ -260,18 +281,24 @@ mod tests {
 
     #[test]
     fn the_rest_of_a_range_stays_inside_the_first_call() {
-        // No --until: pinned to the now the first call used.
+        // No --until: pinned to the server's time, which it answers.
         let body = range_body(Some("7d"), None, Some("email"), NOW).unwrap();
+        let served = NOW + 90_000;
+        let until = continuation_until(&body, &json!({ "appliedUntil": served }), NOW);
+        assert_eq!(until, served, "the server's clock, not this machine's");
         assert_eq!(
-            continue_command("https://webhooks.cc", "acme", &body, NOW, 42, true),
+            continue_command("https://webhooks.cc", "acme", &body, until, 42, true),
             format!(
-                "whk requests replay-range --api-url=https://webhooks.cc acme --since=42 --until={NOW} --kind=email --yes"
+                "whk requests replay-range --api-url=https://webhooks.cc acme --since=42 --until={served} --kind=email --yes"
             )
         );
+        // A server that answers no appliedUntil: the now this run started from.
+        assert_eq!(continuation_until(&body, &json!({}), NOW), NOW);
         // An --until given is kept, and --yes only when it was given.
         let body = range_body(None, Some("1799999999000"), None, NOW).unwrap();
+        let until = continuation_until(&body, &json!({}), NOW);
         assert_eq!(
-            continue_command("https://webhooks.cc", "acme", &body, NOW, 42, false),
+            continue_command("https://webhooks.cc", "acme", &body, until, 42, false),
             "whk requests replay-range --api-url=https://webhooks.cc acme --since=42 --until=1799999999000"
         );
     }

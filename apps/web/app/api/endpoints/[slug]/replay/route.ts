@@ -10,7 +10,8 @@ import { reportError } from "@/lib/observability";
  * POST /api/endpoints/{slug}/replay: sends the endpoint's requests received
  * between `since` and `until` (milliseconds; `kind` "email" or "http"
  * optional) through its destinations again, oldest first, at most 500.
- * Owner only.
+ * Owner only. Without `until` the range ends at the server's now, which the
+ * answer names as `appliedUntil`, so a continuation keeps the same end.
  */
 export async function POST(request: Request, { params }: { params: Promise<{ slug: string }> }) {
   const auth = await authenticateRequestRequireUser(request);
@@ -49,7 +50,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ slu
   if (!access?.isOwner) return reply({ error: "Endpoint not found" }, 404);
 
   try {
-    const { ids, nextSince } = await requestsInRange(access.endpointId, {
+    const { ids, nextSince, appliedUntil } = await requestsInRange(access.endpointId, {
       since,
       until,
       kind: (body.kind as "email" | "http" | null | undefined) ?? null,
@@ -67,6 +68,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ slu
       requests: ids.length,
       queued,
       limit: MAX_REPLAY,
+      appliedUntil,
       ...(nextSince !== null ? { nextSince } : {}),
     });
   } catch (error) {
