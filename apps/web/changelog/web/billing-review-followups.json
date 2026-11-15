@@ -4,7 +4,7 @@
     "The TypeScript SDK's waitForCheckout keeps polling when the connection ends while an answer's body is being read, as it does when a request gets no answer at all",
     "The agent spend budget panel reads the budget again when a reload began while a save was on its way, so it never shows the budget the save replaced",
     "A billing change sent again on the agent budget after the owner lowered the budget reports what is left from the lowered budget",
-    "whk reports a changed quote from a billing route as quote_changed (exit 8), and a payment the bank wants confirmed or a team with no owner as billing_refused rather than forbidden",
+    "whk reports a changed quote from a billing route as quote_changed (exit 8), a team with no owner as billing_refused rather than forbidden, and a payment the bank wants confirmed as outcome_unknown, since it may still go through",
     "A second team plan subscription left for a person is recorded in the audit log as well as reported",
     "The operations center lists the audit events done to an account, by the system, Polar, agents or other accounts, beside those it made"
   ]

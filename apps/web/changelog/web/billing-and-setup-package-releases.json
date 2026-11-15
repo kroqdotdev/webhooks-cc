@@ -1,0 +1,6 @@
+{
+  "title": "whk 1.20.0, SDK 1.30.0, MCP 2.4.0, Python and Go 0.10.0",
+  "items": [
+    "The changelog lists whk 1.20.0, SDK 1.30.0, MCP 2.4.0 and the Python and Go SDKs 0.10.0: billing changes an agent asks for and the owner approves, the agent spend budget, checkout links for the person to pay, whk setup agent, and the CLI's alerts, previews, send-email, downloads and server-side replay"
+  ]
+}
