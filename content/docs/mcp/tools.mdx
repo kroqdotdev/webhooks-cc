@@ -948,7 +948,7 @@ A [checkout link](/docs/api#checkout-links) for the person to pay with their own
 
 ### wait_for_checkout
 
-Waits for the person to pay a link from `create_checkout`, and says when it is paid or has expired, when what was bought differs from what the link asked for, and when the purchase was undone as a duplicate because the account already had what it buys (its subscription ended and a refund under review).
+Waits for the person to pay a link from `create_checkout`, and says when it is paid or has expired, when what was bought differs from what the link asked for, and when the purchase was undone as a duplicate because the account already had what it buys (its subscription ended and a refund under review). A link that reads expired is polled for a minute more, since a payment Polar confirms late still turns it paid.
 
 | Parameter | Type     | Required | Description                                  |
 | --------- | -------- | -------- | -------------------------------------------- |

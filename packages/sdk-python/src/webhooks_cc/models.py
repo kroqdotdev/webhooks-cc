@@ -1948,9 +1948,12 @@ class CheckoutLink:
     ``url`` is our page, ``None`` once the link is no longer open; Polar's checkout
     is never in it. ``item`` is what it buys, as the API took it, and ``summary``
     says so in one sentence. Once paid, ``bought`` is what the order or subscription
-    holds and ``matches`` whether that is what the link asked for (``None`` when
-    unknown). ``status`` ``"superseded"``: it was paid, but the purchase was undone
-    as a duplicate: its subscription was ended and a refund is under review.
+    holds and ``matches`` whether that is what the link asked for (``None`` while
+    it is not known yet, say a team plan's seats before its subscription's event;
+    only ``False`` is a mismatch). Rarely, ``"expired"`` turns ``"paid"`` when a
+    payment Polar confirmed late arrives. ``status`` ``"superseded"``: it was paid,
+    but the purchase was undone as a duplicate: its subscription was ended and a
+    refund is under review.
     """
 
     id: str

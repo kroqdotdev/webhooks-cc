@@ -156,14 +156,18 @@ export const TWIN_CHECKOUT_WINDOW_MS = 2 * 60 * 60 * 1000;
 
 /**
  * What to do with a second live plan subscription (`event`) beside the one
- * the account or team holds (`stored`). "end" (refund and revoke it) when it
- * started after the stored one, or within TWIN_CHECKOUT_WINDOW_MS of it
- * either way: two sessions paid together, whose events may arrive in either
- * order (a 5xx retry delivers the first one's late), so the one that arrives
- * second is the extra one. "report" for a person otherwise, or when Polar
- * left out when either started: one that started well before may be the plan
- * used all along (its row cleared by a revoked event while it stayed live),
- * and a full refund would pay back months that were used.
+ * the account or team holds (`stored`). "end" (refund and revoke it) only
+ * when the two started within TWIN_CHECKOUT_WINDOW_MS of each other, either
+ * way: two sessions paid together, whose events may arrive in either order
+ * (a 5xx retry delivers the first one's late), so the one that arrives
+ * second is the extra one. A checkout is refused once the team is
+ * subscribed, so a real twin always starts inside that window. "report" for
+ * a person otherwise, in either direction, or when Polar left out when
+ * either started: one that started well before may be the plan used all
+ * along (its row cleared by a revoked event while it stayed live), and one
+ * that started well after is more likely a replacement made by hand in
+ * Polar than a second checkout; a full refund of either would pay back what
+ * was meant to be kept.
  */
 export function duplicateVerdict(
   event: Record<string, unknown>,
@@ -172,8 +176,7 @@ export function duplicateVerdict(
   const started = subscriptionStartMs(event);
   const storedStarted = subscriptionStartMs(stored);
   if (started === null || storedStarted === null) return "report";
-  if (started > storedStarted) return "end";
-  return storedStarted - started <= TWIN_CHECKOUT_WINDOW_MS ? "end" : "report";
+  return Math.abs(started - storedStarted) <= TWIN_CHECKOUT_WINDOW_MS ? "end" : "report";
 }
 
 /** Revokes a subscription; one an earlier delivery already ended is fine. */

@@ -102,10 +102,36 @@ def test_wait_for_checkout_returns_once_paid(monkeypatch: pytest.MonkeyPatch) ->
 
 def test_wait_for_checkout_raises_when_it_expires_or_runs_out() -> None:
     with pytest.raises(CheckoutExpiredError) as expired:
-        client_for(Api([(200, link("expired"))])).billing.wait_for_checkout(ID)
+        client_for(Api([(200, link("expired"))])).billing.wait_for_checkout(ID, expired_grace=0)
     assert expired.value.checkout_id == ID
     with pytest.raises(TimeoutError):
         client_for(Api([(200, link("open"))])).billing.wait_for_checkout(ID, timeout=0)
+
+
+def test_wait_for_checkout_keeps_polling_a_link_that_reads_expired(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # A payment Polar confirms late can still turn an expired link paid.
+    monkeypatch.setattr("webhooks_cc.client._sleep_ms", lambda ms: None)
+    api = Api([(200, link("expired")), (200, link("paid"))])
+    paid = client_for(api).billing.wait_for_checkout(ID, poll_interval=1000)
+    assert paid.status == "paid"
+    assert len(api.calls) == 2
+
+
+def test_wait_for_checkout_says_expired_when_the_wait_ends_on_an_expired_link(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    clock = [0.0]
+    monkeypatch.setattr("webhooks_cc.client.time.monotonic", lambda: clock[0])
+
+    def sleep(ms: float) -> None:
+        clock[0] += ms / 1000
+
+    monkeypatch.setattr("webhooks_cc.client._sleep_ms", sleep)
+    api = Api([(200, link("expired"))] * 5)
+    with pytest.raises(CheckoutExpiredError):
+        client_for(api).billing.wait_for_checkout(ID, timeout=2500, poll_interval=1000)
 
 
 def test_wait_for_checkout_raises_when_the_purchase_was_undone() -> None:

@@ -8,6 +8,9 @@ const mockFns = vi.hoisted(() => ({
   supersedeCheckoutLinks: vi.fn(),
 }));
 
+// The customer the event names, which a link named by its metadata must have.
+const CUSTOMER_OF_EVENT = "cus_team_1";
+
 vi.mock("@/lib/billing/refunds", () => ({ recordRefund: mockFns.recordRefund }));
 vi.mock("@/lib/billing/checkout-link-rows", () => ({
   detachCheckoutLinks: mockFns.detachCheckoutLinks,
@@ -1792,7 +1795,8 @@ describe("subscription event guards", () => {
         period_start: "2026-08-01T00:00:00.000Z",
       },
     };
-    // A live Teams subscription on the team's customer, started after the stored one.
+    // A live Teams subscription on the team's customer, started an hour after
+    // the stored one (sub_live, 2026-08-09T23:00Z in most cases): a twin.
     const TEAM_SUB = {
       status: "active",
       ended_at: null,
@@ -1815,7 +1819,7 @@ describe("subscription event guards", () => {
       vi.spyOn(console, "warn").mockImplementation(() => {});
       mockFns.createAdminClient.mockReturnValue(createFakeAdmin({ "teams:select": [liveTeam] }));
       const revoke = polarState({
-        sub_live: { ...TEAM_SUB, id: "sub_live", started_at: "2026-08-01T00:00:00Z" },
+        sub_live: { ...TEAM_SUB, id: "sub_live", started_at: "2026-08-09T23:00:00Z" },
         sub_2: { ...TEAM_SUB, id: "sub_2", checkout_id: "co_2" },
       });
 
@@ -1833,7 +1837,11 @@ describe("subscription event guards", () => {
       expect(revoke).toHaveBeenCalledWith("sub_2");
       expect(revoke).not.toHaveBeenCalledWith("sub_live");
       // A checkout link its session made reads superseded, never paid.
-      expect(mockFns.supersedeCheckoutLinks).toHaveBeenCalledWith("co_2", undefined);
+      expect(mockFns.supersedeCheckoutLinks).toHaveBeenCalledWith(
+        "co_2",
+        undefined,
+        CUSTOMER_OF_EVENT
+      );
       // Recorded and superseded before the revoke: a redelivery after it
       // reads an ended one and never comes back here.
       expect(mockFns.recordRefund.mock.invocationCallOrder[0]).toBeLessThan(
@@ -1851,7 +1859,7 @@ describe("subscription event guards", () => {
       mockFns.createAdminClient.mockReturnValue(createFakeAdmin({ "teams:select": [liveTeam] }));
       // The event still carries the live copy; Polar's current state is ended.
       const revoke = polarState({
-        sub_live: { ...TEAM_SUB, id: "sub_live", started_at: "2026-08-01T00:00:00Z" },
+        sub_live: { ...TEAM_SUB, id: "sub_live", started_at: "2026-08-09T23:00:00Z" },
         sub_2: { id: "sub_2", status: "canceled", ended_at: "2026-08-02T00:00:00Z" },
       });
 
@@ -1877,7 +1885,7 @@ describe("subscription event guards", () => {
       vi.spyOn(console, "warn").mockImplementation(() => {});
       mockFns.createAdminClient.mockReturnValue(createFakeAdmin({ "teams:select": [liveTeam] }));
       const revoke = polarState({
-        sub_live: { ...TEAM_SUB, id: "sub_live", started_at: "2026-08-01T00:00:00Z" },
+        sub_live: { ...TEAM_SUB, id: "sub_live", started_at: "2026-08-09T23:00:00Z" },
         sub_old: { id: "sub_old", status: "active", ended_at: "2026-07-01T00:00:00Z" },
       });
 
@@ -1932,7 +1940,7 @@ describe("subscription event guards", () => {
         })
       );
       const revoke = polarState({
-        sub_live: { ...TEAM_SUB, id: "sub_live", started_at: "2026-08-01T00:00:00Z" },
+        sub_live: { ...TEAM_SUB, id: "sub_live", started_at: "2026-08-09T23:00:00Z" },
         sub_2: { ...TEAM_SUB, id: "sub_2", checkout_id: "co_2" },
       });
 
@@ -1994,7 +2002,11 @@ describe("subscription event guards", () => {
         reason: "duplicate_plan",
         teamId: "team_1",
       });
-      expect(mockFns.supersedeCheckoutLinks).toHaveBeenCalledWith("co_2", undefined);
+      expect(mockFns.supersedeCheckoutLinks).toHaveBeenCalledWith(
+        "co_2",
+        undefined,
+        CUSTOMER_OF_EVENT
+      );
       expect(revoke).toHaveBeenCalledWith("sub_2");
       expect(revoke).not.toHaveBeenCalledWith("sub_live");
     });
@@ -2027,7 +2039,7 @@ describe("subscription event guards", () => {
       mockFns.createAdminClient.mockReturnValue(createFakeAdmin({ "teams:select": [liveTeam] }));
       // An add-on product this deployment does not configure reaches the plan handlers.
       const revoke = polarState({
-        sub_live: { ...TEAM_SUB, id: "sub_live", started_at: "2026-08-01T00:00:00Z" },
+        sub_live: { ...TEAM_SUB, id: "sub_live", started_at: "2026-08-09T23:00:00Z" },
         sub_addon: { ...TEAM_SUB, id: "sub_addon", product_id: "prod_unconfigured_addon" },
       });
 
@@ -2074,7 +2086,7 @@ describe("subscription event guards", () => {
       expect(mockFns.supersedeCheckoutLinks).not.toHaveBeenCalled();
       expect(teamsUpdates()).toEqual([]);
       expect(consoleError).toHaveBeenCalledWith(
-        "[team-billing] a team has a second live team plan subscription that started well before the one it holds",
+        "[team-billing] a team has a second live team plan subscription that did not start within two hours of the one it holds",
         expect.objectContaining({ eventSubscriptionId: "sub_older" })
       );
     });
@@ -2105,7 +2117,11 @@ describe("subscription event guards", () => {
         reason: "duplicate_plan",
         teamId: "team_1",
       });
-      expect(mockFns.supersedeCheckoutLinks).toHaveBeenCalledWith("co_first", undefined);
+      expect(mockFns.supersedeCheckoutLinks).toHaveBeenCalledWith(
+        "co_first",
+        undefined,
+        CUSTOMER_OF_EVENT
+      );
       expect(revoke).toHaveBeenCalledWith("sub_first");
       expect(revoke).not.toHaveBeenCalledWith("sub_live");
       expect(teamsUpdates()).toEqual([]);
@@ -2157,23 +2173,23 @@ describe("subscription event guards", () => {
       expect(mockFns.supersedeCheckoutLinks).not.toHaveBeenCalled();
       expect(revoke).not.toHaveBeenCalled();
       expect(consoleError).toHaveBeenCalledWith(
-        "[team-billing] a team has a second live team plan subscription that started well before the one it holds",
+        "[team-billing] a team has a second live team plan subscription that did not start within two hours of the one it holds",
         expect.objectContaining({ eventSubscriptionId: "sub_early" })
       );
     });
 
-    test("a newer one is ended whichever event arrives, by when each started", async () => {
+    test("a twin is ended by when each was created when Polar left out when it started", async () => {
       vi.spyOn(console, "warn").mockImplementation(() => {});
       mockFns.createAdminClient.mockReturnValue(createFakeAdmin({ "teams:select": [liveTeam] }));
-      // Polar left out started_at: created_at says which came first.
+      // Polar left out started_at: created_at says when each began.
       const revoke = polarState({
         sub_live: {
           ...TEAM_SUB,
           id: "sub_live",
           started_at: null,
-          created_at: "2026-08-01T00:00:00Z",
+          created_at: "2026-08-02T00:00:00Z",
         },
-        sub_2: { ...TEAM_SUB, id: "sub_2", started_at: null, created_at: "2026-08-02T00:00:00Z" },
+        sub_2: { ...TEAM_SUB, id: "sub_2", started_at: null, created_at: "2026-08-02T01:00:00Z" },
       });
 
       await applyTeamPolarWebhookEvent(
@@ -2184,6 +2200,37 @@ describe("subscription event guards", () => {
 
       expect(revoke).toHaveBeenCalledWith("sub_2");
       expect(mockFns.recordRefund).toHaveBeenCalledTimes(1);
+    });
+
+    test("one that started more than two hours after the stored one is reported, neither ended nor refunded", async () => {
+      // A checkout is refused once the team is subscribed, so a real twin
+      // starts within the window; one a week later is more likely a
+      // replacement staff made in Polar.
+      const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+      mockFns.createAdminClient.mockReturnValue(createFakeAdmin({ "teams:select": [liveTeam] }));
+      const revoke = polarState({
+        sub_live: { ...TEAM_SUB, id: "sub_live", started_at: "2026-08-01T00:00:00Z" },
+        sub_late: {
+          ...TEAM_SUB,
+          id: "sub_late",
+          started_at: "2026-08-08T00:00:00Z",
+          checkout_id: "co_late",
+        },
+      });
+
+      await applyTeamPolarWebhookEvent(
+        "subscription.created",
+        "team_1",
+        subscriptionEvent("sub_late")
+      );
+
+      expect(revoke).not.toHaveBeenCalled();
+      expect(mockFns.recordRefund).not.toHaveBeenCalled();
+      expect(mockFns.supersedeCheckoutLinks).not.toHaveBeenCalled();
+      expect(consoleError).toHaveBeenCalledWith(
+        "[team-billing] a team has a second live team plan subscription that did not start within two hours of the one it holds",
+        expect.objectContaining({ eventSubscriptionId: "sub_late" })
+      );
     });
 
     test("is reported, not ended, when Polar left out when either started", async () => {

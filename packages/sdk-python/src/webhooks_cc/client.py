@@ -2087,19 +2087,32 @@ class Billing:
         *,
         timeout: Duration | None = None,
         poll_interval: Duration = 3000,
+        expired_grace: Duration = 60_000,
     ) -> CheckoutLink:
         """Wait until the person pays and return the paid link. Raises
-        :class:`CheckoutExpiredError` when it expires first,
+        :class:`CheckoutExpiredError` when it expires first (after polling for
+        ``expired_grace`` more, a minute by default, since a payment Polar
+        confirms late can still turn an expired link paid),
         :class:`CheckoutSupersededError` when its purchase was undone as a duplicate,
         and :class:`TimeoutError` when ``timeout`` passes first (default:
-        until it expires). Polls at least a second apart."""
+        until it expires). Polls at least a second apart. ``matches`` ``None``
+        on the paid link is not known yet, never a mismatch."""
         _validate_segment(checkout_id, "checkout id")
         interval = max(1000.0, parse_duration(poll_interval))
+        grace = max(0.0, parse_duration(expired_grace))
         timeout_ms = None if timeout is None else parse_duration(timeout)
         deadline = None if timeout_ms is None else time.monotonic() * 1000 + timeout_ms
+        # When the link first read expired, while it may still turn paid.
+        expired_at: float | None = None
+
+        def timed_out() -> Exception:
+            if expired_at is not None:
+                return CheckoutExpiredError(checkout_id)
+            return TimeoutError(timeout_ms or 0, "Timed out waiting for the checkout to be paid")
+
         while True:
             if deadline is not None and time.monotonic() * 1000 >= deadline:
-                raise TimeoutError(timeout_ms or 0, "Timed out waiting for the checkout to be paid")
+                raise timed_out()
             checkout = CheckoutLink.from_dict(
                 _checkout_of(
                     self._client._api(
@@ -2109,17 +2122,21 @@ class Billing:
             )
             if checkout.status == "paid":
                 return checkout
-            if checkout.status == "expired":
-                raise CheckoutExpiredError(checkout_id)
             if checkout.status == "superseded":
                 raise CheckoutSupersededError(checkout_id)
+            if checkout.status == "expired":
+                now = time.monotonic() * 1000
+                if expired_at is None:
+                    expired_at = now
+                if now - expired_at >= grace:
+                    raise CheckoutExpiredError(checkout_id)
+            else:
+                expired_at = None
             wait = interval
             if deadline is not None:
                 left = deadline - time.monotonic() * 1000
                 if left <= 0:
-                    raise TimeoutError(
-                        timeout_ms or 0, "Timed out waiting for the checkout to be paid"
-                    )
+                    raise timed_out()
                 wait = min(interval, left)
             _sleep_ms(wait)
 

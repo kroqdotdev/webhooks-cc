@@ -4,6 +4,7 @@
  * billing modules, so those modules can call these without an import cycle.
  */
 import { createAdminClient } from "@/lib/supabase/admin";
+import { reportError } from "@/lib/observability";
 import { CHECKOUT_LINK_METADATA_KEY } from "@/lib/supabase/billing-shared";
 
 /**
@@ -20,6 +21,43 @@ const LINK_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 const POLAR_CHECKOUT_ID = /^[A-Za-z0-9_-]{1,128}$/;
 
 /**
+ * Whether a Polar event's customer is the one the link's billing account
+ * pays with (the user's, or the team's). The metadata is ours, but a link
+ * named there is acted on only when the payment came from its own account:
+ * a session made for another customer (by hand in Polar, say) that carries
+ * a link's id never pays or undoes that link. A mismatch is reported.
+ */
+export async function linkCustomerMatches(
+  linkId: string,
+  customerId: string | null
+): Promise<boolean> {
+  const admin = createAdminClient();
+  const { data: link, error } = await admin
+    .from("billing_checkouts")
+    .select("user_id, team_id")
+    .eq("id", linkId)
+    .maybeSingle();
+  if (error) throw error;
+  if (!link) return false;
+  const { data: account, error: accountError } = link.team_id
+    ? await admin.from("teams").select("polar_customer_id").eq("id", link.team_id).maybeSingle()
+    : await admin
+        .from("users")
+        .select("polar_customer_id")
+        .eq("id", link.user_id ?? "")
+        .maybeSingle();
+  if (accountError) throw accountError;
+  const stored = account?.polar_customer_id ?? null;
+  if (customerId !== null && stored !== null && customerId === stored) return true;
+  reportError(
+    "[checkout-links] a Polar session's metadata names a checkout link of another customer",
+    undefined,
+    { linkId }
+  );
+  return false;
+}
+
+/**
  * Marks the links whose Polar session made a purchase the webhook then
  * undid: a subscription ended as the account's second plan or add-on of its
  * kind, or an order whose extra domains had nothing left to go on (both
@@ -29,47 +67,56 @@ const POLAR_CHECKOUT_ID = /^[A-Za-z0-9_-]{1,128}$/;
  * Called before the subscription is revoked: a redelivery after a revoke
  * reads it as ended and never comes back here.
  *
- * Those are the links that follow the session (`checkoutId`), a link that
+ * Those are the links that follow the session (`checkoutId`) or were paid
+ * through it (paid_checkout_id, a session they had replaced), a link that
  * replaced it with a new session and is not paid or cancelled
  * (previous_checkout_ids), and the link the session's `metadata` names,
  * which may never have stored the session's id (the write after minting
- * failed): that one unless another session was moved onto it or it was let
- * go of a moved session (detached_at), the same rule that keeps such a link
- * from being paid through the metadata.
+ * failed): that one unless another session was moved onto it, it was let
+ * go of a moved session (detached_at) or its asker cancelled it, the same
+ * rules that keep such a link from being paid through the metadata, and
+ * only when the event's `customerId` is the link account's
+ * (linkCustomerMatches()). A link already paid through another of its
+ * sessions is never superseded here: that purchase stands, and this one is
+ * a duplicate of it.
  */
 export async function supersedeCheckoutLinks(
   checkoutId: string | null,
-  metadata?: unknown
+  metadata: unknown,
+  customerId: string | null
 ): Promise<void> {
   const named = checkoutLinkNamedBy(metadata);
   if (!checkoutId && !named) return;
   const admin = createAdminClient();
   const paidAt = new Date().toISOString();
-  if (checkoutId) {
+  const safeId = checkoutId !== null && POLAR_CHECKOUT_ID.test(checkoutId);
+  if (safeId) {
+    // Following this session and not paid through another, or paid through this one.
+    const ours = `and(polar_checkout_id.eq."${checkoutId}",paid_checkout_id.is.null),paid_checkout_id.eq."${checkoutId}"`;
     const { error } = await admin
       .from("billing_checkouts")
       .update({ status: "superseded" })
-      .eq("polar_checkout_id", checkoutId)
+      .or(ours)
       .neq("status", "superseded");
     if (error) throw error;
     const { error: stampError } = await admin
       .from("billing_checkouts")
       .update({ paid_at: paidAt })
-      .eq("polar_checkout_id", checkoutId)
+      .or(ours)
       .is("paid_at", null);
     if (stampError) throw stampError;
-  }
-  if (checkoutId && POLAR_CHECKOUT_ID.test(checkoutId)) {
+
     // Only while the link is not paid by its own later session.
-    const { error } = await admin
+    const { error: replacedError } = await admin
       .from("billing_checkouts")
       .update({ status: "superseded", paid_at: paidAt })
       .contains("previous_checkout_ids", [checkoutId])
       .in("status", ["open", "expired"])
       .is("cancelled_at", null);
-    if (error) throw error;
+    if (replacedError) throw replacedError;
   }
-  if (named && (!checkoutId || POLAR_CHECKOUT_ID.test(checkoutId))) {
+  if (named && (!checkoutId || safeId)) {
+    if (!(await linkCustomerMatches(named, customerId))) return;
     let query = admin
       .from("billing_checkouts")
       .update({
@@ -78,7 +125,9 @@ export async function supersedeCheckoutLinks(
       })
       .eq("id", named)
       .neq("status", "superseded")
-      .is("detached_at", null);
+      .is("detached_at", null)
+      .is("cancelled_at", null)
+      .is("paid_checkout_id", null);
     query = checkoutId
       ? query.or(`polar_checkout_id.is.null,polar_checkout_id.eq."${checkoutId}"`)
       : query.is("polar_checkout_id", null);
@@ -124,11 +173,14 @@ export async function markCheckoutLinkMismatch(
   checkoutId: string | null,
   mismatch: "base"
 ): Promise<void> {
-  if (!checkoutId) return;
+  if (!checkoutId || !POLAR_CHECKOUT_ID.test(checkoutId)) return;
   const { error } = await createAdminClient()
     .from("billing_checkouts")
     .update({ mismatch })
-    .eq("polar_checkout_id", checkoutId);
+    // Following the session and not paid through another, or paid through it.
+    .or(
+      `and(polar_checkout_id.eq."${checkoutId}",paid_checkout_id.is.null),paid_checkout_id.eq."${checkoutId}"`
+    );
   if (error) throw error;
 }
 

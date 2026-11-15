@@ -15,7 +15,9 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
  * key holder. The purchase is checked again and a Polar checkout made (or
  * the link's own reused while Polar has it open): the answer is
  * { status: "redirect", url } for the page to go on to, or the link's state
- * (paid, processing, expired, superseded) with what it buys. Another
+ * (paid, processing, expired, superseded) with what it buys: its summary,
+ * kind and resource (what a superseded link's explanation is worded by,
+ * when the page has no review to go on). Another
  * account gets 403 wrong_account; an unknown link 404. Opening is audited.
  */
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -41,9 +43,20 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
         status: 200,
         targetId: id,
       });
-      return Response.json({ status: "redirect", url: opened.url, summary: opened.summary });
+      return Response.json({
+        status: "redirect",
+        url: opened.url,
+        summary: opened.summary,
+        kind: opened.link.kind,
+        resource: opened.link.resource,
+      });
     }
-    return Response.json({ status: opened.kind, summary: opened.summary });
+    return Response.json({
+      status: opened.kind,
+      summary: opened.summary,
+      kind: opened.link.kind,
+      resource: opened.link.resource,
+    });
   } catch (error) {
     const { response, reason } = checkoutErrorResponse(error, "Failed to open the checkout");
     await auditUserAction(request, auth.userId, {

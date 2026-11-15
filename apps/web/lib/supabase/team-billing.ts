@@ -1830,17 +1830,21 @@ async function endOrphanTeamSubscription(
  * link's and the dashboard's, or two links for different plans or seats).
  * Then the event's subscription is for a team plan (Teams or Team Business,
  * any interval), live, on the same Polar customer as the stored one, the
- * stored one is live too, and duplicateVerdict() says "end": the event's
- * subscription started after the stored one, or within two hours of it
- * either way (twin checkouts whose events arrived out of order, say after a
- * 5xx retry). The team keeps the one it holds, and the other ends before it
- * charges again; what it charged goes back through the refund queue
+ * stored one is live too, and duplicateVerdict() says "end": the two
+ * started within two hours of each other, either way (twin checkouts whose
+ * events arrived out of order, say after a 5xx retry; a checkout is refused
+ * once the team is subscribed, so a real twin starts inside that window).
+ * The team keeps the one it holds, and the other ends before it charges
+ * again; what it charged goes back through the refund queue
  * (lib/billing/refunds.ts), and a checkout link whose session made it reads
- * superseded, never paid. One that started well before, or when Polar left
- * out when either started, is reported for a person and neither ended nor
- * refunded: it may be the plan the team has been using all along (its row
- * cleared by a revoked event while it stayed live), and a full refund would
- * pay back months that were used. A late event for an ended subscription is
+ * superseded, never paid (one already paid through another of its sessions
+ * keeps that purchase: supersedeCheckoutLinks()). One that started further
+ * apart in either direction, or when Polar left out when either started,
+ * is reported for a person and neither ended nor refunded: one well before
+ * may be the plan the team has been using all along (its row cleared by a
+ * revoked event while it stayed live), one well after is more likely a
+ * replacement staff made in Polar, and a full refund would pay back what
+ * was meant to be kept. A late event for an ended subscription is
  * logged; anything else (a stored subscription Polar no longer has live, a
  * product that is not a team plan, another customer) is reported and changes
  * nothing.
@@ -1871,7 +1875,7 @@ async function settleForeignTeamSubscription(
     ) {
       if (duplicateVerdict(current, stored) === "report") {
         reportError(
-          "[team-billing] a team has a second live team plan subscription that started well before the one it holds",
+          "[team-billing] a team has a second live team plan subscription that did not start within two hours of the one it holds",
           undefined,
           { teamId, eventType, storedSubscriptionId, eventSubscriptionId: subscriptionId }
         );
@@ -1885,7 +1889,11 @@ async function settleForeignTeamSubscription(
         reason: "duplicate_plan",
         teamId,
       });
-      await supersedeCheckoutLinks(asNonEmptyString(current.checkout_id), current.metadata);
+      await supersedeCheckoutLinks(
+        asNonEmptyString(current.checkout_id),
+        current.metadata,
+        asNonEmptyString(current.customer_id)
+      );
       await revokeSubscriptionQuietly(subscriptionId);
       console.warn("[team-billing] ended a second team plan subscription", {
         teamId,
@@ -2213,7 +2221,7 @@ async function applyTeamSubscriptionState(
     // settleForeignTeamSubscription() settles it without waiting for Polar
     // to redeliver: twin checkouts start within two hours of each other, so
     // the loser is ended and refunded even when it started first
-    // (duplicateVerdict()); one that started well before is reported.
+    // (duplicateVerdict()); one that started further apart is reported.
     await applyTeamSubscriptionState(eventType, teamId, event, true);
     return;
   }

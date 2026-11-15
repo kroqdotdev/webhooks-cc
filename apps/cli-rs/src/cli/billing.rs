@@ -195,6 +195,14 @@ const POLL_EVERY: Duration = if cfg!(test) {
     Duration::from_secs(3)
 };
 
+// How long a wait keeps polling a link that reads expired: a payment Polar
+// confirms late still turns it paid.
+const EXPIRED_GRACE: Duration = if cfg!(test) {
+    Duration::from_millis(100)
+} else {
+    Duration::from_secs(60)
+};
+
 /// What `whk billing checkout` was asked to buy.
 pub struct CheckoutArgs {
     pub kind: String,
@@ -287,8 +295,9 @@ pub async fn checkout(
 }
 
 /// `whk billing checkout-status`: where a link stands; with `wait`, waits
-/// until it is paid (checkout_expired if it expires first, checkout_superseded
-/// if its purchase was undone as a duplicate).
+/// until it is paid (checkout_expired if it expires first, after polling a
+/// minute more since a late payment can still turn it paid;
+/// checkout_superseded if its purchase was undone as a duplicate).
 pub async fn checkout_status(
     client: &ApiClient,
     id: &str,
@@ -337,6 +346,8 @@ async fn wait_until_paid(
     json: bool,
 ) -> Result<()> {
     use anyhow::Context;
+    // When the link first read expired, while it may still turn paid.
+    let mut expired_at: Option<Instant> = None;
     loop {
         let answer = client.get_checkout(id).await.with_context(|| {
             format!("could not check checkout link {id}; run `whk billing checkout-status {id} --wait` to try again")
@@ -351,12 +362,20 @@ async fn wait_until_paid(
                 }
                 return Ok(());
             }
-            Some("expired") => return Err(CliError::CheckoutExpired.into()),
+            Some("expired") => {
+                let since = *expired_at.get_or_insert_with(Instant::now);
+                if since.elapsed() >= EXPIRED_GRACE {
+                    return Err(CliError::CheckoutExpired.into());
+                }
+            }
             Some("superseded") => return Err(CliError::CheckoutSuperseded.into()),
-            _ => {}
+            _ => expired_at = None,
         }
         let left = deadline.saturating_duration_since(Instant::now());
         if left.is_zero() {
+            if expired_at.is_some() {
+                return Err(CliError::CheckoutExpired.into());
+            }
             return Err(CliError::Timeout(format!(
                 "Not paid yet. Run `whk billing checkout-status {id} --wait` to keep waiting."
             ))
@@ -378,6 +397,8 @@ fn print_status(link: &Value) {
                     "Paid {when}; it is applied to the account within a minute."
                 ))
             );
+            // Only a known mismatch: null is not known yet (a team plan's
+            // seats arrive with its subscription, after the order).
             if link["matches"] == Value::Bool(false) {
                 println!(
                     "  What was bought differs from what the link asked for ({}); check `whk billing`.",
@@ -736,6 +757,15 @@ mod tests {
         assert_eq!((c.code, c.exit), ("checkout_expired", 8));
         // Without --wait it only reports.
         checkout_status(&client(&base), ID, None, true)
+            .await
+            .unwrap();
+    }
+
+    #[tokio::test]
+    async fn an_expired_link_that_turns_paid_is_paid() {
+        // A payment Polar confirms late still marks the link paid.
+        let (base, _) = server(vec!["expired", "expired", "paid"]).await;
+        checkout_status(&client(&base), ID, Some("1m"), true)
             .await
             .unwrap();
     }

@@ -839,7 +839,11 @@ async function waitForApprovalText(client: WebhooksCC, id: string, ms: number): 
   }
 }
 
-/** Waits for a checkout link to be paid and says how it went. */
+/**
+ * Waits for a checkout link to be paid and says how it went. The SDK keeps
+ * polling for a minute once the link reads expired (a late payment can
+ * still turn it paid); `matches` null is not known yet, never a mismatch.
+ */
 async function waitForCheckoutText(client: WebhooksCC, id: string, ms: number): Promise<string> {
   try {
     const paid = await client.billing.waitForCheckout(id, { timeout: ms });
@@ -853,7 +857,7 @@ async function waitForCheckoutText(client: WebhooksCC, id: string, ms: number): 
       return "The person paid, but by then the account already had what the link buys (or what it added to had ended), so the purchase was undone: its subscription was ended and a refund of what it charged is under review (monthly blocks bought twice stay on the account as one-time blocks, and a second overage subscription was ended before it charged anything). Do not promise the person a refund; get_billing shows what the account keeps.";
     }
     if (error instanceof CheckoutExpiredError) {
-      return "The checkout link expired before it was paid. If the person still wants it, make a new one with create_checkout.";
+      return `The checkout link expired before it was paid. If the person still wants it, make a new one with create_checkout. If they say they did pay, call wait_for_checkout with id ${id} once more first: a payment confirmed late still turns the link paid.`;
     }
     if (error instanceof TimeoutError) {
       return `Not paid yet. Remind the person of the link if needed, and call wait_for_checkout with id ${id} again.`;

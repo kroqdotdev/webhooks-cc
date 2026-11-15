@@ -25,9 +25,16 @@ describe("subscriptionStartMs", () => {
 describe("duplicateVerdict", () => {
   const at = (iso: string | null) => ({ started_at: iso });
 
-  test("ends one that started after the stored one, however much later", () => {
+  test("ends one that started within two hours after the stored one", () => {
     expect(duplicateVerdict(at("2026-08-01T00:00:01Z"), at("2026-08-01T00:00:00Z"))).toBe("end");
-    expect(duplicateVerdict(at("2026-10-01T00:00:00Z"), at("2026-08-01T00:00:00Z"))).toBe("end");
+    expect(duplicateVerdict(at("2026-08-01T02:00:00Z"), at("2026-08-01T00:00:00Z"))).toBe("end");
+  });
+
+  test("reports one that started more than two hours after the stored one", () => {
+    // A checkout is refused once the team is subscribed: one this much
+    // later is more likely a replacement made in Polar than a twin.
+    expect(duplicateVerdict(at("2026-08-01T02:00:01Z"), at("2026-08-01T00:00:00Z"))).toBe("report");
+    expect(duplicateVerdict(at("2026-10-01T00:00:00Z"), at("2026-08-01T00:00:00Z"))).toBe("report");
   });
 
   test("ends one that started within two hours before the stored one", () => {

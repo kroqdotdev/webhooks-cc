@@ -688,7 +688,11 @@ async function applyPlanSubscription(
       // Before the revoke too: a redelivery after it reads the subscription
       // as ended and never comes back here, so a failed supersede would
       // leave the link to be marked paid.
-      await supersedeCheckoutLinks(asNonEmptyString(data.checkout_id), data.metadata);
+      await supersedeCheckoutLinks(
+        asNonEmptyString(data.checkout_id),
+        data.metadata,
+        asNonEmptyString(data.customer_id)
+      );
       await revokeSubscriptionQuietly(subscriptionId);
       return true;
     }

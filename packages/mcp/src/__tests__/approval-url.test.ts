@@ -184,6 +184,15 @@ describe("checkout links opened by the client (URL elicitation)", () => {
         url: null,
         bought: { product: "prod_teams", seats: 5, units: null, amount: 0, currency: "usd" },
         matches: false,
+      })
+      .mockResolvedValueOnce({
+        ...link,
+        kind: "team_plan",
+        status: "paid",
+        url: null,
+        // The order came first: the seats are not known yet.
+        bought: { product: "prod_teams", seats: null, units: null, amount: 0, currency: "usd" },
+        matches: null,
       });
     const handlers = tools({ billing: { waitForCheckout } as unknown as WebhooksCC["billing"] });
     const superseded = (await handlers.wait_for_checkout({ id: CHECKOUT })).content[0].text;
@@ -199,5 +208,9 @@ describe("checkout links opened by the client (URL elicitation)", () => {
     expect((await handlers.wait_for_checkout({ id: CHECKOUT })).content[0].text).toContain(
       "What was bought differs from what the link asked for (5 seats)"
     );
+    // Not known yet is no mismatch.
+    const unknown = (await handlers.wait_for_checkout({ id: CHECKOUT })).content[0].text;
+    expect(unknown).toContain("Paid:");
+    expect(unknown).not.toContain("differs");
   });
 });

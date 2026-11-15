@@ -1019,16 +1019,95 @@ describe("checkout links", () => {
       currency: "usd",
       metadata: { checkout_link: id },
     });
-    expect(await stored(id)).toMatchObject({ status: "paid", mismatch: "replaced" });
+    expect(await stored(id)).toMatchObject({
+      status: "paid",
+      mismatch: "replaced",
+      // It follows the session that paid from now on; the newer one is kept
+      // as replaced.
+      polar_checkout_id: first,
+      paid_checkout_id: first,
+      previous_checkout_ids: [second],
+    });
     expect((await read(key.raw, id)).body.checkout).toMatchObject({
       status: "paid",
       bought: { product: "prod_business_test" },
       matches: false,
     });
+
+    // The newer session paid later too: a duplicate of the purchase that
+    // stands, which neither changes what the link bought nor undoes it.
+    await deliver("order.paid", {
+      id: `order_replaced_newer_${ts}`,
+      checkout_id: second,
+      product_id: "prod_pro_test",
+      status: "paid",
+      net_amount: 800,
+      currency: "usd",
+      metadata: { checkout_link: id },
+    });
+    const { supersedeCheckoutLinks } = await import("@/lib/billing/checkout-link-rows");
+    const { data: account } = await admin
+      .from("users")
+      .select("polar_customer_id")
+      .eq("id", userId)
+      .single();
+    await supersedeCheckoutLinks(second, { checkout_link: id }, account?.polar_customer_id ?? null);
+    expect(await stored(id)).toMatchObject({
+      status: "paid",
+      paid_checkout_id: first,
+      bought: { product: "prod_business_test", amount: 2900 },
+    });
+
+    // The purchase the replaced session made is undone: the link reads superseded.
+    await supersedeCheckoutLinks(first, { checkout_link: id }, account?.polar_customer_id ?? null);
+    expect((await stored(id)).status).toBe("superseded");
+  });
+
+  it("never pays or supersedes a link through the metadata for another customer's payment", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const customerId = `cus_metadata_owner_${ts}`;
+    const userId = await makeUser("metadata-customer", { polar_customer_id: customerId });
+    const key = await makeKey(userId);
+    const id = (await create(key.raw, { kind: "plan", plan: "pro" })).body.checkout.id;
+
+    await deliver("order.paid", {
+      id: `order_other_customer_${ts}`,
+      checkout_id: `polar_checkout_other_customer_${ts}`,
+      customer_id: `cus_someone_else_${ts}`,
+      product_id: "prod_pro_test",
+      status: "paid",
+      net_amount: 800,
+      currency: "usd",
+      metadata: { checkout_link: id },
+    });
+    expect(await stored(id)).toMatchObject({ status: "open", polar_checkout_id: null });
+    const { supersedeCheckoutLinks } = await import("@/lib/billing/checkout-link-rows");
+    await supersedeCheckoutLinks(
+      `polar_checkout_other_customer_${ts}`,
+      { checkout_link: id },
+      `cus_someone_else_${ts}`
+    );
+    expect(await stored(id)).toMatchObject({ status: "open", polar_checkout_id: null });
+
+    // Its own customer's payment pays it.
+    await deliver("order.paid", {
+      id: `order_own_customer_${ts}`,
+      checkout_id: `polar_checkout_own_customer_${ts}`,
+      customer_id: customerId,
+      product_id: "prod_pro_test",
+      status: "paid",
+      net_amount: 800,
+      currency: "usd",
+      metadata: { checkout_link: id },
+    });
+    expect(await stored(id)).toMatchObject({
+      status: "paid",
+      paid_checkout_id: `polar_checkout_own_customer_${ts}`,
+    });
   });
 
   it("never pays a cancelled link through a session's metadata", async () => {
-    const userId = await makeUser("cancel-paid");
+    const userId = await makeUser("cancel-paid", { polar_customer_id: `cus_cancel_paid_${ts}` });
     const key = await makeKey(userId);
     const id = (await create(key.raw, { kind: "plan", plan: "pro" })).body.checkout.id;
     expect((await cancel(key.raw, id)).status).toBe(200);
@@ -1038,12 +1117,19 @@ describe("checkout links", () => {
     await deliver("order.paid", {
       id: `order_cancelled_${ts}`,
       checkout_id: `polar_checkout_cancelled_${ts}`,
+      customer_id: `cus_cancel_paid_${ts}`,
       product_id: "prod_pro_test",
       status: "paid",
       net_amount: 800,
       currency: "usd",
       metadata: { checkout_link: id },
     });
+    expect(await stored(id)).toMatchObject({ status: "expired", polar_checkout_id: null });
+
+    // Nor supersedes it, should that session's purchase be undone.
+    const { supersedeCheckoutLinks } = await import("@/lib/billing/checkout-link-rows");
+    // The customer is the link's own: only the cancellation keeps it.
+    await supersedeCheckoutLinks(null, { checkout_link: id }, `cus_cancel_paid_${ts}`);
     expect(await stored(id)).toMatchObject({ status: "expired", polar_checkout_id: null });
   });
 

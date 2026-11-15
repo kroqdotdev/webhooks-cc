@@ -51,6 +51,10 @@ function builder(table: string) {
     is: filter("is"),
     lte: filter("lte"),
     contains: filter("contains"),
+    filter: (column: string, operator: string, value: unknown) => {
+      query.filters.push(["filter", column, `${operator}.${String(value)}`]);
+      return chain;
+    },
     or: (expression: string) => {
       query.filters.push(["or", expression, null]);
       return chain;
@@ -112,6 +116,7 @@ vi.mock("@/lib/supabase/capacity-billing", () => ({
 import { TeamBillingError } from "@/lib/supabase/team-billing";
 import {
   boughtMatches,
+  mergeBought,
   checkoutPrice,
   CheckoutLinkError,
   checkoutSummary,
@@ -148,6 +153,7 @@ function row(overrides: Record<string, unknown> = {}) {
     item: { kind: "plan", plan: "pro", interval: "month" },
     url: OUR_URL,
     polar_checkout_id: null,
+    paid_checkout_id: null,
     previous_checkout_ids: [],
     expected: null,
     bought: null,
@@ -162,6 +168,12 @@ function row(overrides: Record<string, unknown> = {}) {
     paid_at: null,
     ...overrides,
   };
+}
+
+/** What linkCustomerMatches() reads: the link's account, then its Polar customer. */
+function pushCustomer(customer: string | null = "cus_1") {
+  mocks.results.push({ data: { user_id: "user-1", team_id: null }, error: null });
+  mocks.results.push({ data: { polar_customer_id: customer }, error: null });
 }
 
 beforeEach(() => {
@@ -454,9 +466,10 @@ describe("getCheckoutLink", () => {
     expect(await getCheckoutLink(LINK, "user-1")).toMatchObject({ status: "open", url: null });
     expect(mocks.checkoutsGet).not.toHaveBeenCalled();
 
-    // Polar unreachable: still open, and asked again later.
+    // Polar unreachable just past its expiry: still open, and asked again later.
     vi.spyOn(console, "warn").mockImplementation(() => {});
-    mocks.results.push({ data: row(opened), error: null });
+    const justPast = { ...opened, expires_at: new Date(Date.now() - 60_000).toISOString() };
+    mocks.results.push({ data: row(justPast), error: null });
     mocks.results.push({ data: null, error: null });
     mocks.checkoutsGet.mockRejectedValue(new Error("down"));
     expect(await getCheckoutLink(LINK, "user-1")).toMatchObject({ status: "open" });
@@ -469,6 +482,138 @@ describe("getCheckoutLink", () => {
     expect(boughtMatches({ product: "prod_business" }, bought)).toBe(false);
     expect(boughtMatches(null, bought)).toBeNull();
   });
+
+  it("reads matches as not known yet while the seats or units it names are", () => {
+    // An order handled before its subscription's event leaves the seats out.
+    const fromOrder = {
+      product: "prod_teams",
+      seats: null,
+      units: null,
+      amount: 3600,
+      currency: "usd",
+    };
+    expect(boughtMatches({ product: "prod_teams", seats: 3 }, fromOrder)).toBeNull();
+    expect(
+      boughtMatches({ product: "prod_add", units: 2 }, { ...fromOrder, product: "prod_add" })
+    ).toBeNull();
+    // A product that differs is known at once.
+    expect(boughtMatches({ product: "prod_business", seats: 3 }, fromOrder)).toBe(false);
+    // A link that names no count matches on the product alone.
+    expect(boughtMatches({ product: "prod_teams" }, fromOrder)).toBe(true);
+  });
+
+  it("keeps what a paid link bought when its subscription changes later", () => {
+    const paid = { product: "prod_teams", seats: 3, units: null, amount: 3600, currency: "usd" };
+    // A week later: 5 seats, then Team Business. Polar keeps checkout_id on the subscription.
+    expect(mergeBought(paid, { ...paid, seats: 5, amount: 6000 }, "subscription")).toEqual(paid);
+    expect(mergeBought(paid, { ...paid, product: "prod_team_business" }, "subscription")).toEqual(
+      paid
+    );
+    // Only what is still unknown is filled in, and the order's amount wins.
+    const fromOrder = { ...paid, seats: null, amount: 3600 };
+    expect(mergeBought(fromOrder, { ...paid, amount: 9999 }, "subscription")).toEqual(paid);
+    expect(
+      mergeBought({ ...paid, amount: null, currency: null }, { ...paid, seats: null }, "order")
+    ).toEqual(paid);
+  });
+
+  it("holds a link whose session Polar still has open for 15 minutes past expiry, then expires it", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    const recent = new Date(Date.now() - 5 * 60_000).toISOString();
+    const opened = { expires_at: recent, polar_checkout_id: "polar_checkout_1", expected: PRO };
+    for (const answer of [
+      () => mocks.checkoutsGet.mockResolvedValue({ status: "open" }),
+      () => mocks.checkoutsGet.mockRejectedValue(new Error("down")),
+    ]) {
+      mocks.queries.length = 0;
+      answer();
+      mocks.results.push({ data: row(opened), error: null });
+      mocks.results.push({ data: null, error: null }); // the check's stamp
+      expect(await getCheckoutLink(LINK, "user-1")).toMatchObject({ status: "open", url: null });
+      expect(mocks.queries.some((q) => q.patch?.status === "expired")).toBe(false);
+    }
+
+    // Past the grace: expired (a late payment still marks it paid).
+    const old = { ...opened, expires_at: new Date(Date.now() - 16 * 60_000).toISOString() };
+    for (const answer of [
+      () => mocks.checkoutsGet.mockResolvedValue({ status: "open" }),
+      () => mocks.checkoutsGet.mockRejectedValue(new Error("down")),
+    ]) {
+      mocks.queries.length = 0;
+      answer();
+      mocks.results.push({ data: row(old), error: null });
+      mocks.results.push({ data: null, error: null });
+      mocks.results.push({ data: [row({ ...old, status: "expired" })], error: null });
+      expect(await getCheckoutLink(LINK, "user-1")).toMatchObject({ status: "expired" });
+    }
+
+    // Confirming at Polar: held, whatever the time.
+    mocks.queries.length = 0;
+    mocks.checkoutsGet.mockResolvedValue({ status: "confirmed" });
+    mocks.results.push({ data: row(old), error: null });
+    mocks.results.push({ data: null, error: null });
+    expect(await getCheckoutLink(LINK, "user-1")).toMatchObject({ status: "open" });
+    expect(mocks.queries.some((q) => q.patch?.status === "expired")).toBe(false);
+  });
+
+  it("never expires a link while a session it replaced is still being paid", async () => {
+    const old = new Date(Date.now() - 16 * 60_000).toISOString();
+    const opened = {
+      expires_at: old,
+      polar_checkout_id: "polar_checkout_2",
+      previous_checkout_ids: ["polar_checkout_1"],
+      expected: PRO,
+    };
+    mocks.checkoutsGet.mockImplementation(async (id: string) =>
+      id === "polar_checkout_2" ? { status: "expired" } : { status: "confirmed" }
+    );
+    mocks.results.push({ data: row(opened), error: null });
+    mocks.results.push({ data: null, error: null });
+    expect(await getCheckoutLink(LINK, "user-1")).toMatchObject({ status: "open" });
+    expect(mocks.checkoutsGet).toHaveBeenCalledWith("polar_checkout_1");
+    expect(mocks.queries.some((q) => q.patch?.status === "expired")).toBe(false);
+
+    // The replaced session was paid: the link is paid through it.
+    mocks.queries.length = 0;
+    mocks.checkoutsGet.mockImplementation(async (id: string) =>
+      id === "polar_checkout_2"
+        ? { status: "expired" }
+        : { id, status: "succeeded", product_id: "prod_pro", customer_id: "cus_1" }
+    );
+    mocks.results.push({ data: row(opened), error: null }); // read
+    mocks.results.push({ data: null, error: null }); // stamp
+    mocks.results.push({ data: [], error: null }); // no link follows polar_checkout_1
+    mocks.results.push({
+      data: [
+        {
+          id: LINK,
+          polar_checkout_id: "polar_checkout_2",
+          previous_checkout_ids: ["polar_checkout_1"],
+        },
+      ],
+      error: null,
+    }); // this one replaced it
+    mocks.results.push({ data: [{ id: LINK }], error: null }); // paid through it
+    mocks.results.push({ data: [], error: null }); // links it paid before
+    mocks.results.push({
+      data: row({
+        ...opened,
+        status: "paid",
+        polar_checkout_id: "polar_checkout_1",
+        paid_checkout_id: "polar_checkout_1",
+        previous_checkout_ids: ["polar_checkout_2"],
+        mismatch: "replaced",
+        bought: { product: "prod_pro", seats: null, units: null, amount: null, currency: null },
+      }),
+      error: null,
+    }); // read again
+    expect(await getCheckoutLink(LINK, "user-1")).toMatchObject({ status: "paid", matches: false });
+    expect(mocks.queries.find((q) => q.patch?.mismatch === "replaced")?.patch).toMatchObject({
+      polar_checkout_id: "polar_checkout_1",
+      paid_checkout_id: "polar_checkout_1",
+      previous_checkout_ids: ["polar_checkout_2"],
+    });
+  });
 });
 
 describe("openCheckoutLink", () => {
@@ -480,6 +625,7 @@ describe("openCheckoutLink", () => {
       kind: "redirect",
       url: POLAR_URL,
       summary: "The Pro plan, billed monthly.",
+      link: { kind: "plan", resource: null },
     });
     expect(mocks.planPurchase).toHaveBeenCalledWith("user-1", "pro", "month");
     expect(mocks.mint).toHaveBeenCalledWith({
@@ -756,6 +902,8 @@ describe("settleCheckoutLinkFromWebhook", () => {
       op: "update",
       patch: {
         status: "paid",
+        // The session that paid it.
+        paid_checkout_id: "polar_checkout_1",
         bought: { product: "prod_pro", amount: 900, currency: "usd", seats: null, units: null },
       },
       filters: [
@@ -786,16 +934,13 @@ describe("settleCheckoutLinkFromWebhook", () => {
         ["is", "polar_checkout_id", null],
       ],
     });
-    // Links the session already paid, by it or by one it replaced.
+    // Links this session already paid, and only those: one paid through
+    // another of its sessions keeps that purchase.
     expect(mocks.queries[3]).toMatchObject({
       op: "select",
       filters: [
         ["eq", "status", "paid"],
-        [
-          "or",
-          "polar_checkout_id.eq.polar_checkout_1,previous_checkout_ids.cs.{polar_checkout_1}",
-          null,
-        ],
+        ["eq", "paid_checkout_id", "polar_checkout_1"],
       ],
     });
     expect(mocks.queries).toHaveLength(4);
@@ -879,7 +1024,17 @@ describe("settleCheckoutLinkFromWebhook", () => {
   it("pays a link that replaced the session with a new one, recording the mismatch", async () => {
     mocks.subscriptionsGet.mockResolvedValue({ id: "sub_1", status: "active", ended_at: null });
     mocks.results.push({ data: [], error: null }); // no link follows the session now
-    mocks.results.push({ data: [{ id: LINK }], error: null }); // the link that replaced it
+    mocks.results.push({
+      data: [
+        {
+          id: LINK,
+          polar_checkout_id: "polar_checkout_2",
+          previous_checkout_ids: ["polar_checkout_0", "polar_checkout_1"],
+        },
+      ],
+      error: null,
+    }); // the link that replaced it
+    mocks.results.push({ data: [{ id: LINK }], error: null }); // written
     await settleCheckoutLinkFromWebhook("subscription.created", {
       id: "sub_1",
       checkout_id: "polar_checkout_1",
@@ -890,11 +1045,22 @@ describe("settleCheckoutLinkFromWebhook", () => {
     expect(mocks.subscriptionsGet).toHaveBeenCalledWith("sub_1");
     expect(mocks.queries[2]).toMatchObject({
       op: "update",
-      patch: { status: "paid", mismatch: "replaced", bought: { product: "prod_add", units: 2 } },
+      patch: {
+        status: "paid",
+        mismatch: "replaced",
+        bought: { product: "prod_add", units: 2 },
+        // It follows the session that paid from now on; the newer one is
+        // kept as replaced, so its later payment is a duplicate of this one.
+        polar_checkout_id: "polar_checkout_1",
+        paid_checkout_id: "polar_checkout_1",
+        previous_checkout_ids: ["polar_checkout_0", "polar_checkout_2"],
+      },
       filters: [
-        ["contains", "previous_checkout_ids", ["polar_checkout_1"]],
+        ["eq", "id", LINK],
         ["in", "status", ["open", "expired"]],
         ["is", "cancelled_at", null],
+        // Fenced on the session it followed when read.
+        ["eq", "polar_checkout_id", "polar_checkout_2"],
       ],
     });
 
@@ -939,9 +1105,11 @@ describe("settleCheckoutLinkFromWebhook", () => {
     mocks.results.push({ data: [], error: null }); // no link follows the session
     mocks.results.push({ data: [], error: null }); // none replaced it
     mocks.results.push({ data: { id: LINK }, error: null }); // the named one waits
+    pushCustomer();
     await settleCheckoutLinkFromWebhook("order.paid", {
       id: "o1",
       checkout_id: "polar_checkout_1",
+      customer_id: "cus_1",
       product_id: "prod_pro",
       net_amount: 900,
       currency: "usd",
@@ -949,9 +1117,18 @@ describe("settleCheckoutLinkFromWebhook", () => {
     });
     // A one-time order has no subscription to end: Polar is not asked.
     expect(mocks.subscriptionsGet).not.toHaveBeenCalled();
-    expect(mocks.queries[3]).toMatchObject({
+    // The payment came from the link account's own Polar customer.
+    expect(mocks.queries[4]).toMatchObject({
+      table: "users",
+      filters: [["eq", "id", "user-1"]],
+    });
+    expect(mocks.queries[5]).toMatchObject({
       op: "update",
-      patch: { status: "paid", polar_checkout_id: "polar_checkout_1" },
+      patch: {
+        status: "paid",
+        polar_checkout_id: "polar_checkout_1",
+        paid_checkout_id: "polar_checkout_1",
+      },
       filters: [
         ["eq", "id", LINK],
         ["in", "status", ["open", "expired"]],
@@ -977,9 +1154,11 @@ describe("settleCheckoutLinkFromWebhook", () => {
       mocks.results.push({ data: [], error: null });
       mocks.results.push({ data: [], error: null });
       mocks.results.push({ data: { id: LINK }, error: null });
+      pushCustomer();
       await settleCheckoutLinkFromWebhook(eventType, {
         ...data,
         checkout_id: "polar_checkout_2",
+        customer_id: "cus_1",
         metadata: { checkout_link: LINK },
       });
       expect(mocks.subscriptionsGet).toHaveBeenLastCalledWith("sub_2");
@@ -992,16 +1171,34 @@ describe("settleCheckoutLinkFromWebhook", () => {
     mocks.results.push({ data: [], error: null });
     mocks.results.push({ data: [], error: null });
     mocks.results.push({ data: { id: LINK }, error: null });
+    pushCustomer();
     await settleCheckoutLinkFromWebhook("subscription.created", {
       id: "sub_2",
       status: "active",
       checkout_id: "polar_checkout_2",
+      customer_id: "cus_1",
       metadata: { checkout_link: LINK },
     });
-    expect(mocks.queries[3]).toMatchObject({
+    expect(mocks.queries[5]).toMatchObject({
       op: "update",
       patch: { status: "paid", polar_checkout_id: "polar_checkout_2" },
     });
+  });
+
+  it("never pays or supersedes a link through the metadata for another customer's payment", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    mocks.results.push({ data: [], error: null });
+    mocks.results.push({ data: [], error: null });
+    mocks.results.push({ data: { id: LINK }, error: null });
+    pushCustomer("cus_1");
+    await settleCheckoutLinkFromWebhook("order.paid", {
+      id: "o3",
+      checkout_id: "polar_checkout_9",
+      customer_id: "cus_other",
+      product_id: "prod_pro",
+      metadata: { checkout_link: LINK },
+    });
+    expect(updatesOf(LINK)).toHaveLength(0);
   });
 
   it("marks a link paid by a live subscription, never a superseded one, and not when incomplete", async () => {
@@ -1028,6 +1225,8 @@ describe("settleCheckoutLinkFromWebhook", () => {
       filters: [
         ["eq", "polar_checkout_id", "c1"],
         ["eq", "status", "open"],
+        // One that replaced sessions is left to a read, which asks about those too.
+        ["filter", "previous_checkout_ids", "eq.{}"],
         ["lte", "expires_at", expect.any(String)],
       ],
     });

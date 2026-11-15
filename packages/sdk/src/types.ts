@@ -2124,7 +2124,9 @@ export type CheckoutItem =
  * was undone as a duplicate (the account already had that plan or add-on,
  * or what it added to had ended): its subscription was ended and a refund
  * of what it charged is under review. A link cancelled before it was
- * opened reads `expired`.
+ * opened reads `expired`. Rarely, `expired` turns `paid` afterwards: a
+ * payment Polar confirmed late still marks the link paid, so
+ * `waitForCheckout()` keeps polling for a minute after `expired`.
  */
 export type CheckoutStatus = "open" | "paid" | "expired" | "superseded";
 
@@ -2159,7 +2161,11 @@ export interface CheckoutLink {
   paidAt: string | null;
   /** Once paid: what the order or subscription holds. */
   bought: CheckoutBought | null;
-  /** Once paid: whether that is what the link asked for (null when unknown). */
+  /**
+   * Once paid: whether that is what the link asked for. Null while it is not
+   * known yet (a team plan's seats arrive with its subscription, after the
+   * order), which is no mismatch: only `false` is.
+   */
   matches: boolean | null;
 }
 
@@ -2168,6 +2174,12 @@ export interface WaitForCheckoutOptions {
   timeout?: number;
   /** Milliseconds between polls (default 3000, at least 1000). */
   pollInterval?: number;
+  /**
+   * How long to keep polling once the link reads `expired` before throwing
+   * CheckoutExpiredError (default 60000): a payment Polar confirms late can
+   * still turn it `paid`.
+   */
+  expiredGrace?: number;
   signal?: AbortSignal;
 }
 

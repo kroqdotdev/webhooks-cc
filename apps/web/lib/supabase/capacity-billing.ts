@@ -1169,8 +1169,11 @@ async function overageCheckout(
 
 /**
  * Overage started through a checkout link, with the maximum the account has
- * stored, else the default (`max`, which the link's summary names). Only
- * when overage has no subscription yet: turning a live one back on, or
+ * stored, else the one the link was made with, else the default (`max`,
+ * which the link's summary names). It is read again when the link is
+ * opened and rides on the session's metadata, so a maximum the person
+ * changed after the link was made is the one the subscription is given.
+ * Only when overage has no subscription yet: turning a live one back on, or
  * changing its maximum, charges nothing new and stays with a session
  * (setOverage()). Nothing is written until the subscription arrives.
  */
@@ -1198,12 +1201,11 @@ export async function overagePurchase(
   }
   const row = await requireEligible(account, { renewing: true, resource });
   const storedMax = resource === "pages" ? row.page_overage_max : row.overage_max;
-  const max =
-    linkMax !== undefined && isValidOverageMax(spec, linkMax)
+  const max = isValidOverageMax(spec, storedMax)
+    ? storedMax
+    : linkMax !== undefined && isValidOverageMax(spec, linkMax)
       ? linkMax
-      : storedMax > 0
-        ? storedMax
-        : spec.defaultOverageMax;
+      : spec.defaultOverageMax;
   return {
     expected: { product: overageProduct },
     max,
@@ -1502,7 +1504,8 @@ function linkOverageMax(
 
 /**
  * The overage maximum of the checkout link whose session made the
- * subscription: the link's own row, else the session's metadata.
+ * subscription: the session's metadata (the maximum read when the link was
+ * opened), else the link's own row.
  */
 async function linkOverageMaxFor(
   kind: CapacityKind,
@@ -1513,9 +1516,10 @@ async function linkOverageMaxFor(
   );
   if (!entry) return null;
   const [resource, spec] = entry;
+  const fromSession = linkOverageMax(kind, subscription);
+  if (fromSession) return fromSession;
   const fromRow = await checkoutLinkOverageMax(asNonEmptyString(subscription.checkout_id));
-  if (isValidOverageMax(spec, fromRow)) return { max: fromRow, resource };
-  return linkOverageMax(kind, subscription);
+  return isValidOverageMax(spec, fromRow) ? { max: fromRow, resource } : null;
 }
 
 /** Whether the add-on subscription is already stored (any account, any status). */
@@ -1598,7 +1602,11 @@ async function settleDuplicate(
   }
   // Before the revoke: a redelivery after it reads the subscription as
   // ended and never comes back here.
-  await supersedeCheckoutLinks(asNonEmptyString(subscription.checkout_id), subscription.metadata);
+  await supersedeCheckoutLinks(
+    asNonEmptyString(subscription.checkout_id),
+    subscription.metadata,
+    asNonEmptyString(subscription.customer_id)
+  );
   await revokeQuietly(subscriptionId);
 }
 
@@ -1637,7 +1645,11 @@ async function applyPaidOrder(
   if (granted?.unapplied === true) {
     // Domains added to a subscription that ended while the checkout was open.
     await refundFor(account, { order: orderId }, "addon_not_applied");
-    await supersedeCheckoutLinks(asNonEmptyString(data.checkout_id), data.metadata);
+    await supersedeCheckoutLinks(
+      asNonEmptyString(data.checkout_id),
+      data.metadata,
+      asNonEmptyString(data.customer_id)
+    );
     return;
   }
   await checkTopUpBase(data, granted, units);
@@ -1648,7 +1660,11 @@ async function applyPaidOrder(
     // purchase was, so it reads as a duplicate): record it now.
     if (granted.status === "duplicate" && granted.kind === "domain_increase") {
       await refundFor(account, { order: orderId }, "addon_not_applied");
-      await supersedeCheckoutLinks(asNonEmptyString(data.checkout_id), data.metadata);
+      await supersedeCheckoutLinks(
+        asNonEmptyString(data.checkout_id),
+        data.metadata,
+        asNonEmptyString(data.customer_id)
+      );
     }
     return;
   }

@@ -123,6 +123,9 @@ function CheckoutLinkContent() {
           status?: string;
           url?: string;
           summary?: string;
+          /** What the link buys, for the wording of a superseded link. */
+          kind?: string | null;
+          resource?: string | null;
         };
         const summary = result.summary ?? "";
         if (response.ok && result.status === "redirect" && result.url) {
@@ -136,7 +139,11 @@ function CheckoutLinkContent() {
             setPhase({
               kind,
               summary,
-              explanation: supersededExplanation(review?.kind, review?.resource),
+              // The answer's own kind and resource: a retried open has no review.
+              explanation: supersededExplanation(
+                result.kind ?? review?.kind,
+                result.kind ? result.resource : review?.resource
+              ),
             });
           } else if (kind === "paid" || kind === "processing" || kind === "expired") {
             setPhase({ kind, summary });

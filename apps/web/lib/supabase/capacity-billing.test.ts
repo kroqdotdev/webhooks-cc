@@ -25,6 +25,9 @@ const mockFns = vi.hoisted(() => ({
   markCheckoutLinkMismatch: vi.fn(),
 }));
 
+// The customer the event names, which a link named by its metadata must have.
+const CUSTOMER_OF_EVENT = null;
+
 vi.mock("@/lib/billing/refunds", () => ({ recordRefund: mockFns.recordRefund }));
 vi.mock("@/lib/billing/checkout-link-rows", () => ({
   checkoutLinkOverageMax: mockFns.checkoutLinkOverageMax,
@@ -649,7 +652,11 @@ describe("applyCapacityWebhookEvent: subscriptions nobody should keep paying for
     });
     // A checkout link whose session made it reads superseded, before the
     // revoke: a redelivery after it never comes back here.
-    expect(mockFns.supersedeCheckoutLinks).toHaveBeenCalledWith("co_second", undefined);
+    expect(mockFns.supersedeCheckoutLinks).toHaveBeenCalledWith(
+      "co_second",
+      undefined,
+      CUSTOMER_OF_EVENT
+    );
     expect(mockFns.supersedeCheckoutLinks.mock.invocationCallOrder[0]).toBeLessThan(
       mockFns.subscriptionsRevoke.mock.invocationCallOrder[0]
     );
@@ -766,7 +773,11 @@ describe("applyCapacityWebhookEvent: subscriptions nobody should keep paying for
     expect(mockFns.recordRefund.mock.invocationCallOrder[0]).toBeLessThan(
       mockFns.subscriptionsRevoke.mock.invocationCallOrder[0]
     );
-    expect(mockFns.supersedeCheckoutLinks).toHaveBeenCalledWith("co_domains_2", undefined);
+    expect(mockFns.supersedeCheckoutLinks).toHaveBeenCalledWith(
+      "co_domains_2",
+      undefined,
+      CUSTOMER_OF_EVENT
+    );
     expect(mockFns.supersedeCheckoutLinks.mock.invocationCallOrder[0]).toBeLessThan(
       mockFns.subscriptionsRevoke.mock.invocationCallOrder[0]
     );
@@ -810,7 +821,11 @@ describe("applyCapacityWebhookEvent: subscriptions nobody should keep paying for
       userId: "user_1",
       teamId: null,
     });
-    expect(mockFns.supersedeCheckoutLinks).toHaveBeenCalledWith("co_domains", undefined);
+    expect(mockFns.supersedeCheckoutLinks).toHaveBeenCalledWith(
+      "co_domains",
+      undefined,
+      CUSTOMER_OF_EVENT
+    );
   });
 
   it("records nothing for a deleted account's add-on Polar has ended since its first read", async () => {
@@ -854,7 +869,11 @@ describe("applyCapacityWebhookEvent: subscriptions nobody should keep paying for
       teamId: null,
     });
     // The link that bought them reads superseded, never paid.
-    expect(mockFns.supersedeCheckoutLinks).toHaveBeenCalledWith("co_domains", undefined);
+    expect(mockFns.supersedeCheckoutLinks).toHaveBeenCalledWith(
+      "co_domains",
+      undefined,
+      CUSTOMER_OF_EVENT
+    );
     expect(mockFns.subscriptionsUpdate).not.toHaveBeenCalled();
   });
 
@@ -1215,10 +1234,38 @@ describe("checkout link purchases", () => {
       })
     );
 
-    // Opened later, it keeps the maximum the link was made with.
+    // Opened later, it takes the maximum the account has stored now (the
+    // person may have changed it since), and only else the link's own.
     tables.users = proAccount({ overage_max: 500_000 });
+    const opened = await overagePurchase(USER, "user_1", "requests", 250_000);
+    expect(opened.max).toBe(500_000);
+    await opened.mint(LINK);
+    expect(mockFns.checkoutsCreate).toHaveBeenLastCalledWith(
+      expect.objectContaining({ metadata: expect.objectContaining({ overage_max: 500_000 }) })
+    );
+    tables.users = proAccount({ overage_max: 0 });
     expect((await overagePurchase(USER, "user_1", "requests", 250_000)).max).toBe(250_000);
-    expect((await overagePurchase(USER, "user_1")).max).toBe(500_000);
+  });
+
+  it("gives the subscription the maximum its session was opened with, over the link's own", async () => {
+    // Lowered after the link was made: the session carries the lower one.
+    mockFns.checkoutLinkOverageMax.mockResolvedValue(500_000);
+    mockFns.subscriptionsGet.mockResolvedValue({
+      id: "sub_overage",
+      status: "active",
+      checkout_id: "co_link",
+      metadata: { checkout_link: "link_1", overage_max: "100000" },
+      current_period_start: "2026-10-27T00:00:00Z",
+      current_period_end: "2026-11-27T00:00:00Z",
+    });
+    await applyCapacityWebhookEvent(
+      "subscription.created",
+      USER,
+      { resource: "requests", kind: "overage" },
+      { id: "sub_overage" }
+    );
+    expect(updates).toContainEqual({ table: "users", patch: { overage_max: 100_000 } });
+    expect(updates).not.toContainEqual({ table: "users", patch: { overage_max: 500_000 } });
   });
 
   it("stores the link's overage maximum when its subscription first arrives", async () => {

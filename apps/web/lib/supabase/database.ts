@@ -1245,6 +1245,7 @@ export interface Database {
           item: Json;
           url: string;
           polar_checkout_id: string | null;
+          paid_checkout_id: string | null;
           expected: Json | null;
           bought: Json | null;
           mismatch: "base" | "replaced" | null;
@@ -1271,6 +1272,7 @@ export interface Database {
           item?: Json;
           url: string;
           polar_checkout_id?: string | null;
+          paid_checkout_id?: string | null;
           expected?: Json | null;
           bought?: Json | null;
           mismatch?: "base" | "replaced" | null;
@@ -1285,7 +1287,9 @@ export interface Database {
           paid_at?: string | null;
         };
         Update: {
+          item?: Json;
           polar_checkout_id?: string | null;
+          paid_checkout_id?: string | null;
           expected?: Json | null;
           bought?: Json | null;
           mismatch?: "base" | "replaced" | null;

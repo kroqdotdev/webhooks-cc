@@ -10,6 +10,9 @@ const mockFns = vi.hoisted(() => ({
   supersedeCheckoutLinks: vi.fn(),
 }));
 
+// The customer the event names, which a link named by its metadata must have.
+const CUSTOMER_OF_EVENT = "cus_1";
+
 vi.mock("@/lib/billing/refunds", () => ({ recordRefund: mockFns.recordRefund }));
 vi.mock("@/lib/billing/checkout-link-rows", () => ({
   supersedeCheckoutLinks: mockFns.supersedeCheckoutLinks,
@@ -753,7 +756,11 @@ describe("plan events apply Polar's current state", () => {
 
     expect(polarRevoke).toHaveBeenCalledWith("sub_second");
     // A checkout link its session made reads superseded, never paid.
-    expect(mockFns.supersedeCheckoutLinks).toHaveBeenCalledWith("co_link", undefined);
+    expect(mockFns.supersedeCheckoutLinks).toHaveBeenCalledWith(
+      "co_link",
+      undefined,
+      CUSTOMER_OF_EVENT
+    );
     expect(userUpdatePayload()).toBeUndefined();
     expect(mockFns.recordRefund).toHaveBeenCalledWith({
       target: { subscription: "sub_second" },

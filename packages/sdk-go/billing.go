@@ -77,7 +77,9 @@ type CheckoutBought struct {
 // "superseded" (paid, but undone as a duplicate, a refund under review);
 // Summary says in one sentence what it buys. Once paid, Bought is what the
 // order or subscription holds and Matches whether that is what the link
-// asked for (nil when unknown).
+// asked for (nil while it is not known yet, say a team plan's seats before
+// its subscription's event; only false is a mismatch). Rarely, "expired"
+// turns "paid" when a payment Polar confirmed late arrives.
 type CheckoutLink struct {
 	ID        string          `json:"id"`
 	Status    string          `json:"status"`
@@ -144,11 +146,21 @@ type WaitForCheckoutOptions struct {
 	Timeout time.Duration
 	// PollInterval is the time between polls (default 3 seconds, at least 1).
 	PollInterval time.Duration
+	// ExpiredGrace is how long to keep polling once the link reads expired
+	// (0: a minute; negative: not at all): a payment Polar confirms late can
+	// still turn an expired link paid.
+	ExpiredGrace time.Duration
 }
 
+// checkoutExpiredGrace is WaitForCheckout's default ExpiredGrace.
+const checkoutExpiredGrace = time.Minute
+
 // WaitForCheckout waits until the person pays and returns the paid link. It
-// returns an error matching ErrCheckoutExpired when the link expires first,
-// ErrCheckoutSuperseded when its purchase was undone as a duplicate, and a *TimeoutError when opts.Timeout passes first.
+// returns an error matching ErrCheckoutExpired when the link expires first
+// (after polling for opts.ExpiredGrace more, since a late payment can still
+// turn an expired link paid), ErrCheckoutSuperseded when its purchase was
+// undone as a duplicate, and a *TimeoutError when opts.Timeout passes first.
+// A nil Matches on the paid link is not known yet, never a mismatch.
 func (s *BillingService) WaitForCheckout(ctx context.Context, id string, opts WaitForCheckoutOptions) (*CheckoutLink, error) {
 	if err := validateSegment(id, "checkout id"); err != nil {
 		return nil, err
@@ -158,7 +170,16 @@ func (s *BillingService) WaitForCheckout(ctx context.Context, id string, opts Wa
 	if opts.Timeout > 0 {
 		deadline = time.Now().Add(opts.Timeout)
 	}
+	grace := opts.ExpiredGrace
+	if grace == 0 {
+		grace = checkoutExpiredGrace
+	}
+	// When the link first read expired, while it may still turn paid.
+	var expiredAt time.Time
 	timedOut := func() error {
+		if !expiredAt.IsZero() {
+			return ErrCheckoutExpired
+		}
 		return &TimeoutError{After: opts.Timeout, message: "timed out waiting for the checkout to be paid"}
 	}
 	for {
@@ -169,10 +190,17 @@ func (s *BillingService) WaitForCheckout(ctx context.Context, id string, opts Wa
 		switch checkout.Status {
 		case "paid":
 			return checkout, nil
-		case "expired":
-			return nil, ErrCheckoutExpired
 		case "superseded":
 			return nil, ErrCheckoutSuperseded
+		case "expired":
+			if expiredAt.IsZero() {
+				expiredAt = time.Now()
+			}
+			if time.Since(expiredAt) >= grace {
+				return nil, ErrCheckoutExpired
+			}
+		default:
+			expiredAt = time.Time{}
 		}
 		wait := poll
 		if !deadline.IsZero() {

@@ -21,4 +21,14 @@ describe("supersededExplanation", () => {
     expect(supersededExplanation("monthly_blocks", "domains")).toContain("under review");
     expect(supersededExplanation("overage", "pages")).toContain("nothing was or will be charged");
   });
+
+  it("never says a subscription ended for monthly blocks or an unknown kind", () => {
+    // A top-up of monthly blocks is an order: no subscription ended for it.
+    for (const resource of ["requests", "pages", "domains"]) {
+      expect(supersededExplanation("monthly_blocks", resource)).not.toMatch(
+        /subscription was ended/i
+      );
+    }
+    expect(supersededExplanation(undefined, undefined)).not.toMatch(/subscription was ended/i);
+  });
 });

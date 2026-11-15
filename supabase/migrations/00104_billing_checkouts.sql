@@ -52,8 +52,14 @@ create table if not exists public.billing_checkouts (
   -- Our page for the link, on the site its asker uses (users.home_site).
   url                 text not null check (char_length(url) <= 2048),
   -- The Polar checkout session, once the person opened the link. Several
-  -- team links can share a team's one open session.
+  -- team links can share a team's one open session. A link paid through a
+  -- session it had replaced follows that session from then on (the newer
+  -- one moves into previous_checkout_ids).
   polar_checkout_id   text,
+  -- The session whose payment marked the link paid (or superseded), so a
+  -- later payment of another of its sessions never changes what it bought
+  -- or undoes a purchase that stands.
+  paid_checkout_id    text,
   -- What that session buys: { product, seats?, units? }.
   expected            jsonb,
   -- What the paid order or subscription holds: { product, seats, units, amount, currency }.
@@ -66,7 +72,8 @@ create table if not exists public.billing_checkouts (
   -- The sessions this link followed before a reopen replaced them (the
   -- purchase moved, say a top-up's starting count): Polar cannot end a
   -- session, so a payment of one still marks the link paid, with mismatch
-  -- 'replaced', rather than leave it open to expire.
+  -- 'replaced', rather than leave it open to expire, and a read past expiry
+  -- asks Polar about them too before it calls the link expired.
   previous_checkout_ids text[] not null default '{}'
                         check (cardinality(previous_checkout_ids) <= 20),
   -- When the asker cancelled the link. A tab that was opening it meanwhile
@@ -92,10 +99,14 @@ create table if not exists public.billing_checkouts (
 -- The webhook finds a link by its session.
 create index if not exists billing_checkouts_polar_checkout
   on public.billing_checkouts (polar_checkout_id) where polar_checkout_id is not null;
--- And by a session it replaced.
+-- And by a session it replaced. Not partial: a `@>` query carries no
+-- predicate that would prove a partial index's WHERE, so the planner would
+-- never use one.
 create index if not exists billing_checkouts_previous_checkouts
-  on public.billing_checkouts using gin (previous_checkout_ids)
-  where previous_checkout_ids <> '{}';
+  on public.billing_checkouts using gin (previous_checkout_ids);
+-- And by the session that paid it.
+create index if not exists billing_checkouts_paid_checkout
+  on public.billing_checkouts (paid_checkout_id) where paid_checkout_id is not null;
 -- The limits count an account's recent rows.
 create index if not exists billing_checkouts_user_created
   on public.billing_checkouts (user_id, created_at) where user_id is not null;

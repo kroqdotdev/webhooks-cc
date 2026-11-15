@@ -70,9 +70,26 @@ describe("billing checkout links", () => {
 
   it("throws when the link expires, or the wait runs out", async () => {
     globalThis.fetch = vi.fn().mockResolvedValue(answer(link("expired")));
-    await expect(client().billing.waitForCheckout(ID)).rejects.toBeInstanceOf(CheckoutExpiredError);
+    await expect(client().billing.waitForCheckout(ID, { expiredGrace: 0 })).rejects.toBeInstanceOf(
+      CheckoutExpiredError
+    );
+    // A wait that runs out while the link reads expired says it expired.
+    await expect(
+      client().billing.waitForCheckout(ID, { timeout: 1_500, pollInterval: 1_000 })
+    ).rejects.toBeInstanceOf(CheckoutExpiredError);
     globalThis.fetch = vi.fn().mockResolvedValue(answer(link("open")));
     await expect(client().billing.waitForCheckout(ID, { timeout: 0 })).rejects.toThrow("Timed out");
+  });
+
+  it("keeps polling a link that reads expired, since a late payment can still turn it paid", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(answer(link("expired")))
+      .mockResolvedValueOnce(answer(link("paid")));
+    globalThis.fetch = fetchMock;
+    const paid = await client().billing.waitForCheckout(ID, { pollInterval: 1_000 });
+    expect(paid.status).toBe("paid");
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
   it("throws when the purchase was undone as a duplicate plan", async () => {

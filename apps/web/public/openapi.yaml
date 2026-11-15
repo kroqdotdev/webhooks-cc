@@ -3468,7 +3468,10 @@ paths:
         with any of their keys, agents or sessions, and for a team link also the team's owner now,
         while the person who asked still owns the team. `url` is only there while it is open and
         before its expiry; Polar's checkout never is. A paid link carries `bought` and `matches`.
-        Poll every two seconds at most. Once the account or team is deleted, its links go with it
+        Rarely, `expired` turns `paid` afterwards: a payment Polar confirmed late still marks the
+        link paid (a link whose Polar checkout is still open is held for 15 minutes past its
+        expiry first), so a client waiting for the payment keeps polling for a minute after
+        `expired`. Poll every two seconds at most. Once the account or team is deleted, its links go with it
         and this answers 404.
       parameters:
         - name: id
@@ -5922,7 +5925,8 @@ components:
           nullable: true
           description: >-
             Once paid, whether what was bought is what the link asked for (the product, and its
-            seats or blocks); null when unknown.
+            seats or blocks); null while that is not known yet (a team plan's seats arrive with
+            its subscription, after the order), which is no mismatch: only false is.
 
     Approval:
       type: object

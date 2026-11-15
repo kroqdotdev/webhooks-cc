@@ -86,6 +86,27 @@ func TestWaitForCheckout(t *testing.T) {
 	}
 }
 
+// A payment Polar confirms late can still turn an expired link paid.
+func TestWaitForCheckoutKeepsPollingAnExpiredLink(t *testing.T) {
+	api := newFakeAPI(t)
+	var polls atomic.Int32
+	api.handle("GET /api/billing/checkouts/"+checkoutID, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		status := "expired"
+		if polls.Add(1) > 1 {
+			status = "paid"
+		}
+		_ = json.NewEncoder(w).Encode(checkoutAnswer(status))
+	})
+	link, err := api.client().Billing.WaitForCheckout(context.Background(), checkoutID, webhookscc.WaitForCheckoutOptions{PollInterval: time.Second})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if link.Status != "paid" || polls.Load() != 2 {
+		t.Fatalf("link = %+v after %d polls", link, polls.Load())
+	}
+}
+
 func TestWaitForCheckoutEnds(t *testing.T) {
 	api := newFakeAPI(t)
 	status := "expired"
@@ -94,7 +115,11 @@ func TestWaitForCheckoutEnds(t *testing.T) {
 		_ = json.NewEncoder(w).Encode(checkoutAnswer(status))
 	})
 	client := api.client()
-	if _, err := client.Billing.WaitForCheckout(context.Background(), checkoutID, webhookscc.WaitForCheckoutOptions{}); !errors.Is(err, webhookscc.ErrCheckoutExpired) {
+	if _, err := client.Billing.WaitForCheckout(context.Background(), checkoutID, webhookscc.WaitForCheckoutOptions{ExpiredGrace: -1}); !errors.Is(err, webhookscc.ErrCheckoutExpired) {
+		t.Fatalf("err = %v, want ErrCheckoutExpired", err)
+	}
+	// A wait that runs out while the link reads expired says it expired.
+	if _, err := client.Billing.WaitForCheckout(context.Background(), checkoutID, webhookscc.WaitForCheckoutOptions{Timeout: 1500 * time.Millisecond, PollInterval: time.Second}); !errors.Is(err, webhookscc.ErrCheckoutExpired) {
 		t.Fatalf("err = %v, want ErrCheckoutExpired", err)
 	}
 	status = "superseded"

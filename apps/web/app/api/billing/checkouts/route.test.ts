@@ -277,6 +277,7 @@ describe("POST /api/billing/checkouts/{id}/open", () => {
       kind: "redirect",
       url: "https://sandbox.polar.sh/checkout/polar_c_x",
       summary: view.summary,
+      link: { kind: "plan", resource: null },
     });
     const response = await open(LINK);
     expect(response.status).toBe(200);
@@ -284,6 +285,8 @@ describe("POST /api/billing/checkouts/{id}/open", () => {
       status: "redirect",
       url: "https://sandbox.polar.sh/checkout/polar_c_x",
       summary: view.summary,
+      kind: "plan",
+      resource: null,
     });
     expect(mocks.openCheckoutLink).toHaveBeenCalledWith(LINK, "user-1");
     expect(mocks.auditUserAction).toHaveBeenCalledWith(expect.any(Request), "user-1", {
@@ -294,9 +297,31 @@ describe("POST /api/billing/checkouts/{id}/open", () => {
   });
 
   it("answers where a link stands without a checkout", async () => {
-    mocks.openCheckoutLink.mockResolvedValue({ kind: "paid", summary: view.summary });
-    expect(await (await open(LINK)).json()).toEqual({ status: "paid", summary: view.summary });
+    mocks.openCheckoutLink.mockResolvedValue({
+      kind: "paid",
+      summary: view.summary,
+      link: { kind: "plan", resource: null },
+    });
+    expect(await (await open(LINK)).json()).toEqual({
+      status: "paid",
+      summary: view.summary,
+      kind: "plan",
+      resource: null,
+    });
     expect(mocks.auditUserAction).not.toHaveBeenCalled();
+  });
+
+  it("names what a superseded link bought, for a page that has no review to go on", async () => {
+    mocks.openCheckoutLink.mockResolvedValue({
+      kind: "superseded",
+      summary: "2 monthly blocks of 25,000 requests in all for the account.",
+      link: { kind: "monthly_blocks", resource: "requests" },
+    });
+    expect(await (await open(LINK)).json()).toMatchObject({
+      status: "superseded",
+      kind: "monthly_blocks",
+      resource: "requests",
+    });
   });
 
   it("refuses an API key or agent token: Polar's checkout never reaches one", async () => {

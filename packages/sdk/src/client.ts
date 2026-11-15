@@ -197,6 +197,11 @@ const IDEMPOTENT_METHODS = new Set(["GET", "HEAD", "OPTIONS", "PUT", "DELETE"]);
 declare const PKG_VERSION: string | undefined;
 const SDK_VERSION = typeof PKG_VERSION !== "undefined" ? PKG_VERSION : "0.0.0-dev";
 const WAIT_FOR_LOOKBACK_MS = 5 * 60 * 1000;
+/**
+ * How long waitForCheckout() keeps polling a link that reads expired: a
+ * payment Polar confirms late still marks it paid.
+ */
+const CHECKOUT_EXPIRED_GRACE_MS = 60_000;
 // How far before the newest request a wait's next poll starts. The receiver
 // stamps receivedAt before the capture commits, and a capture can wait its
 // turn behind others for the same account.
@@ -2777,9 +2782,11 @@ export class WebhooksCC {
 
     /**
      * Wait until the person pays. Resolves with the paid link; throws
-     * CheckoutExpiredError when it expires first, CheckoutSupersededError
-     * when its purchase was undone as a duplicate, TimeoutError
-     * when `timeout` passes first.
+     * CheckoutExpiredError when it expires first (after polling for
+     * `expiredGrace`, a minute by default, since a late payment can still
+     * turn an expired link paid), CheckoutSupersededError when its purchase
+     * was undone as a duplicate, TimeoutError when `timeout` passes first.
+     * `matches` null on the paid link is not known yet, never a mismatch.
      */
     waitForCheckout: async (
       id: string,
@@ -2788,8 +2795,13 @@ export class WebhooksCC {
       // At least a second apart: the status route allows two a second.
       const interval = Math.max(1_000, options.pollInterval ?? 3_000);
       const deadline = options.timeout === undefined ? Infinity : Date.now() + options.timeout;
+      const grace = Math.max(0, options.expiredGrace ?? CHECKOUT_EXPIRED_GRACE_MS);
+      // When the link first read expired, while it may still turn paid.
+      let expiredAt: number | null = null;
       const timedOut = () =>
-        new TimeoutError(options.timeout ?? 0, "Timed out waiting for the checkout to be paid");
+        expiredAt !== null
+          ? new CheckoutExpiredError(id)
+          : new TimeoutError(options.timeout ?? 0, "Timed out waiting for the checkout to be paid");
       for (;;) {
         options.signal?.throwIfAborted();
         const left = deadline - Date.now();
@@ -2798,8 +2810,11 @@ export class WebhooksCC {
           timeout: Number.isFinite(left) ? left : undefined,
         });
         if (checkout.status === "paid") return checkout;
-        if (checkout.status === "expired") throw new CheckoutExpiredError(id);
         if (checkout.status === "superseded") throw new CheckoutSupersededError(id);
+        if (checkout.status === "expired") {
+          expiredAt ??= Date.now();
+          if (Date.now() - expiredAt >= grace) throw new CheckoutExpiredError(id);
+        } else expiredAt = null;
         const remaining = deadline - Date.now();
         if (remaining <= 0) throw timedOut();
         await sleep(Math.min(interval, remaining));
