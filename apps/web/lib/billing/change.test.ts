@@ -61,6 +61,26 @@ vi.mock("@/lib/supabase/admin", () => ({
       }
       return { data: null, error: null };
     }),
+    // billing_change_locks, as billingChangeStillRunning reads it: a lease
+    // held here never runs out.
+    from: () => {
+      const filters: Record<string, string> = {};
+      const query = {
+        select: () => query,
+        eq: (column: string, value: string) => {
+          filters[column] = value;
+          return query;
+        },
+        maybeSingle: async () => ({
+          data:
+            polar.locks.get(filters.account_key) === filters.holder
+              ? { expires_at: "2099-01-01T00:00:00Z" }
+              : null,
+          error: null,
+        }),
+      };
+      return query;
+    },
   }),
 }));
 
@@ -177,7 +197,9 @@ const {
   loadBillingQuote,
   parseBillingChangeRequest,
   quoteFingerprint,
+  billingChangeStillRunning,
   runBillingChange,
+  quotedSeatDirection,
   sameSeatsSentence,
   teamAccountLine,
 } = await import("./change");
@@ -411,8 +433,46 @@ describe("running an approved change", () => {
     expect(teamBilling.updateTeamSeats).toHaveBeenCalledWith("owner", TEAM, 5, {
       currentSeats: 3,
       periodEnd: "2026-12-01T00:00:00.000Z",
+      direction: "increase",
     });
     // The account's lease is given back.
+    expect(polar.locks.size).toBe(0);
+  });
+
+  test("an approval's run holds the lease under its id and records its result before release", async () => {
+    const approved = await quoteNow();
+    const approvalId = "00000000-0000-4000-8000-0000000000aa";
+    const seen: Array<{ held: string | undefined; running: boolean }> = [];
+    const { outcome } = await runBillingChange("owner", ask, approved, {
+      holder: approvalId,
+      whileHeld: async (run) => {
+        expect(run.outcome).toEqual({ executed: true, applied: "now" });
+        seen.push({
+          held: polar.locks.get(`team:${TEAM}`),
+          running: await billingChangeStillRunning("owner", TEAM, approvalId, 0),
+        });
+      },
+    });
+    expect(outcome.executed).toBe(true);
+    expect(seen).toEqual([{ held: approvalId, running: true }]);
+    expect(polar.locks.size).toBe(0);
+    // Given back and long started: the run is over.
+    expect(await billingChangeStillRunning("owner", TEAM, approvalId, 0)).toBe(false);
+    // Just started, before it could take the lease: still running.
+    expect(await billingChangeStillRunning("owner", TEAM, approvalId, Date.now() - 5_000)).toBe(
+      true
+    );
+  });
+
+  test("a failure recording the result under the lease leaves the outcome as it was", async () => {
+    const approved = await quoteNow();
+    const { outcome } = await runBillingChange("owner", ask, approved, {
+      whileHeld: async () => {
+        throw new Error("database down");
+      },
+    });
+    expect(outcome).toEqual({ executed: true, applied: "now" });
+    expect(observability.reportError).toHaveBeenCalled();
     expect(polar.locks.size).toBe(0);
   });
 
@@ -877,6 +937,21 @@ describe("plan switches made now", () => {
     const approved = (await loadBillingQuote("owner", up)).at(Date.now());
     const { outcome } = await runBillingChange("owner", up, approved);
     expect(outcome).toMatchObject({ executed: false, code: "quote_changed" });
+  });
+});
+
+describe("quotedSeatDirection", () => {
+  test("reads the way the quote priced it, on Polar's seats", async () => {
+    const more = await quoteNow();
+    expect(quotedSeatDirection(more, 5)).toBe("increase");
+    const fewer = {
+      ...more,
+      applies: "renewal" as const,
+      basis: { ...more.basis, currentSeats: 3 },
+    };
+    expect(quotedSeatDirection(fewer, 2)).toBe("reduction");
+    const same = { ...more, basis: { ...more.basis, currentSeats: 5 } };
+    expect(quotedSeatDirection(same, 5)).toBe("same");
   });
 });
 

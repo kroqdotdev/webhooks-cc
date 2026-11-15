@@ -2,18 +2,29 @@ import { beforeEach, describe, expect, test, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   row: null as Record<string, unknown> | null,
+  /** Rows answered after the first read (the poll's re-read), in order. */
+  later: [] as Array<Record<string, unknown> | null>,
   unrecorded: undefined as
-    { afterMs: number; result(params: unknown): Record<string, unknown> } | undefined,
+    | {
+        running(run: unknown): Promise<boolean>;
+        result(params: unknown): Record<string, unknown>;
+      }
+    | undefined,
 }));
 
 vi.mock("@/lib/observability", () => ({ reportError: vi.fn() }));
 
 vi.mock("@/lib/supabase/admin", () => ({
   createAdminClient: () => {
+    let reads = 0;
     const query = {
       select: () => query,
       eq: () => query,
-      maybeSingle: async () => ({ data: mocks.row, error: null }),
+      maybeSingle: async () => {
+        reads += 1;
+        const data = reads > 1 && mocks.later.length > 0 ? mocks.later.shift()! : mocks.row;
+        return { data, error: null };
+      },
     };
     return { from: () => query };
   },
@@ -77,24 +88,46 @@ describe("an approval that ran and left no result", () => {
   const asker = { userId: "owner", keyId: "key-1" };
   const unknown = { executed: null, code: "outcome_unknown", reason: "Check billing." };
 
+  const running = vi.fn<(run: unknown) => Promise<boolean>>();
+
   beforeEach(() => {
     vi.useFakeTimers();
     vi.setSystemTime(now);
-    mocks.unrecorded = { afterMs: 5 * 60_000, result: () => unknown };
+    mocks.later = [];
+    running.mockReset();
+    mocks.unrecorded = { running, result: () => unknown };
   });
 
-  test("still reads as running while a run could be going", async () => {
-    mocks.row = row(60_000);
+  test("still reads as running while the action says its run is going, however long", async () => {
+    // A slow run past what a run usually takes, still holding its lease.
+    mocks.row = row(10 * 60_000);
+    running.mockResolvedValue(true);
     const polled = await pollApproval(String(mocks.row.id), asker);
     expect(polled?.approval.status).toBe("approved");
     expect(polled?.result).toBeUndefined();
+    expect(running).toHaveBeenCalledWith({
+      approvalId: mocks.row.id,
+      userId: "owner",
+      params: {},
+      startedAtMs: now - 10 * 60_000,
+    });
   });
 
-  test("answers the action's unknown outcome once no run can still be going", async () => {
-    mocks.row = row(6 * 60_000);
+  test("answers the action's unknown outcome once its run is over without a result", async () => {
+    mocks.row = row(60_000);
+    running.mockResolvedValue(false);
     const polled = await pollApproval(String(mocks.row.id), asker);
     expect(polled?.approval.status).toBe("completed");
     expect(polled?.result).toEqual(unknown);
+  });
+
+  test("reads a result the run recorded just before it ended, never the unknown one", async () => {
+    mocks.row = row(60_000);
+    const made = { executed: true, applied: "now" };
+    mocks.later = [{ result: made }];
+    running.mockResolvedValue(false);
+    const polled = await pollApproval(String(mocks.row.id), asker);
+    expect(polled?.result).toEqual(made);
   });
 
   test("an action without one keeps the asker waiting until the row expires", async () => {

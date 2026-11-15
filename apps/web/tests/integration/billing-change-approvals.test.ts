@@ -497,13 +497,36 @@ describe("billing changes an agent asks for", () => {
           expires_at: new Date(Date.now() - agoMs + 15 * 60_000).toISOString(),
         })
         .eq("id", id);
-    await markCompleted(30_000);
-    const running = await pollApproval(id, { userId: owner, keyId: ownerKey });
-    expect(running?.approval.status).toBe("approved");
-    expect(running?.result).toBeUndefined();
+    const asker = { userId: owner, keyId: ownerKey };
+    // Just started, before its run could take the lease.
+    await markCompleted(5_000);
+    const starting = await pollApproval(id, asker);
+    expect(starting?.approval.status).toBe("approved");
+    expect(starting?.result).toBeUndefined();
 
-    await markCompleted(6 * 60_000);
-    const lost = await pollApproval(id, { userId: owner, keyId: ownerKey });
+    // Long started, but its run still holds the account's lease (under the
+    // approval's id): a slow run is still a run.
+    await markCompleted(10 * 60_000);
+    const { data: claimed } = await admin.rpc("claim_billing_change_lock", {
+      p_account_key: `team:${teamId}`,
+      p_holder: id,
+      p_seconds: 120,
+    });
+    expect(claimed).toBe(true);
+    try {
+      const slow = await pollApproval(id, asker);
+      expect(slow?.approval.status).toBe("approved");
+      expect(slow?.result).toBeUndefined();
+    } finally {
+      await admin.rpc("release_billing_change_lock", {
+        p_account_key: `team:${teamId}`,
+        p_holder: id,
+      });
+    }
+
+    // No lease and no result: the run is over and its outcome unknown.
+    await markCompleted(60_000);
+    const lost = await pollApproval(id, asker);
     expect(lost?.approval.status).toBe("completed");
     expect(lost?.result).toMatchObject({
       executed: null,

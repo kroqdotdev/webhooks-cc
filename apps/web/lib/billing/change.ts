@@ -44,11 +44,13 @@ import {
   resubscribeTeam,
   TeamBillingError,
   updateTeamSeats,
+  type SeatDirection,
 } from "@/lib/supabase/team-billing";
 import { reportError } from "@/lib/observability";
 import { createPolarClient, loggablePolarError } from "@/lib/polar";
 import { POLAR_CALL_MS, withPolarMutationGuard, type PolarMutationGuard } from "./polar-guard";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { withSupabaseCallTimeout } from "@/lib/supabase/call-timeout";
 import { formatCents, teamPlanLabel } from "@/lib/team-pricing";
 import { isUuid } from "@/lib/uuid";
 import { cleanUntrustedName } from "@/lib/untrusted-name";
@@ -1113,12 +1115,15 @@ const RUN_DEADLINE_MS = 100_000;
 /** A lease renewal slower than this counts as failed: the change stops before Polar. */
 const EXTEND_TIMEOUT_MS = 5_000;
 
+/** The most one database call of a run may take (withSupabaseCallTimeout). */
+const SUPABASE_CALL_MS = 10_000;
+
 /**
- * When a billing approval's run is surely over: past its deadline, its last
- * Polar call and the lease that call renewed. A completed approval with no
- * result by then answers BILLING_OUTCOME_UNKNOWN.
+ * How long after an approval starts its run the poll reads it as running
+ * though it holds no lease yet: taking the lease is the run's first call,
+ * cut off at SUPABASE_CALL_MS.
  */
-export const BILLING_CHANGE_MAX_RUN_MS = 5 * 60_000;
+const LEASE_CLAIM_GRACE_MS = 30_000;
 
 /** The billing account a change is for, as the lease names it. */
 function accountKey(userId: string, teamId: string | null): string {
@@ -1202,6 +1207,21 @@ class ChangeLease implements PolarMutationGuard {
   }
 }
 
+export interface BillingChangeRunOptions {
+  /**
+   * Who holds the lease: an approval's id, so the asker's poll can tell a
+   * run still going from one that ended without a result
+   * (billingChangeStillRunning). Otherwise a new id.
+   */
+  holder?: string;
+  /**
+   * Called with the outcome while the lease is still held: an approval
+   * records its result here, so no poll ever finds the lease gone and the
+   * result not yet kept. A failure is reported and the run's outcome stands.
+   */
+  whileHeld?: (run: BillingChangeRun) => Promise<void>;
+}
+
 /**
  * Makes an approved change, only if a fresh quote, priced at the moment of
  * the ask, equals the approved one (same plan, prices, seats, period,
@@ -1215,17 +1235,32 @@ class ChangeLease implements PolarMutationGuard {
  * pass against the state before either. The lease is renewed, and must
  * still be this run's, right before each Polar call that changes or
  * charges anything (ChangeLease), and a run that passes its deadline makes
- * no further call. BillingChangeRetry means nothing was touched (the lease
- * is held or was lost before any change, or billing could not be read),
- * and the approval may be approved again.
+ * no further call. Every database call of the run is cut off after
+ * SUPABASE_CALL_MS, so a hung request cannot hold a run past its lease,
+ * where the asker's poll would read it as over (billingChangeStillRunning).
+ * BillingChangeRetry means nothing was touched (the lease is held or was
+ * lost before any change, or billing could not be read), and the approval
+ * may be approved again.
  */
 export async function runBillingChange(
   userId: string,
   request: BillingChangeRequest,
-  approved: BillingQuote
+  approved: BillingQuote,
+  options: BillingChangeRunOptions = {}
+): Promise<BillingChangeRun> {
+  return withSupabaseCallTimeout(SUPABASE_CALL_MS, () =>
+    runLeased(userId, request, approved, options)
+  );
+}
+
+async function runLeased(
+  userId: string,
+  request: BillingChangeRequest,
+  approved: BillingQuote,
+  options: BillingChangeRunOptions
 ): Promise<BillingChangeRun> {
   const key = accountKey(userId, request.teamId);
-  const holder = crypto.randomUUID();
+  const holder = options.holder ?? crypto.randomUUID();
   const admin = createAdminClient();
   const { data: claimed, error: claimError } = await admin.rpc("claim_billing_change_lock", {
     p_account_key: key,
@@ -1247,7 +1282,17 @@ export async function runBillingChange(
   }
   const lease = new ChangeLease(key, holder);
   try {
-    return await withPolarMutationGuard(lease, () => runLocked(userId, request, approved, lease));
+    const run = await withPolarMutationGuard(lease, () =>
+      runLocked(userId, request, approved, lease)
+    );
+    if (options.whileHeld) {
+      try {
+        await options.whileHeld(run);
+      } catch (error) {
+        reportError("Recording a billing change's outcome under its lease failed", error);
+      }
+    }
+    return run;
   } finally {
     const { error } = await admin.rpc("release_billing_change_lock", {
       p_account_key: key,
@@ -1256,6 +1301,34 @@ export async function runBillingChange(
     // It expires on its own; until then the account's next change waits.
     if (error) reportError("Releasing the billing change lease failed", error);
   }
+}
+
+/**
+ * Whether an approval's billing change may still be running, for the
+ * asker's poll while the approval has no result: it does while its lease
+ * (held under the approval's id, see BillingChangeRunOptions) is held and
+ * unexpired, and for LEASE_CLAIM_GRACE_MS after it started, before the
+ * lease is taken. A lease that cannot be read counts as held: the poll
+ * asks again rather than answer that the outcome is unknown.
+ */
+export async function billingChangeStillRunning(
+  userId: string,
+  teamId: string | null,
+  holder: string,
+  startedAtMs: number
+): Promise<boolean> {
+  if (Date.now() - startedAtMs < LEASE_CLAIM_GRACE_MS) return true;
+  const { data, error } = await createAdminClient()
+    .from("billing_change_locks")
+    .select("expires_at")
+    .eq("account_key", accountKey(userId, teamId))
+    .eq("holder", holder)
+    .maybeSingle();
+  if (error) {
+    reportError("Reading a billing change's lease failed", error);
+    return true;
+  }
+  return data !== null && Date.parse(data.expires_at) > Date.now();
 }
 
 async function runLocked(
@@ -1406,9 +1479,12 @@ async function makeChange(
         // The seats as the database had them: what the increase compares
         // with right before Polar is asked (Polar's may differ after a
         // failed write, and asking again for its count is how that heals).
+        // The direction is the quote's, priced on Polar's seats: when the
+        // database would take the change another way, it refuses.
         await updateTeamSeats(userId, teamId, change.seats, {
           currentSeats: Number(quote.basis.teamSeats ?? quote.basis.currentSeats),
           periodEnd: String(quote.basis.periodEnd),
+          direction: quotedSeatDirection(quote, change.seats),
         });
         return {
           outcome: { executed: true, applied: quote.applies === "renewal" ? "renewal" : "now" },
@@ -1464,6 +1540,17 @@ async function makeChange(
     default:
       throw new BillingChangeRefusal(400, "Seats belong to a team: name the team", "invalid_seats");
   }
+}
+
+/**
+ * Which way a seat quote priced the change (`applies`): fewer seats wait for
+ * the renewal, more are charged now, and the same count (cancelling a
+ * waiting reduction) applies now with no charge. The quote's currentSeats
+ * are Polar's.
+ */
+export function quotedSeatDirection(quote: BillingQuote, seats: number): SeatDirection {
+  if (quote.applies === "renewal") return "reduction";
+  return seats === Number(quote.basis.currentSeats) ? "same" : "increase";
 }
 
 /**

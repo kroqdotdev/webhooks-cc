@@ -4,7 +4,13 @@ import { reportError } from "@/lib/observability";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { Json } from "@/lib/supabase/database";
 import { compareNetworks, type DeviceRequester, type NetworkMatch } from "@/lib/device-requester";
-import { ActionError, actionSpec, type ActionDetail, type ApprovalAction } from "./actions";
+import {
+  ActionError,
+  actionSpec,
+  type ActionDetail,
+  type ApprovalAction,
+  type RunContext,
+} from "./actions";
 
 /** How long a person has to answer, and then the asker to collect. */
 export const APPROVAL_TTL_MS = 15 * 60_000;
@@ -364,7 +370,12 @@ export async function decideApproval(
   let stored: Json;
   let forBrowser: Record<string, unknown> | undefined;
   try {
-    ({ stored, browser: forBrowser } = await spec.run(row.user_id, row.params, input));
+    ({ stored, browser: forBrowser } = await spec.run(
+      row.user_id,
+      row.params,
+      input,
+      runContext(row.id)
+    ));
   } catch (err) {
     // Only a clean refusal (ActionError: checked, nothing done) gives the
     // approval back to approve again. Anything else may have failed after
@@ -409,6 +420,22 @@ export async function decideApproval(
   };
 }
 
+/** What a run is told of its approval: its id, and a way to keep its result early. */
+function runContext(id: string): RunContext {
+  return {
+    approvalId: id,
+    async recordResult(stored) {
+      const { error } = await createAdminClient()
+        .from("approvals")
+        .update({ result: stored })
+        .eq("id", id)
+        .eq("status", "completed")
+        .is("result", null);
+      if (error) throw error;
+    },
+  };
+}
+
 /**
  * The asker's poll. Once approved, the first poll runs the action and hands
  * over its result; the approval is then completed, and later polls see only
@@ -445,12 +472,33 @@ export async function pollApproval(
     }
     // Still running, or it ran and its result was never recorded (a crash).
     // An action that says what that means (a billing change: it may or may
-    // not have been made) answers it once the run is surely over; the rest
-    // leave the asker waiting until the row expires.
+    // not have been made) answers it once its run is over; the rest leave
+    // the asker waiting until the row expires.
     const unrecorded = actionSpec(row.action).unrecorded;
-    const startedAt = new Date(row.completed_at ?? row.created_at).getTime();
-    if (unrecorded && Date.now() - startedAt >= unrecorded.afterMs) {
-      return { approval: view(row), result: unrecorded.result(row.params) };
+    if (unrecorded) {
+      const running = await unrecorded.running({
+        approvalId: row.id,
+        userId: row.user_id,
+        params: row.params,
+        startedAtMs: new Date(row.completed_at ?? row.created_at).getTime(),
+      });
+      if (!running) {
+        // The run may have recorded its result just before it ended.
+        const { data: again, error: againError } = await admin
+          .from("approvals")
+          .select("result")
+          .eq("id", row.id)
+          .maybeSingle();
+        if (againError) throw againError;
+        const recorded = (again as { result: Json | null } | null)?.result ?? null;
+        return {
+          approval: view(row),
+          result:
+            recorded !== null
+              ? (recorded as Record<string, unknown>)
+              : unrecorded.result(row.params),
+        };
+      }
     }
     const expired = new Date(row.expires_at).getTime() <= Date.now();
     return { approval: { ...view(row), status: expired ? "expired" : "approved" } };
@@ -471,7 +519,7 @@ export async function pollApproval(
   const spec = actionSpec(row.action);
   let ran: { result: Record<string, unknown>; stored: Json };
   try {
-    ran = await spec.run(row.user_id, row.params);
+    ran = await spec.run(row.user_id, row.params, undefined, runContext(row.id));
   } catch (err) {
     // Give the approval back, so the asker can try again in its window
     // (after freeing a key slot, say).

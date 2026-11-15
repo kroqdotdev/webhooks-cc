@@ -40,8 +40,8 @@ import {
 } from "@/lib/integrations/google";
 import { googleRefreshToken, listGoogleConnections } from "@/lib/supabase/google-connections";
 import {
-  BILLING_CHANGE_MAX_RUN_MS,
   BILLING_OUTCOME_UNKNOWN,
+  billingChangeStillRunning,
   BillingChangeRetry,
   cleanTeamName,
   loadBillingQuote,
@@ -50,6 +50,7 @@ import {
   parseBillingChangeRequest,
   refusalOf,
   runBillingChange,
+  type BillingChangeOutcome,
   type BillingChangeRequest,
   type BillingQuote,
 } from "@/lib/billing/change";
@@ -117,7 +118,8 @@ interface ActionSpec<P> {
   run(
     userId: string,
     params: P,
-    input?: unknown
+    input?: unknown,
+    context?: RunContext
   ): Promise<{
     result: Record<string, unknown>;
     stored: Json;
@@ -131,11 +133,34 @@ interface ActionSpec<P> {
   undo?(userId: string, stored: Json): Promise<void>;
   /**
    * What the asker reads for an approval that ran ("approve" only) and has
-   * no recorded result `afterMs` after it started, when no run can still be
-   * going (a crash mid-run, or a result that could not be written). Without
-   * it the asker reads "approved" until the row expires.
+   * no recorded result once its run is over (`running` says it no longer
+   * can be going: a crash mid-run, or a result that could not be written).
+   * Without it the asker reads "approved" until the row expires.
    */
-  unrecorded?: { afterMs: number; result(params: P): Record<string, unknown> };
+  unrecorded?: {
+    running(run: UnrecordedRun<P>): Promise<boolean>;
+    result(params: P): Record<string, unknown>;
+  };
+}
+
+/** What a run knows of the approval it runs for. */
+export interface RunContext {
+  approvalId: string;
+  /**
+   * Keeps `stored` as the approval's result now, before the run returns
+   * (the store records it again after): a billing change records it while
+   * it still holds its lease.
+   */
+  recordResult(stored: Json): Promise<void>;
+}
+
+/** An approval that ran and has no result yet, as `unrecorded.running` reads it. */
+export interface UnrecordedRun<P> {
+  approvalId: string;
+  userId: string;
+  params: P;
+  /** When the run started (the approval completed). */
+  startedAtMs: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -817,24 +842,39 @@ const billingChange: ActionSpec<BillingParams> = {
     approximate: quote.approximate,
     ...(typeof quote.maxPeriodCents === "number" ? { maxPeriodCents: quote.maxPeriodCents } : {}),
   }),
-  // A run ends within its lease (runBillingChange); past it with no result,
-  // the process died mid-run, after Polar may have made the change.
+  // The run holds the account's lease under the approval's id, and records
+  // its result before giving the lease back: with no result, no lease and
+  // the start well past, the process died mid-run, after Polar may have
+  // made the change.
   unrecorded: {
-    afterMs: BILLING_CHANGE_MAX_RUN_MS,
+    running: ({ approvalId, userId, params, startedAtMs }) =>
+      billingChangeStillRunning(userId, params.teamId, approvalId, startedAtMs),
     result: ({ quote }) => ({ ...BILLING_OUTCOME_UNKNOWN, change: quote.change }),
   },
-  async run(userId, { teamId, change, quote }) {
+  async run(userId, { teamId, change, quote }, _input, context) {
+    // The checkout's link goes to the approving browser only: the asker
+    // never gets a link that pays on the owner's card.
+    const resultOf = (outcome: BillingChangeOutcome) =>
+      ({ ...outcome, change: quote.change }) as Record<string, unknown>;
     let run;
     try {
-      run = await runBillingChange(userId, { teamId, change }, quote);
+      run = await runBillingChange(
+        userId,
+        { teamId, change },
+        quote,
+        context
+          ? {
+              holder: context.approvalId,
+              whileHeld: (made) => context.recordResult(resultOf(made.outcome) as Json),
+            }
+          : {}
+      );
     } catch (error) {
       // Nothing was touched: the approval goes back to pending.
       if (error instanceof BillingChangeRetry) throw new ActionError(error.status, error.message);
       throw error;
     }
-    // The checkout's link goes to the approving browser only: the asker
-    // never gets a link that pays on the owner's card.
-    const result = { ...run.outcome, change: quote.change } as Record<string, unknown>;
+    const result = resultOf(run.outcome);
     return {
       result,
       stored: result as Json,

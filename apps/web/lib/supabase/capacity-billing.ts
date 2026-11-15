@@ -21,6 +21,7 @@ import {
   loggablePolarError,
   type CapacityProductIds,
 } from "@/lib/polar";
+import { currentPolarMutationGuard } from "@/lib/billing/polar-guard";
 import { recordRefund, type RefundTarget } from "@/lib/billing/refunds";
 import { reportError } from "@/lib/observability";
 import { planEntitlements, teamAllowance, teamEntitlements } from "@/lib/entitlements";
@@ -859,11 +860,15 @@ export async function setOverage(
   const polar = createPolarClient();
 
   if (!options.enabled) {
-    await writeOverageMax(account, 0, resource);
+    const previousMax = await readOverageMax(account, resource);
+    await changeOverageMax(account, 0, previousMax, resource, async () => {
+      if (current && !current.cancel_at_period_end) {
+        await polar.subscriptions.update(current.polar_subscription_id, {
+          cancel_at_period_end: true,
+        });
+      }
+    });
     if (current && !current.cancel_at_period_end) {
-      await polar.subscriptions.update(current.polar_subscription_id, {
-        cancel_at_period_end: true,
-      });
       await markSubscription(current.id, { cancel_at_period_end: true, canceled_with_plan: false });
     } else if (current?.canceled_with_plan) {
       // Ending with the plan already: turned off, it must not come back with it.
@@ -893,26 +898,85 @@ export async function setOverage(
       "The last overage payment failed. Update your payment method under Invoices and payment method first."
     );
   }
-  await writeOverageMax(account, maxRequests, resource);
+  // The customer first: making one is a Polar call, and the maximum is
+  // written only once nothing but the change itself is left to fail.
+  const customerId = current ? null : await ensureCustomer(account, actingUserId);
+  const checkoutUrl = await changeOverageMax(
+    account,
+    maxRequests,
+    storedMax,
+    resource,
+    async () => {
+      if (customerId !== null) {
+        const checkout = await polar.checkouts.create({
+          products: [overageProduct],
+          customer_id: customerId,
+          success_url: await successUrl(account, "overage", spec),
+          metadata: { capacity: "overage", resource },
+        });
+        return checkout.url;
+      }
+      if (current?.cancel_at_period_end) {
+        await polar.subscriptions.update(current.polar_subscription_id, {
+          cancel_at_period_end: false,
+        });
+      }
+      return null;
+    }
+  );
+  if (checkoutUrl !== null) return { kind: "checkout", url: checkoutUrl };
 
-  if (!current) {
-    const customerId = await ensureCustomer(account, actingUserId);
-    const checkout = await polar.checkouts.create({
-      products: [overageProduct],
-      customer_id: customerId,
-      success_url: await successUrl(account, "overage", spec),
-      metadata: { capacity: "overage", resource },
-    });
-    return { kind: "checkout", url: checkout.url };
-  }
-
-  if (current.cancel_at_period_end) {
-    await polar.subscriptions.update(current.polar_subscription_id, {
-      cancel_at_period_end: false,
-    });
+  if (current?.cancel_at_period_end) {
     await markSubscription(current.id, { cancel_at_period_end: false, canceled_with_plan: false });
   }
   return { kind: "updated" };
+}
+
+/**
+ * Writes the overage maximum, then makes the Polar call that goes with it
+ * (`polarCall`, which may make none). Under a billing change an owner
+ * approved, the change's lease is checked before the write (the Polar
+ * mutation guard), so a refusal there leaves the maximum as it was and
+ * "nothing was changed" stays true. When the Polar call fails, the
+ * previous maximum is written back: Polar did not take the change, so the
+ * account must not count against a maximum nobody got.
+ */
+async function changeOverageMax<T>(
+  account: CapacityAccount,
+  max: number,
+  previousMax: number,
+  resource: CapacityResource,
+  polarCall: () => Promise<T>
+): Promise<T> {
+  await currentPolarMutationGuard()?.beforeMutation("overage.max");
+  await writeOverageMax(account, max, resource);
+  try {
+    return await polarCall();
+  } catch (error) {
+    if (previousMax !== max) {
+      try {
+        await writeOverageMax(account, previousMax, resource);
+      } catch (restoreError) {
+        reportError("Restoring the overage maximum after a failed Polar call failed", restoreError);
+      }
+    }
+    throw error;
+  }
+}
+
+async function readOverageMax(
+  account: CapacityAccount,
+  resource: CapacityResource
+): Promise<number> {
+  const admin = createAdminClient();
+  const column = resource === "pages" ? "page_overage_max" : "overage_max";
+  const { data, error } =
+    account.kind === "team"
+      ? await admin.from("teams").select(column).eq("id", account.teamId).maybeSingle()
+      : await admin.from("users").select(column).eq("id", account.userId).maybeSingle();
+  if (error) throw error;
+  const value = (data as Record<string, unknown> | null)?.[column];
+  return typeof value === "number" ? value : 0;
 }
 
 async function writeOverageMax(

@@ -254,7 +254,8 @@ export async function changePlanForUser(
   const { productId, applies } = planChangeFor(user, plan, interval);
   const now = applies === "now";
 
-  // Checked with no await before the update.
+  // Checked right before the update; the guarded Polar call still awaits
+  // the lease renewal after it, which the minute's margin covers.
   if (approved && now && pastApprovedPeriod(approved.periodEnd)) {
     throw new BillingActionError("quote_changed", "The billing period moved since this was priced");
   }

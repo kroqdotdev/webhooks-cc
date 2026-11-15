@@ -2050,6 +2050,12 @@ export interface Database {
       };
       // Staff, support tickets and ops metrics (migration 00087).
       /** Sessions a site switch carried the second factor to (migration 00088). */
+      billing_change_locks: {
+        Row: { account_key: string; holder: string; expires_at: string };
+        Insert: { account_key: string; holder: string; expires_at: string };
+        Update: { account_key?: string; holder?: string; expires_at?: string };
+        Relationships: [];
+      };
       mfa_trusted_sessions: {
         Row: { session_id: string; user_id: string; created_at: string };
         Insert: { session_id: string; user_id: string; created_at?: string };

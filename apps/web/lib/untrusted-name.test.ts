@@ -28,6 +28,34 @@ describe("cleanUntrustedName", () => {
     expect(cleanUntrustedName(`x\uD83Dy`, 80)).toBe("xy");
   });
 
+  test("keeps emoji sequences whole", () => {
+    const cp = (...points: number[]) => String.fromCodePoint(...points);
+    // A family (ZWJ sequence), a keycap, a flag, a subdivision flag (tag
+    // characters), a skin tone and a heart with its variation selector.
+    const family = cp(0x1f468, 0x200d, 0x1f469, 0x200d, 0x1f467, 0x200d, 0x1f466);
+    const keycap = cp(0x31, 0xfe0f, 0x20e3);
+    const flag = cp(0x1f1e9, 0x1f1f0);
+    const england = cp(0x1f3f4, 0xe0067, 0xe0062, 0xe0065, 0xe006e, 0xe0067, 0xe007f);
+    const wave = cp(0x1f44b, 0x1f3fd);
+    const heart = cp(0x2764, 0xfe0f);
+    for (const emoji of [family, keycap, flag, england, wave, heart]) {
+      expect(cleanUntrustedName(`Acme ${emoji} Bot`, 80)).toBe(`Acme ${emoji} Bot`);
+    }
+    // The same joiners and marks outside an emoji are still removed.
+    expect(cleanUntrustedName(`A${cp(0x200d)}c${cp(0xfe0f)}m${cp(0x20e3)}e`, 80)).toBe("Acme");
+    // A sequence that does not fit whole is left out, never cut.
+    expect(cleanUntrustedName(`ab${family}`, 4)).toBe("ab");
+    expect(cleanUntrustedName(`ab${family}`, 9)).toBe(`ab${family}`);
+  });
+
+  test("keeps an apostrophe inside a name, drops quotes that could close a sentence", () => {
+    expect(cleanUntrustedName("O'Brien's team", 80)).toBe("O'Brien's team");
+    expect(cleanUntrustedName("'Acme' `x` \u201Cy\u201D \u2018z\u2019 \"w\"", 80)).toBe(
+      "Acme x y z w"
+    );
+    expect(cleanUntrustedName("Acme' approves", 80)).toBe("Acme approves");
+  });
+
   test("is empty when nothing is left", () => {
     expect(cleanUntrustedName(`"" \u200B `, 80)).toBe("");
   });

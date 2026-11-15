@@ -607,15 +607,33 @@ export async function resubscribeTeam(userId: string, teamId: string): Promise<v
 }
 
 /**
- * What an approved seat increase was priced on (a `billing.change`
- * approval): the seats it added to and the end of the period its prorated
- * charge covers. The increase refuses, right before Polar is asked, when
- * either moved, because Polar would then charge for another period.
+ * What an approved seat change was priced on (a `billing.change`
+ * approval): the seats it changes from, the end of the period a prorated
+ * charge covers, and which way the quote said it goes. An increase refuses,
+ * right before Polar is asked, when the seats or the period moved, because
+ * Polar would then charge for another period. A change quoted as an
+ * increase or a reduction refuses when this database would take it the
+ * other way (the quote reads Polar's seats, the change the database's, and
+ * the two can disagree after a failed write), so a change quoted as a
+ * reduction at the renewal is never charged now as an increase, nor an
+ * increase quoted with its charge scheduled as a reduction instead. A
+ * change quoted as the same count Polar bills already goes either way: it
+ * sets this database to Polar's count, as its sentence says
+ * (sameSeatsSentence in lib/billing/change.ts), and charges nothing.
  */
-export interface ApprovedSeatIncrease {
+export interface ApprovedSeatChange {
   /** The team's seats as this database had them when it was priced. */
   currentSeats: number;
   periodEnd: string;
+  /** The way the quote priced it: more seats now, the same, or fewer at the renewal. */
+  direction: SeatDirection;
+}
+
+export type SeatDirection = "increase" | "same" | "reduction";
+
+/** Which way going from `from` seats to `to` goes. */
+export function seatDirection(from: number, to: number): SeatDirection {
+  return to > from ? "increase" : to < from ? "reduction" : "same";
 }
 
 /**
@@ -632,12 +650,22 @@ export async function updateTeamSeats(
   userId: string,
   teamId: string,
   seats: number,
-  approved?: ApprovedSeatIncrease
+  approved?: ApprovedSeatChange
 ): Promise<void> {
   const team = await getTeamForOwner(userId, teamId);
   assertValidSeatCount(seats, team.seats);
   if (!team.polar_subscription_id) {
     throw new TeamBillingError("no_subscription", "No active subscription");
+  }
+  if (
+    approved &&
+    approved.direction !== "same" &&
+    seatDirection(team.seats, seats) !== approved.direction
+  ) {
+    throw new TeamBillingError(
+      "quote_changed",
+      "The team's seats are not what this was priced on, so it would change another way"
+    );
   }
 
   // Increases are charged now and raise capacity now. Reductions take effect
@@ -662,9 +690,11 @@ export async function updateTeamSeats(
     const polar = createPolarClient();
     let increased: Record<string, unknown>;
     let increasedAt: Date;
-    // Checked with no await before the update: a renewal crossed since the
+    // Checked right before the update: a renewal crossed since the
     // approval's quote (or seats changed meanwhile) would charge a price
-    // nobody approved.
+    // nobody approved. The guarded Polar call still awaits the lease
+    // renewal after this check (lib/billing/polar-guard.ts), which the
+    // minute's margin before the period end covers.
     if (
       approved &&
       (team.seats !== approved.currentSeats || pastApprovedPeriod(approved.periodEnd))
@@ -980,9 +1010,11 @@ export async function changeTeamPlan(
 
   let updated: Record<string, unknown>;
   let updatedAt: Date;
-  // Checked with no await before the update: a switch made now is charged
-  // for the rest of the period, so one that crossed the renewal since the
-  // approval's quote would charge for a period nobody approved.
+  // Checked right before the update: a switch made now is charged for the
+  // rest of the period, so one that crossed the renewal since the
+  // approval's quote would charge for a period nobody approved. The guarded
+  // Polar call still awaits the lease renewal after this check, which the
+  // minute's margin before the period end covers.
   if (approved && applies === "now" && pastApprovedPeriod(approved.periodEnd)) {
     throw new TeamBillingError("quote_changed", "The billing period moved since this was priced");
   }
