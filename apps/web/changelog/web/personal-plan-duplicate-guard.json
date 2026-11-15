@@ -1,6 +1,8 @@
 {
   "title": "Second plan subscriptions",
   "items": [
-    "A second personal plan subscription is ended and refunded only when it was paid within two hours of the plan the account holds, as for teams; one that started earlier or later is left for a person to look at, so a plan in use is never ended in favour of one bought again"
+    "A second personal plan subscription is ended and refunded only when it was paid within two hours of the plan the account holds, as for teams; one that started earlier or later is left for a person to look at, so a plan in use is never ended in favour of one bought again",
+    "When the plan an account holds ends while another plan subscription is still live on it, that one becomes the account's plan, so its extra requests and pages are not ended while a paid plan runs",
+    "Deleting an account ends every live plan subscription on it, not only the one the account showed"
   ]
 }

@@ -210,6 +210,31 @@ describe("POST /api/polar-webhook", () => {
     expect(mockFns.reconcileAddonsWithPlan).not.toHaveBeenCalled();
   });
 
+  test("reconciles add-ons only after the plan handler finished, and never when it threw", async () => {
+    // A revoke adopts another live plan subscription inside the handler, so
+    // add-ons must be brought in line with the row only after it.
+    const data = {
+      id: "sub_pro",
+      product_id: "prod_pro",
+      customer: { id: "cus_3", external_id: "user_9", metadata: {} },
+    };
+    mockFns.validateEvent.mockResolvedValue({ type: "subscription.revoked", data });
+
+    const { POST } = await import("./route");
+    await POST(webhookRequest());
+    expect(mockFns.applyPolarWebhookEvent.mock.invocationCallOrder[0]).toBeLessThan(
+      mockFns.reconcileAddonsWithPlan.mock.invocationCallOrder[0]
+    );
+
+    mockFns.reconcileAddonsWithPlan.mockClear();
+    mockFns.applyPolarWebhookEvent.mockRejectedValueOnce(new Error("Polar list failed"));
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+    const response = await POST(webhookRequest());
+    expect(response.status).toBe(500);
+    expect(mockFns.reconcileAddonsWithPlan).not.toHaveBeenCalled();
+    consoleError.mockRestore();
+  });
+
   test("routes customer metadata team events to the team handler", async () => {
     const data = {
       customer: { id: "cus_1", external_id: "cus_1", metadata: { teamId: "team_meta" } },

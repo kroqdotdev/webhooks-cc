@@ -17,6 +17,7 @@ import {
   type ProductSwitchPrice,
 } from "@/lib/team-pricing";
 import { supersedeCheckoutLinks } from "@/lib/billing/checkout-link-rows";
+import { auditSystemEvent } from "@/lib/audit";
 import { reportError } from "@/lib/observability";
 import { returnOrigin } from "@/lib/site-server";
 import { createAdminClient } from "./admin";
@@ -30,6 +31,7 @@ import {
   normalizeStoredSubscriptionStatus,
   parseEventTimestamp,
   revokeSubscriptionQuietly,
+  subscriptionStartMs,
   CHECKOUT_LINK_METADATA_KEY,
   type LinkPurchase,
 } from "./billing-shared";
@@ -519,6 +521,101 @@ async function currentSubscription(
   return (asRecord(current) ?? event) as Record<string, unknown>;
 }
 
+/** The product a Polar subscription record sells. */
+function subscriptionProductId(subscription: Record<string, unknown>): string | null {
+  return (
+    asNonEmptyString(subscription.product_id) ??
+    asNonEmptyString(asRecord(subscription.product)?.id)
+  );
+}
+
+/**
+ * The personal plan subscriptions Polar has live on a customer (a plan
+ * product, that customer's, not ended), newest start first, leaving out
+ * `exceptId`. Polar's errors propagate.
+ */
+export async function livePlanSubscriptions(
+  customerId: string,
+  exceptId: string | null = null
+): Promise<Record<string, unknown>[]> {
+  const products = [
+    process.env.POLAR_PRO_PRODUCT_ID,
+    process.env.POLAR_BUSINESS_PRODUCT_ID,
+    process.env.POLAR_BUSINESS_ANNUAL_PRODUCT_ID,
+  ].filter((id): id is string => Boolean(id));
+  if (products.length === 0) return [];
+  const page = await createPolarClient().subscriptions.list({
+    customer_id: customerId,
+    product_id: products,
+    active: true,
+    limit: 100,
+  });
+  return (page.items as unknown[])
+    .map((item) => asRecord(item))
+    .filter(
+      (subscription): subscription is Record<string, unknown> =>
+        subscription !== null &&
+        asNonEmptyString(subscription.id) !== null &&
+        subscription.id !== exceptId &&
+        asNonEmptyString(subscription.customer_id) === customerId &&
+        planForProduct(subscriptionProductId(subscription)) !== null &&
+        isLiveSubscriptionState(subscription)
+    )
+    .sort((a, b) => (subscriptionStartMs(b) ?? 0) - (subscriptionStartMs(a) ?? 0));
+}
+
+/**
+ * After the plan an account held was revoked: a plan subscription Polar
+ * still has live on its customer (one the duplicate guard left for a
+ * person, say) becomes the account's, the newest when there are several.
+ * The webhook route reconciles add-ons with the stored plan right after
+ * this handler returns, so without it a paid plan's add-ons would end. A
+ * failed read of Polar throws: the row is already free, as it was before
+ * this existed, the route skips the reconcile on an error so add-ons are
+ * not ended, and Polar's redelivery tries again (the clear is a no-op by
+ * then).
+ */
+async function adoptLivePlanSubscription(
+  userId: string,
+  customerId: string,
+  endedId: string | null
+): Promise<void> {
+  const { data: row, error } = await createAdminClient()
+    .from("users")
+    .select("polar_subscription_id")
+    .eq("id", userId)
+    .maybeSingle<{ polar_subscription_id: string | null }>();
+  if (error) throw error;
+  // Gone, or still holding another subscription (the event was not its own).
+  if (!row || row.polar_subscription_id) return;
+
+  const [newest, ...others] = await livePlanSubscriptions(customerId, endedId);
+  if (!newest) return;
+  let applied = false;
+  for (let attempt = 0; attempt < 3 && !applied; attempt++) {
+    applied = await applyPlanSubscription(userId, newest);
+  }
+  if (!applied) {
+    throw new Error("The account kept changing while a live plan was adopted; retry it");
+  }
+  console.info("[billing] adopted a live plan subscription after the held one was revoked", {
+    userId,
+    endedSubscriptionId: endedId,
+    adoptedSubscriptionId: newest.id,
+  });
+  if (others.length > 0) {
+    reportError(
+      "[billing] an account still has more than one live plan subscription after one was revoked",
+      undefined,
+      {
+        userId,
+        adoptedSubscriptionId: newest.id,
+        otherSubscriptionIds: others.map((subscription) => subscription.id),
+      }
+    );
+  }
+}
+
 /**
  * A link into Polar's customer portal for the account's own Polar customer:
  * invoices, receipts and the payment method. Plan and seat changes stay in
@@ -695,20 +792,45 @@ async function applyPlanSubscription(
     // the plan used all along (its id lost from the row while Polar kept it
     // live, then bought again), one well after a replacement made by hand
     // in Polar, and a revoke cannot be undone (duplicateVerdict()).
+    // As for a team's (settleForeignTeamSubscription()), only a plan
+    // product, on the account's own Polar customer and not yet ended, is
+    // ever ended; anything else beside a live held plan is reported and
+    // leaves the row alone.
     const held = stored.polar_subscription_id
       ? asRecord(await createPolarClient().subscriptions.get(stored.polar_subscription_id))
       : null;
     if (stored.polar_subscription_id && held !== null && isLiveSubscriptionState(held)) {
-      if (duplicateVerdict(data, held) === "report") {
+      const reason =
+        planForProduct(subscriptionProductId(data)) === null
+          ? "not_a_plan"
+          : customerId === null || customerId !== asNonEmptyString(held.customer_id)
+            ? "other_customer"
+            : asNonEmptyString(data.ended_at) !== null
+              ? "ended"
+              : duplicateVerdict(data, held) === "report"
+                ? "not_a_twin"
+                : null;
+      if (reason !== null) {
+        const details = {
+          userId,
+          storedSubscriptionId: stored.polar_subscription_id,
+          eventSubscriptionId: subscriptionId,
+          reason,
+        };
         reportError(
-          "[billing] an account has a second live plan subscription that did not start within two hours of the one it holds",
+          "[billing] an account has a second live plan subscription that was left for a person",
           undefined,
-          {
-            userId,
-            storedSubscriptionId: stored.polar_subscription_id,
-            eventSubscriptionId: subscriptionId,
-          }
+          details
         );
+        // Kept in the audit log too, so the report outlives a dropped
+        // StatOSS event. Ids and our own code only.
+        await auditSystemEvent({
+          action: "billing.duplicate_plan_reported",
+          outcome: "refused",
+          userId,
+          targetId: subscriptionId,
+          metadata: { stored_subscription_id: stored.polar_subscription_id, reason },
+        });
         return true;
       }
       // Recorded first: once revoked, a redelivery reads it as ended and
@@ -749,9 +871,10 @@ async function applyPlanSubscription(
 
   // The plan and interval come from the product; a product that is none
   // of today's plans is the original Pro.
-  const sold = planForProduct(
-    asNonEmptyString(data.product_id) ?? asNonEmptyString(asRecord(data.product)?.id)
-  ) ?? { plan: "pro" as const, interval: "month" as const };
+  const sold = planForProduct(subscriptionProductId(data)) ?? {
+    plan: "pro" as const,
+    interval: "month" as const,
+  };
   const annual = sold.interval === "year";
 
   // An annual plan's quota renews monthly (process_billing_period_resets)
@@ -990,6 +1113,8 @@ export async function applyPolarWebhookEvent(eventType: string, payload: unknown
         block_requests: 0,
         overage_active: false,
       });
+      // Before the route reconciles add-ons with the row.
+      await adoptLivePlanSubscription(userId, customerId, asNonEmptyString(data.id));
       return;
     }
 

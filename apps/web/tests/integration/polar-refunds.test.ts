@@ -11,6 +11,7 @@ import { createClient } from "@supabase/supabase-js";
 const polarMocks = vi.hoisted(() => ({
   get: vi.fn(),
   revoke: vi.fn(),
+  list: vi.fn(async () => ({ items: [] as unknown[] })),
   validateEvent: vi.fn(),
 }));
 
@@ -19,7 +20,12 @@ vi.mock("@/lib/polar", async (importOriginal) => {
   return {
     ...actual,
     createPolarClient: () => ({
-      subscriptions: { get: polarMocks.get, revoke: polarMocks.revoke, update: vi.fn() },
+      subscriptions: {
+        get: polarMocks.get,
+        revoke: polarMocks.revoke,
+        list: polarMocks.list,
+        update: vi.fn(),
+      },
     }),
     getPolarWebhookSecret: () => "whsec_test",
     loggablePolarError: (error: unknown) => error,
@@ -299,6 +305,7 @@ describe("webhooks that record a refund", () => {
     // Twin checkouts: paid a few minutes apart.
     const second = {
       ...subscription(`sub_second_${ts}`, { metadata: { userId } }, "prod_pro_test"),
+      customer_id: first.customer_id,
       started_at: new Date(Date.parse(first.started_at) + 5 * 60_000).toISOString(),
     };
     targets.push(`subscription:${second.id}`);
@@ -336,6 +343,7 @@ describe("webhooks that record a refund", () => {
 
     const old = {
       ...subscription(`sub_old_${ts}`, { metadata: { userId } }, "prod_pro_test"),
+      customer_id: recent.customer_id,
       started_at: new Date(Date.now() - 300 * 86_400_000).toISOString(),
     };
     targets.push(`subscription:${old.id}`);
@@ -351,6 +359,39 @@ describe("webhooks that record a refund", () => {
       .eq("id", userId)
       .single();
     expect(account?.polar_subscription_id).toBe(recent.id);
+    // Left for a person in the audit log too, by ids.
+    const { data: audit } = await admin
+      .from("audit_events")
+      .select("action, outcome, target_id, metadata")
+      .eq("action", "billing.duplicate_plan_reported")
+      .eq("target_user_id", userId);
+    expect(audit).toEqual([
+      {
+        action: "billing.duplicate_plan_reported",
+        outcome: "refused",
+        target_id: old.id,
+        metadata: { stored_subscription_id: recent.id, reason: "not_a_twin" },
+      },
+    ]);
+
+    // When the plan the account holds is revoked, the one left live becomes
+    // its plan rather than leaving a paying customer on Free.
+    polarMocks.list.mockResolvedValueOnce({ items: [old] });
+    await deliver("subscription.revoked", {
+      ...recent,
+      status: "canceled",
+      ended_at: new Date().toISOString(),
+    });
+    expect(polarMocks.list).toHaveBeenCalledWith(
+      expect.objectContaining({ customer_id: recent.customer_id, active: true })
+    );
+    const { data: adopted } = await admin
+      .from("users")
+      .select("polar_subscription_id, plan")
+      .eq("id", userId)
+      .single();
+    expect(adopted).toEqual({ polar_subscription_id: old.id, plan: "pro" });
+    expect(polarMocks.revoke).not.toHaveBeenCalled();
   });
 
   it("a plan subscription for a deleted account is revoked and held for review", async () => {
