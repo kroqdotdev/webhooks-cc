@@ -723,7 +723,14 @@ async function loadTeamQuote(
               : [],
           // The seats and the period the charge is for: the increase checks
           // them again right before Polar is asked (updateTeamSeats).
-          basis: { ...loaded.basis, currentSeats: q.currentSeats, periodEnd: q.periodEnd },
+          // Polar's own scheduled seats too: the budget counts a reduction
+          // only below the lower of it and ours (classifyChange).
+          basis: {
+            ...loaded.basis,
+            currentSeats: q.currentSeats,
+            pendingSeats: q.pendingSeats,
+            periodEnd: q.periodEnd,
+          },
         };
       },
       budget: (nowMs) => {

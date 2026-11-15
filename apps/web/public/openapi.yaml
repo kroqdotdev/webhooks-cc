@@ -2998,12 +2998,14 @@ paths:
       responses:
         "200":
           description: >-
-            Changed at once: by a browser session, or on the agent spend budget for an API key
-            or agent token (this body, with `viaBudget`).
+            Changed at once: by a browser session (`BillingPlanChanged`), or on the agent spend
+            budget for an API key or agent token (`BillingChangeOnBudget`, with `viaBudget`).
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/BillingChangeOnBudget"
+                oneOf:
+                  - $ref: "#/components/schemas/BillingPlanChanged"
+                  - $ref: "#/components/schemas/BillingChangeOnBudget"
         "202":
           $ref: "#/components/responses/BillingChangeAsked"
         "400":
@@ -3283,12 +3285,14 @@ paths:
       responses:
         "200":
           description: >-
-            Changed at once: by a browser session, or on the agent spend budget for an API key
-            or agent token (this body, with `viaBudget`).
+            Changed at once: by a browser session (`BillingPlanChanged`), or on the agent spend
+            budget for an API key or agent token (`BillingChangeOnBudget`, with `viaBudget`).
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/BillingChangeOnBudget"
+                oneOf:
+                  - $ref: "#/components/schemas/BillingPlanChanged"
+                  - $ref: "#/components/schemas/BillingChangeOnBudget"
         "202":
           $ref: "#/components/responses/BillingChangeAsked"
         "400":
@@ -6246,6 +6250,25 @@ components:
               keyId:
                 type: [string, "null"]
 
+    BillingPlanChanged:
+      description: >-
+        A plan change a browser session made: `now` (a monthly move up, the difference charged
+        for the rest of the period) or `renewal` (anything else, applied when the subscription
+        renews). For a team, `seatReductionLost` is a seat reduction that was waiting for the
+        renewal and that the plan change replaced (Polar keeps one pending update).
+      type: object
+      required: [applied]
+      properties:
+        applied:
+          type: string
+          enum: [now, renewal]
+        seatReductionLost:
+          type: integer
+          description: The seats the dropped reduction would have renewed at (teams only)
+        viaBudget:
+          type: boolean
+          enum: [false]
+          description: Never true here; a change on the agent spend budget is `BillingChangeOnBudget`
     BillingChangeOnBudget:
       description: >-
         Made at once on the account's agent spend budget (an API key or agent token, a budget
@@ -6365,6 +6388,10 @@ components:
               google.connect,
               google.pick,
               ai.assist,
+              teams.delete,
+              teams.invite,
+              billing.change,
+              billing.agent_budget,
             ]
         summary:
           type: string

@@ -985,14 +985,27 @@ const agentBudget: ActionSpec<AgentBudgetParams> = {
       { label: "Emails", value: "You are emailed on every change made on the budget." },
     ];
   },
-  async run(userId, { teamId, budgetCents, previousCents, keyId, agentRegistrationId }) {
+  async run(
+    userId,
+    { teamId, budgetCents, previousCents, keyId, agentRegistrationId },
+    _input,
+    context
+  ) {
     if (teamId && !(await ownedTeam(userId, teamId))) {
       throw new ActionError(404, "Team not found or not owner");
     }
     const account = { userId, teamId };
     // Set only from the budget it was asked against: one lowered (or
     // turned off) since is the owner's later word, which this never undoes.
-    const set = await setAgentBudget(account, budgetCents, false, previousCents);
+    // And only while this approval still stands: a two-factor reset refuses
+    // it even while it runs (zero_agent_budgets_for_user).
+    const set = await setAgentBudget(
+      account,
+      budgetCents,
+      false,
+      previousCents,
+      context?.approvalId ?? null
+    );
     if (set.status === "changed") {
       // Refused for good: approving it again could never set it, and the
       // asker's poll tells the agent to read the budget and ask again.

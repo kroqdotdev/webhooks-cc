@@ -10,9 +10,15 @@ const mocks = vi.hoisted(() => ({
         result(params: unknown): Record<string, unknown>;
       }
     | undefined,
+  /** The action's run, for decideApproval. */
+  run: undefined as ((...args: unknown[]) => Promise<unknown>) | undefined,
+  /** Every update written, and the errors the next ones answer, in order. */
+  updates: [] as Array<{ values: Record<string, unknown>; filters: Array<[string, unknown]> }>,
+  updateErrors: [] as Array<{ message: string } | null>,
+  reportError: vi.fn(),
 }));
 
-vi.mock("@/lib/observability", () => ({ reportError: vi.fn() }));
+vi.mock("@/lib/observability", () => ({ reportError: mocks.reportError }));
 
 vi.mock("@/lib/supabase/admin", () => ({
   createAdminClient: () => {
@@ -26,16 +32,45 @@ vi.mock("@/lib/supabase/admin", () => ({
         return { data, error: null };
       },
     };
-    return { from: () => query };
+    const update = (values: Record<string, unknown>) => {
+      const written = { values, filters: [] as Array<[string, unknown]> };
+      mocks.updates.push(written);
+      const updating = {
+        eq: (column: string, value: unknown) => {
+          written.filters.push([column, value]);
+          return updating;
+        },
+        then: (resolve: (value: { error: unknown }) => void) =>
+          resolve({ error: mocks.updateErrors.shift() ?? null }),
+      };
+      return updating;
+    };
+    return {
+      from: () => ({ ...query, update }),
+      rpc: async () => ({ data: true, error: null }),
+    };
   },
 }));
 
 vi.mock("./actions", () => ({
-  ActionError: class ActionError extends Error {},
-  actionSpec: () => ({ runAt: "approve", unrecorded: mocks.unrecorded }),
+  ActionError: class ActionError extends Error {
+    constructor(
+      readonly status: number,
+      message: string,
+      readonly deniedWith: unknown = null
+    ) {
+      super(message);
+    }
+  },
+  actionSpec: () => ({
+    runAt: "approve",
+    unrecorded: mocks.unrecorded,
+    run: (...args: unknown[]) => mocks.run!(...args),
+  }),
 }));
 
-const { pollApproval, requesterLabelFor } = await import("./store");
+const { pollApproval, requesterLabelFor, decideApproval, ApprovalError } = await import("./store");
+const { ActionError } = await import("./actions");
 
 describe("who asked", () => {
   test("an agent's name is the one it gave itself, cleaned", () => {
@@ -181,5 +216,92 @@ describe("a refused budget raise", () => {
     const polled = await pollApproval(String(mocks.row.id), asker);
     expect(polled?.approval.status).toBe("denied");
     expect(polled?.result).toBeUndefined();
+  });
+});
+
+describe("a run refused for good", () => {
+  const now = Date.parse("2026-11-16T12:00:00Z");
+  const pending = {
+    id: "00000000-0000-4000-8000-0000000000cc",
+    user_id: "owner",
+    action: "billing.agent_budget",
+    params: { teamId: null, budgetCents: 5000, previousCents: 0 },
+    summary: "Set the agent budget of your account to $50.00 per 30 days.",
+    user_code: "ABCD-EFGH",
+    status: "pending",
+    requested_by_key: "key-1",
+    requested_by_agent: null,
+    requester: "an API key",
+    client: null,
+    country: null,
+    network: null,
+    created_at: new Date(now - 60_000).toISOString(),
+    completed_at: null,
+    expires_at: new Date(now + 14 * 60_000).toISOString(),
+    result: null,
+  };
+  const changed = () =>
+    new ActionError(409, "The budget has changed since this was asked.", {
+      code: "budget_changed",
+    });
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(now);
+    mocks.row = pending;
+    mocks.later = [];
+    mocks.updates = [];
+    mocks.updateErrors = [];
+    mocks.reportError.mockReset();
+    mocks.run = async () => {
+      throw changed();
+    };
+  });
+
+  test("records the refusal with its result, only on the row it completed", async () => {
+    await expect(decideApproval("ABCD-EFGH", "owner", true)).rejects.toBeInstanceOf(ApprovalError);
+    expect(mocks.updates).toHaveLength(1);
+    expect(mocks.updates[0]).toEqual({
+      values: { status: "denied", completed_at: null, result: { code: "budget_changed" } },
+      filters: [
+        ["id", pending.id],
+        ["status", "completed"],
+      ],
+    });
+    expect(mocks.reportError).not.toHaveBeenCalled();
+  });
+
+  test("tries the refusal again when the write fails, and reports one that never lands", async () => {
+    mocks.updateErrors = [{ message: "connection reset" }];
+    await expect(decideApproval("ABCD-EFGH", "owner", true)).rejects.toMatchObject({
+      status: 409,
+    });
+    expect(mocks.updates).toHaveLength(2);
+    expect(mocks.reportError).not.toHaveBeenCalled();
+
+    mocks.updates = [];
+    mocks.updateErrors = [{ message: "connection reset" }, { message: "connection reset" }];
+    await expect(decideApproval("ABCD-EFGH", "owner", true)).rejects.toMatchObject({
+      status: 409,
+    });
+    expect(mocks.updates).toHaveLength(2);
+    expect(mocks.reportError).toHaveBeenCalledWith("Recording a refused approval failed", {
+      message: "connection reset",
+    });
+  });
+
+  test("records a run's result only while the row is still completed", async () => {
+    mocks.run = async () => ({ result: { budgetCents: 5000 }, stored: { budgetCents: 5000 } });
+    const decided = await decideApproval("ABCD-EFGH", "owner", true);
+    expect(decided.done).toBe(true);
+    expect(mocks.updates).toEqual([
+      {
+        values: { result: { budgetCents: 5000 } },
+        filters: [
+          ["id", pending.id],
+          ["status", "completed"],
+        ],
+      },
+    ]);
   });
 });

@@ -3008,6 +3008,7 @@ export interface Database {
           p_cents: number;
           p_only_lower: boolean;
           p_expected?: number | null;
+          p_approval?: string | null;
         };
         Returns: Json;
       };
@@ -3082,7 +3083,7 @@ export interface Database {
       };
       claim_agent_budget_retry: {
         Args: { p_id: string; p_cents: number | null };
-        Returns: number | null;
+        Returns: Json | null;
       };
       bury_lost_agent_budget_take: {
         Args: { p_id: string; p_user_id: string | null; p_team_id: string | null };

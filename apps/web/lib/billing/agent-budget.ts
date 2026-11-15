@@ -231,13 +231,16 @@ export async function setAgentBudget(
   account: BudgetAccount,
   cents: number,
   onlyLower: boolean,
-  expectedCents: number | null = null
+  expectedCents: number | null = null,
+  /** The approval running this set: nothing is set once it was refused. */
+  approvalId: string | null = null
 ): Promise<SetBudgetResult> {
   const { data, error } = await createAdminClient().rpc("set_agent_budget", {
     ...accountArgs(account),
     p_cents: cents,
     p_only_lower: onlyLower,
     p_expected: expectedCents,
+    p_approval: approvalId,
   });
   if (error) throw error;
   const result = (data ?? {}) as Record<string, unknown>;
@@ -299,10 +302,16 @@ export function classifyChange(
       if (!teamId) return "approval";
       const seats = numberIn(quote.basis, "teamSeats");
       if (seats === null) return "approval";
-      const pending = numberIn(quote.basis, "teamPendingSeats");
       if (change.seats > seats && quote.applies === "now") return "spend";
       // Fewer than renew now; a count between a scheduled reduction and
       // today's seats would raise the renewal, so it is not a decrease.
+      // Ours (teamPendingSeats) and Polar's (pendingSeats) can differ for a
+      // while (a webhook not here yet): the lower one is what renews.
+      const scheduled = [
+        numberIn(quote.basis, "teamPendingSeats"),
+        numberIn(quote.basis, "pendingSeats"),
+      ].filter((value): value is number => value !== null && value > 0);
+      const pending = scheduled.length > 0 ? Math.min(...scheduled) : null;
       const planWaits =
         pendingPlan ||
         (typeof quote.basis.pendingProduct === "string" && quote.basis.pendingProduct !== "") ||
@@ -769,7 +778,10 @@ export async function trySpendFromBudget(
       return fallback(stop);
     }
   } catch (error) {
-    reportError("[agent-budget] reading the budget failed; asking for approval", error);
+    reportError(
+      "[agent-budget] reading the budget failed; asking for approval",
+      loggablePolarError(error)
+    );
     return { kind: "none" };
   }
 
@@ -788,7 +800,10 @@ export async function trySpendFromBudget(
     }
     // spendLocked answers every failure after a take itself, so nothing
     // was taken here: the approval path answers it.
-    reportError("[agent-budget] the budget path failed before a take; asking for approval", error);
+    reportError(
+      "[agent-budget] the budget path failed before a take; asking for approval",
+      loggablePolarError(error)
+    );
     return { kind: "none" };
   }
 }
@@ -812,7 +827,10 @@ async function spendLocked(
     const stop = budgetStop(caller, state);
     if (stop) return fallback(stop);
   } catch (error) {
-    reportError("[agent-budget] reading the change failed; asking for approval", error);
+    reportError(
+      "[agent-budget] reading the change failed; asking for approval",
+      loggablePolarError(error)
+    );
     return { kind: "none" };
   }
   const { quote, kind, facts } = quoted;
@@ -953,16 +971,50 @@ async function afterTake<T>(
   try {
     return await run();
   } catch (error) {
-    reportError("[agent-budget] a spend failed after it was taken", loggablePolarError(error));
-    try {
-      await settle(id, "unsettled", null);
-    } catch (settleError) {
+    // An outcome the run knew but could not record (the bank wants the
+    // cardholder to confirm) is recorded here, so a retry of the same
+    // request reads it and never sends the change a second time.
+    const kept = error instanceof UnrecordedOutcome ? error : null;
+    reportError(
+      "[agent-budget] a spend failed after it was taken",
+      loggablePolarError(kept ? kept.original : error)
+    );
+    let settleError: unknown = null;
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        await settle(id, "unsettled", kept ? kept.outcome : null);
+        settleError = null;
+        break;
+      } catch (thrown) {
+        settleError = thrown;
+      }
+    }
+    if (settleError) {
       reportError("[agent-budget] could not keep a failed spend unsettled", settleError);
     }
     await tellOwner(id, "unknown");
-    return unknownResponse(context, OUTCOME_UNKNOWN_WORDS);
+    return unknownResponse(context, kept ? kept.words : OUTCOME_UNKNOWN_WORDS);
   }
 }
+
+/**
+ * A spend's outcome that a run knows but whose settle failed: thrown to
+ * afterTake, which records it (kept unsettled with this outcome) and
+ * answers with these words.
+ */
+class UnrecordedOutcome extends Error {
+  constructor(
+    readonly outcome: Json,
+    readonly words: string,
+    readonly original: unknown
+  ) {
+    super("A spend's outcome could not be recorded");
+    this.name = "UnrecordedOutcome";
+  }
+}
+
+/** What a spend the bank wants the cardholder to confirm keeps (3-D Secure). */
+const PAYMENT_ACTION_OUTCOME: Json = { code: "payment_action_required" };
 
 /** How long returnLostTake waits before it looks a second time. */
 export const LOST_TAKE_RECHECK_MS = 500;
@@ -1125,7 +1177,10 @@ async function resumeSpend(
         try {
           replay = await polarAtTarget(context.state.subscriptionId!, context.target!);
         } catch (readError) {
-          reportError("[agent-budget] could not read the subscription before a replay", readError);
+          reportError(
+            "[agent-budget] could not read the subscription before a replay",
+            loggablePolarError(readError)
+          );
           return Response.json(
             { error: "Could not read the subscription. Ask again.", code: "billing_unavailable" },
             { status: 503 }
@@ -1156,13 +1211,18 @@ async function resumeSpend(
   // counted at no less than today's cost, the quote a resend is made at;
   // one that will not (p_cents null) is only looked at, which moves none
   // of its windows.
-  const { data: claimed, error } = await createAdminClient().rpc("claim_agent_budget_retry", {
+  const { data, error } = await createAdminClient().rpc("claim_agent_budget_retry", {
     p_id: id,
     p_cents: refusal || awaitingCardholder ? null : context.costCents,
   });
   if (error) throw error;
-  if (claimed === null || claimed === undefined) return runningResponse(context);
-  const countedCents = Number(claimed);
+  const claimed = (data ?? null) as { amount?: unknown; resend?: unknown } | null;
+  if (!claimed || typeof claimed.amount !== "number") return runningResponse(context);
+  const countedCents = claimed.amount;
+  // The claim checks the budget again under the account's lock: one lowered
+  // since the read above leaves the try only a look, never a resend.
+  const refused: ResendRefusal | null =
+    refusal ?? (!awaitingCardholder && claimed.resend !== true ? "over_budget" : null);
   // Polar has no idempotency key: if the subscription is at the target
   // already, the first try was made, and sending it again would only
   // repeat it.
@@ -1178,7 +1238,10 @@ async function resumeSpend(
       );
     }
   } catch (readError) {
-    reportError("[agent-budget] could not read the subscription before a retry", readError);
+    reportError(
+      "[agent-budget] could not read the subscription before a retry",
+      loggablePolarError(readError)
+    );
     const left = Math.max(0, existing.budgetCents - existing.othersCents - countedCents);
     return keepUnsettled(context, id, left, "outcome_unknown", OUTCOME_UNKNOWN_WORDS);
   }
@@ -1189,8 +1252,8 @@ async function resumeSpend(
     if (status === "applied") return finishSpend(counted, id, MADE, left);
     return unknownResponse(context, PAYMENT_ACTION_REQUIRED);
   }
-  if (refusal) {
-    return keepUnsettled(counted, id, left, `not_resent:${refusal}`, RESEND_REFUSED_WORDS);
+  if (refused) {
+    return keepUnsettled(counted, id, left, `not_resent:${refused}`, RESEND_REFUSED_WORDS);
   }
   // A second try: whatever it finds, it never gives the spend back.
   return runSpend(counted, id, left, true);
@@ -1384,7 +1447,14 @@ async function runSpend(
       );
     }
     if (kind === "payment_action") {
-      const status = await settle(id, "unsettled", { code: "payment_action_required" });
+      // The mark keeps a retry from sending it again, so a settle that fails
+      // hands it to afterTake to record rather than lose it.
+      let status: string | null;
+      try {
+        status = await settle(id, "unsettled", PAYMENT_ACTION_OUTCOME);
+      } catch (settleError) {
+        throw new UnrecordedOutcome(PAYMENT_ACTION_OUTCOME, PAYMENT_ACTION_REQUIRED, settleError);
+      }
       if (status === "applied") return finishSpend(context, id, MADE, leftCents);
       try {
         await auditSpend(context, "billing.agent_budget_spent", 402, {
@@ -1729,14 +1799,20 @@ export function billingPageUrl(homeSite: string | null, teamId: string | null): 
   return teamId ? `${origin}/teams/${teamId}` : `${origin}/account/plan`;
 }
 
+/**
+ * The owner's address, or null when the account has none. A failed read
+ * throws: a notice whose owner could not be read is tried again, never
+ * taken out of the queue as having nobody to go to.
+ */
 async function ownerEmail(
   userId: string
 ): Promise<{ email: string; homeSite: string | null } | null> {
-  const { data } = await createAdminClient()
+  const { data, error } = await createAdminClient()
     .from("users")
     .select("email, home_site")
     .eq("id", userId)
     .maybeSingle();
+  if (error) throw error;
   return data?.email ? { email: data.email, homeSite: data.home_site ?? null } : null;
 }
 
@@ -1750,21 +1826,27 @@ async function teamName(teamId: string | null): Promise<string | null> {
   return data?.name ? cleanUntrustedName(data.name, KEY_NAME_MAX) || null : null;
 }
 
-/** A team's owner (its owner membership, else its creator), whom a team spend's email goes to. */
+/**
+ * A team's owner (its owner membership, else its creator), whom a team
+ * spend's email goes to; null only when the reads found none (a failed read
+ * throws, as ownerEmail's does).
+ */
 async function teamOwnerOf(teamId: string): Promise<string | null> {
   const admin = createAdminClient();
-  const { data: owner } = await admin
+  const { data: owner, error: ownerError } = await admin
     .from("team_members")
     .select("user_id")
     .eq("team_id", teamId)
     .eq("role", "owner")
     .maybeSingle();
+  if (ownerError) throw ownerError;
   if (owner?.user_id) return owner.user_id;
-  const { data: team } = await admin
+  const { data: team, error: teamError } = await admin
     .from("teams")
     .select("created_by")
     .eq("id", teamId)
     .maybeSingle();
+  if (teamError) throw teamError;
   return team?.created_by ?? null;
 }
 

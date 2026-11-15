@@ -6,7 +6,7 @@
 //! | Status | Code                    | Meaning                                         |
 //! | ------ | ----------------------- | ----------------------------------------------- |
 //! | 0      |                         | Success                                         |
-//! | 1      | `error`, `bad_request`, `delivery_failed`, `billing_refused`, `outcome_unknown` | Any other failure, the server refused input, a test delivery was not accepted, an approved billing change was refused with nothing changed (the server's code in `reason`), or it (or a change made on the agent budget) may or may not have been made (check billing) |
+//! | 1      | `error`, `bad_request`, `delivery_failed`, `billing_refused`, `outcome_unknown` | Any other failure, the server refused input, a test delivery was not accepted, a billing change (approved, or made on the agent budget) was refused with nothing changed (the server's code in `reason`), or it may or may not have been made (check billing) |
 //! | 2      | `usage`                 | Bad arguments (clap answers these itself)        |
 //! | 3      | `not_logged_in`, `unauthorized`, `connection_revoked`, `login_expired`, `login_denied` | No credentials, or they were refused |
 //! | 4      | `not_found`             | No such endpoint, request, team or share         |
@@ -174,6 +174,38 @@ fn from_status(status: u16, retry_after: Option<u64>) -> Classified {
     c
 }
 
+/// The codes the billing routes answer when they refused a change and
+/// nothing was changed (lib/billing/change.ts, `BEFORE_POLAR`, less the
+/// generic ones a status already says: not found, forbidden, a plan
+/// required).
+const BILLING_REFUSALS: &[&str] = &[
+    "payment_failed",
+    "seats_below_members",
+    "seats_below_minimum",
+    "invalid_seats",
+    "unchanged",
+    "not_scheduled",
+    "no_subscription",
+    "plan_ending",
+    "change_pending",
+    "not_offered",
+    "past_due",
+    "invalid_max",
+];
+
+fn is_billing_refusal(code: &str) -> bool {
+    BILLING_REFUSALS.contains(&code)
+}
+
+fn billing_refused(code: &str, status: Option<u16>) -> Classified {
+    let mut c = Classified::new("billing_refused", 1).hint(format!(
+        "Nothing was changed ({code}). Fix what the message says, then ask again."
+    ));
+    c.reason = Some(code.to_string());
+    c.status = status;
+    c
+}
+
 const OUTCOME_UNKNOWN_HINT: &str = "The change may have been made. Check `whk billing` (or the team's billing) before asking again.";
 
 /// The code, exit status and next step for a failure, from the first error
@@ -215,13 +247,7 @@ pub fn classify(error: &anyhow::Error) -> Classified {
                 ),
                 CliError::QuoteChanged(_) => Classified::new("quote_changed", 8)
                     .hint("Nothing was changed. Ask again for a new quote."),
-                CliError::BillingRefused { code, .. } => {
-                    let mut c = Classified::new("billing_refused", 1).hint(format!(
-                        "Nothing was changed ({code}). Fix what the message says, then ask again."
-                    ));
-                    c.reason = Some(code.clone());
-                    c
-                }
+                CliError::BillingRefused { code, .. } => billing_refused(code, None),
                 CliError::OutcomeUnknown(_) => {
                     Classified::new("outcome_unknown", 1).hint(OUTCOME_UNKNOWN_HINT)
                 }
@@ -235,6 +261,16 @@ pub fn classify(error: &anyhow::Error) -> Classified {
                 let mut c = Classified::new("outcome_unknown", 1).hint(OUTCOME_UNKNOWN_HINT);
                 c.status = Some(e.status);
                 return c;
+            }
+            // A billing change refused with nothing changed (a declined
+            // card answers 402, which is not the plan forbidding it): the
+            // same code as an approved change refused, the server's own in
+            // `reason`.
+            if let Some(code) = e.code.as_deref().filter(|code| is_billing_refusal(code))
+                && (400..500).contains(&e.status)
+                && !matches!(e.status, 401 | 404 | 429)
+            {
+                return billing_refused(code, Some(e.status));
             }
             return from_status(e.status, e.retry_after);
         }
@@ -361,6 +397,44 @@ mod tests {
         );
         let c = classify(&anyhow::Error::new(CliError::OutcomeUnknown("x".into())));
         assert_eq!((c.code, c.exit), ("outcome_unknown", 1));
+        // A billing route's own refusal is billing_refused whatever its
+        // status: a declined card's 402 is not the plan forbidding it.
+        for (status, code) in [
+            (402, "payment_failed"),
+            (409, "seats_below_members"),
+            (409, "unchanged"),
+            (400, "not_offered"),
+        ] {
+            let error = anyhow::Error::new(ApiError {
+                status,
+                message: "Nothing was changed.".into(),
+                retry_after: None,
+                code: Some(code.into()),
+            });
+            let c = classify(&error);
+            assert_eq!(
+                (c.code, c.exit, c.status),
+                ("billing_refused", 1, Some(status))
+            );
+            assert_eq!(c.reason.as_deref(), Some(code));
+            assert_eq!(error_json(&error, &c)["error"]["reason"], code);
+        }
+        // Without a billing code a 402 is still forbidden, and a 404 or 429
+        // keeps its own meaning even with one.
+        let c = classify(&anyhow::Error::new(ApiError {
+            status: 402,
+            message: "Upgrade".into(),
+            retry_after: None,
+            code: Some("plan_required".into()),
+        }));
+        assert_eq!((c.code, c.exit), ("forbidden", 5));
+        let c = classify(&anyhow::Error::new(ApiError {
+            status: 404,
+            message: "No subscription".into(),
+            retry_after: None,
+            code: Some("no_subscription".into()),
+        }));
+        assert_eq!((c.code, c.exit), ("not_found", 4));
         // A change on the agent budget answers it as an error status.
         let c = classify(&anyhow::Error::new(ApiError {
             status: 502,

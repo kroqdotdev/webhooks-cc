@@ -79,6 +79,13 @@ function order(
   });
 }
 
+/** A retry's claim: what the spend counts at when this caller has it (null otherwise), and whether it may be sent. */
+async function claimRetry(id: string, cents: number | null) {
+  const { data, error } = await admin.rpc("claim_agent_budget_retry", { p_id: id, p_cents: cents });
+  if (error) throw error;
+  return data as { amount: number; resend: boolean } | null;
+}
+
 async function settle(id: string, status: string, outcome: Record<string, unknown> | null = null) {
   const { data, error } = await admin.rpc("settle_agent_budget_spend", {
     p_id: id,
@@ -193,14 +200,10 @@ describe("take_agent_budget", () => {
     const taken = await take(`h:lost-${ts}`, 1000);
     expect(await settle(taken.id, "unsettled")).toBe("unsettled");
     expect((await state()).spent).toBe(1000);
-    const claims = await Promise.all(
-      Array.from({ length: 4 }, () =>
-        admin.rpc("claim_agent_budget_retry", { p_id: taken.id, p_cents: null })
-      )
-    );
+    const claims = await Promise.all(Array.from({ length: 4 }, () => claimRetry(taken.id, null)));
     // The one that has it is answered with what the spend counts.
-    expect(claims.filter((c) => c.data === 1000)).toHaveLength(1);
-    expect(claims.filter((c) => c.data === null)).toHaveLength(3);
+    expect(claims.filter((c) => c?.amount === 1000 && c.resend === false)).toHaveLength(1);
+    expect(claims.filter((c) => c === null)).toHaveLength(3);
     // Another key is busy while it is unsettled or running.
     expect((await take(`h:other-${ts}`, 100)).status).toBe("busy");
   });
@@ -208,16 +211,13 @@ describe("take_agent_budget", () => {
   it("counts a resend at no less than today's cost, never lower", async () => {
     const taken = await take(`h:resend-${ts}`, 1000);
     await settle(taken.id, "unsettled");
-    const raised = await admin.rpc("claim_agent_budget_retry", { p_id: taken.id, p_cents: 1010 });
-    expect(raised.data).toBe(1010);
+    expect(await claimRetry(taken.id, 1010)).toEqual({ amount: 1010, resend: true });
     expect((await state()).spent).toBe(1010);
     await settle(taken.id, "unsettled");
-    const kept = await admin.rpc("claim_agent_budget_retry", { p_id: taken.id, p_cents: 900 });
-    expect(kept.data).toBe(1010);
+    expect(await claimRetry(taken.id, 900)).toEqual({ amount: 1010, resend: true });
     // Not sent again (p_cents null): what it counts stays.
     await settle(taken.id, "unsettled");
-    const same = await admin.rpc("claim_agent_budget_retry", { p_id: taken.id, p_cents: null });
-    expect(same.data).toBe(1010);
+    expect(await claimRetry(taken.id, null)).toEqual({ amount: 1010, resend: false });
   });
 
   it("counts a spend until its counts_until, in every sum alike", async () => {
@@ -431,11 +431,7 @@ describe("take_agent_budget", () => {
     const lost = await take(`h:never-back-${ts}`, 800);
     expect(await settle(lost.id, "unsettled")).toBe("unsettled");
     // A retry claims it and its run gives it back: kept counted instead.
-    const { data: claimed } = await admin.rpc("claim_agent_budget_retry", {
-      p_id: lost.id,
-      p_cents: 800,
-    });
-    expect(claimed).toBe(800);
+    expect(await claimRetry(lost.id, 800)).toEqual({ amount: 800, resend: true });
     expect(await settle(lost.id, "returned")).toBe("unsettled");
     expect((await state()).spent).toBe(800);
     // Settled, so the next take is not busy behind it.
@@ -652,8 +648,7 @@ describe("take_agent_budget", () => {
       .from("agent_budget_spends")
       .update({ updated_at: old, status_changed_at: old })
       .eq("id", taken.id);
-    const looked = await admin.rpc("claim_agent_budget_retry", { p_id: taken.id, p_cents: null });
-    expect(looked.data).toBe(1000);
+    expect(await claimRetry(taken.id, null)).toEqual({ amount: 1000, resend: false });
     const { data: held } = await admin
       .from("agent_budget_spends")
       .select("status, updated_at, status_changed_at, retry_claimed_at, amount_cents")
@@ -664,12 +659,8 @@ describe("take_agent_budget", () => {
     expect(Date.parse(held!.status_changed_at)).toBe(Date.parse(old));
     expect(held!.retry_claimed_at).not.toBeNull();
     // One looker at a time, and no resend while it looks.
-    expect(
-      (await admin.rpc("claim_agent_budget_retry", { p_id: taken.id, p_cents: null })).data
-    ).toBeNull();
-    expect(
-      (await admin.rpc("claim_agent_budget_retry", { p_id: taken.id, p_cents: 1000 })).data
-    ).toBeNull();
+    expect(await claimRetry(taken.id, null)).toBeNull();
+    expect(await claimRetry(taken.id, 1000)).toBeNull();
     // Kept unsettled: the hold goes, and the next retry may claim it.
     expect(await settle(taken.id, "unsettled")).toBe("unsettled");
     const { data: free } = await admin
@@ -680,8 +671,7 @@ describe("take_agent_budget", () => {
     expect(free!.retry_claimed_at).toBeNull();
     expect(Date.parse(free!.updated_at)).toBe(Date.parse(old));
     // A resend moves both, since it reaches Polar.
-    const sent = await admin.rpc("claim_agent_budget_retry", { p_id: taken.id, p_cents: 1000 });
-    expect(sent.data).toBe(1000);
+    expect(await claimRetry(taken.id, 1000)).toEqual({ amount: 1000, resend: true });
     const { data: resent } = await admin
       .from("agent_budget_spends")
       .select("status, status_changed_at")
@@ -717,9 +707,7 @@ describe("take_agent_budget", () => {
     const resent = await take(`h:undeliverable-resent-${ts}`, 500, { ...BUSINESS, n: 2 });
     await settle(resent.id, "unsettled");
     await admin.from("agent_budget_spends").update(givenUp).eq("id", resent.id);
-    expect(
-      (await admin.rpc("claim_agent_budget_retry", { p_id: resent.id, p_cents: 500 })).data
-    ).toBe(500);
+    expect(await claimRetry(resent.id, 500)).toEqual({ amount: 500, resend: true });
     await expectSendable(resent.id);
     expect(await settle(resent.id, "applied")).toBe("applied");
     await expectSendable(resent.id);
@@ -760,14 +748,10 @@ describe("take_agent_budget", () => {
       .from("agent_budget_spends")
       .update({ updated_at: old, taken_at: old })
       .eq("id", looked.id);
-    expect(
-      (await admin.rpc("claim_agent_budget_retry", { p_id: looked.id, p_cents: null })).data
-    ).toBe(300);
+    expect(await claimRetry(looked.id, null)).toEqual({ amount: 300, resend: false });
     const resent = await take(`h:unsettled-at-resend-${ts}`, 300, { ...BUSINESS, n: 4 });
     await admin.from("agent_budget_spends").update({ updated_at: old }).eq("id", resent.id);
-    expect(
-      (await admin.rpc("claim_agent_budget_retry", { p_id: resent.id, p_cents: 300 })).data
-    ).toBe(300);
+    expect(await claimRetry(resent.id, 300)).toEqual({ amount: 300, resend: true });
     const { data: rows } = await admin
       .from("agent_budget_spends")
       .select("id, unsettled_at")
@@ -779,9 +763,7 @@ describe("take_agent_budget", () => {
       .from("agent_budget_spends")
       .update({ status: "unsettled", unsettled_at: first, updated_at: old })
       .eq("id", resent.id);
-    expect(
-      (await admin.rpc("claim_agent_budget_retry", { p_id: resent.id, p_cents: 300 })).data
-    ).toBe(300);
+    expect(await claimRetry(resent.id, 300)).toEqual({ amount: 300, resend: true });
     const { data: kept } = await admin
       .from("agent_budget_spends")
       .select("unsettled_at")
@@ -978,8 +960,14 @@ describe("take_agent_budget", () => {
       admin.rpc("finish_agent_budget_email", { p_id: taken.id, p_kind: kind, p_result: result });
     const claims = await Promise.all(Array.from({ length: 4 }, () => claim("unknown")));
     expect(claims.filter((c) => c.data === true)).toHaveLength(1);
-    // A failed send drops the claim: it may be tried again.
+    // A failed send drops the claim and puts the next try off: nobody, the
+    // request's own send included, claims it before its backoff is up.
     await finish("unknown", "failed");
+    expect((await claim("unknown")).data).toBe(false);
+    await admin
+      .from("agent_budget_spends")
+      .update({ email_next_at: new Date(Date.now() - 1000).toISOString() })
+      .eq("id", taken.id);
     expect((await claim("unknown")).data).toBe(true);
     await finish("unknown", "sent");
     expect((await claim("unknown")).data).toBe(false);
@@ -1087,9 +1075,11 @@ describe("take_agent_budget", () => {
       "First reduction.",
       "Second reduction.",
     ]);
-    // A failed send drops the claim and backs off; the rows stay for the next notice.
+    // A failed send drops the claim and backs off; the rows stay for the next
+    // notice, which a request's own send waits for too.
     await finish(won.claim!, "failed");
     expect(await due()).toBe(false);
+    expect((await claim()).status).toBe("wait");
     await admin
       .from("agent_budget_reductions")
       .update({ email_next_at: new Date(Date.now() - 1000).toISOString() })
@@ -1114,6 +1104,121 @@ describe("take_agent_budget", () => {
     expect(next.reductions!.map((r) => r.description)).toEqual(["Third reduction."]);
     await finish(next.claim!, "sent");
     expect((await claim()).status).toBe("wait");
+  });
+
+  it("only looks at a resend the budget no longer covers, checked under the account's lock", async () => {
+    const taken = await take(`h:resend-lowered-${ts}`, 1000);
+    await settle(taken.id, "unsettled");
+    // Another spend counts 3500 of the 5000; the owner lowers the budget to
+    // 4000 after the request read it: 500 is left besides this spend.
+    const other = await take(`h:resend-lowered-other-${ts}`, 100, { ...BUSINESS, n: 2 });
+    expect(other.status).toBe("busy");
+    await admin
+      .from("agent_budget_spends")
+      .update({ taken_at: new Date(Date.now() - 20 * 60_000).toISOString() })
+      .eq("id", taken.id);
+    const counted = await take(`h:resend-lowered-other-${ts}`, 3500, { ...BUSINESS, n: 2 });
+    expect(counted.status).toBe("taken");
+    await settle(counted.id, "applied");
+    await admin.rpc("set_agent_budget", {
+      p_user_id: userId,
+      p_team_id: null,
+      p_cents: 4000,
+      p_only_lower: false,
+    });
+    expect(await claimRetry(taken.id, 1000)).toEqual({ amount: 1000, resend: false });
+    const { data: row } = await admin
+      .from("agent_budget_spends")
+      .select("status, retry_claimed_at, amount_cents")
+      .eq("id", taken.id)
+      .single();
+    expect(row).toMatchObject({ status: "unsettled", amount_cents: 1000 });
+    expect(row!.retry_claimed_at).not.toBeNull();
+    // Still covered (at most 500 now), it is sent.
+    await settle(taken.id, "unsettled");
+    expect(await claimRetry(taken.id, 500)).toEqual({ amount: 1000, resend: true });
+  });
+
+  it("gives each of two orders racing for one subscription a spend of its own", async () => {
+    // Two spends with the same target, both unsettled; orders for both at
+    // once must not both take the newest.
+    for (let round = 0; round < 4; round++) {
+      await admin.from("agent_budget_spends").delete().eq("user_id", userId);
+      const first = await take(`h:order-race-a-${ts}-${round}`, 1000);
+      await settle(first.id, "unsettled");
+      await admin
+        .from("agent_budget_spends")
+        .update({ taken_at: new Date(Date.now() - 20 * 60_000).toISOString() })
+        .eq("id", first.id);
+      const second = await take(`h:order-race-b-${ts}-${round}`, 1000, { ...BUSINESS, n: 2 });
+      expect(second.status).toBe("taken");
+      await settle(second.id, "unsettled");
+      const [a, b] = await Promise.all([
+        order(`ord_abt_race_a_${ts}_${round}`, 1000),
+        order(`ord_abt_race_b_${ts}_${round}`, 1000),
+      ]);
+      expect(a.error).toBeNull();
+      expect(b.error).toBeNull();
+      const ids = [a.data?.id, b.data?.id];
+      expect(ids).not.toContain(undefined);
+      expect(new Set(ids).size).toBe(2);
+      const { data: rows } = await admin
+        .from("agent_budget_spends")
+        .select("id, polar_order_id, status")
+        .in("id", [first.id, second.id]);
+      expect(new Set(rows!.map((row) => row.polar_order_id)).size).toBe(2);
+      for (const row of rows!) expect(row.status).toBe("applied");
+    }
+  });
+
+  it("refuses a raise a two-factor reset finds running, so it never turns the budget back on", async () => {
+    await admin.from("users").update({ agent_budget_cents: 0 }).eq("id", userId);
+    const ask = async (status: string) => {
+      const { data, error } = await admin
+        .from("approvals")
+        .insert({
+          user_id: userId,
+          action: "billing.agent_budget",
+          params: { teamId: null, budgetCents: 5000, previousCents: 0 },
+          summary: "Set the agent budget.",
+          user_code: crypto.randomUUID().slice(0, 9),
+          requester: "API key test",
+          status,
+          expires_at: new Date(Date.now() + 15 * 60_000).toISOString(),
+        })
+        .select("id")
+        .single();
+      if (error) throw error;
+      return data.id as string;
+    };
+    const setFor = (approvalId: string) =>
+      admin.rpc("set_agent_budget", {
+        p_user_id: userId,
+        p_team_id: null,
+        p_cents: 5000,
+        p_only_lower: false,
+        p_expected: 0,
+        p_approval: approvalId,
+      });
+    // Decided and running (completed, no result yet), and approved.
+    const running = await ask("completed");
+    const approved = await ask("approved");
+    const { error } = await admin.rpc("zero_agent_budgets_for_user", { p_user_id: userId });
+    expect(error).toBeNull();
+    const { data: rows } = await admin
+      .from("approvals")
+      .select("id, status, result")
+      .in("id", [running, approved]);
+    for (const row of rows!) {
+      expect(row).toMatchObject({ status: "denied", result: { code: "budget_changed" } });
+    }
+    // The run that follows finds the budget it was asked against (0) but
+    // its approval refused: nothing is set.
+    expect((await setFor(running)).data).toMatchObject({ status: "changed", previous: 0 });
+    expect((await state()).budget).toBe(0);
+    // A raise whose approval still stands is set.
+    const standing = await ask("completed");
+    expect((await setFor(standing)).data).toMatchObject({ status: "ok", budget: 5000 });
   });
 
   it("refuses every pending raise of the budget when the budget changes", async () => {

@@ -377,20 +377,35 @@ export async function decideApproval(
     // A refusal that can never come out otherwise (deniedWith) refuses the
     // approval for good, with a result the asker's poll returns.
     const denied = err.deniedWith !== undefined && err.deniedWith !== null;
-    await admin
-      .from("approvals")
-      .update(
+    // Tried twice: a write that fails both times leaves the row completed
+    // without a result (the asker's poll ends at expiry), which is ours to
+    // look at. Nothing ran, so the person is still told why.
+    let undoError: unknown = null;
+    for (let attempt = 0; attempt < 2; attempt++) {
+      ({ error: undoError } = await admin
+        .from("approvals")
+        .update(
+          denied
+            ? { status: "denied", completed_at: null, result: err.deniedWith }
+            : {
+                status: "pending",
+                decided_at: null,
+                completed_at: null,
+                expires_at: row.expires_at,
+              }
+        )
+        .eq("id", row.id)
+        .eq("status", "completed"));
+      if (!undoError) break;
+    }
+    if (undoError) {
+      reportError(
         denied
-          ? { status: "denied", completed_at: null, result: err.deniedWith }
-          : {
-              status: "pending",
-              decided_at: null,
-              completed_at: null,
-              expires_at: row.expires_at,
-            }
-      )
-      .eq("id", row.id)
-      .eq("status", "completed");
+          ? "Recording a refused approval failed"
+          : "Giving back an approval whose run was refused failed",
+        undoError
+      );
+    }
     throw new ApprovalError(err.status, err.message);
   }
   // The action is done whatever happens next, so the row never goes back
@@ -399,10 +414,13 @@ export async function decideApproval(
   // at "approved" until the row expires, then "expired".
   let recordError: unknown = null;
   for (let attempt = 0; attempt < 2; attempt++) {
+    // Only while it is still completed: one refused meanwhile (a two-factor
+    // reset refuses budget raises) keeps the refusal its asker reads.
     ({ error: recordError } = await admin
       .from("approvals")
       .update({ result: stored })
-      .eq("id", row.id));
+      .eq("id", row.id)
+      .eq("status", "completed"));
     if (!recordError) break;
   }
   // Done all the same: the person is told so and the trail records it; only

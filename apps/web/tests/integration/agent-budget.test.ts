@@ -112,6 +112,7 @@ import {
   PUT as putTeamBudget,
 } from "@/app/api/teams/[teamId]/billing/agent-budget/route";
 import { GET as getBudget, PUT as putBudget } from "@/app/api/billing/agent-budget/route";
+import { ActionError, actionSpec } from "@/lib/approvals/actions";
 import { decideApproval, reviewApproval } from "@/lib/approvals/store";
 import {
   sendPendingAgentBudgetEmails,
@@ -981,6 +982,59 @@ describe("agent spend budget", () => {
       .eq("team_id", teamId)
       .eq("action", "billing.agent_budget_zeroed");
     expect(audit?.some((a) => (a.metadata as { reason?: string }).reason === "support")).toBe(true);
+  });
+
+  it("never sets a raise whose run a two-factor reset found under way", async () => {
+    await admin.from("users").update({ agent_budget_cents: 0 }).eq("id", owner);
+    // Approved and running: decide_approval made it completed, and the run
+    // has not set the budget yet when the reset comes.
+    const params = {
+      teamId: null,
+      teamName: null,
+      budgetCents: 5000,
+      previousCents: 0,
+      keyId: null,
+      agentRegistrationId: null,
+    };
+    const insert = async () => {
+      const { data, error } = await admin
+        .from("approvals")
+        .insert({
+          user_id: owner,
+          action: "billing.agent_budget",
+          params,
+          summary: "Set the agent budget of your account to $50.00 per 30 days.",
+          user_code: crypto.randomUUID().slice(0, 9),
+          requester: "API key test",
+          status: "completed",
+          expires_at: new Date(Date.now() + 15 * 60_000).toISOString(),
+        })
+        .select("id")
+        .single();
+      if (error) throw error;
+      return data.id as string;
+    };
+    const run = (approvalId: string) =>
+      actionSpec("billing.agent_budget").run(owner, params, undefined, {
+        approvalId,
+        recordResult: async () => {},
+      });
+    const running = await insert();
+    await removeTwoFactor(owner, "support");
+    const refused = await run(running).catch((error: unknown) => error);
+    expect(refused).toBeInstanceOf(ActionError);
+    expect((refused as ActionError).deniedWith).toEqual({ code: "budget_changed" });
+    const { data: user } = await admin
+      .from("users")
+      .select("agent_budget_cents")
+      .eq("id", owner)
+      .single();
+    expect(user!.agent_budget_cents).toBe(0);
+    // One the reset never saw runs as before.
+    const standing = await insert();
+    const ran = await run(standing);
+    expect(ran.result).toEqual({ budgetCents: 5000, previousCents: 0 });
+    await admin.from("users").update({ agent_budget_cents: 0 }).eq("id", owner);
   });
 
   it("reads and sets the personal budget too", async () => {

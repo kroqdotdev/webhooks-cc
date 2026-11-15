@@ -121,6 +121,48 @@ describe("classifyChange", () => {
     ).toBe("decrease");
   });
 
+  it("counts a reduction from the lower of our scheduled seats and Polar's", () => {
+    // Polar already renews at 2 while our row still says 4 (its webhook is
+    // late): 3 raises Polar's renewal, so it is not a decrease.
+    const lagging = { teamSeats: 5, teamPendingSeats: 4, pendingSeats: 2 };
+    expect(
+      classifyChange(
+        TEAM,
+        { kind: "seats", seats: 3 },
+        quote({ basis: lagging, applies: "renewal" })
+      )
+    ).toBe("approval");
+    // And the other way round: our row is lower than Polar's.
+    expect(
+      classifyChange(
+        TEAM,
+        { kind: "seats", seats: 3 },
+        quote({
+          basis: { teamSeats: 5, teamPendingSeats: 2, pendingSeats: 4 },
+          applies: "renewal",
+        })
+      )
+    ).toBe("approval");
+    expect(
+      classifyChange(
+        TEAM,
+        { kind: "seats", seats: 1 },
+        quote({ basis: lagging, applies: "renewal" })
+      )
+    ).toBe("decrease");
+    // Polar's alone counts when our row has none.
+    expect(
+      classifyChange(
+        TEAM,
+        { kind: "seats", seats: 3 },
+        quote({
+          basis: { teamSeats: 5, teamPendingSeats: null, pendingSeats: 2 },
+          applies: "renewal",
+        })
+      )
+    ).toBe("approval");
+  });
+
   it("keeps fewer seats for the owner while a plan change waits for the renewal", () => {
     const basis = { teamSeats: 3, teamPendingSeats: null };
     const fewer = { kind: "seats", seats: 2 } as const;

@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Meter } from "@/components/ui/meter";
 import { longDate } from "@/lib/dates";
+import { createLatestCall } from "@/lib/latest-call";
 import {
   AGENT_BUDGET_RENEWAL_NOTE,
   agentBudgetDescription,
@@ -79,9 +80,14 @@ export function AgentBudgetPanel({
   const [field, setField] = useState("");
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<{ tone: "success" | "error"; text: string } | null>(null);
+  // Reads and saves overlap (a reload while a save is on its way): only the
+  // newest one's answer is shown, so a read begun before a save never puts
+  // back the budget the save replaced.
+  const [calls] = useState(createLatestCall);
 
   const load = useCallback(async () => {
     if (!accessToken) return;
+    const current = calls.begin();
     try {
       const response = await fetch(budgetUrl(teamId), {
         headers: { Authorization: `Bearer ${accessToken}` },
@@ -89,12 +95,14 @@ export function AgentBudgetPanel({
       });
       if (!response.ok) throw new Error("The agent budget could not be loaded");
       const next = (await response.json()) as AgentBudgetView;
+      if (!current()) return;
       setView(next);
       setField(dollarsField(next.budgetCents));
     } catch (err) {
+      if (!current()) return;
       setMessage({ tone: "error", text: err instanceof Error ? err.message : String(err) });
     }
-  }, [accessToken, teamId]);
+  }, [accessToken, teamId, calls]);
 
   useEffect(() => {
     void load();
@@ -104,6 +112,7 @@ export function AgentBudgetPanel({
     if (!accessToken) return;
     setBusy(true);
     setMessage(null);
+    const current = calls.begin();
     try {
       const response = await fetch(budgetUrl(teamId), {
         method: "PUT",
@@ -115,8 +124,11 @@ export function AgentBudgetPanel({
       if (!response.ok || !data) {
         throw new Error(data?.error ?? "The budget could not be saved");
       }
-      setView(data);
-      setField(dollarsField(data.budgetCents));
+      // Saved whatever happens next; a read begun since shows it already.
+      if (current()) {
+        setView(data);
+        setField(dollarsField(data.budgetCents));
+      }
       setMessage({
         tone: "success",
         text:

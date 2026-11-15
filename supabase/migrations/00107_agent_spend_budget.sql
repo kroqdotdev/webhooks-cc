@@ -376,15 +376,22 @@ $$;
 -- approved after the owner lowered the budget never undoes that. Any
 -- change refuses every raise of it still waiting for approval: each was
 -- asked against the budget as it was, and a lower one is the owner's (or a
--- key's) latest word. Who may set a team's is checked by the web app (the
--- team's owner only).
+-- key's) latest word. p_approval, when given, is the approval running
+-- this call: unless it is still completed without a result (refused
+-- meanwhile, as a two-factor reset refuses every raise), nothing is set
+-- ('changed'). The account row is locked before the approval, as
+-- zero_agent_budgets_for_user locks them, so the two never pass each
+-- other. Who may set a team's is checked by the web app (the team's owner
+-- only).
 drop function if exists public.set_agent_budget(uuid, uuid, integer, boolean);
+drop function if exists public.set_agent_budget(uuid, uuid, integer, boolean, integer);
 create or replace function public.set_agent_budget(
   p_user_id    uuid,
   p_team_id    uuid,
   p_cents      integer,
   p_only_lower boolean,
-  p_expected   integer default null
+  p_expected   integer default null,
+  p_approval   uuid default null
 )
 returns jsonb
 language plpgsql
@@ -408,6 +415,17 @@ begin
   end if;
   if not found then
     return jsonb_build_object('status', 'no_account');
+  end if;
+  if p_approval is not null then
+    perform 1 from public.approvals a
+     where a.id = p_approval
+       and a.action = 'billing.agent_budget'
+       and a.status = 'completed'
+       and a.result is null
+       for update;
+    if not found then
+      return jsonb_build_object('status', 'changed', 'previous', v_previous);
+    end if;
   end if;
   if p_expected is not null and p_expected <> v_previous then
     return jsonb_build_object('status', 'changed', 'previous', v_previous);
@@ -666,18 +684,27 @@ $$;
 --     retry_claimed_at, which the settle that follows clears, and nothing
 --     else moves (updated_at and status_changed_at included), so a look
 --     never stretches a window measured from them.
--- Returns what the spend counts at when this caller has it, else null. The
--- account row is locked first, as a take locks it, so a take never sums a
--- row that is being raised.
+-- A resend is checked against the budget again here, under the account
+-- row's lock, as resendRefusal in lib/billing/agent-budget.ts checked it
+-- before: a budget lowered since that check (by the owner, or a key) so
+-- that what is left besides this spend no longer covers p_cents makes the
+-- try only a look ('resend' false), and nothing is sent to Polar.
+-- Returns {"amount": what the spend counts at, "resend": whether it may be
+-- sent} when this caller has it, else null. The account row is locked
+-- first, as a take locks it, so a take never sums a row that is being
+-- raised, and a budget set waits for it.
+drop function if exists public.claim_agent_budget_retry(uuid, integer);
 create or replace function public.claim_agent_budget_retry(p_id uuid, p_cents integer)
-returns integer
+returns jsonb
 language plpgsql
 security definer set search_path = ''
 as $$
 declare
   v_user   uuid;
   v_team   uuid;
+  v_budget integer;
   v_amount integer;
+  v_resend boolean := p_cents is not null;
 begin
   if p_cents is not null and p_cents < 0 then
     raise exception 'invalid amount: %', p_cents using errcode = '22023';
@@ -688,12 +715,19 @@ begin
     return null;
   end if;
   if v_team is not null then
-    perform 1 from public.teams t where t.id = v_team for no key update;
+    select t.agent_budget_cents into v_budget
+      from public.teams t where t.id = v_team for no key update;
   else
-    perform 1 from public.users u where u.id = v_user for no key update;
+    select u.agent_budget_cents into v_budget
+      from public.users u where u.id = v_user for no key update;
+  end if;
+  if v_resend
+     and (v_budget is null
+          or v_budget - public.agent_budget_counted_cents(v_user, v_team, p_id) < p_cents) then
+    v_resend := false;
   end if;
   -- Its outcome is not known from here on, whatever this try finds.
-  if p_cents is not null then
+  if v_resend then
     update public.agent_budget_spends s
        set status = 'running',
            amount_cents = greatest(s.amount_cents, p_cents),
@@ -721,7 +755,10 @@ begin
        and (s.retry_claimed_at is null or s.retry_claimed_at < now() - interval '5 minutes')
     returning s.amount_cents into v_amount;
   end if;
-  return v_amount;
+  if v_amount is null then
+    return null;
+  end if;
+  return jsonb_build_object('amount', v_amount, 'resend', v_resend);
 end;
 $$;
 
@@ -906,77 +943,97 @@ security definer set search_path = ''
 as $$
 declare
   v_row     public.agent_budget_spends%rowtype;
+  v_locked  public.agent_budget_spends%rowtype;
   v_before  integer;
   v_status  text;
   v_count   integer;
   v_paid    timestamptz := least(coalesce(p_paid_at, p_ordered_at, now()), now());
-  v_revived boolean := false;
-  v_again   boolean := false;
+  v_revived boolean;
+  v_again   boolean;
+  v_picked  boolean := false;
 begin
   if p_net_cents is null or p_net_cents < 0 then
     return null;
   end if;
-  select * into v_row
-    from public.agent_budget_spends s
-   where s.polar_order_id = p_order_id;
-  if not found then
+  -- The spend is picked before its account row is locked (the account is
+  -- the spend's), so another order's handler may take it in between: once
+  -- locked, the row must still be as picked, else it is picked again. The
+  -- second pick holds the account's lock, so it cannot move again; three
+  -- passes are only a bound.
+  for v_pass in 1..3 loop
+    v_revived := false;
+    v_again := false;
     select * into v_row
       from public.agent_budget_spends s
-     where s.polar_subscription_id = p_subscription_id
-       and s.polar_order_id is null
-       and s.status <> 'returned'
-       and s.counts_until > now()
-       -- Taken before the order (a minute for the two clocks), and the
-       -- order no later than 10 minutes after the spend last moved or was sent.
-       and s.taken_at <= p_ordered_at + interval '1 minute'
-       and p_ordered_at <= s.status_changed_at + interval '10 minutes'
-       and (
-         (s.target ? 'productId' and s.target->>'productId' = p_product_id)
-         or (s.target ? 'seats' and p_seats is not null
-             and p_seats = (s.target->>'seats')::integer)
-       )
-     order by s.taken_at desc
-     limit 1;
+     where s.polar_order_id = p_order_id;
     if not found then
       select * into v_row
         from public.agent_budget_spends s
        where s.polar_subscription_id = p_subscription_id
          and s.polar_order_id is null
-         and s.status = 'returned'
-         and s.returned_at > now() - case when s.outcome->>'code' = 'payment_failed'
-                                          then interval '30 days' else interval '1 day' end
+         and s.status <> 'returned'
+         and s.counts_until > now()
+         -- Taken before the order (a minute for the two clocks), and the
+         -- order no later than 10 minutes after the spend last moved or was sent.
          and s.taken_at <= p_ordered_at + interval '1 minute'
-         and p_ordered_at <= s.returned_at + interval '1 minute'
+         and p_ordered_at <= s.status_changed_at + interval '10 minutes'
          and (
            (s.target ? 'productId' and s.target->>'productId' = p_product_id)
            or (s.target ? 'seats' and p_seats is not null
                and p_seats = (s.target->>'seats')::integer)
          )
-       order by s.returned_at desc
+       order by s.taken_at desc
        limit 1;
       if not found then
-        return null;
+        select * into v_row
+          from public.agent_budget_spends s
+         where s.polar_subscription_id = p_subscription_id
+           and s.polar_order_id is null
+           and s.status = 'returned'
+           and s.returned_at > now() - case when s.outcome->>'code' = 'payment_failed'
+                                            then interval '30 days' else interval '1 day' end
+           and s.taken_at <= p_ordered_at + interval '1 minute'
+           and p_ordered_at <= s.returned_at + interval '1 minute'
+           and (
+             (s.target ? 'productId' and s.target->>'productId' = p_product_id)
+             or (s.target ? 'seats' and p_seats is not null
+                 and p_seats = (s.target->>'seats')::integer)
+           )
+         order by s.returned_at desc
+         limit 1;
+        if not found then
+          return null;
+        end if;
+        v_revived := true;
       end if;
-      v_revived := true;
-    end if;
-  elsif v_row.status = 'returned' then
-    return null;
-  else
-    v_again := v_row.status = 'applied';
-  end if;
-
-  if v_row.team_id is not null then
-    perform 1 from public.teams t where t.id = v_row.team_id for no key update;
-  else
-    perform 1 from public.users u where u.id = v_row.user_id for no key update;
-  end if;
-
-  select s.amount_cents, s.status into v_before, v_status
-    from public.agent_budget_spends s where s.id = v_row.id for update;
-  if v_revived then
-    if v_status <> 'returned' then
+    elsif v_row.status = 'returned' then
       return null;
+    else
+      v_again := v_row.status = 'applied';
     end if;
+
+    if v_row.team_id is not null then
+      perform 1 from public.teams t where t.id = v_row.team_id for no key update;
+    else
+      perform 1 from public.users u where u.id = v_row.user_id for no key update;
+    end if;
+
+    select * into v_locked
+      from public.agent_budget_spends s where s.id = v_row.id for update;
+    if found
+       and v_locked.polar_order_id is not distinct from v_row.polar_order_id
+       and v_locked.status = v_row.status then
+      v_picked := true;
+      exit;
+    end if;
+  end loop;
+  if not v_picked then
+    return null;
+  end if;
+  v_before := v_locked.amount_cents;
+  v_status := v_locked.status;
+
+  if v_revived then
     -- The key may have taken a new spend since: this one keeps counting
     -- under a key of its own.
     if exists (
@@ -1039,8 +1096,10 @@ $$;
 -- 'unknown': it may have been): true when this caller sends it. Nothing is
 -- claimed once that email went out, or the 'unknown' one once the change is
 -- known made, for a spend whose email cannot be delivered or that has had
--- 30 tries, or while another sender's claim is under five minutes old. Each
--- claim counts a try.
+-- 30 tries, while another sender's claim is under five minutes old, or
+-- before its next try is due (email_next_at: a failed send puts it off by
+-- the backoff, which a request's own send waits for as the poller does).
+-- Each claim counts a try.
 create or replace function public.claim_agent_budget_email(p_id uuid, p_kind text)
 returns boolean
 language sql
@@ -1055,6 +1114,7 @@ as $$
        and not s.email_undeliverable
        and s.email_attempts < 30
        and (p_kind = 'spent' or (p_kind = 'unknown' and s.unknown_emailed_at is null))
+       and s.email_next_at <= now()
        and (s.email_claimed_at is null or s.email_claimed_at < now() - interval '5 minutes')
     returning 1
   )
@@ -1174,10 +1234,12 @@ as $$
 $$;
 
 -- Claims the account's next reduction notice: every reduction not yet
--- emailed (in the last 7 days; older ones are given up on), in one email.
--- At most one notice per account an hour: while one went out in the last
--- hour, or another sender holds a claim under five minutes old, nothing is
--- claimed ('wait', with when the next may go). Serialised on the account
+-- emailed (in the last 7 days; older ones are given up on) whose next try
+-- is due (email_next_at, which a failed send puts off by the backoff), in
+-- one email. At most one notice per account an hour: while one went out in
+-- the last hour, another sender holds a claim under five minutes old, or
+-- every reduction left waits its backoff, nothing is claimed ('wait', with
+-- when the next may go). Serialised on the account
 -- row, so two senders never both pass the hour. Returns 'claimed' with the
 -- claim and the reductions, 'wait', or 'none'.
 create or replace function public.claim_agent_budget_reduction_notice(p_user_id uuid, p_team_id uuid)
@@ -1234,6 +1296,7 @@ begin
      where (r.user_id = p_user_id or r.team_id = p_team_id)
        and r.emailed_at is null
        and not r.email_undeliverable
+       and r.email_next_at <= now()
     returning r.id, r.key_id, r.agent_registration_id, r.description, r.renewal_cents, r.made_at
   )
   select jsonb_agg(jsonb_build_object(
@@ -1247,6 +1310,14 @@ begin
     into v_rows
     from claimed c;
   if v_rows is null then
+    select min(r.email_next_at) into v_last
+      from public.agent_budget_reductions r
+     where (r.user_id = p_user_id or r.team_id = p_team_id)
+       and r.emailed_at is null
+       and not r.email_undeliverable;
+    if v_last is not null then
+      return jsonb_build_object('status', 'wait', 'next_at', v_last);
+    end if;
     return jsonb_build_object('status', 'none');
   end if;
   return jsonb_build_object('status', 'claimed', 'claim', v_claim, 'reductions', v_rows);
@@ -1303,9 +1374,15 @@ $$;
 
 -- Every budget a person controls (their own and every team they own, by
 -- an owner membership or as its creator, as account deletion finds them)
--- goes to 0, and every raise of one still waiting for their approval is
--- refused: a recovery code was spent or staff reset two-factor. Returns the
--- accounts whose budget was above 0.
+-- goes to 0, and every raise of one is refused: a recovery code was spent
+-- or staff reset two-factor. Refused are the raises waiting for approval,
+-- any approved and not yet collected, and those approved and running now
+-- (completed without a result), whose set_agent_budget then sets nothing:
+-- a raise from 0 would otherwise find the budget it was asked against and
+-- turn it back on. The account rows are locked first, as set_agent_budget
+-- locks them before its approval, so a raise either lands before this
+-- (and is zeroed here) or finds its approval refused. Returns the accounts
+-- whose budget was above 0.
 create or replace function public.zero_agent_budgets_for_user(p_user_id uuid)
 returns jsonb
 language plpgsql
@@ -1315,6 +1392,15 @@ declare
   v_user  integer;
   v_teams jsonb;
 begin
+  perform 1 from public.users u where u.id = p_user_id for no key update;
+  perform 1 from public.teams t
+   where t.created_by = p_user_id
+      or t.id in (
+        select m.team_id from public.team_members m
+         where m.user_id = p_user_id and m.role = 'owner'
+      )
+   order by t.id
+     for no key update;
   update public.users u set agent_budget_cents = 0
    where u.id = p_user_id and u.agent_budget_cents <> 0
   returning 1 into v_user;
@@ -1334,7 +1420,8 @@ begin
          result = jsonb_build_object('code', 'budget_changed')
    where a.user_id = p_user_id
      and a.action = 'billing.agent_budget'
-     and a.status = 'pending';
+     and (a.status in ('pending', 'approved')
+          or (a.status = 'completed' and a.result is null));
   return jsonb_build_object('user', v_user is not null, 'teams', v_teams);
 end;
 $$;
@@ -1505,7 +1592,7 @@ revoke all on function public.agent_budget_decrease_check(uuid, uuid, integer) f
 revoke all on function public.deny_agent_budget_raises(uuid, uuid) from public, anon, authenticated;
 revoke all on function public.deny_agent_budget_raises_of_key() from public, anon, authenticated;
 revoke all on function public.decide_approval(uuid, text, text, integer) from public, anon, authenticated;
-revoke all on function public.set_agent_budget(uuid, uuid, integer, boolean, integer) from public, anon, authenticated;
+revoke all on function public.set_agent_budget(uuid, uuid, integer, boolean, integer, uuid) from public, anon, authenticated;
 revoke all on function public.take_agent_budget(uuid, uuid, text, integer, uuid, uuid, jsonb, text, text, jsonb, timestamptz, jsonb, uuid) from public, anon, authenticated;
 revoke all on function public.retire_agent_budget_key(uuid) from public, anon, authenticated;
 revoke all on function public.claim_agent_budget_retry(uuid, integer) from public, anon, authenticated;
@@ -1529,7 +1616,7 @@ grant execute on function public.agent_budget_state(uuid, uuid) to service_role;
 grant execute on function public.agent_budget_decrease_check(uuid, uuid, integer) to service_role;
 grant execute on function public.deny_agent_budget_raises(uuid, uuid) to service_role;
 grant execute on function public.decide_approval(uuid, text, text, integer) to service_role;
-grant execute on function public.set_agent_budget(uuid, uuid, integer, boolean, integer) to service_role;
+grant execute on function public.set_agent_budget(uuid, uuid, integer, boolean, integer, uuid) to service_role;
 grant execute on function public.take_agent_budget(uuid, uuid, text, integer, uuid, uuid, jsonb, text, text, jsonb, timestamptz, jsonb, uuid) to service_role;
 grant execute on function public.retire_agent_budget_key(uuid) to service_role;
 grant execute on function public.claim_agent_budget_retry(uuid, integer) to service_role;

@@ -11,6 +11,8 @@ const USER = "0b6a2a9e-3c1d-4e5f-8a7b-9c0d1e2f3a4b";
 interface Db {
   user: Record<string, unknown> | null;
   userError: Error | null;
+  /** An error the users read answers with (rather than throws), as PostgREST does. */
+  userReadError: { message: string } | null;
   spendByKey: Record<string, unknown> | null;
   /** The row a status read finds; a function answers each read in turn. */
   spendRow: Record<string, unknown> | null | (() => Record<string, unknown> | null);
@@ -22,6 +24,7 @@ interface Db {
 const db: Db = {
   user: null,
   userError: null,
+  userReadError: null,
   spendByKey: null,
   spendRow: null,
   registration: null,
@@ -50,6 +53,7 @@ function builder(table: string) {
   const answer = async () => {
     if (table === "users") {
       if (db.userError) throw db.userError;
+      if (db.userReadError) return { data: null, error: db.userReadError };
       return { data: db.user, error: null };
     }
     if (table === "capacity_subscriptions") return { data: null, count: 0, error: null };
@@ -101,7 +105,8 @@ vi.mock("@/lib/polar", async (importOriginal) => ({
   createPolarClient: () => ({
     subscriptions: { get: async () => (polar.get ? polar.get() : polar.subscription) },
   }),
-  loggablePolarError: (error: unknown) => error,
+  // Marks what passed through it, so a test sees no raw Polar error is reported.
+  loggablePolarError: (error: unknown) => ({ loggable: error }),
   planProductId: (plan: string, interval: string) => `prod_${plan}_${interval}`,
   teamPlanProductId: (plan: string, interval: string) => `prod_${plan}_${interval}`,
 }));
@@ -123,9 +128,14 @@ vi.mock("./change", async (importOriginal) => {
   };
 });
 
-const { keyLabel, LOST_TAKE_RECHECK_MS, settleAgentBudgetFromWebhook, trySpendFromBudget } =
-  await import("./agent-budget");
-const { BillingChangeRefusal } = await import("./change");
+const {
+  emailSpend,
+  keyLabel,
+  LOST_TAKE_RECHECK_MS,
+  settleAgentBudgetFromWebhook,
+  trySpendFromBudget,
+} = await import("./agent-budget");
+const { BillingChangeRefusal, PAYMENT_ACTION_REQUIRED } = await import("./change");
 
 const CHANGE = { kind: "plan", plan: "business", interval: "month" } as const;
 const CALLER = { userId: USER, keyId: "5e1f2a3b-4c5d-4e6f-8a9b-0c1d2e3f4a5b" };
@@ -174,6 +184,7 @@ beforeEach(() => {
     home_site: null,
   };
   db.userError = null;
+  db.userReadError = null;
   db.spendByKey = null;
   db.spendRow = null;
   db.registration = null;
@@ -269,7 +280,7 @@ describe("trySpendFromBudget", () => {
       budget: 10_000,
       others: 0,
     });
-    db.rpc.claim_agent_budget_retry = () => 3000;
+    db.rpc.claim_agent_budget_retry = () => ({ amount: 3000, resend: true });
     db.rpc.settle_agent_budget_spend = (args) => args.p_status;
     mocks.makeBillingChange.mockRejectedValue(
       new BillingChangeRefusal(409, "The card was declined", "card_declined")
@@ -279,6 +290,73 @@ describe("trySpendFromBudget", () => {
     expect(response.status).toBe(502);
     expect(await response.json()).toMatchObject({ code: "outcome_unknown" });
     expect(settles()).toEqual(["unsettled"]);
+  });
+
+  it("only looks at a resend the claim finds the budget no longer covers", async () => {
+    db.rpc.take_agent_budget = () => ({
+      status: "existing",
+      id: "spend-1",
+      spend_status: "unsettled",
+      outcome: null,
+      age_seconds: 60,
+      quoted_cents: 3000,
+      amount_cents: 3000,
+      period_end: PERIOD_END,
+      budget: 10_000,
+      others: 0,
+    });
+    // The owner lowered the budget after the take was read: the claim,
+    // under the account's lock, makes it a look.
+    db.rpc.claim_agent_budget_retry = () => ({ amount: 3000, resend: false });
+    db.rpc.settle_agent_budget_spend = (args) => args.p_status;
+    const attempt = await trySpendFromBudget(request(), CALLER, null, CHANGE);
+    const response = (attempt as { response: Response }).response;
+    expect(response.status).toBe(502);
+    expect(await response.json()).toMatchObject({ code: "outcome_unknown" });
+    expect(mocks.makeBillingChange).not.toHaveBeenCalled();
+    expect(settles()).toEqual(["unsettled"]);
+    const claim = db.rpcCalls.find((call) => call.name === "claim_agent_budget_retry")!;
+    expect(claim.args.p_cents).toBe(3000);
+  });
+
+  it("keeps the 3-D Secure mark when its settle fails, so a retry never sends it again", async () => {
+    db.rpc.take_agent_budget = () => ({ status: "taken", id: "spend-1", left: 7000 });
+    let failed = false;
+    db.rpc.settle_agent_budget_spend = (args) => {
+      if (!failed) {
+        failed = true;
+        throw new Error("connection reset");
+      }
+      return args.p_status;
+    };
+    const { TeamBillingError } = await import("@/lib/supabase/team-billing");
+    mocks.makeBillingChange.mockRejectedValue(
+      new TeamBillingError("payment_action_required", "Confirm the payment")
+    );
+    const attempt = await trySpendFromBudget(request(), CALLER, null, CHANGE);
+    const response = (attempt as { response: Response }).response;
+    expect(response.status).toBe(502);
+    expect(await response.json()).toMatchObject({
+      code: "outcome_unknown",
+      reason: PAYMENT_ACTION_REQUIRED,
+    });
+    const recorded = db.rpcCalls.filter((call) => call.name === "settle_agent_budget_spend");
+    expect(recorded.map((call) => call.args)).toEqual([
+      { p_id: "spend-1", p_status: "unsettled", p_outcome: { code: "payment_action_required" } },
+      { p_id: "spend-1", p_status: "unsettled", p_outcome: { code: "payment_action_required" } },
+    ]);
+  });
+
+  it("reports a Polar read that failed only through loggablePolarError", async () => {
+    const polarError = new Error("Polar said: customer someone@example.com");
+    mocks.loadBillingQuote.mockRejectedValue(polarError);
+    const attempt = await trySpendFromBudget(request(), CALLER, null, CHANGE);
+    expect(attempt).toEqual({ kind: "none" });
+    expect(mocks.reportError).toHaveBeenCalledWith(
+      "[agent-budget] reading the change failed; asking for approval",
+      { loggable: polarError }
+    );
+    for (const call of mocks.reportError.mock.calls) expect(call[1]).not.toBe(polarError);
   });
 
   it("sends a spend on a subscription billed in another currency to the approval", async () => {
@@ -529,6 +607,46 @@ describe("settleAgentBudgetFromWebhook", () => {
     await settleAgentBudgetFromWebhook("order.created", paid);
     await settleAgentBudgetFromWebhook("order.paid", { ...paid, billing_reason: "purchase" });
     expect(db.rpcCalls).toEqual([]);
+  });
+});
+
+describe("emailSpend", () => {
+  it("tries a spend email again when its owner could not be read, never dropping it", async () => {
+    db.rpc.claim_agent_budget_email = () => true;
+    db.rpc.finish_agent_budget_email = () => null;
+    db.spendRow = {
+      user_id: USER,
+      team_id: null,
+      key_id: null,
+      agent_registration_id: null,
+      description: "Change the plan.",
+      amount_cents: 3000,
+      facts: {},
+    };
+    db.userReadError = { message: "connection reset" };
+    await expect(emailSpend("spend-1", "spent")).rejects.toMatchObject({
+      message: "connection reset",
+    });
+    const finish = db.rpcCalls.find((call) => call.name === "finish_agent_budget_email")!;
+    expect(finish.args).toMatchObject({ p_id: "spend-1", p_result: "failed" });
+  });
+
+  it("takes a spend email out of the queue only when the owner has no address", async () => {
+    db.rpc.claim_agent_budget_email = () => true;
+    db.rpc.finish_agent_budget_email = () => null;
+    db.spendRow = {
+      user_id: USER,
+      team_id: null,
+      key_id: null,
+      agent_registration_id: null,
+      description: "Change the plan.",
+      amount_cents: 3000,
+      facts: {},
+    };
+    db.user = null;
+    expect(await emailSpend("spend-2", "spent")).toBe(false);
+    const finish = db.rpcCalls.find((call) => call.name === "finish_agent_budget_email")!;
+    expect(finish.args).toMatchObject({ p_id: "spend-2", p_result: "undeliverable" });
   });
 });
 
