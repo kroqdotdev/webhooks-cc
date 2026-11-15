@@ -77,9 +77,27 @@ describe("supersedeCheckoutLinks", () => {
     }
   });
 
+  it("records the session on a link that follows it but was superseded through another", async () => {
+    await supersedeCheckoutLinks("polar_checkout_2", null, null);
+    // Superseded by polar_checkout_1 while following polar_checkout_2: this
+    // undone purchase now records it, so it never pays the link as its own.
+    expect(mocks.queries).toContainEqual(
+      expect.objectContaining({
+        op: "update",
+        patch: { paid_checkout_id: "polar_checkout_2" },
+        filters: [
+          ["eq", "polar_checkout_id", "polar_checkout_2"],
+          ["eq", "status", "superseded"],
+          ["neq", "paid_checkout_id", "polar_checkout_2"],
+        ],
+      })
+    );
+  });
+
   it("asks about the customer only for a link that is a candidate", async () => {
     mocks.results.push({ data: null, error: null }); // the session's own links
     mocks.results.push({ data: null, error: null }); // paid_at stamp
+    mocks.results.push({ data: null, error: null }); // superseded through another session
     mocks.results.push({ data: null, error: null }); // links that replaced it
     mocks.results.push({ data: [], error: null }); // superseded links that list it
     mocks.results.push({ data: null, error: null }); // the named link is no candidate
@@ -91,6 +109,7 @@ describe("supersedeCheckoutLinks", () => {
 
     // A candidate paid from another customer: reported, never superseded.
     mocks.queries.length = 0;
+    mocks.results.push({ data: null, error: null });
     mocks.results.push({ data: null, error: null });
     mocks.results.push({ data: null, error: null });
     mocks.results.push({ data: null, error: null });
@@ -116,13 +135,14 @@ describe("an undone session", () => {
   it("is taken off the replaced sessions of superseded links, so it never pays one", async () => {
     mocks.results.push({ data: null, error: null }); // the session's own links
     mocks.results.push({ data: null, error: null }); // paid_at stamp
+    mocks.results.push({ data: null, error: null }); // superseded through another session
     mocks.results.push({ data: null, error: null }); // links that replaced it
     mocks.results.push({
       data: [{ id: LINK, previous_checkout_ids: ["polar_checkout_0", "polar_checkout_1"] }],
       error: null,
     }); // a superseded link that lists it
     await supersedeCheckoutLinks("polar_checkout_1", null, null);
-    const read = mocks.queries[3];
+    const read = mocks.queries[4];
     expect(read).toMatchObject({
       op: "select",
       filters: [
@@ -130,7 +150,7 @@ describe("an undone session", () => {
         ["eq", "status", "superseded"],
       ],
     });
-    expect(mocks.queries[4]).toMatchObject({
+    expect(mocks.queries[5]).toMatchObject({
       op: "update",
       patch: { previous_checkout_ids: ["polar_checkout_0"] },
       // Only while the row still holds the list it was read with.

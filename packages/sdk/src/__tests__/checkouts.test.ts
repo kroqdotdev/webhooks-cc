@@ -196,6 +196,56 @@ describe("billing checkout links", () => {
     expect(refused).toHaveBeenCalledTimes(1);
   }, 15_000);
 
+  it("gives up after ten failures in a row when it has no deadline", async () => {
+    vi.useFakeTimers();
+    try {
+      const once = new WebhooksCC({
+        apiKey: "whcc_testkey123",
+        baseUrl: BASE_URL,
+        retry: { maxAttempts: 1 },
+      });
+      // A failure that keeps coming back ends the wait with that failure.
+      const busy = vi.fn().mockResolvedValue(answer({ error: "busy" }, 503));
+      globalThis.fetch = busy;
+      const failed = once.billing.waitForCheckout(ID, { pollInterval: 1_000 }).catch((e) => e);
+      await vi.advanceTimersByTimeAsync(20_000);
+      expect(((await failed) as Error).message).toContain("busy");
+      expect(busy).toHaveBeenCalledTimes(10);
+
+      // An answer in between starts the count again.
+      const mixed = vi.fn();
+      for (let i = 0; i < 9; i++) mixed.mockResolvedValueOnce(answer({ error: "busy" }, 503));
+      mixed.mockResolvedValueOnce(answer(link("open")));
+      for (let i = 0; i < 9; i++) mixed.mockRejectedValueOnce(new TypeError("fetch failed"));
+      mixed.mockResolvedValueOnce(answer(link("paid")));
+      globalThis.fetch = mixed;
+      const paid = once.billing.waitForCheckout(ID, { pollInterval: 1_000 });
+      await vi.advanceTimersByTimeAsync(30_000);
+      expect((await paid).status).toBe("paid");
+      expect(mixed).toHaveBeenCalledTimes(20);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("counts only a request that got no answer as the network", async () => {
+    // An answer that is not the API's JSON is no network failure: thrown at once.
+    const html = vi.fn().mockResolvedValue({
+      ...answer({}),
+      headers: new Headers({ "content-type": "text/html" }),
+    });
+    globalThis.fetch = html;
+    const once = new WebhooksCC({
+      apiKey: "whcc_testkey123",
+      baseUrl: BASE_URL,
+      retry: { maxAttempts: 1 },
+    });
+    await expect(
+      once.billing.waitForCheckout(ID, { pollInterval: 1_000, timeout: 10_000 })
+    ).rejects.toThrow("Unexpected content type");
+    expect(html).toHaveBeenCalledTimes(1);
+  });
+
   it("never says nothing was bought for a link that may have been paid", async () => {
     globalThis.fetch = vi.fn().mockResolvedValue(
       answer(

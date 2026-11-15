@@ -2186,7 +2186,11 @@ export interface CheckoutLink {
 }
 
 export interface WaitForCheckoutOptions {
-  /** Give up after this many milliseconds (default: until the link expires). */
+  /**
+   * Give up after this many milliseconds (default: until the link expires).
+   * Without it, ten polls in a row that fail for now (a 5xx, a 429, the
+   * network) end the wait with the last one's error.
+   */
   timeout?: number;
   /** Milliseconds between polls (default 3000, at least 1000). */
   pollInterval?: number;

@@ -1033,7 +1033,9 @@ async function paidAtPolar(
       id: linkId,
       error: loggablePolarError(error),
     });
-    return "not_live";
+    // Past expiry a failed read is unsettled, as documented; before it the
+    // link reads processing and the webhook decides.
+    return stopAt === undefined ? "not_live" : "unread";
   }
 }
 
@@ -1460,7 +1462,9 @@ const CHECKOUT_ID = /^[A-Za-z0-9_-]{1,128}$/;
  * this session but was superseded by another of its sessions (that
  * purchase was undone, this one stands), and a one-time order that a
  * refund was recorded for (polar_refunds: it bought nothing) never pays a
- * link through a replaced session or the metadata.
+ * link through a replaced session or the metadata. A succeeded session of
+ * a one-time order (`source` "checkout", no subscription) names no order,
+ * so it never pays a link those ways either: its order.paid does.
  *
  * `polar` bounds the subscription read (a read past expiry gives each call
  * to Polar POLAR_READ_TIMEOUT_S).
@@ -1482,6 +1486,10 @@ async function settlePaid(
   const stillLive = async () => {
     if (live !== null) return live;
     if (subscriptionId !== null) live = await isLiveSubscription(subscriptionId, polar);
+    // A succeeded session of a one-time order names no order, so whether a
+    // refund was recorded for it cannot be told here: its order.paid
+    // decides (the links that follow the session were paid above).
+    else if (source === "checkout") live = false;
     // A one-time order stands unless the webhook recorded a refund for it
     // (extra domains with nothing left to go on, an account deleted
     // meanwhile): such an order bought nothing.

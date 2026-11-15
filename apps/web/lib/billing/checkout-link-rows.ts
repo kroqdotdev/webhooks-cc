@@ -84,7 +84,9 @@ export async function linkCustomerMatches(
  * here: that purchase stands, and this one is a duplicate of it. Every link
  * superseded records the session that did it in paid_checkout_id, so a
  * session it had replaced whose purchase stands can still pay it
- * (settlePaid() in checkout-links.ts).
+ * (settlePaid() in checkout-links.ts); a link that follows the session and
+ * was already superseded through another records this session instead, so
+ * this undone purchase can never pay it as its own.
  */
 export async function supersedeCheckoutLinks(
   checkoutId: string | null,
@@ -111,6 +113,19 @@ export async function supersedeCheckoutLinks(
       .or(ours)
       .is("paid_at", null);
     if (stampError) throw stampError;
+
+    // Following this session but already superseded through another one
+    // (whose purchase was undone first): this session now records it, so
+    // a later event for it (a checkout.updated after the revoke failed or
+    // the order was refunded) never reads the link as superseded by
+    // another session and pays it through its own (settlePaid()).
+    const { error: undoneError } = await admin
+      .from("billing_checkouts")
+      .update({ paid_checkout_id: checkoutId })
+      .eq("polar_checkout_id", checkoutId)
+      .eq("status", "superseded")
+      .neq("paid_checkout_id", checkoutId);
+    if (undoneError) throw undoneError;
 
     // Only while the link is not paid by its own later session.
     const { error: replacedError } = await admin

@@ -1178,12 +1178,20 @@ export class WebhooksCC {
         if (deadline !== undefined && Date.now() >= deadline) {
           throw new TimeoutError(timeoutMs ?? 0);
         }
-        const response = await this.fetchImpl(url, {
-          method,
-          headers,
-          body: body ? JSON.stringify(body) : undefined,
-          signal: controller.signal,
-        });
+        let response: Response;
+        try {
+          response = await this.fetchImpl(url, {
+            method,
+            headers,
+            body: body ? JSON.stringify(body) : undefined,
+            signal: controller.signal,
+          });
+        } catch (error) {
+          // The request never got an answer: the network, not the API. A
+          // wait polls again after it (failsForNow()).
+          if (error instanceof Error && error.name !== "AbortError") networkFailures.add(error);
+          throw error;
+        }
 
         const durationMs = Date.now() - start;
 
@@ -2812,9 +2820,11 @@ export class WebhooksCC {
      * undone as a duplicate, TimeoutError when `timeout` passes first, and
      * the signal's reason when it is aborted (the poll in flight and the
      * wait between polls included). A poll that fails for now (a 5xx, a
-     * 429, a network error or a timed-out poll) is tried again until the
-     * deadline; any other failure is thrown. `matches` null on the paid
-     * link is not known yet, never a mismatch.
+     * 429, a request that never got an answer, or a timed-out poll) is
+     * tried again until the deadline; without a `timeout`, the tenth such
+     * failure in a row is thrown, so a wait cannot retry for good. Any
+     * other failure is thrown at once. `matches` null on the paid link is
+     * not known yet, never a mismatch.
      */
     waitForCheckout: async (
       id: string,
@@ -2828,6 +2838,8 @@ export class WebhooksCC {
       // and how it last read.
       let expiredAt: number | null = null;
       let lastExpired: CheckoutLink | null = null;
+      // Polls that failed for now in a row.
+      let failures = 0;
       const expiredError = (checkout: CheckoutLink | null) =>
         new CheckoutExpiredError(
           id,
@@ -2852,6 +2864,10 @@ export class WebhooksCC {
         } catch (error) {
           options.signal?.throwIfAborted();
           if (!failsForNow(error)) throw error;
+          // Without a deadline, a failure that keeps coming back is no
+          // longer for now.
+          failures += 1;
+          if (!Number.isFinite(deadline) && failures >= CHECKOUT_WAIT_MAX_FAILURES) throw error;
           // Our side, a rate limit or the network: poll again until the
           // deadline, as the server asked when it said how long to wait.
           if (error instanceof RateLimitError && error.retryAfter !== undefined) {
@@ -2864,6 +2880,7 @@ export class WebhooksCC {
         }
         // Aborted while the poll ran: never an answer after cancelling.
         options.signal?.throwIfAborted();
+        failures = 0;
         if (checkout.status === "paid") return checkout;
         if (checkout.status === "superseded") throw new CheckoutSupersededError(id);
         if (checkout.status === "expired") {
@@ -4826,10 +4843,25 @@ function sleepUnlessAborted(ms: number, signal: AbortSignal | undefined): Promis
 }
 
 /**
+ * The errors of requests that never got an answer (the fetch itself
+ * failed), as request() threw them: what failsForNow() counts as the
+ * network. Kept beside the error rather than wrapping it, so callers still
+ * get the fetch's own error.
+ */
+const networkFailures = new WeakSet<Error>();
+
+/**
+ * How many polls in a row a wait with no deadline lets fail for now before
+ * it throws the last failure (waitForCheckout()).
+ */
+const CHECKOUT_WAIT_MAX_FAILURES = 10;
+
+/**
  * Whether a failed poll is for now only, worth asking again until the
  * wait's deadline: our side (5xx), a rate limit, a poll that timed out, or
- * the network (any error that is not one of the API's answers). The API's
- * refusals (a 401, a 404 and the like) are final.
+ * a request that never got an answer (networkFailures). The API's refusals
+ * (a 401, a 404 and the like) and anything else (an answer that is not
+ * JSON, a token that could not be had) are final.
  */
 function failsForNow(error: unknown): boolean {
   if (error instanceof WebhooksCCError) {
@@ -4837,7 +4869,7 @@ function failsForNow(error: unknown): boolean {
       error.statusCode >= 500 || error instanceof RateLimitError || error instanceof TimeoutError
     );
   }
-  return error instanceof Error && error.name !== "AbortError";
+  return error instanceof Error && networkFailures.has(error);
 }
 
 /**

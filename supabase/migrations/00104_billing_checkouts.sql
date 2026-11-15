@@ -109,6 +109,59 @@ create table if not exists public.billing_checkouts (
   constraint billing_checkouts_one_account check ((user_id is null) <> (team_id is null))
 );
 
+-- A database that ran an earlier draft of this file already has the table
+-- without the columns added since, which `create table if not exists`
+-- leaves out: add them, and their checks, so the file applies again over
+-- it. Each check is added only when missing, under the name an inline
+-- check gets, so a fresh table (which has them all) is left alone.
+alter table public.billing_checkouts
+  add column if not exists paid_checkout_id      text,
+  add column if not exists previous_checkout_ids text[] not null default '{}',
+  add column if not exists cancelled_at          timestamptz,
+  add column if not exists opened_at             timestamptz,
+  add column if not exists expired_reason        text;
+
+do $$
+begin
+  if not exists (
+    select 1 from pg_constraint
+    where conrelid = 'public.billing_checkouts'::regclass
+      and conname = 'billing_checkouts_previous_checkout_ids_check'
+  ) then
+    alter table public.billing_checkouts
+      add constraint billing_checkouts_previous_checkout_ids_check
+      check (cardinality(previous_checkout_ids) <= 20);
+  end if;
+  if not exists (
+    select 1 from pg_constraint
+    where conrelid = 'public.billing_checkouts'::regclass
+      and conname = 'billing_checkouts_expired_reason_check'
+  ) then
+    alter table public.billing_checkouts
+      add constraint billing_checkouts_expired_reason_check
+      check (expired_reason in ('unsettled'));
+  end if;
+  -- The first draft allowed only 'base'.
+  if exists (
+    select 1 from pg_constraint
+    where conrelid = 'public.billing_checkouts'::regclass
+      and conname = 'billing_checkouts_mismatch_check'
+      and pg_get_constraintdef(oid) not like '%replaced%'
+  ) then
+    alter table public.billing_checkouts drop constraint billing_checkouts_mismatch_check;
+  end if;
+  if not exists (
+    select 1 from pg_constraint
+    where conrelid = 'public.billing_checkouts'::regclass
+      and conname = 'billing_checkouts_mismatch_check'
+  ) then
+    alter table public.billing_checkouts
+      add constraint billing_checkouts_mismatch_check
+      check (mismatch in ('base', 'replaced'));
+  end if;
+end;
+$$;
+
 -- The webhook finds a link by its session.
 create index if not exists billing_checkouts_polar_checkout
   on public.billing_checkouts (polar_checkout_id) where polar_checkout_id is not null;

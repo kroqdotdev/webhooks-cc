@@ -180,6 +180,10 @@ const checkoutExpiredGrace = time.Minute
 // minutes past its expiry).
 const checkoutLatePayment = 20 * time.Minute
 
+// checkoutWaitMaxFailures is how many polls in a row a WaitForCheckout with
+// no Timeout lets fail for now before it returns the last failure.
+const checkoutWaitMaxFailures = 10
+
 // failsForNow reports whether a failed poll is worth asking again until the
 // wait's deadline: our side (5xx), a rate limit, a poll that timed out, or
 // the network. The API's refusals (a 401, a 404 and the like) are final.
@@ -216,9 +220,10 @@ func mayStillBePaid(checkout *CheckoutLink) bool {
 // and a *TimeoutError when opts.Timeout passes first, a poll in flight
 // included: each poll, its retries and an agent's token exchange end by the
 // wait's deadline. A poll that fails for now (a 5xx, a 429, a network error
-// or a timed-out poll) is tried again until the deadline; any other failure
-// is returned. A nil Matches on the paid link is not known yet, never a
-// mismatch.
+// or a timed-out poll) is tried again until the deadline; without a
+// Timeout, the tenth such failure in a row is returned, so a wait cannot
+// retry for good. Any other failure is returned at once. A nil Matches on
+// the paid link is not known yet, never a mismatch.
 func (s *BillingService) WaitForCheckout(ctx context.Context, id string, opts WaitForCheckoutOptions) (*CheckoutLink, error) {
 	if err := validateSegment(id, "checkout id"); err != nil {
 		return nil, err
@@ -236,6 +241,8 @@ func (s *BillingService) WaitForCheckout(ctx context.Context, id string, opts Wa
 	// whether it read as one that may have been paid.
 	var expiredAt time.Time
 	unsettled := false
+	// Polls that failed for now in a row.
+	failures := 0
 	expiredErr := func() error {
 		if unsettled {
 			return ErrCheckoutUnsettled
@@ -269,6 +276,12 @@ func (s *BillingService) WaitForCheckout(ctx context.Context, id string, opts Wa
 			if !failsForNow(err) {
 				return nil, err
 			}
+			// Without a deadline, a failure that keeps coming back is no
+			// longer for now.
+			failures++
+			if deadline.IsZero() && failures >= checkoutWaitMaxFailures {
+				return nil, err
+			}
 			// Our side, a rate limit or the network: poll again, after as
 			// long as the server asked.
 			var apiErr *Error
@@ -276,6 +289,7 @@ func (s *BillingService) WaitForCheckout(ctx context.Context, id string, opts Wa
 				wait = apiErr.RetryAfter
 			}
 		} else {
+			failures = 0
 			switch checkout.Status {
 			case "paid":
 				return checkout, nil

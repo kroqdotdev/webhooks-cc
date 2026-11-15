@@ -1717,6 +1717,38 @@ describe("letting go of a link past its expiry", () => {
   });
 });
 
+describe("a failed subscription read past expiry", () => {
+  it("counts as unsettled, not as a payment being confirmed", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    const opened = {
+      expires_at: new Date(Date.now() - 16 * 60_000).toISOString(),
+      polar_checkout_id: "polar_checkout_1",
+      expected: PRO,
+    };
+    mocks.checkoutsGet.mockResolvedValue({
+      id: "polar_checkout_1",
+      status: "succeeded",
+      product_id: "prod_pro",
+      subscription_id: "sub_1",
+    });
+    mocks.subscriptionsGet.mockRejectedValue(new Error("polar down"));
+    mocks.results.push({ data: row(opened), error: null });
+    mocks.results.push({ data: [{ id: LINK }], error: null });
+    mocks.results.push({
+      data: [row({ ...opened, status: "expired", expired_reason: "unsettled" })],
+      error: null,
+    });
+    // Past the 15 minutes an unread session is held for, and not the day a
+    // payment being confirmed is: let go of as unsettled, with its alert.
+    expect(await getCheckoutLink(LINK, "user-1")).toMatchObject({ expiredReason: "unsettled" });
+    expect(mocks.reportError).toHaveBeenCalledWith(
+      expect.stringContaining("could not be read"),
+      undefined,
+      { linkId: LINK }
+    );
+  });
+});
+
 describe("a replaced session's payment found past the reads' deadline", () => {
   it("is left for later instead of asking Polar again", async () => {
     try {
@@ -1946,6 +1978,36 @@ describe("a link superseded through another of its sessions", () => {
       filters: [["eq", "target", "order:o1"]],
     });
     expect(mocks.queries.some((q) => q.patch?.mismatch === "replaced")).toBe(false);
+    expect(mocks.subscriptionsGet).not.toHaveBeenCalled();
+  });
+
+  it("is never paid by a one-time order's succeeded session, which names no order", async () => {
+    // The order was refunded (or not): only its order.paid can tell, so a
+    // checkout.updated pays no link that does not simply follow the session.
+    mocks.results.push({ data: [], error: null }); // none open or expired follows it
+    mocks.results.push({
+      data: [
+        { id: LINK, polar_checkout_id: "polar_checkout_2", previous_checkout_ids: [] },
+        {
+          id: "22222222-2222-4333-8444-555555555555",
+          polar_checkout_id: "polar_checkout_3",
+          previous_checkout_ids: ["polar_checkout_2"],
+        },
+      ],
+      error: null,
+    }); // superseded by another session while following this one, and one that replaced it
+    mocks.results.push({ data: { id: LINK }, error: null }); // the named link waits
+    pushCustomer();
+    await settleCheckoutLinkFromWebhook("checkout.updated", {
+      id: "polar_checkout_2",
+      status: "succeeded",
+      product_id: "prod_blocks",
+      customer_id: "cus_1",
+      metadata: { checkout_link: LINK },
+    });
+    expect(mocks.queries.filter((q) => q.patch?.status === "paid")).toHaveLength(1);
+    expect(mocks.queries.some((q) => q.patch?.mismatch === "replaced")).toBe(false);
+    expect(mocks.queries.some((q) => q.table === "polar_refunds")).toBe(false);
     expect(mocks.subscriptionsGet).not.toHaveBeenCalled();
   });
 });

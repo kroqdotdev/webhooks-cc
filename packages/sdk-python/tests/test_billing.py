@@ -17,6 +17,7 @@ from webhooks_cc import (
     NotFoundError,
     RetryOptions,
     TimeoutError,
+    WebhooksCCError,
 )
 from webhooks_cc.client import WebhooksCC
 
@@ -207,6 +208,38 @@ def test_wait_for_checkout_keeps_polling_through_the_network(
     )
     assert client.billing.wait_for_checkout(ID, timeout=60_000).status == "paid"
     assert tries["n"] == 3
+
+
+def test_wait_for_checkout_gives_up_after_ten_failures_in_a_row_without_a_deadline(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("webhooks_cc.client._sleep_ms", lambda ms: None)
+    failed = {"error": "busy"}
+    # A failure that keeps coming back ends the wait with that failure.
+    api = Api([(503, failed)] * 12)
+    client = WebhooksCC(
+        "whcc_test",
+        base_url="https://api.test",
+        http_client=httpx.Client(transport=httpx.MockTransport(api)),
+        retry=RetryOptions(max_attempts=1),
+    )
+    with pytest.raises(WebhooksCCError) as error:
+        client.billing.wait_for_checkout(ID)
+    assert error.value.status_code == 503
+    assert len(api.calls) == 10
+
+    # An answer in between starts the count again.
+    api = Api(
+        [(503, failed)] * 9 + [(200, link("open"))] + [(502, failed)] * 9 + [(200, link("paid"))]
+    )
+    client = WebhooksCC(
+        "whcc_test",
+        base_url="https://api.test",
+        http_client=httpx.Client(transport=httpx.MockTransport(api)),
+        retry=RetryOptions(max_attempts=1),
+    )
+    assert client.billing.wait_for_checkout(ID).status == "paid"
+    assert len(api.calls) == 20
 
 
 def test_wait_for_checkout_raises_a_refusal_at_once() -> None:

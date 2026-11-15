@@ -240,6 +240,24 @@ async function deliver(type: string, data: Record<string, unknown>) {
   expect(response.status).toBe(200);
 }
 
+/** As deliver(), for an event whose apply fails: the status the route answers. */
+async function deliverStatus(type: string, data: Record<string, unknown>): Promise<number> {
+  polar.validateEvent.mockResolvedValueOnce({ type, data });
+  const response = await webhookRoute(
+    new Request("https://webhooks.cc/api/polar-webhook", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "webhook-id": `evt_${Math.random()}`,
+        "webhook-signature": "sig",
+        "webhook-timestamp": `${Math.floor(Date.now() / 1000)}`,
+      },
+      body: "{}",
+    })
+  );
+  return response.status;
+}
+
 async function rows(column: "user_id" | "team_id", id: string) {
   const { data, error } = await admin
     .from("billing_checkouts")
@@ -1439,6 +1457,145 @@ describe("checkout links let go of or settled late", () => {
       expect(await stored(id)).toMatchObject({ status: "open", polar_checkout_id: s2 });
     } finally {
       await admin.from("polar_refunds").delete().eq("target", `order:${order}`);
+    }
+  });
+
+  it("keeps a link superseded when a refunded one-time order's session reads succeeded later", async () => {
+    const userId = await makeUser("refunded-late");
+    const key = await makeKey(userId);
+    const token = await sessionToken(userId);
+    const id = (await create(key.raw, { kind: "plan", plan: "pro" })).body.checkout.id;
+    await open(token, id);
+    const [s1, s2] = [1, 2].map((n) => `polar_checkout_refunded_late_${n}_${ts}`);
+    await admin
+      .from("billing_checkouts")
+      .update({ polar_checkout_id: s2, previous_checkout_ids: [s1] })
+      .eq("id", id);
+    const { supersedeCheckoutLinks } = await import("@/lib/billing/checkout-link-rows");
+    // The replaced session's purchase is undone: superseded through it.
+    await supersedeCheckoutLinks(s1, null, null);
+    expect(await stored(id)).toMatchObject({ status: "superseded", paid_checkout_id: s1 });
+
+    // The link's own session's order was refunded too: it bought nothing.
+    const order = `order_refunded_late_${ts}`;
+    const { error } = await admin.from("polar_refunds").insert({
+      target: `order:${order}`,
+      reason: "addon_not_applied",
+      user_id: userId,
+      status: "held",
+      hold_reason: "manual",
+    });
+    if (error) throw error;
+    const succeeded = {
+      id: s2,
+      status: "succeeded",
+      product_id: "prod_pro_test",
+      metadata: { checkout_link: id },
+    };
+    try {
+      await deliver("order.paid", {
+        id: order,
+        checkout_id: s2,
+        product_id: "prod_pro_test",
+        status: "paid",
+        net_amount: 800,
+        currency: "usd",
+        metadata: { checkout_link: id },
+      });
+      expect((await stored(id)).status).toBe("superseded");
+      // Its session read succeeded afterwards names no order, so it never
+      // pays the link: only the order could say it was not refunded.
+      await deliver("checkout.updated", succeeded);
+      expect(await stored(id)).toMatchObject({ status: "superseded", paid_checkout_id: s1 });
+
+      // Superseding through the session records it on the link, which then
+      // never waits on that session at all.
+      await supersedeCheckoutLinks(s2, null, null);
+      expect(await stored(id)).toMatchObject({ status: "superseded", paid_checkout_id: s2 });
+      await deliver("checkout.updated", succeeded);
+      expect((await stored(id)).status).toBe("superseded");
+    } finally {
+      await admin.from("polar_refunds").delete().eq("target", `order:${order}`);
+    }
+  });
+
+  it("keeps a link superseded when its duplicate subscription could not be revoked", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const userId = await makeUser("revoke-failed");
+    const key = await makeKey(userId);
+    const token = await sessionToken(userId);
+    const id = (await create(key.raw, { kind: "plan", plan: "pro" })).body.checkout.id;
+    expect((await open(token, id)).body.status).toBe("redirect");
+    const session = String((await stored(id)).polar_checkout_id);
+    // The link had replaced a session whose purchase was undone first.
+    const replaced = `polar_checkout_revoke_failed_${ts}`;
+    await admin
+      .from("billing_checkouts")
+      .update({ previous_checkout_ids: [replaced] })
+      .eq("id", id);
+    const { supersedeCheckoutLinks } = await import("@/lib/billing/checkout-link-rows");
+    await supersedeCheckoutLinks(replaced, null, null);
+    expect(await stored(id)).toMatchObject({ status: "superseded", paid_checkout_id: replaced });
+
+    // Meanwhile the account got Pro from another checkout.
+    const kept = `sub_revoke_kept_${ts}`;
+    const duplicate = `sub_revoke_dup_${ts}`;
+    const customerId = `cus_revoke_failed_${ts}`;
+    await admin
+      .from("users")
+      .update({
+        plan: "pro",
+        polar_customer_id: customerId,
+        polar_subscription_id: kept,
+        subscription_status: "active",
+      })
+      .eq("id", userId);
+    const live = (subscriptionId: string, checkoutId: string | null) => ({
+      id: subscriptionId,
+      status: "active",
+      ended_at: null,
+      product_id: "prod_pro_test",
+      customer_id: customerId,
+      checkout_id: checkoutId,
+      metadata: checkoutId === session ? { checkout_link: id } : {},
+      current_period_start: new Date().toISOString(),
+      current_period_end: new Date(Date.now() + 30 * 86_400_000).toISOString(),
+      cancel_at_period_end: false,
+      pending_update: null,
+    });
+    const state: Record<string, Record<string, unknown>> = {
+      [kept]: live(kept, null),
+      [duplicate]: live(duplicate, session),
+    };
+    polar.subscriptionGet.mockImplementation(
+      async (subscriptionId: string) => state[subscriptionId]
+    );
+    // Polar refuses the revoke: the duplicate stays live, and the event fails.
+    polar.subscriptionRevoke.mockRejectedValueOnce(new Error("polar unavailable"));
+
+    try {
+      const status = await deliverStatus("subscription.created", {
+        ...state[duplicate],
+        customer: { id: customerId, metadata: { userId } },
+      });
+      expect(status).toBeGreaterThanOrEqual(500);
+      expect(polar.subscriptionRevoke).toHaveBeenCalledWith(duplicate);
+      // Superseded through this session now, not the one it replaced.
+      expect(await stored(id)).toMatchObject({ status: "superseded", paid_checkout_id: session });
+
+      // Its session read succeeded, its subscription still live in Polar:
+      // never paid as its own session's purchase.
+      await deliver("checkout.updated", {
+        id: session,
+        status: "succeeded",
+        product_id: "prod_pro_test",
+        subscription_id: duplicate,
+        customer_id: customerId,
+        metadata: { checkout_link: id },
+      });
+      expect((await stored(id)).status).toBe("superseded");
+    } finally {
+      await admin.from("polar_refunds").delete().eq("user_id", userId);
     }
   });
 });

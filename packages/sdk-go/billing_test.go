@@ -235,6 +235,25 @@ func TestWaitForCheckoutKeepsPollingThroughTheNetwork(t *testing.T) {
 	}
 }
 
+func TestWaitForCheckoutGivesUpAfterTenFailuresInARowWithoutATimeout(t *testing.T) {
+	t.Parallel() // ten polls a second apart
+	api := newFakeAPI(t)
+	var polls atomic.Int32
+	api.handle("GET /api/billing/checkouts/"+checkoutID, func(w http.ResponseWriter, r *http.Request) {
+		polls.Add(1)
+		writeJSON(w, http.StatusServiceUnavailable, map[string]any{"error": "busy"})
+	})
+	client := api.client(webhookscc.WithRetry(webhookscc.RetryOptions{MaxAttempts: 1}))
+	_, err := client.Billing.WaitForCheckout(context.Background(), checkoutID, webhookscc.WaitForCheckoutOptions{PollInterval: time.Second})
+	var apiErr *webhookscc.Error
+	if !errors.As(err, &apiErr) || apiErr.StatusCode != http.StatusServiceUnavailable {
+		t.Fatalf("err = %v, want the last 503", err)
+	}
+	if n := polls.Load(); n != 10 {
+		t.Fatalf("polls = %d, want 10", n)
+	}
+}
+
 func TestWaitForCheckoutEndsOnARefusal(t *testing.T) {
 	api := newFakeAPI(t)
 	var polls atomic.Int32

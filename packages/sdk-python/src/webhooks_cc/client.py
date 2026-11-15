@@ -2121,9 +2121,11 @@ class Billing:
         and :class:`TimeoutError` when ``timeout`` passes first (default:
         until it expires). The expired error's ``reason`` is ``"unsettled"`` when
         the person may have paid. A poll that fails for now (a 5xx, a 429, a
-        network error or a timed-out poll) is tried again until the deadline; any
-        other failure is raised. Polls at least a second apart. ``matches``
-        ``None`` on the paid link is not known yet, never a mismatch."""
+        network error or a timed-out poll) is tried again until the deadline;
+        without a ``timeout``, the tenth such failure in a row is raised, so a
+        wait cannot retry for good. Any other failure is raised at once. Polls at
+        least a second apart. ``matches`` ``None`` on the paid link is not known
+        yet, never a mismatch."""
         _validate_segment(checkout_id, "checkout id")
         interval = max(1000.0, parse_duration(poll_interval))
         grace = max(0.0, parse_duration(expired_grace))
@@ -2133,6 +2135,8 @@ class Billing:
         # how it read then.
         expired_at: float | None = None
         reason: Literal["unsettled"] | None = None
+        # Polls that failed for now in a row.
+        failures = 0
 
         def expired_error() -> CheckoutExpiredError:
             return CheckoutExpiredError(checkout_id, reason=reason)
@@ -2153,6 +2157,11 @@ class Billing:
             except (httpx.TransportError, TimeoutError, RateLimitError, WebhooksCCError) as error:
                 if not _fails_for_now(error):
                     raise
+                # Without a deadline, a failure that keeps coming back is no
+                # longer for now.
+                failures += 1
+                if deadline is None and failures >= _CHECKOUT_WAIT_MAX_FAILURES:
+                    raise
                 # Our side, a rate limit or the network: poll again until the
                 # deadline, after as long as the server asked.
                 if isinstance(error, RateLimitError) and error.retry_after is not None:
@@ -2164,6 +2173,7 @@ class Billing:
                     wait = min(wait, left)
                 _sleep_ms(wait)
                 continue
+            failures = 0
             checkout = CheckoutLink.from_dict(_checkout_of(answer))
             if checkout.status == "paid":
                 return checkout
@@ -2196,6 +2206,11 @@ class Billing:
         _validate_segment(checkout_id, "checkout id")
         data = self._client._api("DELETE", f"/billing/checkouts/{checkout_id}")
         return CheckoutLink.from_dict(_checkout_of(data))
+
+
+# How many polls in a row a wait with no deadline lets fail for now before it
+# raises the last failure (wait_for_checkout()).
+_CHECKOUT_WAIT_MAX_FAILURES = 10
 
 
 def _fails_for_now(error: Exception) -> bool:
