@@ -177,13 +177,12 @@ fn from_status(status: u16, retry_after: Option<u64>) -> Classified {
 /// The codes the billing routes answer when they refused a change and
 /// nothing was changed (lib/billing/change.ts, `BEFORE_POLAR`, less the
 /// generic ones a status already says: not found, forbidden, a plan
-/// required; and less `quote_changed`, which has a code of its own), plus
-/// `payment_action_required`: the bank wants the cardholder to confirm the
-/// charge, which a 402 must not read as the plan forbidding. A test keeps
-/// this list in step with `BEFORE_POLAR`.
+/// required; and less `quote_changed`, which has a code of its own). A test
+/// keeps this list in step with `BEFORE_POLAR`. `payment_action_required` is
+/// not here: the bank wants the cardholder to confirm the charge, so the
+/// change may still be made, and it reads as `outcome_unknown`.
 const BILLING_REFUSALS: &[&str] = &[
     "payment_failed",
-    "payment_action_required",
     "owner_not_found",
     "seats_below_members",
     "seats_below_minimum",
@@ -203,15 +202,24 @@ fn is_billing_refusal(code: &str) -> bool {
 }
 
 fn billing_refused(code: &str, status: Option<u16>) -> Classified {
-    let hint = if code == "payment_action_required" {
-        // Not a plain refusal: the change may still be made once the
-        // cardholder confirms the payment, so asking again could repeat it.
-        "The bank wants the cardholder to confirm the payment (Polar emails them a link). Check `whk billing` before asking again.".to_string()
-    } else {
-        format!("Nothing was changed ({code}). Fix what the message says, then ask again.")
-    };
+    if code == "payment_action_required" {
+        return payment_action_required(status);
+    }
+    let hint = format!("Nothing was changed ({code}). Fix what the message says, then ask again.");
     let mut c = Classified::new("billing_refused", 1).hint(hint);
     c.reason = Some(code.to_string());
+    c.status = status;
+    c
+}
+
+/// The bank wants the cardholder to confirm the charge: not a refusal, since
+/// the change may still be made once they do, so asking again could repeat
+/// it. It reads as `outcome_unknown`, the server's code in `reason`.
+fn payment_action_required(status: Option<u16>) -> Classified {
+    let mut c = Classified::new("outcome_unknown", 1).hint(
+        "The bank wants the cardholder to confirm the payment (Polar emails them a link). Check `whk billing` before asking again.",
+    );
+    c.reason = Some("payment_action_required".to_string());
     c.status = status;
     c
 }
@@ -277,6 +285,11 @@ pub fn classify(error: &anyhow::Error) -> Classified {
             }
             // A billing change not made because its price or the
             // subscription moved: the same code as an approved change's.
+            if e.code.as_deref() == Some("payment_action_required")
+                && (400..500).contains(&e.status)
+            {
+                return payment_action_required(Some(e.status));
+            }
             if e.code.as_deref() == Some("quote_changed") && (400..500).contains(&e.status) {
                 let mut c = Classified::new("quote_changed", 8).hint(QUOTE_CHANGED_HINT);
                 c.status = Some(e.status);
@@ -421,7 +434,6 @@ mod tests {
         // status: a declined card's 402 is not the plan forbidding it.
         for (status, code) in [
             (402, "payment_failed"),
-            (402, "payment_action_required"),
             (409, "owner_not_found"),
             (409, "seats_below_members"),
             (409, "unchanged"),
@@ -509,7 +521,8 @@ mod tests {
             retry_after: None,
             code: Some("payment_action_required".into()),
         }));
-        assert_eq!((c.code, c.exit), ("billing_refused", 1));
+        assert_eq!((c.code, c.exit), ("outcome_unknown", 1));
+        assert_eq!(c.reason.as_deref(), Some("payment_action_required"));
         let hint = c.hint.unwrap();
         assert!(hint.contains("Check `whk billing`"));
         assert!(!hint.contains("Nothing was changed"));
