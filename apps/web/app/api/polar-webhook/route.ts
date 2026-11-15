@@ -47,7 +47,7 @@ export async function POST(request: Request) {
 
     // Team-customer events carry their team id in the payload (customer metadata,
     // a `team:` external id, or seat metadata on bare customer_seat.* payloads).
-    // Pass the raw event data through — reshaping it would strip seat routing keys.
+    // Pass the raw event data through: reshaping it would strip seat routing keys.
     const data = event.data as unknown as Record<string, unknown>;
     const teamId = extractTeamIdFromWebhook(data);
     try {
@@ -88,6 +88,10 @@ export async function POST(request: Request) {
         // keyed by the order's id).
         await settleAgentBudgetFromWebhook(event.type, data);
         // Add-ons follow the plan: they end with it and need it to count.
+        // Only after the plan handler has finished, which on a revoke
+        // includes adopting another live plan subscription the customer
+        // has; a handler that throws skips this, so add-ons are never ended
+        // against a row the handler did not finish.
         if (event.type.startsWith("subscription.")) {
           const account = await webhookAccount(teamId, data);
           if (account) await reconcileAddonsWithPlan(account);

@@ -12,8 +12,14 @@ import { createClient } from "@supabase/supabase-js";
  */
 
 const polarMocks = vi.hoisted(() => ({
-  createPolarClient: vi.fn(() => ({
-    subscriptions: { update: vi.fn(), get: vi.fn(), revoke: vi.fn() },
+  // Tests swap in clients with only the calls they need.
+  createPolarClient: vi.fn((): Record<string, unknown> => ({
+    subscriptions: {
+      update: vi.fn(),
+      get: vi.fn(),
+      revoke: vi.fn(),
+      list: vi.fn(async () => ({ items: [] })),
+    },
   })),
   validateEvent: vi.fn(),
 }));
@@ -949,7 +955,12 @@ describe("extra inbound domains", () => {
     } finally {
       polarMocks.createPolarClient.mockReset();
       polarMocks.createPolarClient.mockImplementation(() => ({
-        subscriptions: { update: vi.fn(), get: vi.fn(), revoke: vi.fn() },
+        subscriptions: {
+          update: vi.fn(),
+          get: vi.fn(),
+          revoke: vi.fn(),
+          list: vi.fn(async () => ({ items: [] })),
+        },
       }));
     }
     const { data: purchase } = await admin
@@ -1078,7 +1089,12 @@ describe("extra inbound domains", () => {
     } finally {
       polarMocks.createPolarClient.mockReset();
       polarMocks.createPolarClient.mockImplementation(() => ({
-        subscriptions: { update: vi.fn(), get: vi.fn(), revoke: vi.fn() },
+        subscriptions: {
+          update: vi.fn(),
+          get: vi.fn(),
+          revoke: vi.fn(),
+          list: vi.fn(async () => ({ items: [] })),
+        },
       }));
     }
   });

@@ -1,5 +1,7 @@
 import { createAdminClient } from "./admin";
 import { createPolarClient, isEndedSubscriptionError } from "@/lib/polar";
+import { recordRefund } from "@/lib/billing/refunds";
+import { livePlanSubscriptions } from "./billing";
 import { revokeAllAddons } from "./capacity-billing";
 import { closeRunsWithoutAccess } from "@/lib/tunnels/access";
 import { stopSharesUnderTeamNames } from "@/lib/tunnels/names";
@@ -119,10 +121,39 @@ export async function deleteAccountForUser(userId: string): Promise<void> {
 
   const { data: user, error: userError } = await admin
     .from("users")
-    .select("polar_subscription_id")
+    .select("polar_subscription_id, polar_customer_id")
     .eq("id", userId)
     .maybeSingle();
   if (userError) throw userError;
+
+  // Any other plan subscription Polar has live on the account's customer (a
+  // second one the duplicate guard left for a person, or one whose id the
+  // row lost) would go on charging after the row is gone. They follow the
+  // rule for a subscription that outlives its account: only one Polar says
+  // is live, its refund recorded before the revoke, since a redelivery after
+  // the revoke reads it as ended. The refund is a second plan's
+  // (duplicate_plan, "a second plan subscription, revoked"), not a charge
+  // made after the deletion, which is what deleted_account tells Polar. The
+  // refund worker pays it only once Polar has it ended, so a revoke that
+  // fails here, which keeps the account, refunds nothing. Done before the
+  // stored one, whose revoked event would otherwise adopt one of these.
+  if (user?.polar_customer_id) {
+    try {
+      const others = await livePlanSubscriptions(
+        user.polar_customer_id,
+        user.polar_subscription_id ?? null
+      );
+      for (const subscription of others) {
+        const id = String(subscription.id);
+        await recordRefund({ target: { subscription: id }, reason: "duplicate_plan", userId });
+        await revokePersonalSubscription(id);
+      }
+    } catch (error) {
+      throw new AccountDeletionBillingError("Could not cancel another plan subscription", {
+        cause: error,
+      });
+    }
+  }
 
   if (user?.polar_subscription_id) {
     try {

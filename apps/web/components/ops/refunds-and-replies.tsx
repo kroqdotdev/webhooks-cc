@@ -27,8 +27,48 @@ const HOLDS: Record<string, string> = {
   old_orders: "Includes orders older than two days",
 };
 
+/** The worker's flag for a subscription Polar still had live (lib/billing/refunds.ts). */
+const SUBSCRIPTION_LIVE = "subscription_live";
+
 function dollars(cents: number | null): string {
   return cents === null ? "–" : `$${(cents / 100).toFixed(2)}`;
+}
+
+/**
+ * Why a refund waits, as rows of its details list. A subscription Polar still
+ * had live is the reason whatever the hold says, so that line replaces both
+ * the hold reason and the raw code; the worker clears it once Polar has the
+ * subscription ended.
+ */
+export function RefundHoldLines({
+  refund,
+}: {
+  refund: Pick<HeldRefund, "holdReason" | "lastError">;
+}) {
+  if (refund.lastError === SUBSCRIPTION_LIVE) {
+    return (
+      <>
+        <dt className="text-muted-foreground">Held because</dt>
+        <dd>Still live in Polar: revoke it there, then approve</dd>
+      </>
+    );
+  }
+  return (
+    <>
+      {refund.holdReason && (
+        <>
+          <dt className="text-muted-foreground">Held because</dt>
+          <dd>{HOLDS[refund.holdReason] ?? refund.holdReason}</dd>
+        </>
+      )}
+      {refund.lastError && (
+        <>
+          <dt className="text-muted-foreground">Last error</dt>
+          <dd className="font-mono text-xs text-destructive-ink">{refund.lastError}</dd>
+        </>
+      )}
+    </>
+  );
 }
 
 /** Held refunds: what approving would refund, and the two decisions. */
@@ -140,18 +180,7 @@ export function OpsRefunds() {
                     "Unknown"
                   )}
                 </dd>
-                {refund.holdReason && (
-                  <>
-                    <dt className="text-muted-foreground">Held because</dt>
-                    <dd>{HOLDS[refund.holdReason] ?? refund.holdReason}</dd>
-                  </>
-                )}
-                {refund.lastError && (
-                  <>
-                    <dt className="text-muted-foreground">Last error</dt>
-                    <dd className="font-mono text-xs text-destructive-ink">{refund.lastError}</dd>
-                  </>
-                )}
+                <RefundHoldLines refund={refund} />
                 <dt className="text-muted-foreground">Orders</dt>
                 <dd>
                   {refund.orders.length === 0 ? (

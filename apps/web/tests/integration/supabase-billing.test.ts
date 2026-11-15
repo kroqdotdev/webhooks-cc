@@ -89,7 +89,12 @@ describe("Supabase Billing Integration", () => {
     // Plan events read the subscription back from Polar; with nothing there
     // the event's own state applies.
     polarMocks.createPolarClient.mockReturnValue({
-      subscriptions: { get: vi.fn(async () => undefined), revoke: vi.fn(), update: vi.fn() },
+      subscriptions: {
+        get: vi.fn(async () => undefined),
+        revoke: vi.fn(),
+        update: vi.fn(),
+        list: vi.fn(async () => ({ items: [] })),
+      },
     });
     polarMocks.getPolarCheckoutConfig.mockReset();
     polarMocks.getPolarWebhookSecret.mockReset();
