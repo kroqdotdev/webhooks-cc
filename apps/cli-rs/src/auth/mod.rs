@@ -90,7 +90,16 @@ mod tests {
 
     #[test]
     fn test_roundtrip_token() {
-        let tmp = env::temp_dir().join("whk-test-auth");
+        // A directory of its own, so concurrent runs never share one.
+        let unique = format!(
+            "whk-test-auth-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        );
+        let tmp = env::temp_dir().join(unique);
         let _ = fs::remove_dir_all(&tmp);
         fs::create_dir_all(&tmp).unwrap();
 

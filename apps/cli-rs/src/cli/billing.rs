@@ -1107,10 +1107,16 @@ mod tests {
 
     #[tokio::test]
     async fn keeps_polling_through_the_network_failing() {
-        // Nothing listens here: every poll fails to connect.
-        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        // A server that hangs up on every connection, so every poll fails as
+        // a network error. It stays bound for the whole test: a closed port
+        // could be reused by another test's server, which would answer.
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let base = format!("http://127.0.0.1:{}", listener.local_addr().unwrap().port());
-        drop(listener);
+        tokio::spawn(async move {
+            while let Ok((connection, _)) = listener.accept().await {
+                drop(connection);
+            }
+        });
         let error = checkout_status(&client(&base), ID, Some("1s"), true)
             .await
             .unwrap_err();

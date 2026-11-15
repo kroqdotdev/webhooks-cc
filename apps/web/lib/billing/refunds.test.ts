@@ -908,7 +908,7 @@ describe("a row held because its subscription was live", () => {
   it("only pushes the next check back when the orders cannot be read, however many checks ran", async () => {
     mocks.ordersList.mockRejectedValueOnce(new TypeError("fetch failed"));
 
-    await expect(processRefund(flagged({ attempts: 20 }))).resolves.toBe("waiting");
+    await expect(processRefund(flagged({ attempts: 20 }))).resolves.toBe("unreachable");
     expect(mocks.subscriptionsGet).not.toHaveBeenCalled();
     expect(mocks.refundsCreate).not.toHaveBeenCalled();
     expect(mocks.reportError).not.toHaveBeenCalled();
@@ -925,7 +925,7 @@ describe("a row held because its subscription was live", () => {
   it("only pushes the next check back when the subscription cannot be read", async () => {
     mocks.subscriptionsGet.mockRejectedValueOnce({ statusCode: 503 });
 
-    await expect(processRefund(flagged({ attempts: 14 }))).resolves.toBe("waiting");
+    await expect(processRefund(flagged({ attempts: 14 }))).resolves.toBe("unreachable");
     expect(mocks.reportError).not.toHaveBeenCalled();
     expect(lastUpdate()).toMatchObject({ attempts: 15, last_error: "subscription_live" });
     expect(lastUpdate()).not.toHaveProperty("status");
@@ -976,6 +976,23 @@ describe("runRefunds", () => {
     mocks.subscriptionsGet.mockResolvedValueOnce({ status: "active", ended_at: null });
 
     await expect(runRefunds()).resolves.toEqual({ waiting: 1 });
+  });
+
+  it("counts a slow check that could not reach Polar apart from one still waiting", async () => {
+    const slow = (id: string) =>
+      row({
+        id,
+        target: "subscription:sub_2",
+        status: "held",
+        last_error: "subscription_live",
+        orders: [],
+      });
+    mocks.rechecks.push(slow("row_3"), slow("row_4"));
+    mocks.subscriptionsGet
+      .mockResolvedValueOnce({ status: "active", ended_at: null })
+      .mockRejectedValueOnce({ statusCode: 503 });
+
+    await expect(runRefunds()).resolves.toEqual({ waiting: 1, unreachable: 1 });
   });
 });
 

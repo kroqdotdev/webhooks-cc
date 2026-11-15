@@ -351,7 +351,9 @@ async function recheckLiveHold(
  * A slow check of a row held because its subscription was live that could
  * not reach Polar: the next check is only pushed back. Such a row is never
  * retried to failure or failed for a temporary error, since it already waits
- * for a person and only the check of Polar's state is late.
+ * for a person and only the check of Polar's state is late. Counted as
+ * `unreachable`, apart from rows that wait on Polar, so the worker's summary
+ * line shows when Polar could not be read.
  */
 async function postponeLiveRecheck(row: RefundRow): Promise<RefundOutcome> {
   await updateRow(row, {
@@ -359,7 +361,7 @@ async function postponeLiveRecheck(row: RefundRow): Promise<RefundOutcome> {
     next_attempt_at: liveRecheckAt(row.attempts + 1),
     last_error: SUBSCRIPTION_LIVE,
   });
-  return "waiting";
+  return "unreachable";
 }
 
 async function fail(
@@ -407,7 +409,15 @@ async function retryLater(
 }
 
 export type RefundOutcome =
-  "prepared" | "held" | "refunded" | "nothing" | "waiting" | "queued" | "failed" | "retry";
+  | "prepared"
+  | "held"
+  | "refunded"
+  | "nothing"
+  | "waiting"
+  | "unreachable"
+  | "queued"
+  | "failed"
+  | "retry";
 
 /**
  * Works one claimed row. A held row is prepared for the review (which orders,

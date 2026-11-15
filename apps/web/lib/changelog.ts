@@ -30,7 +30,7 @@ export const TRACK_LABELS: Record<ChangelogTrack, string> = {
 const RELEASE = release as { version: string | null; entries: ChangelogEntry[] };
 
 export const APP_VERSION: string = RELEASE.version ?? "dev";
-export const CLI_VERSION = "1.20.0";
+export const CLI_VERSION = "1.20.1";
 export const SDK_VERSION = "1.30.0";
 export const PYTHON_SDK_VERSION = "0.10.0";
 export const GO_SDK_VERSION = "0.10.0";
@@ -2144,6 +2144,18 @@ export const CHANGELOG: ChangelogEntry[] = [
   },
 
   // ─── CLI ────────────────────────────────────────────────────────────
+  {
+    version: "1.20.1",
+    date: "2026-11-15",
+    title: "Ctrl-C During Setup And Downloads To Stdout On macOS",
+    track: "cli",
+    items: [
+      "On macOS and Windows, a Ctrl-C at a program `whk setup agent` shows (Codex's sign-in) no longer ends whk once that program has exited (Linux already took the pending Ctrl-C in 1.20.0): on macOS a Ctrl-C still on its way to whk is discarded before its usual action comes back, without waiting for it",
+      "On Windows, when that program did not exit successfully (Ctrl-C ended it, or it handled Ctrl-C itself and exited with a code of its own), whk waits a moment before removing its own Ctrl-C handler, so the handler answers the event first and whk goes on to record what the program added",
+      "On macOS, `whk requests download -o /dev/stdout` (or `/dev/fd/1`) is held to the rules for stdout when stdout is a pipe, as it already was on Linux: refused under `--json`, so the bytes never mix with the JSON",
+      "`whk --help` wraps the exit status 8 lines evenly",
+    ],
+  },
   {
     version: "1.20.0",
     date: "2026-11-15",

@@ -468,8 +468,9 @@ impl Runner for ProcessRunner {
             // Ctrl-C at the program's prompt (Codex's sign-in) is the
             // person's answer to that program: it ends the program, not
             // whk, which still records what the program added.
-            let _interrupt = IgnoreInterrupt::new();
+            let interrupt = IgnoreInterrupt::new();
             let status = command.status()?;
+            interrupt.program_ended(&status);
             return Ok(RunOutput {
                 success: status.success(),
                 ..RunOutput::default()
@@ -546,31 +547,38 @@ impl IgnoreInterrupt {
     }
 }
 
-/// Takes a SIGINT still pending for whk, never waiting for one: on Linux
-/// with a zero-timeout `sigtimedwait` while it is blocked on this thread (it
-/// may also have gone to another thread, whose quiet handler took it); where
-/// that call is missing (macOS), a short pause lets the kernel deliver it.
+/// Discards a SIGINT still pending for whk: setting its action to `SIG_IGN`
+/// drops a pending SIGINT in the kernel, whichever thread it was meant for
+/// (POSIX), so nothing waits and no thread can take it in between. One
+/// already being delivered runs the quiet handler. `Drop` then restores the
+/// action that was there before.
 #[cfg(unix)]
-fn take_pending_interrupt() {
-    #[cfg(any(target_os = "linux", target_os = "android"))]
-    // SAFETY: sigset_t values are zeroed and initialised with sigemptyset;
-    // the zero timeout means sigtimedwait never blocks; the mask is put back.
+fn discard_pending_interrupt() {
+    // SAFETY: sigaction with a zeroed struct whose mask is emptied.
     unsafe {
-        let mut interrupt: libc::sigset_t = std::mem::zeroed();
-        libc::sigemptyset(&mut interrupt);
-        libc::sigaddset(&mut interrupt, libc::SIGINT);
-        let mut before: libc::sigset_t = std::mem::zeroed();
-        if libc::pthread_sigmask(libc::SIG_BLOCK, &interrupt, &mut before) == 0 {
-            let none = libc::timespec {
-                tv_sec: 0,
-                tv_nsec: 0,
-            };
-            libc::sigtimedwait(&interrupt, std::ptr::null_mut(), &none);
-            libc::pthread_sigmask(libc::SIG_SETMASK, &before, std::ptr::null_mut());
-        }
+        let mut ignore: libc::sigaction = std::mem::zeroed();
+        ignore.sa_sigaction = libc::SIG_IGN;
+        libc::sigemptyset(&mut ignore.sa_mask);
+        libc::sigaction(libc::SIGINT, &ignore, std::ptr::null_mut());
     }
-    #[cfg(not(any(target_os = "linux", target_os = "android")))]
-    std::thread::sleep(std::time::Duration::from_millis(20));
+}
+
+impl IgnoreInterrupt {
+    /// Notes how the program ended. On Windows each Ctrl-C handler runs on
+    /// a thread of its own, so after a Ctrl-C whk's handler may not have run
+    /// yet: a short wait lets it answer the event before the handler is
+    /// removed, or the default would end whk after all. The wait follows
+    /// any program that did not succeed, not only one Ctrl-C ended
+    /// (`STATUS_CONTROL_C_EXIT`), because a program that handles Ctrl-C
+    /// itself exits with a code of its own.
+    fn program_ended(&self, status: &std::process::ExitStatus) {
+        #[cfg(windows)]
+        if self.added && !status.success() {
+            std::thread::sleep(std::time::Duration::from_millis(50));
+        }
+        #[cfg(not(windows))]
+        let _ = status;
+    }
 }
 
 impl Drop for IgnoreInterrupt {
@@ -579,9 +587,9 @@ impl Drop for IgnoreInterrupt {
         if let Some(saved) = &self.saved {
             // A Ctrl-C sent while the program ran may not have reached whk
             // yet (a signal is acted on when it is delivered, not when it is
-            // sent): let it land on the quiet handler before the default
-            // action comes back, or that action would end whk after all.
-            take_pending_interrupt();
+            // sent): discard it before the default action comes back, or
+            // that action would end whk after all.
+            discard_pending_interrupt();
             // SAFETY: restores the action read in `new`.
             unsafe {
                 libc::sigaction(libc::SIGINT, saved, std::ptr::null_mut());
