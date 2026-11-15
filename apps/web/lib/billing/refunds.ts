@@ -261,12 +261,18 @@ export const SUBSCRIPTION_LIVE = "subscription_live";
 /**
  * Holds a row whose subscription Polar still has live once its wait is over,
  * reported once. Its hold reason stays as it was (none for a row automatic
- * refunds queued), so a later check that finds it ended knows whether it was
- * only waiting for that.
+ * refunds queued) unless one is given, so a later check that finds it ended
+ * knows whether it was only waiting for that.
  */
-async function holdLive(row: RefundRow, lines: RefundOrderLine[], plannedCents: number) {
+async function holdLive(
+  row: RefundRow,
+  lines: RefundOrderLine[],
+  plannedCents: number,
+  holdReason?: "manual"
+) {
   await updateRow(row, {
     status: "held",
+    ...(holdReason ? { hold_reason: holdReason } : {}),
     approved_at: null,
     orders: lines as unknown as Json,
     planned_cents: plannedCents,
@@ -276,7 +282,7 @@ async function holdLive(row: RefundRow, lines: RefundOrderLine[], plannedCents: 
   reportError("[refunds] refund held for review", undefined, {
     refundId: row.id,
     reason: row.reason,
-    holdReason: row.hold_reason ?? "none",
+    holdReason: holdReason ?? row.hold_reason ?? "none",
     plannedCents,
     code: SUBSCRIPTION_LIVE,
   });
@@ -337,8 +343,23 @@ async function recheckLiveHold(
     planned_cents: plannedCents,
     last_error: null,
   });
-  console.info(`[refunds] subscription ended, ${row.reason} waits for review`);
+  console.info(`[refunds] subscription ended, ${row.reason} ready for review`);
   return "prepared";
+}
+
+/**
+ * A slow check of a row held because its subscription was live that could
+ * not reach Polar: the next check is only pushed back. Such a row is never
+ * retried to failure or failed for a temporary error, since it already waits
+ * for a person and only the check of Polar's state is late.
+ */
+async function postponeLiveRecheck(row: RefundRow): Promise<RefundOutcome> {
+  await updateRow(row, {
+    attempts: row.attempts + 1,
+    next_attempt_at: liveRecheckAt(row.attempts + 1),
+    last_error: SUBSCRIPTION_LIVE,
+  });
+  return "waiting";
 }
 
 async function fail(
@@ -395,12 +416,17 @@ export type RefundOutcome =
 export async function processRefund(row: RefundRow): Promise<RefundOutcome> {
   const polar = createPolarClient();
   const target = parseTargetKey(row.target);
+  // A held row checked again because its subscription was live: its attempts
+  // only space the checks, so they never fail it.
+  const isLiveRecheck =
+    row.status === "held" && row.last_error === SUBSCRIPTION_LIVE && Array.isArray(row.orders);
 
   let orders: PolarOrder[];
   try {
     orders = await targetOrders(polar, target);
   } catch (error) {
     if (isTransientPolarError(error)) {
+      if (isLiveRecheck) return postponeLiveRecheck(row);
       return retryLater(row, "polar_unavailable", "retry", error);
     }
     await fail(row, polarErrorCode(error) ?? "order_lookup_refused", error);
@@ -417,6 +443,7 @@ export async function processRefund(row: RefundRow): Promise<RefundOutcome> {
       );
     } catch (error) {
       if (isTransientPolarError(error)) {
+        if (isLiveRecheck) return postponeLiveRecheck(row);
         return retryLater(row, "polar_unavailable", "retry", error);
       }
       await fail(row, polarErrorCode(error) ?? "subscription_lookup_refused", error);
@@ -438,7 +465,7 @@ export async function processRefund(row: RefundRow): Promise<RefundOutcome> {
   const lines = refundable.map(orderLine);
   const plannedCents = lines.reduce((sum, line) => sum + line.net, 0);
 
-  if (row.status === "held" && row.last_error === SUBSCRIPTION_LIVE && Array.isArray(row.orders)) {
+  if (isLiveRecheck) {
     return recheckLiveHold(
       row,
       subscriptionLive,
@@ -453,9 +480,14 @@ export async function processRefund(row: RefundRow): Promise<RefundOutcome> {
   }
 
   // Approved with nothing prepared (only a hand-made row can be): nobody saw
-  // what it would refund, so it goes back to a person with the list.
+  // what it would refund, so it goes back to a person with the list, flagged
+  // and checked again while its subscription is live.
   if (row.approved_at && !approvedLines) {
-    await hold(row, "manual", lines, plannedCents);
+    if (subscriptionLive) {
+      await holdLive(row, lines, plannedCents, "manual");
+    } else {
+      await hold(row, "manual", lines, plannedCents);
+    }
     return "held";
   }
 

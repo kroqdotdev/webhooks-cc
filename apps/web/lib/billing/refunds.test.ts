@@ -479,6 +479,28 @@ describe("processRefund", () => {
     });
   });
 
+  it("sends an approval with nothing prepared back to a person, flagged while its subscription is live", async () => {
+    mocks.subscriptionsGet.mockResolvedValueOnce({ status: "active", ended_at: null });
+
+    await expect(
+      processRefund(row({ target: "subscription:sub_x", approved_at: "2026-11-03T11:59:00Z" }))
+    ).resolves.toBe("held");
+
+    expect(mocks.refundsCreate).not.toHaveBeenCalled();
+    expect(lastUpdate()).toMatchObject({
+      status: "held",
+      hold_reason: "manual",
+      approved_at: null,
+      planned_cents: 2900,
+      last_error: "subscription_live",
+    });
+    expect(mocks.reportError).toHaveBeenCalledWith(
+      "[refunds] refund held for review",
+      undefined,
+      expect.objectContaining({ holdReason: "manual", code: "subscription_live" })
+    );
+  });
+
   it("tries again when the check after a refusal cannot reach Polar", async () => {
     mocks.refundsCreate.mockRejectedValueOnce({ statusCode: 422 });
     mocks.ordersGet
@@ -860,8 +882,14 @@ describe("a row held because its subscription was live", () => {
 
   it("loses the flag once ended and waits for a person while automatic refunds are off", async () => {
     mocks.settings.POLAR_AUTO_REFUNDS = false;
+    const info = vi.spyOn(console, "info").mockImplementation(() => {});
 
     await expect(processRefund(flagged())).resolves.toBe("prepared");
+    expect(info).toHaveBeenCalledTimes(1);
+    expect(info).toHaveBeenCalledWith(
+      "[refunds] subscription ended, duplicate_plan ready for review"
+    );
+    info.mockRestore();
     expect(mocks.refundsCreate).not.toHaveBeenCalled();
     expect(lastUpdate()).toMatchObject({
       hold_reason: "manual",
@@ -875,6 +903,32 @@ describe("a row held because its subscription was live", () => {
     await expect(processRefund(flagged({ hold_reason: "over_cap" }))).resolves.toBe("prepared");
     expect(lastUpdate()).toMatchObject({ hold_reason: "over_cap", last_error: null });
     expect(mocks.refundsCreate).not.toHaveBeenCalled();
+  });
+
+  it("only pushes the next check back when the orders cannot be read, however many checks ran", async () => {
+    mocks.ordersList.mockRejectedValueOnce(new TypeError("fetch failed"));
+
+    await expect(processRefund(flagged({ attempts: 20 }))).resolves.toBe("waiting");
+    expect(mocks.subscriptionsGet).not.toHaveBeenCalled();
+    expect(mocks.refundsCreate).not.toHaveBeenCalled();
+    expect(mocks.reportError).not.toHaveBeenCalled();
+    expect(mocks.updates).toHaveLength(1);
+    expect(mocks.updates[0].status).toBe("held");
+    expect(lastUpdate()).toMatchObject({
+      attempts: 21,
+      last_error: "subscription_live",
+      next_attempt_at: new Date(NOW + LIVE_RECHECK_MAX_MS).toISOString(),
+    });
+    expect(lastUpdate()).not.toHaveProperty("status");
+  });
+
+  it("only pushes the next check back when the subscription cannot be read", async () => {
+    mocks.subscriptionsGet.mockRejectedValueOnce({ statusCode: 503 });
+
+    await expect(processRefund(flagged({ attempts: 14 }))).resolves.toBe("waiting");
+    expect(mocks.reportError).not.toHaveBeenCalled();
+    expect(lastUpdate()).toMatchObject({ attempts: 15, last_error: "subscription_live" });
+    expect(lastUpdate()).not.toHaveProperty("status");
   });
 
   it("closes once ended with nothing left to refund", async () => {
