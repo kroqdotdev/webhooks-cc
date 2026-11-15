@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { SiteHeader } from "@/components/nav/site-header";
 import { SupabaseAuthProvider, useAuth } from "@/components/providers/supabase-auth-provider";
 import { MfaGate } from "@/components/auth/mfa-challenge";
+import { askedAgo, countryName } from "@/lib/asked-from";
 import { networkNotice } from "@/lib/device-login-notice";
 import { startDrivePick } from "@/lib/dashboard-api";
 import { DrivePickError, pickFromDrive } from "@/lib/integrations/drive-pick";
@@ -420,21 +421,6 @@ function EnterCode({ onSubmit }: { onSubmit: (code: string) => void }) {
   );
 }
 
-function countryName(code: string): string {
-  if (code === "T1") return "the Tor network";
-  try {
-    return new Intl.DisplayNames(["en"], { type: "region" }).of(code) ?? code;
-  } catch {
-    return code;
-  }
-}
-
-function ago(timestamp: number): string {
-  const minutes = Math.floor((Date.now() - timestamp) / 60_000);
-  if (minutes < 1) return "Less than a minute ago";
-  return minutes === 1 ? "1 minute ago" : `${minutes} minutes ago`;
-}
-
 /** What approving a billing change does to the card, on its button. */
 function billingApproveLabel(page: Record<string, unknown> | null): string {
   // Overage: nothing now, at most this much at the end of each period.
@@ -447,7 +433,6 @@ function billingApproveLabel(page: Record<string, unknown> | null): string {
   const amount = `$${(cents / 100).toFixed(2)}`;
   return `Approve and pay ${page?.approximate ? "about " : ""}${amount}`;
 }
-
 function ReviewPanel(props: {
   review: Review;
   email: string | null;
@@ -512,7 +497,7 @@ function ReviewPanel(props: {
         </div>
         <div className="flex justify-between gap-4">
           <dt className="text-muted-foreground">Asked</dt>
-          <dd className="text-right">{ago(review.createdAt)}</dd>
+          <dd className="text-right">{askedAgo(review.createdAt)}</dd>
         </div>
       </Card>
 

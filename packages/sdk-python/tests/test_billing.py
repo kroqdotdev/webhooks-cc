@@ -1,0 +1,278 @@
+"""Checkout links: client.billing."""
+
+from __future__ import annotations
+
+import json
+from datetime import datetime, timedelta, timezone
+from typing import Any
+
+import httpx
+import pytest
+
+from webhooks_cc import (
+    CheckoutBought,
+    CheckoutExpiredError,
+    CheckoutLink,
+    CheckoutSupersededError,
+    NotFoundError,
+    RetryOptions,
+    TimeoutError,
+    WebhooksCCError,
+)
+from webhooks_cc.client import WebhooksCC
+
+ID = "11111111-2222-4333-8444-555555555555"
+
+
+def ago(minutes: float) -> str:
+    return (datetime.now(timezone.utc) - timedelta(minutes=minutes)).isoformat()
+
+
+def link(status: str, **overrides: Any) -> dict[str, Any]:
+    return {
+        "checkout": {
+            "id": ID,
+            "status": status,
+            "kind": "plan",
+            "summary": "The Pro plan, billed monthly.",
+            "item": {"kind": "plan", "plan": "pro", "interval": "month"},
+            "teamId": None,
+            "url": f"https://webhooks.cc/checkout/{ID}" if status == "open" else None,
+            "opened": status != "open",
+            "createdAt": "2026-11-14T12:00:00.000Z",
+            # Expired a minute ago: a late payment may still land.
+            "expiresAt": ago(1),
+            "paidAt": "2026-11-14T12:05:00.000Z" if status == "paid" else None,
+            "bought": (
+                {
+                    "product": "prod_pro",
+                    "seats": None,
+                    "units": None,
+                    "amount": 900,
+                    "currency": "usd",
+                }
+                if status == "paid"
+                else None
+            ),
+            "matches": True if status == "paid" else None,
+            **overrides,
+        }
+    }
+
+
+class Api:
+    """Answers each call from a list, in order, and records it."""
+
+    def __init__(self, answers: list[tuple[int, Any]]) -> None:
+        self.answers = answers
+        self.calls: list[tuple[str, str, Any]] = []
+
+    def __call__(self, request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content) if request.content else None
+        self.calls.append((request.method, request.url.path, body))
+        status, payload = self.answers.pop(0) if self.answers else (404, {"error": "Not found"})
+        return httpx.Response(status, json=payload)
+
+
+def client_for(api: Api) -> WebhooksCC:
+    return WebhooksCC(
+        "whcc_test",
+        base_url="https://api.test",
+        http_client=httpx.Client(transport=httpx.MockTransport(api)),
+    )
+
+
+def test_create_checkout_sends_only_what_is_given() -> None:
+    api = Api([(201, link("open"))])
+    checkout = client_for(api).billing.create_checkout(
+        "team_plan", team_id="aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee", seats=3
+    )
+    assert isinstance(checkout, CheckoutLink)
+    # Our page, opened signed in; never Polar's checkout.
+    assert checkout.url == f"https://webhooks.cc/checkout/{ID}"
+    assert checkout.bought is None and checkout.matches is None
+    assert checkout.summary == "The Pro plan, billed monthly."
+    assert api.calls == [
+        (
+            "POST",
+            "/api/billing/checkouts",
+            {"kind": "team_plan", "seats": 3, "teamId": "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee"},
+        )
+    ]
+
+
+def test_wait_for_checkout_returns_once_paid(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("webhooks_cc.client._sleep_ms", lambda ms: None)
+    api = Api([(200, link("open")), (200, link("paid"))])
+    paid = client_for(api).billing.wait_for_checkout(ID, poll_interval=1000)
+    assert paid.status == "paid" and paid.url is None and paid.paid_at
+    assert paid.bought == CheckoutBought("prod_pro", None, None, 900, "usd")
+    assert paid.matches is True
+    assert [call[1] for call in api.calls] == [f"/api/billing/checkouts/{ID}"] * 2
+
+
+def test_wait_for_checkout_raises_when_it_expires_or_runs_out() -> None:
+    with pytest.raises(CheckoutExpiredError) as expired:
+        client_for(Api([(200, link("expired"))])).billing.wait_for_checkout(ID, expired_grace=0)
+    assert expired.value.checkout_id == ID
+    with pytest.raises(TimeoutError):
+        client_for(Api([(200, link("open"))])).billing.wait_for_checkout(ID, timeout=0)
+
+
+def test_wait_for_checkout_keeps_polling_a_link_that_reads_expired(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # A payment Polar confirms late can still turn an expired link paid.
+    monkeypatch.setattr("webhooks_cc.client._sleep_ms", lambda ms: None)
+    api = Api([(200, link("expired")), (200, link("paid"))])
+    paid = client_for(api).billing.wait_for_checkout(ID, poll_interval=1000)
+    assert paid.status == "paid"
+    assert len(api.calls) == 2
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [{"opened": False}, {"expiresAt": ago(60)}],
+    ids=["never opened", "expired an hour ago"],
+)
+def test_wait_for_checkout_raises_at_once_when_no_late_payment_can_land(
+    overrides: dict[str, Any],
+) -> None:
+    api = Api([(200, link("expired", **overrides)), (200, link("paid"))])
+    with pytest.raises(CheckoutExpiredError):
+        client_for(api).billing.wait_for_checkout(ID, poll_interval=1000)
+    assert len(api.calls) == 1
+
+
+def test_wait_for_checkout_says_expired_when_the_wait_ends_on_an_expired_link(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    clock = [0.0]
+    monkeypatch.setattr("webhooks_cc.client.time.monotonic", lambda: clock[0])
+
+    def sleep(ms: float) -> None:
+        clock[0] += ms / 1000
+
+    monkeypatch.setattr("webhooks_cc.client._sleep_ms", sleep)
+    api = Api([(200, link("expired"))] * 5)
+    with pytest.raises(CheckoutExpiredError):
+        client_for(api).billing.wait_for_checkout(ID, timeout=2500, poll_interval=1000)
+
+
+def test_wait_for_checkout_raises_when_the_purchase_was_undone() -> None:
+    with pytest.raises(CheckoutSupersededError) as superseded:
+        client_for(Api([(200, link("superseded"))])).billing.wait_for_checkout(ID)
+    # Handled wherever an expired link is.
+    assert isinstance(superseded.value, CheckoutExpiredError)
+    assert superseded.value.checkout_id == ID
+    # It never promises a refund: refunds are reviewed.
+    assert "a refund of what it charged is under review" in str(superseded.value)
+    assert "goes back" not in str(superseded.value)
+
+
+def test_wait_for_checkout_keeps_polling_through_failures_for_now(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("webhooks_cc.client._sleep_ms", lambda ms: None)
+    failed = {"error": "not now"}
+    api = Api([(503, failed), (429, failed), (502, failed), (200, link("paid"))])
+    # No retries of the client's own: the wait itself asks again.
+    client = WebhooksCC(
+        "whcc_test",
+        base_url="https://api.test",
+        http_client=httpx.Client(transport=httpx.MockTransport(api)),
+        retry=RetryOptions(max_attempts=1),
+    )
+    paid = client.billing.wait_for_checkout(ID, poll_interval=1000, timeout=60_000)
+    assert paid.status == "paid"
+    assert len(api.calls) == 4
+
+
+def test_wait_for_checkout_keeps_polling_through_the_network(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("webhooks_cc.client._sleep_ms", lambda ms: None)
+    tries = {"n": 0}
+
+    def flaky(request: httpx.Request) -> httpx.Response:
+        tries["n"] += 1
+        if tries["n"] < 3:
+            raise httpx.ConnectError("connection refused", request=request)
+        return httpx.Response(200, json=link("paid"))
+
+    client = WebhooksCC(
+        "whcc_test",
+        base_url="https://api.test",
+        http_client=httpx.Client(transport=httpx.MockTransport(flaky)),
+        retry=RetryOptions(max_attempts=1),
+    )
+    assert client.billing.wait_for_checkout(ID, timeout=60_000).status == "paid"
+    assert tries["n"] == 3
+
+
+def test_wait_for_checkout_gives_up_after_ten_failures_in_a_row_without_a_deadline(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("webhooks_cc.client._sleep_ms", lambda ms: None)
+    failed = {"error": "busy"}
+    # A failure that keeps coming back ends the wait with that failure.
+    api = Api([(503, failed)] * 12)
+    client = WebhooksCC(
+        "whcc_test",
+        base_url="https://api.test",
+        http_client=httpx.Client(transport=httpx.MockTransport(api)),
+        retry=RetryOptions(max_attempts=1),
+    )
+    with pytest.raises(WebhooksCCError) as error:
+        client.billing.wait_for_checkout(ID)
+    assert error.value.status_code == 503
+    assert len(api.calls) == 10
+
+    # An answer in between starts the count again.
+    api = Api(
+        [(503, failed)] * 9 + [(200, link("open"))] + [(502, failed)] * 9 + [(200, link("paid"))]
+    )
+    client = WebhooksCC(
+        "whcc_test",
+        base_url="https://api.test",
+        http_client=httpx.Client(transport=httpx.MockTransport(api)),
+        retry=RetryOptions(max_attempts=1),
+    )
+    assert client.billing.wait_for_checkout(ID).status == "paid"
+    assert len(api.calls) == 20
+
+
+def test_wait_for_checkout_raises_a_refusal_at_once() -> None:
+    api = Api([(404, {"error": "Checkout link not found"}), (200, link("paid"))])
+    with pytest.raises(NotFoundError):
+        client_for(api).billing.wait_for_checkout(ID, timeout=60_000)
+    assert len(api.calls) == 1
+
+
+def test_wait_for_checkout_says_an_unsettled_link_may_have_been_paid() -> None:
+    answer = link("expired", expiredReason="unsettled", expiresAt=ago(25 * 60))
+    with pytest.raises(CheckoutExpiredError) as expired:
+        client_for(Api([(200, answer)])).billing.wait_for_checkout(ID)
+    assert expired.value.reason == "unsettled"
+    assert "If the person paid, it is still applied" in str(expired.value)
+    assert "has been alerted" in str(expired.value)
+    assert CheckoutLink.from_dict(answer["checkout"]).expired_reason == "unsettled"
+    with pytest.raises(CheckoutExpiredError) as plain:
+        client_for(Api([(200, link("expired", opened=False))])).billing.wait_for_checkout(ID)
+    assert plain.value.reason is None
+
+
+def test_cancel_checkout_expires_a_link_nobody_opened() -> None:
+    api = Api([(200, link("expired"))])
+    cancelled = client_for(api).billing.cancel_checkout(ID)
+    assert cancelled.status == "expired" and cancelled.url is None
+    assert api.calls == [("DELETE", f"/api/billing/checkouts/{ID}", None)]
+
+
+def test_get_checkout_refuses_an_id_that_is_not_a_segment() -> None:
+    api = Api([])
+    with pytest.raises(ValueError):
+        client_for(api).billing.get_checkout("../approvals")
+    with pytest.raises(ValueError):
+        client_for(api).billing.cancel_checkout("../approvals")
+    assert api.calls == []

@@ -151,7 +151,7 @@ async fn server_start(client: &ApiClient, slug: &str, deadline: Instant) -> Resu
 
 /// Whether a failed read is worth another try: rate limits, our side, the
 /// network. A missing endpoint or refused credentials are final.
-fn transient(error: &anyhow::Error) -> bool {
+pub(crate) fn transient(error: &anyhow::Error) -> bool {
     matches!(
         classify(error).code,
         "rate_limited" | "server_error" | "network_error" | "request_timeout"

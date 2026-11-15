@@ -16,7 +16,7 @@ import {
 } from "@/components/billing/plan-chooser";
 import { Segmented } from "@/components/dashboard/settings-primitives";
 import type { AccountProfile } from "@/lib/account-profile";
-import { planName } from "@/lib/billing-api";
+import { planName, PLAN_PRICES } from "@/lib/billing-api";
 import {
   Notice,
   Panel,
@@ -125,8 +125,8 @@ const PLAN_ROWS: { label: string; free: string; pro: string; business: string }[
   {
     label: "Price",
     free: "Free",
-    pro: "$8 a month",
-    business: "$29 a month, or $290 a year",
+    pro: PLAN_PRICES.pro.month ?? "",
+    business: `${PLAN_PRICES.business.month}, or ${PLAN_PRICES.business.year}`,
   },
 ];
 

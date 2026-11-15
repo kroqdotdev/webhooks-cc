@@ -27,6 +27,7 @@ from collections import OrderedDict
 from collections.abc import Callable, Iterator, Mapping, Sequence
 from contextlib import suppress
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
 from typing import TYPE_CHECKING, Any, Literal
 from urllib.parse import unquote, urlsplit
@@ -50,6 +51,8 @@ from .email import (
     is_valid_email_tag,
 )
 from .errors import (
+    CheckoutExpiredError,
+    CheckoutSupersededError,
     InvalidCursorError,
     NotFoundError,
     RateLimitError,
@@ -61,6 +64,7 @@ from .matchers import Matcher, is_email_request, match_email
 from .models import (
     AttachmentDownload,
     BuiltRequest,
+    CheckoutLink,
     CountPage,
     Destination,
     DestinationAttachments,
@@ -184,6 +188,28 @@ def _now_ms() -> float:
 def _sleep_ms(ms: float) -> None:
     if ms > 0:
         time.sleep(ms / 1000)
+
+
+#: A late payment is only possible for a link the person opened, and only this
+#: long after it expired (a read holds a link whose Polar checkout is still
+#: open for 15 minutes past its expiry).
+_CHECKOUT_LATE_PAYMENT_MS = 20 * 60_000
+
+
+def _may_still_be_paid(checkout: CheckoutLink) -> bool:
+    """Whether an expired checkout link may still turn paid: one the person
+    opened, expired under 20 minutes ago. A server from before ``opened`` is
+    given the benefit of the doubt."""
+    if checkout.opened is False:
+        return False
+    try:
+        expired = datetime.fromisoformat(checkout.expires_at.replace("Z", "+00:00"))
+    except ValueError:
+        return True
+    if expired.tzinfo is None:
+        expired = expired.replace(tzinfo=timezone.utc)
+    age_ms = (datetime.now(timezone.utc) - expired).total_seconds() * 1000
+    return age_ms < _CHECKOUT_LATE_PAYMENT_MS
 
 
 def _validate_segment(value: str, name: str) -> None:
@@ -425,6 +451,7 @@ class WebhooksCC:
         self.destinations = Destinations(self)
         self.shares = Shares(self)
         self.names = Names(self)
+        self.billing = Billing(self)
 
     @classmethod
     def _for_agent(
@@ -2022,6 +2049,182 @@ class Names:
         if not named:
             raise ValueError(f"No team of yours is called {team!r}")
         raise ValueError(f"Several of your teams are called {team!r}: pass the team id")
+
+
+class Billing:
+    """Checkout links: paying stays with the person, and an agent hands them a ready
+    checkout instead of sending them to find the right page.
+
+    A link charges nothing until the person enters their own card on Polar's page,
+    so no approval is asked for. At most 5 links an hour and 3 open at once per
+    account; a team's purchases need the team's owner.
+    """
+
+    def __init__(self, client: WebhooksCC) -> None:
+        self._client = client
+
+    def create_checkout(
+        self,
+        kind: Literal["plan", "team_plan", "blocks", "monthly_blocks", "overage"],
+        *,
+        plan: Literal["pro", "business", "team", "team_business"] | None = None,
+        interval: Literal["month", "year"] | None = None,
+        seats: int | None = None,
+        blocks: int | None = None,
+        resource: Literal["requests", "pages", "domains"] | None = None,
+        team_id: str | None = None,
+    ) -> CheckoutLink:
+        """A Polar checkout link for something the account (or a team you own) can buy.
+
+        ``kind`` is ``"plan"`` (``plan`` pro or business), ``"team_plan"`` (``team_id``,
+        ``seats``, ``plan`` team or team_business), ``"blocks"`` (one-time, ``blocks``),
+        ``"monthly_blocks"`` (``blocks`` in all, only ever more than now) or
+        ``"overage"``. Show the person ``url``: they open it signed in as the
+        account's owner (the team's owner for a team) and pay on Polar's page.
+        Then call :meth:`wait_for_checkout`.
+        """
+        body: dict[str, Any] = {"kind": kind}
+        for key, value in (
+            ("plan", plan),
+            ("interval", interval),
+            ("seats", seats),
+            ("blocks", blocks),
+            ("resource", resource),
+            ("teamId", team_id),
+        ):
+            if value is not None:
+                body[key] = value
+        data = self._client._api("POST", "/billing/checkouts", body=body)
+        return CheckoutLink.from_dict(_checkout_of(data))
+
+    def get_checkout(self, checkout_id: str) -> CheckoutLink:
+        """Where a checkout link stands: open, paid, expired or superseded, what it
+        buys and, once paid, what was bought (``bought``, ``matches``)."""
+        _validate_segment(checkout_id, "checkout id")
+        data = self._client._api("GET", f"/billing/checkouts/{checkout_id}")
+        return CheckoutLink.from_dict(_checkout_of(data))
+
+    def wait_for_checkout(
+        self,
+        checkout_id: str,
+        *,
+        timeout: Duration | None = None,
+        poll_interval: Duration = 3000,
+        expired_grace: Duration = 60_000,
+    ) -> CheckoutLink:
+        """Wait until the person pays and return the paid link. Raises
+        :class:`CheckoutExpiredError` when it expires first (for a link the
+        person opened that expired under 20 minutes ago, after polling for
+        ``expired_grace`` more, a minute by default, since a payment Polar
+        confirms late can still turn it paid; at once otherwise),
+        :class:`CheckoutSupersededError` when its purchase was undone as a duplicate,
+        and :class:`TimeoutError` when ``timeout`` passes first (default:
+        until it expires). The expired error's ``reason`` is ``"unsettled"`` when
+        the person may have paid. A poll that fails for now (a 5xx, a 429, a
+        network error or a timed-out poll) is tried again until the deadline;
+        without a ``timeout``, the tenth such failure in a row is raised, so a
+        wait cannot retry for good. Any other failure is raised at once. Polls at
+        least a second apart. ``matches`` ``None`` on the paid link is not known
+        yet, never a mismatch."""
+        _validate_segment(checkout_id, "checkout id")
+        interval = max(1000.0, parse_duration(poll_interval))
+        grace = max(0.0, parse_duration(expired_grace))
+        timeout_ms = None if timeout is None else parse_duration(timeout)
+        deadline = None if timeout_ms is None else time.monotonic() * 1000 + timeout_ms
+        # When the link first read expired, while it may still turn paid, and
+        # how it read then.
+        expired_at: float | None = None
+        reason: Literal["unsettled"] | None = None
+        # Polls that failed for now in a row.
+        failures = 0
+
+        def expired_error() -> CheckoutExpiredError:
+            return CheckoutExpiredError(checkout_id, reason=reason)
+
+        def timed_out() -> Exception:
+            if expired_at is not None:
+                return expired_error()
+            return TimeoutError(timeout_ms or 0, "Timed out waiting for the checkout to be paid")
+
+        while True:
+            if deadline is not None and time.monotonic() * 1000 >= deadline:
+                raise timed_out()
+            wait = interval
+            try:
+                answer = self._client._api(
+                    "GET", f"/billing/checkouts/{checkout_id}", deadline_ms=deadline
+                )
+            except (httpx.TransportError, TimeoutError, RateLimitError, WebhooksCCError) as error:
+                if not _fails_for_now(error):
+                    raise
+                # Without a deadline, a failure that keeps coming back is no
+                # longer for now.
+                failures += 1
+                if deadline is None and failures >= _CHECKOUT_WAIT_MAX_FAILURES:
+                    raise
+                # Our side, a rate limit or the network: poll again until the
+                # deadline, after as long as the server asked.
+                if isinstance(error, RateLimitError) and error.retry_after is not None:
+                    wait = max(interval, error.retry_after * 1000.0)
+                if deadline is not None:
+                    left = deadline - time.monotonic() * 1000
+                    if left <= 0:
+                        raise timed_out() from None
+                    wait = min(wait, left)
+                _sleep_ms(wait)
+                continue
+            failures = 0
+            checkout = CheckoutLink.from_dict(_checkout_of(answer))
+            if checkout.status == "paid":
+                return checkout
+            if checkout.status == "superseded":
+                raise CheckoutSupersededError(checkout_id)
+            if checkout.status == "expired":
+                reason = checkout.expired_reason
+                if not _may_still_be_paid(checkout):
+                    raise expired_error()
+                now = time.monotonic() * 1000
+                if expired_at is None:
+                    expired_at = now
+                if now - expired_at >= grace:
+                    raise expired_error()
+            else:
+                expired_at = None
+                reason = None
+            if deadline is not None:
+                left = deadline - time.monotonic() * 1000
+                if left <= 0:
+                    raise timed_out()
+                wait = min(interval, left)
+            _sleep_ms(wait)
+
+    def cancel_checkout(self, checkout_id: str) -> CheckoutLink:
+        """Cancel a checkout link the person has not opened yet, so it can no longer
+        be paid, and return it (now ``expired``). One already opened has a Polar
+        checkout that cannot be ended, so the server answers 409 (it expires on its
+        own), as it does for a paid link."""
+        _validate_segment(checkout_id, "checkout id")
+        data = self._client._api("DELETE", f"/billing/checkouts/{checkout_id}")
+        return CheckoutLink.from_dict(_checkout_of(data))
+
+
+# How many polls in a row a wait with no deadline lets fail for now before it
+# raises the last failure (wait_for_checkout()).
+_CHECKOUT_WAIT_MAX_FAILURES = 10
+
+
+def _fails_for_now(error: Exception) -> bool:
+    """Whether a failed poll is worth asking again until the wait's deadline: our
+    side (5xx), a rate limit, a poll that timed out, or the network. The API's
+    refusals (a 401, a 404 and the like) are final."""
+    if isinstance(error, (httpx.TransportError, TimeoutError, RateLimitError)):
+        return True
+    return isinstance(error, WebhooksCCError) and error.status_code >= 500
+
+
+def _checkout_of(data: Any) -> Mapping[str, Any]:
+    checkout = data.get("checkout") if isinstance(data, Mapping) else None
+    return checkout if isinstance(checkout, Mapping) else {}
 
 
 def _layouts_body(layouts: Sequence[Mapping[str, Any] | Layout]) -> list[dict[str, Any]]:

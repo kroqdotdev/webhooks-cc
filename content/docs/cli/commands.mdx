@@ -377,6 +377,8 @@ Deleting a team ends its subscription at once and takes its shared endpoints fro
 
 What the account pays for, read only: the plan and its subscription (monthly or annual, its status, when it renews, a change waiting for the renewal, whether it ends), the add-ons (extra requests, parsed pages, domains), and every team you belong to with its seats, status and add-ons. With `--json` you get the whole `/api/billing` answer.
 
+`whk billing checkout` makes a [checkout link](/docs/api#checkout-links) for the person to pay with their own card: a plan, a team subscription (`--team`, by id or name, the team's owner only), one-time blocks, monthly blocks (the number in all, more than now) or overage. The person opens the link signed in as the account's owner, and it needs no approval, since nothing is charged until they pay on Polar's page. `--wait` waits for the payment after printing the link (with `--json`, as NDJSON: one line with the open link, whose `url` is what the person is handed, then one with the paid link), and `whk billing checkout-status <id>` says where a link stands and, once paid, what was bought (`--wait` too). A link that expires before it is paid exits with `checkout_expired` (status 8), after a minute more of polling for a link the person opened that expired under 20 minutes ago, since a payment Polar confirms late still turns it paid (at once for any other), and so does one that expired before Polar confirmed a payment it was processing (or while Polar could not be asked), with a message that a payment, if the person made one, is still applied and that we have been alerted; a poll our side or the network fails is asked again until the wait ends. One whose purchase was undone as a duplicate (the account already had what it buys; its subscription is ended and a refund is under review) exits with `checkout_superseded` (status 8). `whk billing checkout-cancel <id>` cancels a link the person has not opened yet; one already opened expires on its own. At most 5 links an hour and 3 open at once.
+
 ```bash
 whk billing                                   # or: whk billing show
 whk billing plan business                     # Pro to Business: charged the difference now
@@ -389,6 +391,13 @@ whk billing blocks 1 --resource pages         # 1,000 parsed pages (Business)
 whk billing buy 4                             # one-time blocks, paid at a checkout
 whk billing overage on --max 4                # at most 4 blocks a period; or: overage off
 whk billing cancel                            # at the period end; whk billing resume undoes it
+whk billing checkout plan --plan pro          # a link for the person to pay
+whk billing checkout team-plan --team Acme --seats 3 --wait
+whk billing checkout blocks --blocks 4 --resource requests
+whk billing checkout monthly-blocks --blocks 2 --resource pages
+whk billing checkout overage
+whk billing checkout-status <id> --wait --timeout 30m
+whk billing checkout-cancel <id>
 ```
 
 Each change is quoted and waits for the account's owner (the team's owner with `--team`) to approve it, as `keys create` does, with the same `--remote`, `--no-browser`, `--no-wait` and `--timeout`: the page shows what changes, when, and what is charged now. Approving makes it only while a fresh quote still matches; otherwise nothing is changed and whk exits with `quote_changed` (status 8), so ask again. Refused with nothing changed for another reason (a declined card, fewer seats than members), it exits with `billing_refused` (status 1), the server's own code in the JSON error's `reason`; if Polar was asked and then something failed, it exits with `outcome_unknown` (status 1): the change may have been made, so check `whk billing` before asking again. Adding blocks or turning overage on for the first time sends the owner to a Polar checkout; whk reports only that a checkout was opened. A browser session's change is made at once.

@@ -2095,6 +2095,116 @@ export interface AiSetupResult {
 export type CapacityResource = "requests" | "pages" | "domains";
 
 /**
+ * What a checkout link buys (`POST /api/billing/checkouts`). With `teamId`,
+ * the team's (its owner only); without, the account's own.
+ */
+export type CheckoutItem =
+  | { kind: "plan"; plan: "pro" | "business"; interval?: "month" | "year" }
+  | {
+      kind: "team_plan";
+      teamId: string;
+      seats: number;
+      plan?: "team" | "team_business";
+      interval?: "month" | "year";
+    }
+  /** One-time blocks: 25,000 requests or 1,000 parsed pages each, never expiring. */
+  | { kind: "blocks"; blocks: number; resource?: "requests" | "pages"; teamId?: string }
+  /** Monthly blocks (or extra domains) in all; only ever more than the account has. */
+  | {
+      kind: "monthly_blocks";
+      blocks: number;
+      resource?: CapacityResource;
+      teamId?: string;
+    }
+  /** Overage, with the account's stored maximum (or the default). */
+  | { kind: "overage"; resource?: "requests" | "pages"; teamId?: string };
+
+/**
+ * Where a checkout link stands. `superseded`: it was paid, but the purchase
+ * was undone as a duplicate (the account already had that plan or add-on,
+ * or what it added to had ended): its subscription was ended and a refund
+ * of what it charged is under review. A link cancelled before it was
+ * opened reads `expired`. Rarely, `expired` turns `paid` afterwards: a
+ * payment Polar confirmed late still marks the link paid, so
+ * `waitForCheckout()` keeps polling for a minute after `expired` (for a
+ * link that was opened and expired under 20 minutes ago). Rarely too,
+ * `paid` turns `superseded`: a read may mark a link paid from Polar before
+ * the webhook's duplicate checks undo the purchase.
+ */
+export type CheckoutStatus = "open" | "paid" | "expired" | "superseded";
+
+/** What a paid link's order or subscription holds, as Polar reported it. */
+export interface CheckoutBought {
+  product: string | null;
+  seats: number | null;
+  units: number | null;
+  /** In cents, before tax; null for an API key or agent token (only a browser session reads it). */
+  amount: number | null;
+  currency: string | null;
+}
+
+/**
+ * A checkout link: hand `url` to the person, who opens it signed in as the
+ * account's owner (the team's owner for a team) and pays on Polar's page
+ * with their own card. Nothing is charged until they do. `url` is our page
+ * and null once the link is no longer open; Polar's checkout is never in it.
+ */
+export interface CheckoutLink {
+  id: string;
+  status: CheckoutStatus;
+  kind: CheckoutItem["kind"];
+  /** One sentence saying what it buys. */
+  summary: string;
+  /** What it buys; an overage link also names its monthly maximum (`max`). */
+  item: CheckoutItem & { max?: number };
+  teamId: string | null;
+  url: string | null;
+  /**
+   * Whether the person opened it (a Polar checkout was made for it): only
+   * then can a payment still land after it expires. Absent from servers
+   * released before it.
+   */
+  opened?: boolean;
+  createdAt: string;
+  expiresAt: string;
+  paidAt: string | null;
+  /**
+   * Why an expired link expired, when it may have been paid: "unsettled"
+   * (Polar was still confirming a payment a day later, or could not be read
+   * about it). A payment that lands still turns it paid, and webhooks.cc
+   * has been alerted. Null otherwise; absent from servers released before it.
+   */
+  expiredReason?: "unsettled" | null;
+  /** Once paid: what the order or subscription holds. */
+  bought: CheckoutBought | null;
+  /**
+   * Once paid: whether that is what the link asked for. Null while it is not
+   * known yet (a team plan's seats arrive with its subscription, after the
+   * order), which is no mismatch: only `false` is.
+   */
+  matches: boolean | null;
+}
+
+export interface WaitForCheckoutOptions {
+  /**
+   * Give up after this many milliseconds (default: until the link expires).
+   * Without it, ten polls in a row that fail for now (a 5xx, a 429, the
+   * network) end the wait with the last one's error.
+   */
+  timeout?: number;
+  /** Milliseconds between polls (default 3000, at least 1000). */
+  pollInterval?: number;
+  /**
+   * How long to keep polling once the link reads `expired` before throwing
+   * CheckoutExpiredError (default 60000): a payment Polar confirms late can
+   * still turn it `paid`. Only for a link the person opened that expired
+   * under 20 minutes ago; any other expired link throws at once.
+   */
+  expiredGrace?: number;
+  signal?: AbortSignal;
+}
+
+/**
  * The add-ons of one account or team for one resource, as the API reads them
  * (`GET /api/billing/capacity`). Fields beyond these may appear.
  */

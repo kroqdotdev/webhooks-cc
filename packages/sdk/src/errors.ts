@@ -69,6 +69,56 @@ export class ApprovalExpiredError extends WebhooksCCError {
   }
 }
 
+/** What CheckoutExpiredError says for a link that may have been paid (`reason` "unsettled"). */
+const UNSETTLED_CHECKOUT_MESSAGE =
+  "The checkout link expired before Polar confirmed a payment for it. If the person paid, it is still applied to the account once Polar confirms it, and webhooks.cc has been alerted; check billing before making a new link.";
+
+/**
+ * A checkout link expired before the person paid. Make a new one if they
+ * still want it. `reason` is "unsettled" when it expired while Polar never
+ * said it was unpaid (a payment still being confirmed a day later, or
+ * Polar not answering): the person may have paid, and a payment that
+ * lands still turns the link paid, so check billing first.
+ */
+export class CheckoutExpiredError extends WebhooksCCError {
+  public readonly reason: "unsettled" | null;
+
+  constructor(
+    public readonly checkoutId: string,
+    message?: string,
+    reason: "unsettled" | null = null
+  ) {
+    super(
+      0,
+      message ??
+        (reason === "unsettled"
+          ? UNSETTLED_CHECKOUT_MESSAGE
+          : "The checkout link expired before it was paid. Make a new one if the person still wants it.")
+    );
+    this.name = "CheckoutExpiredError";
+    this.reason = reason;
+  }
+}
+
+/**
+ * A checkout link was paid, but the webhook undid the purchase as a
+ * duplicate: the account already had that plan or add-on (or the
+ * subscription it added to had ended), so its subscription was ended and a
+ * refund of what it charged is under review (monthly blocks bought twice
+ * stay as one-time blocks; a second overage subscription charged nothing).
+ * A CheckoutExpiredError too, so code that handles a link that did not buy
+ * anything handles this one.
+ */
+export class CheckoutSupersededError extends CheckoutExpiredError {
+  constructor(checkoutId: string) {
+    super(
+      checkoutId,
+      "By the time this checkout was paid, the account already had what it buys (or what it added to had ended), so the purchase was undone: its subscription was ended and a refund of what it charged is under review. Monthly blocks bought twice stay on the account as one-time blocks instead, and a second overage subscription was ended before it charged anything."
+    );
+    this.name = "CheckoutSupersededError";
+  }
+}
+
 /** Rate limit metadata from X-RateLimit-* response headers. */
 export interface RateLimitMeta {
   /** Maximum number of requests allowed in the current window. */

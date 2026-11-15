@@ -28,9 +28,23 @@ import { planEntitlements, teamAllowance, teamEntitlements } from "@/lib/entitle
 import { createAdminClient } from "./admin";
 import { addMonthUtc, ensurePolarCustomerId, getBillingUser } from "./billing";
 import { returnOrigin } from "@/lib/site-server";
-import { asNonEmptyString, asRecord, parseEventTimestamp } from "./billing-shared";
+import {
+  asNonEmptyString,
+  asRecord,
+  checkoutSession,
+  CHECKOUT_LINK_METADATA_KEY,
+  parseEventTimestamp,
+  type CheckoutLinkContext,
+  type CheckoutSession,
+  type LinkPurchase,
+} from "./billing-shared";
 import type { Database } from "./database";
 import { ensureTeamPolarCustomerId, getTeamForOwner } from "./team-billing";
+import {
+  checkoutLinkOverageMax,
+  markCheckoutLinkMismatch,
+  supersedeCheckoutLinks,
+} from "@/lib/billing/checkout-link-rows";
 
 /**
  * Extra request capacity in Polar (migration 00065), for a Pro account and a
@@ -711,21 +725,166 @@ export async function createOneTimeBlocksCheckout(
   resource: CapacityResource = "requests",
   units: CheckoutUnits = {}
 ): Promise<string> {
-  const spec = RESOURCES[resource];
+  await checkOneTimeBlocks(account, resource);
+  return (await oneTimeBlocksCheckout(account, actingUserId, blocks, resource, undefined, units))
+    .url;
+}
+
+async function checkOneTimeBlocks(
+  account: CapacityAccount,
+  resource: CapacityResource
+): Promise<string> {
   const { oneTime } = requireProducts(resource);
   if (!oneTime) throw notOffered(resource);
   await requireEligible(account, { resource });
-  const customerId = await ensureCustomer(account, actingUserId);
+  return oneTime;
+}
 
+/**
+ * The metadata a checkout carries: what the add-on is for, and the checkout
+ * link it was made for, if any.
+ */
+function checkoutMetadata(
+  metadata: Record<string, string | number>,
+  link: CheckoutLinkContext | undefined
+): Record<string, string | number> {
+  return link ? { ...metadata, [CHECKOUT_LINK_METADATA_KEY]: link.id } : metadata;
+}
+
+/**
+ * The checkout for one-time blocks. The dashboard's lets the person change
+ * the number on Polar's page; a checkout link's sells exactly `blocks`.
+ */
+async function oneTimeBlocksCheckout(
+  account: CapacityAccount,
+  actingUserId: string,
+  blocks: number,
+  resource: CapacityResource,
+  link?: CheckoutLinkContext,
+  units: CheckoutUnits = {}
+): Promise<CheckoutSession> {
+  const spec = RESOURCES[resource];
+  const { oneTime } = requireProducts(resource);
+  const customerId = await ensureCustomer(account, actingUserId);
   const checkout = await createPolarClient().checkouts.create({
-    products: [oneTime],
+    products: [oneTime as string],
     units: blocks,
-    ...unitBounds(blocks, spec.maxBlocks, units),
+    ...unitBounds(blocks, spec.maxBlocks, link ? { exactUnits: true } : units),
     customer_id: customerId,
-    success_url: await successUrl(account, "blocks", spec),
-    metadata: { capacity: "one_time", resource },
+    success_url: link?.successUrl ?? (await successUrl(account, "blocks", spec)),
+    metadata: checkoutMetadata({ capacity: "one_time", resource }, link),
   });
-  return checkout.url;
+  return checkoutSession(checkout);
+}
+
+/** One-time blocks bought through a checkout link (lib/billing/checkout-links.ts). */
+export async function oneTimeBlocksPurchase(
+  account: CapacityAccount,
+  actingUserId: string,
+  blocks: number,
+  resource: CapacityResource = "requests"
+): Promise<LinkPurchase> {
+  await assertCanManage(account, actingUserId);
+  const product = await checkOneTimeBlocks(account, resource);
+  return {
+    expected: { product, units: blocks },
+    mint: (link) => oneTimeBlocksCheckout(account, actingUserId, blocks, resource, link),
+  };
+}
+
+/**
+ * The checkout for monthly blocks: a new subscription for `blocks` when the
+ * account has none (`current` null), else a one-time order at the full
+ * monthly price for the blocks above `current`'s. A checkout link's new
+ * subscription sells exactly `blocks`; the dashboard's lets the person
+ * change the number on Polar's page.
+ */
+async function monthlyBlocksCheckout(
+  account: CapacityAccount,
+  actingUserId: string,
+  blocks: number,
+  resource: CapacityResource,
+  current: CapacitySubscriptionRow | null,
+  link?: CheckoutLinkContext,
+  units: CheckoutUnits = {}
+): Promise<CheckoutSession> {
+  const spec = RESOURCES[resource];
+  const customerId = await ensureCustomer(account, actingUserId);
+  const success = link?.successUrl ?? (await successUrl(account, "monthly", spec));
+  if (!current) {
+    return checkoutSession(
+      await createPolarClient().checkouts.create({
+        products: [requireProducts(resource).monthly],
+        units: blocks,
+        ...unitBounds(blocks, spec.maxBlocks, link ? { exactUnits: true } : units),
+        customer_id: customerId,
+        success_url: success,
+        metadata: checkoutMetadata({ capacity: "monthly", resource }, link),
+      })
+    );
+  }
+  const added = blocks - current.units;
+  return checkoutSession(
+    await createPolarClient().checkouts.create({
+      products: [requireProducts(resource).monthlyAdd],
+      units: added,
+      min_units: added,
+      max_units: added,
+      customer_id: customerId,
+      success_url: success,
+      // base_units: the count the top-up adds to, so a payment made after
+      // the count moved (blocks added or cut meanwhile) is told apart.
+      metadata: checkoutMetadata(
+        {
+          capacity: "monthly_add",
+          resource,
+          subscription_id: current.polar_subscription_id,
+          base_units: current.units,
+        },
+        link
+      ),
+    })
+  );
+}
+
+/**
+ * Monthly blocks up to `blocks` in all, bought through a checkout link. Only
+ * ever a purchase: the same number or fewer is refused (not_a_purchase),
+ * since that changes a subscription without the person paying, which stays
+ * with a session (changeMonthlyBlocks()).
+ */
+export async function monthlyBlocksPurchase(
+  account: CapacityAccount,
+  actingUserId: string,
+  blocks: number,
+  resource: CapacityResource = "requests"
+): Promise<LinkPurchase & { have: number }> {
+  await assertCanManage(account, actingUserId);
+  const spec = RESOURCES[resource];
+  const products = requireProducts(resource);
+  await requireEligible(account, { renewing: true, resource });
+  const current = liveOfKind(await liveSubscriptions(account), spec.blocks);
+  if (current?.status === "past_due") {
+    throw new CapacityError(
+      "past_due",
+      "The last payment for the monthly blocks failed. Update the payment method under Invoices and payment method first."
+    );
+  }
+  if (current && blocks <= current.units) {
+    throw new CapacityError(
+      "not_a_purchase",
+      `The account already has ${current.units} monthly ${current.units === 1 ? "block" : "blocks"}. A checkout link only adds blocks; fewer is a billing change to ask for instead (set_monthly_blocks).`,
+      409
+    );
+  }
+  return {
+    expected: current
+      ? { product: products.monthlyAdd, units: blocks - current.units }
+      : { product: products.monthly, units: blocks },
+    // The monthly blocks the account has now, which a top-up adds to.
+    have: current?.units ?? 0,
+    mint: (link) => monthlyBlocksCheckout(account, actingUserId, blocks, resource, current, link),
+  };
 }
 
 export type MonthlyBlocksResult =
@@ -752,15 +911,15 @@ export async function changeMonthlyBlocks(
 
   if (!current) {
     if (blocks === 0) return { kind: "unchanged" };
-    const customerId = await ensureCustomer(account, actingUserId);
-    const checkout = await polar.checkouts.create({
-      products: [requireProducts(resource).monthly],
-      units: blocks,
-      ...unitBounds(blocks, spec.maxBlocks, units),
-      customer_id: customerId,
-      success_url: await successUrl(account, "monthly", spec),
-      metadata: { capacity: "monthly", resource },
-    });
+    const checkout = await monthlyBlocksCheckout(
+      account,
+      actingUserId,
+      blocks,
+      resource,
+      null,
+      undefined,
+      units
+    );
     return { kind: "checkout", url: checkout.url };
   }
 
@@ -786,20 +945,7 @@ export async function changeMonthlyBlocks(
   // More blocks: the paid order keeps blocks that were set to end
   // (applyPaidOrder), so an abandoned checkout changes nothing.
   if (blocks > current.units) {
-    const customerId = await ensureCustomer(account, actingUserId);
-    const checkout = await polar.checkouts.create({
-      products: [requireProducts(resource).monthlyAdd],
-      units: blocks - current.units,
-      min_units: blocks - current.units,
-      max_units: blocks - current.units,
-      customer_id: customerId,
-      success_url: await successUrl(account, "monthly", spec),
-      metadata: {
-        capacity: "monthly_add",
-        resource,
-        subscription_id: current.polar_subscription_id,
-      },
-    });
+    const checkout = await monthlyBlocksCheckout(account, actingUserId, blocks, resource, current);
     return { kind: "checkout", url: checkout.url };
   }
 
@@ -880,12 +1026,7 @@ export async function setOverage(
   const row = await requireEligible(account, { renewing: true, resource });
   const storedMax = resource === "pages" ? row.page_overage_max : row.overage_max;
   const maxRequests = options.maxRequests ?? (storedMax > 0 ? storedMax : spec.defaultOverageMax);
-  if (
-    !Number.isInteger(maxRequests) ||
-    maxRequests <= 0 ||
-    maxRequests % spec.blockSize !== 0 ||
-    maxRequests > spec.maxBlocks * spec.blockSize
-  ) {
+  if (!isValidOverageMax(spec, maxRequests)) {
     throw new CapacityError(
       "invalid_max",
       `The maximum must be a whole number of ${spec.blockSize.toLocaleString("en-US")} blocks`,
@@ -908,12 +1049,14 @@ export async function setOverage(
     resource,
     async () => {
       if (customerId !== null) {
-        const checkout = await polar.checkouts.create({
-          products: [overageProduct],
-          customer_id: customerId,
-          success_url: await successUrl(account, "overage", spec),
-          metadata: { capacity: "overage", resource },
-        });
+        const checkout = await overageCheckout(
+          account,
+          actingUserId,
+          overageProduct,
+          resource,
+          undefined,
+          customerId
+        );
         return checkout.url;
       }
       if (current?.cancel_at_period_end) {
@@ -996,17 +1139,111 @@ async function readOverageMax(
   return typeof value === "number" ? value : 0;
 }
 
+async function overageCheckout(
+  account: CapacityAccount,
+  actingUserId: string,
+  overageProduct: string,
+  resource: CapacityResource,
+  link?: { context: CheckoutLinkContext; max: number },
+  /** The customer, when the caller made sure of it already. */
+  knownCustomerId?: string
+): Promise<CheckoutSession> {
+  const customerId = knownCustomerId ?? (await ensureCustomer(account, actingUserId));
+  const checkout = await createPolarClient().checkouts.create({
+    products: [overageProduct],
+    customer_id: customerId,
+    success_url:
+      link?.context.successUrl ?? (await successUrl(account, "overage", RESOURCES[resource])),
+    // A checkout link's maximum rides with the subscription and is stored
+    // when it arrives (applySubscriptionEvent), so nothing changes before
+    // the person pays.
+    metadata: checkoutMetadata(
+      link
+        ? { capacity: "overage", resource, overage_max: link.max }
+        : { capacity: "overage", resource },
+      link?.context
+    ),
+  });
+  return checkoutSession(checkout);
+}
+
+/**
+ * Overage started through a checkout link, with the maximum the account has
+ * stored, else the one the link was made with, else the default (`max`,
+ * which the link's summary names). It is read again when the link is
+ * opened and rides on the session's metadata, so a maximum the person
+ * changed after the link was made is the one the subscription is given.
+ * Only when overage has no subscription yet: turning a live one back on, or
+ * changing its maximum, charges nothing new and stays with a session
+ * (setOverage()). Nothing is written until the subscription arrives.
+ */
+export async function overagePurchase(
+  account: CapacityAccount,
+  actingUserId: string,
+  resource: CapacityResource = "requests",
+  /** The maximum the link was made with, when it is opened. */
+  linkMax?: number
+): Promise<LinkPurchase & { max: number }> {
+  await assertCanManage(account, actingUserId);
+  const spec = RESOURCES[resource];
+  const products = requireProducts(resource);
+  const overageProduct = products.overage;
+  if (!spec.overage || !overageProduct) throw notOffered(resource);
+  const current = liveOfKind(await liveSubscriptions(account), spec.overage);
+  if (current) {
+    throw new CapacityError(
+      "not_a_purchase",
+      current.cancel_at_period_end
+        ? "Overage is set to end with the period. Keeping it charges nothing new, so ask for it as a billing change instead (set_overage)."
+        : "Overage is already on.",
+      409
+    );
+  }
+  const row = await requireEligible(account, { renewing: true, resource });
+  const storedMax = resource === "pages" ? row.page_overage_max : row.overage_max;
+  const max = isValidOverageMax(spec, storedMax)
+    ? storedMax
+    : linkMax !== undefined && isValidOverageMax(spec, linkMax)
+      ? linkMax
+      : spec.defaultOverageMax;
+  return {
+    expected: { product: overageProduct },
+    max,
+    mint: (link) =>
+      overageCheckout(account, actingUserId, overageProduct, resource, { context: link, max }),
+  };
+}
+
+/** A maximum setOverage() would accept for the resource. */
+function isValidOverageMax(spec: ResourceSpec, max: unknown): max is number {
+  return (
+    typeof max === "number" &&
+    Number.isInteger(max) &&
+    max > 0 &&
+    max % spec.blockSize === 0 &&
+    max <= spec.maxBlocks * spec.blockSize
+  );
+}
+
+/**
+ * Stores the overage maximum; with `expected`, only while the stored one is
+ * still that (a compare and set: nothing is written when it moved).
+ */
 async function writeOverageMax(
   account: CapacityAccount,
   max: number,
-  resource: CapacityResource = "requests"
+  resource: CapacityResource = "requests",
+  expected?: number
 ): Promise<void> {
   const admin = createAdminClient();
+  const column = resource === "pages" ? "page_overage_max" : "overage_max";
   const patch = resource === "pages" ? { page_overage_max: max } : { overage_max: max };
-  const { error } =
+  let query =
     account.kind === "team"
-      ? await admin.from("teams").update(patch).eq("id", account.teamId)
-      : await admin.from("users").update(patch).eq("id", account.userId);
+      ? admin.from("teams").update(patch).eq("id", account.teamId)
+      : admin.from("users").update(patch).eq("id", account.userId);
+  if (expected !== undefined) query = query.eq(column, expected);
+  const { error } = await query;
   if (error) throw error;
 }
 
@@ -1199,6 +1436,24 @@ async function applySubscriptionEvent(
   if (!revoked && subscription.status === "incomplete") return;
   const ended = revoked || addonStatus(subscription) === null;
 
+  // Overage bought through a checkout link carries its maximum. It is
+  // written before the subscription is first stored (so a failure is
+  // retried with the event) and never again, so a maximum changed later in
+  // the dashboard stays; not when the account already has overage, since
+  // this one is then a duplicate that ends. The write is conditional on the
+  // maximum read before those checks, so a redelivery that raced the first
+  // one never overwrites a maximum the owner changed meanwhile.
+  const linkMax = ended ? null : await linkOverageMaxFor(kind, subscription);
+  const seenMax = linkMax === null ? null : await readOverageMax(account, linkMax.resource);
+  if (
+    linkMax !== null &&
+    seenMax !== null &&
+    !(await isKnownSubscription(subscriptionId)) &&
+    !liveOfKind(await liveSubscriptions(account), kind)
+  ) {
+    await writeOverageMax(account, linkMax.max, linkMax.resource, seenMax);
+  }
+
   const status = await applySubscriptionState(account, kind, subscription, ended);
 
   if (status === "duplicate") {
@@ -1242,6 +1497,55 @@ async function applySubscriptionEvent(
   }
 }
 
+/** The overage maximum a checkout link's subscription carries, if it is one and it is valid. */
+function linkOverageMax(
+  kind: CapacityKind,
+  subscription: Record<string, unknown>
+): { max: number; resource: CapacityResource } | null {
+  const entry = (Object.entries(RESOURCES) as Array<[CapacityResource, ResourceSpec]>).find(
+    ([, spec]) => spec.overage === kind
+  );
+  const metadata = asRecord(subscription.metadata);
+  if (!entry || !metadata || !asNonEmptyString(metadata[CHECKOUT_LINK_METADATA_KEY])) return null;
+  const [resource, spec] = entry;
+  // Polar keeps metadata values as given; a string is read as a number too.
+  const raw = metadata.overage_max;
+  const max = typeof raw === "string" && /^\d+$/.test(raw) ? Number(raw) : raw;
+  return isValidOverageMax(spec, max) ? { max, resource } : null;
+}
+
+/**
+ * The overage maximum of the checkout link whose session made the
+ * subscription: the session's metadata (the maximum read when the link was
+ * opened), else the link's own row.
+ */
+async function linkOverageMaxFor(
+  kind: CapacityKind,
+  subscription: Record<string, unknown>
+): Promise<{ max: number; resource: CapacityResource } | null> {
+  const entry = (Object.entries(RESOURCES) as Array<[CapacityResource, ResourceSpec]>).find(
+    ([, spec]) => spec.overage === kind
+  );
+  if (!entry) return null;
+  const [resource, spec] = entry;
+  const fromSession = linkOverageMax(kind, subscription);
+  if (fromSession) return fromSession;
+  const fromRow = await checkoutLinkOverageMax(asNonEmptyString(subscription.checkout_id));
+  return isValidOverageMax(spec, fromRow) ? { max: fromRow, resource } : null;
+}
+
+/** Whether the add-on subscription is already stored (any account, any status). */
+async function isKnownSubscription(subscriptionId: string): Promise<boolean> {
+  const { data, error } = await createAdminClient()
+    .from("capacity_subscriptions")
+    .select("id")
+    .eq("polar_subscription_id", subscriptionId)
+    .limit(1)
+    .maybeSingle();
+  if (error) throw error;
+  return data !== null;
+}
+
 async function revokeQuietly(subscriptionId: string): Promise<void> {
   try {
     await createPolarClient().subscriptions.revoke(subscriptionId);
@@ -1250,13 +1554,6 @@ async function revokeQuietly(subscriptionId: string): Promise<void> {
   }
 }
 
-/**
- * A second subscription of a kind the account already has (a checkout
- * completed twice). Overage has charged nothing yet, so it simply ends.
- * Paid blocks end too, and what was paid for them is kept as one-time
- * blocks, recorded once under the subscription's id, so nothing keeps
- * charging and nothing paid for is lost.
- */
 /**
  * Records paid monthly blocks that can no longer be used as one-time blocks,
  * once per subscription, and tells a person (a refund may suit better).
@@ -1282,6 +1579,14 @@ async function keepAsOneTimeBlocks(
   });
 }
 
+/**
+ * A second subscription of a kind the account already has (a checkout
+ * completed twice). Overage has charged nothing yet, so it simply ends.
+ * Paid blocks end too, and what was paid for them is kept as one-time
+ * blocks, recorded once under the subscription's id, so nothing keeps
+ * charging and nothing paid for is lost; paid domains go back as a refund.
+ * A checkout link whose session made it reads superseded, never paid.
+ */
 async function settleDuplicate(
   account: CapacityAccount,
   kind: CapacityKind,
@@ -1307,6 +1612,13 @@ async function settleDuplicate(
     // Domains have no one-time form to keep what was paid: it goes back.
     await refundFor(account, { subscription: subscriptionId }, "duplicate_addon");
   }
+  // Before the revoke: a redelivery after it reads the subscription as
+  // ended and never comes back here.
+  await supersedeCheckoutLinks(
+    asNonEmptyString(subscription.checkout_id),
+    subscription.metadata,
+    asNonEmptyString(subscription.customer_id)
+  );
   await revokeQuietly(subscriptionId);
 }
 
@@ -1345,8 +1657,14 @@ async function applyPaidOrder(
   if (granted?.unapplied === true) {
     // Domains added to a subscription that ended while the checkout was open.
     await refundFor(account, { order: orderId }, "addon_not_applied");
+    await supersedeCheckoutLinks(
+      asNonEmptyString(data.checkout_id),
+      data.metadata,
+      asNonEmptyString(data.customer_id)
+    );
     return;
   }
+  await checkTopUpBase(data, granted, units);
   if (granted?.kind !== spec.increase || granted.synced === true) return;
   const subscriptionId = asNonEmptyString(granted.subscription_id);
   if (!subscriptionId) {
@@ -1354,12 +1672,48 @@ async function applyPaidOrder(
     // purchase was, so it reads as a duplicate): record it now.
     if (granted.status === "duplicate" && granted.kind === "domain_increase") {
       await refundFor(account, { order: orderId }, "addon_not_applied");
+      await supersedeCheckoutLinks(
+        asNonEmptyString(data.checkout_id),
+        data.metadata,
+        asNonEmptyString(data.customer_id)
+      );
     }
     return;
   }
-  await syncIncreaseToPolar(account, orderId, subscriptionId);
+  await syncIncreaseToPolar(account, orderId, subscriptionId, data);
   // The plan may have been set to end since the checkout was opened.
   await reconcileAddonsWithPlan(account);
+}
+
+/**
+ * A monthly top-up adds to the count its checkout was made for
+ * (`base_units` in its metadata). Paid after that count moved (blocks
+ * added in another tab, or cut at a renewal), the subscription now holds
+ * another total than the person was shown: a person is told, and the
+ * checkout link it came from reads `matches: false`. The grant's
+ * target_units is the count after this order, stored with the purchase,
+ * so a redelivery finds the same answer.
+ */
+async function checkTopUpBase(
+  order: Record<string, unknown>,
+  granted: Record<string, unknown> | null,
+  units: number
+): Promise<void> {
+  const raw = asRecord(order.metadata)?.base_units;
+  const base = typeof raw === "string" && /^\d+$/.test(raw) ? Number(raw) : raw;
+  const target = granted?.target_units;
+  if (typeof base !== "number" || typeof target !== "number") return;
+  if (target - units === base) return;
+  reportError(
+    "[capacity] a monthly top-up was paid on another count than it was made for",
+    undefined,
+    {
+      orderId: asNonEmptyString(order.id),
+      base,
+      before: target - units,
+    }
+  );
+  await markCheckoutLinkMismatch(asNonEmptyString(order.checkout_id), "base");
 }
 
 /**
@@ -1374,7 +1728,8 @@ async function applyPaidOrder(
 async function syncIncreaseToPolar(
   account: CapacityAccount,
   orderId: string,
-  subscriptionId: string
+  subscriptionId: string,
+  order: Record<string, unknown>
 ): Promise<void> {
   const admin = createAdminClient();
   const { data: row, error } = await admin
@@ -1407,7 +1762,7 @@ async function syncIncreaseToPolar(
         // Ended meanwhile (the order landed before the end's own event):
         // what the order added goes with it, and so does the row, whose
         // raised units would otherwise count until the end's own event.
-        await settleEndedIncrease(account, orderId);
+        await settleEndedIncrease(account, orderId, order);
         await markEnded(account, row);
       } else if (!row.cancel_at_period_end) {
         // Only set to end in Polar (Polar refuses changes to one with the
@@ -1419,7 +1774,7 @@ async function syncIncreaseToPolar(
     // Ended before this increase could ride on it (a redelivery after the
     // end's own event, or no row at all): what the order added is settled
     // as above, once.
-    await settleEndedIncrease(account, orderId);
+    await settleEndedIncrease(account, orderId, order);
   }
 
   const { error: syncError } = await admin
@@ -1433,9 +1788,14 @@ async function syncIncreaseToPolar(
  * A paid mid-period increase whose subscription ended before the increase
  * could ride on it. Blocks are kept as one-time blocks (recorded once, under
  * the order); domains have no one-time form, so the order is reported for a
- * refund.
+ * refund, and the checkout link it came from is superseded like the other
+ * domain refunds' links, so it never reads paid for a purchase undone.
  */
-async function settleEndedIncrease(account: CapacityAccount, orderId: string): Promise<void> {
+async function settleEndedIncrease(
+  account: CapacityAccount,
+  orderId: string,
+  order: Record<string, unknown>
+): Promise<void> {
   const admin = createAdminClient();
   const { data: purchase, error } = await admin
     .from("capacity_purchases")
@@ -1464,6 +1824,11 @@ async function settleEndedIncrease(account: CapacityAccount, orderId: string): P
   if (!credits) {
     // Domains have no one-time form to keep what was paid: it goes back.
     await refundFor(account, { order: orderId }, "addon_ended");
+    await supersedeCheckoutLinks(
+      asNonEmptyString(order.checkout_id),
+      order.metadata,
+      asNonEmptyString(order.customer_id)
+    );
     return;
   }
   const { data: granted, error: grantError } = await admin.rpc("grant_capacity_purchase", {

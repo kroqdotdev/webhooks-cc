@@ -1,0 +1,11 @@
+{
+  "title": "Checkout links",
+  "items": [
+    "An agent can hand you a ready checkout instead of telling you where to find it: POST /api/billing/checkouts makes a checkout link for a plan, a team subscription or extra capacity, with an API key or a connected agent and no approval, since nothing is charged until you pay with your own card",
+    "The link is a page on webhooks.cc or mailhooks.cc that you open signed in as the account's owner (the team's owner for a team); it checks the purchase again and goes on to Polar's checkout, which sells exactly what the link names, and opened again it goes back to the same checkout while it is open",
+    "The page first shows the account, what the link buys and costs, which key or agent asked, when and from where, with a warning when it came from another network, says up front when the account cannot buy it now and why, and makes nothing until you choose Continue to payment",
+    "GET /api/billing/checkouts/{id} says whether a link is open, paid, expired or superseded (undone as a duplicate: its subscription ended and a refund under review), and once paid what was bought and whether it matches what was asked for (the amount paid only for a browser session), and whether the person opened it; Polar's checkout is never in the answer",
+    "DELETE /api/billing/checkouts/{id} cancels a link nobody has opened yet, from the SDKs, whk billing checkout-cancel and the MCP server's cancel_checkout",
+    "At most 5 links an hour and 3 open at once per account, and 30 attempts an hour per person; a team's purchases need the team's owner and go through the team's one open checkout"
+  ]
+}

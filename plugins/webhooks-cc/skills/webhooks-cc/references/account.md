@@ -33,10 +33,26 @@ change; never to spend money on your own.
   Another refusal (a declined card) says why; fix that first.
 - An unknown outcome means Polar was asked and then something failed: the
   change may have been made. Read `get_billing` before asking again.
-- A first plan or a team's first subscription is a checkout the person
-  starts in the browser.
 
 CLI: `whk billing plan|keep-plan|seats|blocks|buy|overage|cancel|resume`.
+
+## Checkout links (account group)
+
+Paying stays with the person: when they ask for a first plan, a team's first
+subscription, blocks or overage, `create_checkout` makes a link to
+webhooks.cc that they open signed in as the account's owner (the team's
+owner for a team) and pay with their own card on Polar's page; follow it
+with `wait_for_checkout`, which says when what was bought differs from what
+was asked, or when the purchase was undone because the account already had
+what it buys (its subscription ended, a refund under review: never promise one),
+or when it expired before Polar confirmed a payment (it may still have been
+paid: never tell the person nothing was charged; check `get_billing`). A
+`create_checkout` whose client opened the link for them waits only 45
+seconds: on "Not paid yet", keep waiting with `wait_for_checkout`, and only a
+paid answer means it was paid. `cancel_checkout` cancels a link they have not opened yet
+(when they change their mind).
+
+CLI: `whk billing checkout|checkout-status|checkout-cancel`.
 
 ## Teams (teams group)
 

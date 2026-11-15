@@ -932,6 +932,37 @@ What the account pays for, read only: `plan`, `subscription` (`status`, `interva
 
 Ask for a billing change: `change_plan` (`plan`: `pro` or `business`, or `team` or `team_business` with `teamId`; `interval`; or `keep: true` to drop a change waiting for the renewal), `set_seats` (`teamId`, `seats`), `change_addons` (`action`: `set_monthly_blocks`, `buy_blocks` or `set_overage`; `resource`, `blocks`, `enabled`, `maxBlocks`, `teamId`), `cancel_subscription` and `resume_subscription` (`teamId` for a team). Each is quoted and answers with an approval for the owner, whose page shows what changes, when and what is charged now; `wait_for_approval` then says what was done, or that nothing was changed because the price or the subscription moved, in which case ask again. See [Billing changes](/docs/agents#billing-changes).
 
+### create_checkout
+
+A [checkout link](/docs/api#checkout-links) for the person to pay with their own card, when they ask to upgrade or buy: they open it signed in to webhooks.cc as the account's owner (the team's owner for a team), and nothing is charged until they pay on Polar's page, so no approval is asked. A client that can open links (URL elicitation) opens the link for the person, and when the person comes back the call waits up to 45 seconds for the payment: it answers paid, or "Not paid yet" if the payment has not landed by then, in which case call `wait_for_checkout` with the link's id to keep waiting. The call finishing is no confirmation of payment; only a paid answer is. Other clients get the link as text. In the account group. At most 5 links an hour and 3 open at once.
+
+| Parameter  | Type     | Required | Description                                                                          |
+| ---------- | -------- | -------- | ------------------------------------------------------------------------------------ |
+| `kind`     | `string` | yes      | `plan`, `team_plan`, `blocks`, `monthly_blocks` or `overage`                          |
+| `plan`     | `string` | no       | `pro` or `business` (plan); `team` or `team_business` (team_plan)                     |
+| `interval` | `string` | no       | `month` (default) or `year`                                                           |
+| `seats`    | `number` | no       | team_plan: 2 or more                                                                  |
+| `blocks`   | `number` | no       | blocks: how many to buy; monthly_blocks: how many in all                              |
+| `resource` | `string` | no       | `requests` (default), `pages` or `domains`                                            |
+| `teamId`   | `string` | no       | A team you own: the purchase is the team's                                            |
+
+### wait_for_checkout
+
+Waits for the person to pay a link from `create_checkout`, and says when it is paid or has expired, when what was bought differs from what the link asked for, and when the purchase was undone as a duplicate because the account already had what it buys (its subscription ended and a refund under review). A link the person opened that reads expired, under 20 minutes after it expired, is polled for a minute more, since a payment Polar confirms late still turns it paid; any other expired link is answered at once. A link that expired before Polar confirmed a payment it was processing (or while Polar could not be asked) is answered as possibly paid, never as nothing charged: if the person paid, it is still applied, and webhooks.cc has been alerted. A poll our side or the network fails is asked again until the wait ends.
+
+| Parameter | Type     | Required | Description                                  |
+| --------- | -------- | -------- | -------------------------------------------- |
+| `id`      | `string` | yes      | The checkout link's id                       |
+| `timeout` | `string` | no       | How long to wait, such as `45s` (the default) |
+
+### cancel_checkout
+
+Cancels a link from `create_checkout` that the person has not opened yet, so it can no longer be paid. A link they already opened cannot be cancelled, since Polar's checkout cannot be ended; it expires on its own.
+
+| Parameter | Type     | Required | Description            |
+| --------- | -------- | -------- | ---------------------- |
+| `id`      | `string` | yes      | The checkout link's id |
+
 ### list_provider_templates
 
 List supported webhook providers, available templates, and signing metadata. Use this before `send_webhook` when an agent needs to pick a realistic provider payload.

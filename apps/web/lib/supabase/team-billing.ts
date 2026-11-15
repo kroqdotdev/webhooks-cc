@@ -1,6 +1,5 @@
 import {
   createPolarClient,
-  isEndedSubscriptionError,
   loggablePolarError,
   polarAppUrl,
   polarErrorCode,
@@ -25,12 +24,21 @@ import { addMonthsUtc, annualQuotaWindow, MIN_ANNUAL_WINDOW_MS, remainingShare }
 import {
   asNonEmptyString,
   asRecord,
+  duplicateVerdict,
+  isLiveSubscriptionState,
   normalizeStoredSubscriptionStatus,
   parseEventTimestamp,
+  revokeSubscriptionQuietly,
+  CHECKOUT_LINK_METADATA_KEY,
+  type CheckoutExpected,
+  type CheckoutLinkContext,
+  type CheckoutSession,
+  type LinkPurchase,
 } from "./billing-shared";
 import type { Database } from "./database";
 import { removeMemberShares } from "./teams-endpoints";
 import { recordRefund } from "@/lib/billing/refunds";
+import { detachCheckoutLinks, supersedeCheckoutLinks } from "@/lib/billing/checkout-link-rows";
 import { reportError } from "@/lib/observability";
 import { closeRunsWithoutAccess } from "@/lib/tunnels/access";
 import { handOverTeamNames } from "@/lib/tunnels/names";
@@ -297,6 +305,11 @@ interface OpenCheckout {
   product: string | null;
   createdAt: string;
   expiresAt: string | null;
+  /**
+   * Made for a checkout link: it sells one plan and a fixed seat count, so
+   * it cannot be moved to another; the dashboard replaces it instead.
+   */
+  fixed: boolean;
 }
 
 /**
@@ -327,6 +340,7 @@ function openPendingCheckout(pendingCheckout: unknown): OpenCheckout | null {
     product: asNonEmptyString(pending.product) ?? teamPlanProductId("team", "month"),
     createdAt: createdAtRaw,
     expiresAt: expiresAtRaw,
+    fixed: pending.fixed === true,
   };
 }
 
@@ -353,9 +367,9 @@ function checkoutProducts(productId: string): string[] {
  * holder's follow-up writes are fenced on the token (see
  * `releasePendingCheckoutLease`). Bounded guarantee, not absolute: a request
  * stalled past the lease TTL loses the slot and a new claimant can mint a
- * second session — Polar exposes no idempotency key for checkouts — with the
- * foreign-subscription guard in applyTeamSubscriptionState as the backstop if
- * both are completed.
+ * second session (Polar exposes no idempotency key for checkouts). If both
+ * are paid, the foreign-subscription guard in applyTeamSubscriptionState
+ * ends the second subscription and queues its refund.
  *
  * Exported for the integration test that pins the PostgREST filter syntax.
  */
@@ -442,7 +456,8 @@ async function switchOpenCheckout(
   teamId: string,
   open: OpenCheckout,
   seats: number,
-  productId: string
+  productId: string,
+  link?: CheckoutLinkContext
 ): Promise<string> {
   const stillOpen = new TeamBillingError(
     "checkout_in_progress",
@@ -450,7 +465,13 @@ async function switchOpenCheckout(
   );
   if (open.id === null) throw stillOpen;
   try {
-    await createPolarClient().checkouts.update(open.id, { product_id: productId, seats });
+    await createPolarClient().checkouts.update(open.id, {
+      product_id: productId,
+      seats,
+      // It now buys what this link (or the dashboard) asks for, so it names
+      // that link, or none.
+      metadata: link ? { [CHECKOUT_LINK_METADATA_KEY]: link.id } : {},
+    });
   } catch (error) {
     // Expected while the session is being paid; only worth a line.
     console.warn("[team-billing] could not move the open checkout to another plan", {
@@ -459,6 +480,12 @@ async function switchOpenCheckout(
     });
     throw stillOpen;
   }
+  // Links that followed the session no longer buy what it does now. Let go
+  // of before the cache says what the session sells: a failure here then
+  // leaves the cache on the old purchase, so a retry moves the session
+  // again and detaches again, rather than finding it matching and never
+  // detaching them.
+  await detachCheckoutLinks(open.id, link?.id);
   try {
     await writePendingCheckoutIfLeaseHeld(teamId, open.createdAt, {
       id: open.id,
@@ -474,84 +501,24 @@ async function switchOpenCheckout(
   return open.url;
 }
 
-export async function createTeamCheckout(
-  userId: string,
-  teamId: string,
+/**
+ * Mints the team's open session while holding the checkout lease, and
+ * replaces the lease with it (fenced on the lease token: a request stalled
+ * past the lease TTL must not overwrite a newer claimant's session). The
+ * session exists either way, so a failed cache write only costs the dedup
+ * (the lease TTL then reopens the slot) and must not fail the checkout. A
+ * failed mint releases the lease so a retry can mint at once instead of
+ * waiting out the lease TTL.
+ */
+async function mintUnderLease(
+  team: BillingTeam,
+  leaseToken: string,
   seats: number,
-  plan: TeamPlan = "team",
-  interval: BillingInterval = "month"
-): Promise<string> {
-  assertValidSeatCount(seats);
-  const productId = requireTeamPlanProduct(plan, interval);
-
-  const team = await getTeamForOwner(userId, teamId);
-  if (team.subscription_status !== null) {
-    throw new TeamBillingError("already_subscribed", "Team already has an active subscription");
-  }
-
-  // One open checkout session per team, whatever was asked for: a
-  // double-click, a second tab or a change of plan or seats must not leave a
-  // second session that could ALSO be completed (Polar has no way to expire
-  // one). The same request gets the same session; another plan or seat count
-  // updates it in place, which works because every team plan is in it.
-  const open = openPendingCheckout(team.pending_checkout);
-  if (open !== null) {
-    if (open.seats === seats && open.product === productId) {
-      return open.url;
-    }
-    return switchOpenCheckout(team.id, open, seats, productId);
-  }
-
-  // Serialize minting: exactly one concurrent request wins the lease and
-  // creates the Polar session. The foreign-subscription guard in
-  // applyTeamSubscriptionState remains the backstop for sessions minted
-  // before this lease existed (or across a lease expiry).
-  const leaseToken = await claimPendingCheckoutSlot(teamId, seats, productId);
-  if (leaseToken === null) {
-    // Another request holds the slot. One re-read settles whether it already
-    // finished (use its session) or is still minting (tell the caller to
-    // retry in a moment rather than minting a double).
-    const admin = createAdminClient();
-    const { data: fresh, error } = await admin
-      .from("teams")
-      .select("pending_checkout")
-      .eq("id", teamId)
-      .maybeSingle();
-
-    if (error) throw error;
-
-    const freshOpen = openPendingCheckout(fresh?.pending_checkout ?? null);
-    if (freshOpen !== null) {
-      return freshOpen.seats === seats && freshOpen.product === productId
-        ? freshOpen.url
-        : switchOpenCheckout(teamId, freshOpen, seats, productId);
-    }
-
-    throw new TeamBillingError(
-      "checkout_in_progress",
-      "A checkout session is already being prepared for this team. Try again in a moment."
-    );
-  }
-
+  productId: string,
+  link: CheckoutLinkContext | undefined
+): Promise<CheckoutSession> {
   try {
-    const polar = createPolarClient();
-    const appUrl = polarAppUrl();
-    const customerId = await ensureTeamPolarCustomerId(team);
-
-    const checkout = await polar.checkouts.create({
-      // The chosen plan first (Polar selects it); the others so a later
-      // change of plan can update this session instead of opening another.
-      products: checkoutProducts(productId),
-      seats,
-      success_url: `${await returnOrigin(appUrl)}/teams/${teamId}?subscribed=true`,
-      customer_id: customerId,
-    });
-
-    // Replace the lease with the session for the reuse path, fenced on the
-    // lease token: a request stalled past the lease TTL must not overwrite a
-    // newer claimant's session. The session exists either way, so a failed
-    // cache write only costs the dedup (the lease TTL then reopens the slot)
-    // and must not fail the checkout.
+    const checkout = await mintTeamCheckoutSession(team, seats, productId, link);
     try {
       await writePendingCheckoutIfLeaseHeld(team.id, leaseToken, {
         id: checkout.id,
@@ -559,24 +526,263 @@ export async function createTeamCheckout(
         seats,
         product: productId,
         created_at: new Date().toISOString(),
-        expires_at: parseEventTimestamp(checkout.expires_at),
+        expires_at: checkout.expiresAt,
+        fixed: link !== undefined,
       });
     } catch (cacheError) {
-      reportError("[team-billing] failed to cache pending checkout", cacheError, { teamId });
+      reportError("[team-billing] failed to cache pending checkout", cacheError, {
+        teamId: team.id,
+      });
     }
-
-    return checkout.url;
+    return checkout;
   } catch (error) {
-    // Release the lease (token-fenced) so a retry can mint immediately
-    // instead of waiting out the lease TTL. Best effort: the TTL is the
-    // backstop.
+    // Best effort: the lease TTL is the backstop.
     try {
       await releasePendingCheckoutLease(team.id, leaseToken);
     } catch (releaseError) {
-      reportError("[team-billing] failed to release checkout lease", releaseError, { teamId });
+      reportError("[team-billing] failed to release checkout lease", releaseError, {
+        teamId: team.id,
+      });
     }
     throw error;
   }
+}
+
+/**
+ * Makes a Polar checkout session for a team's subscription. The dashboard's
+ * holds every team plan (the chosen one first, which Polar selects), so a
+ * later change of plan can move it instead of opening another, and lets the
+ * person change the seats on Polar's page. A checkout link's sells only its
+ * plan and exactly its seats, and names the link in its metadata.
+ */
+async function mintTeamCheckoutSession(
+  team: BillingTeam,
+  seats: number,
+  productId: string,
+  link: CheckoutLinkContext | undefined
+): Promise<{ id: string; url: string; expiresAt: string | null }> {
+  const polar = createPolarClient();
+  const appUrl = polarAppUrl();
+  const customerId = await ensureTeamPolarCustomerId(team);
+
+  const checkout = await polar.checkouts.create(
+    link
+      ? {
+          products: [productId],
+          seats,
+          min_seats: seats,
+          max_seats: seats,
+          success_url: link.successUrl,
+          customer_id: customerId,
+          metadata: { [CHECKOUT_LINK_METADATA_KEY]: link.id },
+        }
+      : {
+          products: checkoutProducts(productId),
+          seats,
+          success_url: `${await returnOrigin(appUrl)}/teams/${team.id}?subscribed=true`,
+          customer_id: customerId,
+        }
+  );
+  return {
+    id: checkout.id,
+    url: checkout.url,
+    expiresAt: parseEventTimestamp(checkout.expires_at),
+  };
+}
+
+/** The session an open checkout cache entry stands for. */
+function openSession(open: OpenCheckout, url: string): CheckoutSession {
+  const expiresAt =
+    open.expiresAt ?? new Date(Date.parse(open.createdAt) + PENDING_CHECKOUT_TTL_MS).toISOString();
+  return { id: open.id, url, expiresAt };
+}
+
+/**
+ * The team's open session for this plan and seat count: reused when it
+ * already buys them, else moved to them. A checkout link's fixed one (one
+ * plan, exactly its seats) cannot be moved, since Polar cannot change its
+ * seat bounds, and is never replaced by a second payable session either:
+ * checkout_in_progress until it is paid or expires. A checkout link reusing
+ * or moving a session is named in its metadata, so its payment finds the
+ * link.
+ */
+async function takeOpenCheckout(
+  team: BillingTeam,
+  open: OpenCheckout,
+  seats: number,
+  productId: string,
+  link: CheckoutLinkContext | undefined
+): Promise<CheckoutSession> {
+  if (open.seats === seats && open.product === productId) {
+    if (link) {
+      // A session cached before ids were stored cannot be followed.
+      if (open.id === null) {
+        throw new TeamBillingError(
+          "checkout_in_progress",
+          "A checkout for this team is still open. Finish it, or try again once it expires."
+        );
+      }
+      await nameLinkOnSession(team.id, open.id, link);
+    }
+    return openSession(open, open.url);
+  }
+  if (open.fixed) {
+    throw new TeamBillingError("checkout_in_progress", fixedCheckoutMessage(open));
+  }
+  return openSession(open, await switchOpenCheckout(team.id, open, seats, productId, link));
+}
+
+/**
+ * Why another plan or seat count cannot be checked out for the team while a
+ * checkout link's fixed session is open, naming when that session expires
+ * (after which a checkout for another count opens).
+ */
+function fixedCheckoutMessage(open: OpenCheckout): string {
+  const expiresAt = openSession(open, open.url).expiresAt;
+  const ms = expiresAt ? Date.parse(expiresAt) : Number.NaN;
+  const until = Number.isFinite(ms)
+    ? ` until ${new Date(ms).toISOString().slice(11, 16)} UTC (${new Date(ms).toISOString()})`
+    : "";
+  return `Another checkout link's checkout for this team is open${until}, for another plan or seat count, and Polar cannot change it. Pay that one, or try again once it expires.`;
+}
+
+/**
+ * Why opening a checkout link for this plan and seat count would be refused
+ * now (checkout_in_progress: another link's fixed session for the team is
+ * open, for another plan or seat count, until the time the message names),
+ * or null. Reads the database only, for the checkout page's review: opening
+ * refuses the same way (takeOpenCheckout()).
+ */
+export async function teamCheckoutBlocked(
+  teamId: string,
+  expected: CheckoutExpected
+): Promise<{ code: "checkout_in_progress"; message: string } | null> {
+  const { data, error } = await createAdminClient()
+    .from("teams")
+    .select("pending_checkout")
+    .eq("id", teamId)
+    .maybeSingle();
+  if (error) throw error;
+  const open = openPendingCheckout(data?.pending_checkout ?? null);
+  if (!open || !open.fixed) return null;
+  if (open.seats === expected.seats && open.product === expected.product) return null;
+  return { code: "checkout_in_progress", message: fixedCheckoutMessage(open) };
+}
+
+/**
+ * Names the checkout link in a reused session's metadata. Best effort: the
+ * link also stores the session's id, which is how a payment usually finds it.
+ */
+async function nameLinkOnSession(
+  teamId: string,
+  checkoutId: string,
+  link: CheckoutLinkContext
+): Promise<void> {
+  try {
+    await createPolarClient().checkouts.update(checkoutId, {
+      metadata: { [CHECKOUT_LINK_METADATA_KEY]: link.id },
+    });
+  } catch (error) {
+    console.warn("[team-billing] could not name a checkout link on the open session", {
+      teamId,
+      error: loggablePolarError(error),
+    });
+  }
+}
+
+/**
+ * One open checkout session per team, whatever was asked for: a
+ * double-click, a second tab or a change of plan or seats must not leave a
+ * second session that could ALSO be completed (Polar has no way to expire
+ * one). The same request gets the same session; another plan or seat count
+ * moves it (takeOpenCheckout()). Minting is serialized: exactly one
+ * concurrent request wins the lease and creates the Polar session. A session
+ * minted across a lease expiry can still be paid twice;
+ * the foreign-subscription guard in applyTeamSubscriptionState then ends and
+ * refunds the second.
+ */
+async function teamCheckoutSession(
+  team: BillingTeam,
+  seats: number,
+  productId: string,
+  link?: CheckoutLinkContext
+): Promise<CheckoutSession> {
+  const open = openPendingCheckout(team.pending_checkout);
+  if (open !== null) return takeOpenCheckout(team, open, seats, productId, link);
+
+  const leaseToken = await claimPendingCheckoutSlot(team.id, seats, productId);
+  if (leaseToken === null) {
+    // Another request holds the slot. One re-read settles whether it already
+    // finished (use its session) or is still minting (tell the caller to
+    // retry in a moment rather than minting a double).
+    const { data: fresh, error } = await createAdminClient()
+      .from("teams")
+      .select("pending_checkout")
+      .eq("id", team.id)
+      .maybeSingle();
+    if (error) throw error;
+
+    const freshOpen = openPendingCheckout(fresh?.pending_checkout ?? null);
+    if (freshOpen !== null) return takeOpenCheckout(team, freshOpen, seats, productId, link);
+
+    throw new TeamBillingError(
+      "checkout_in_progress",
+      "A checkout session is already being prepared for this team. Try again in a moment."
+    );
+  }
+
+  return mintUnderLease(team, leaseToken, seats, productId, link);
+}
+
+/** The team an owner may subscribe, and the product of the plan asked for. */
+async function checkTeamPlanPurchase(
+  userId: string,
+  teamId: string,
+  seats: number,
+  plan: TeamPlan,
+  interval: BillingInterval
+): Promise<{ team: BillingTeam; productId: string }> {
+  assertValidSeatCount(seats);
+  const productId = requireTeamPlanProduct(plan, interval);
+  const team = await getTeamForOwner(userId, teamId);
+  if (team.subscription_status !== null) {
+    throw new TeamBillingError("already_subscribed", "Team already has an active subscription");
+  }
+  return { team, productId };
+}
+
+export async function createTeamCheckout(
+  userId: string,
+  teamId: string,
+  seats: number,
+  plan: TeamPlan = "team",
+  interval: BillingInterval = "month"
+): Promise<string> {
+  const { team, productId } = await checkTeamPlanPurchase(userId, teamId, seats, plan, interval);
+  return (await teamCheckoutSession(team, seats, productId)).url;
+}
+
+/**
+ * A team subscription bought through a checkout link
+ * (lib/billing/checkout-links.ts): the same rules as createTeamCheckout()
+ * and the team's one open session, as the dashboard uses it (reused when it
+ * buys the same plan and seats, else moved to them). Only a new session is
+ * the link's own, selling exactly its plan and seats; a reused or moved
+ * dashboard session still offers the other plans and other seat counts on
+ * Polar's page, which the paid link's `bought` then shows.
+ */
+export async function teamPlanPurchase(
+  userId: string,
+  teamId: string,
+  seats: number,
+  plan: TeamPlan = "team",
+  interval: BillingInterval = "month"
+): Promise<LinkPurchase> {
+  const { team, productId } = await checkTeamPlanPurchase(userId, teamId, seats, plan, interval);
+  return {
+    expected: { product: productId, seats },
+    mint: (link) => teamCheckoutSession(team, seats, productId, link),
+  };
 }
 
 export async function cancelTeamSubscription(userId: string, teamId: string): Promise<void> {
@@ -1616,12 +1822,7 @@ async function endOrphanTeamSubscription(
 ): Promise<void> {
   const { subscription: current } = await currentTeamSubscription(event);
   const subscriptionId = asNonEmptyString(current.id);
-  const live =
-    (current.status === "active" ||
-      current.status === "trialing" ||
-      current.status === "past_due") &&
-    !asNonEmptyString(current.ended_at);
-  if (!subscriptionId || !live) return;
+  if (!subscriptionId || !isLiveSubscriptionState(current)) return;
   // Recorded first: once revoked, a redelivery reads it as ended and would
   // never record it.
   await recordRefund({
@@ -1629,27 +1830,117 @@ async function endOrphanTeamSubscription(
     reason: "deleted_account",
     teamId,
   });
-  try {
-    await createPolarClient().subscriptions.revoke(subscriptionId);
-  } catch (error) {
-    // Revoked by an earlier delivery of the same event.
-    if (!isEndedSubscriptionError(error)) {
-      reportError(
-        "[team-billing] could not revoke a deleted team's subscription",
-        loggablePolarError(error),
-        {
-          subscriptionId,
-        }
+  await revokeSubscriptionQuietly(subscriptionId);
+}
+
+/**
+ * An event for a subscription that is not the one the team holds. Applying
+ * it would let a stale event for another subscription overwrite the row that
+ * gates access and billing, so the row is never touched here. Only one case
+ * is acted on: two checkout sessions for the team were both paid (a checkout
+ * link's and the dashboard's, or two links for different plans or seats).
+ * Then the event's subscription is for a team plan (Teams or Team Business,
+ * any interval), live, on the same Polar customer as the stored one, the
+ * stored one is live too, and duplicateVerdict() says "end": the two
+ * started within two hours of each other, either way (twin checkouts whose
+ * events arrived out of order, say after a 5xx retry; a checkout is refused
+ * once the team is subscribed, so a real twin starts inside that window).
+ * The team keeps the one it holds, and the other ends before it charges
+ * again; what it charged goes back through the refund queue
+ * (lib/billing/refunds.ts), and a checkout link whose session made it reads
+ * superseded, never paid (one already paid through another of its sessions
+ * keeps that purchase: supersedeCheckoutLinks()). One that started further
+ * apart in either direction, or when Polar left out when either started,
+ * is reported for a person and neither ended nor refunded: one well before
+ * may be the plan the team has been using all along (its row cleared by a
+ * revoked event while it stayed live), one well after is more likely a
+ * replacement staff made in Polar, and a full refund would pay back what
+ * was meant to be kept. A late event for an ended subscription is
+ * logged; anything else (a stored subscription Polar no longer has live, a
+ * product that is not a team plan, another customer) is reported and changes
+ * nothing.
+ *
+ * `current` is the event's subscription as Polar has it now.
+ */
+async function settleForeignTeamSubscription(
+  eventType: string,
+  teamId: string,
+  storedSubscriptionId: string,
+  current: Record<string, unknown>
+): Promise<void> {
+  const subscriptionId = asNonEmptyString(current.id);
+  const productId =
+    asNonEmptyString(current.product_id) ?? asNonEmptyString(asRecord(current.product)?.id);
+  if (
+    subscriptionId !== null &&
+    teamPlanForProduct(productId) !== null &&
+    isLiveSubscriptionState(current)
+  ) {
+    const stored = asRecord(await createPolarClient().subscriptions.get(storedSubscriptionId));
+    const customerId = asNonEmptyString(current.customer_id);
+    if (
+      stored !== null &&
+      isLiveSubscriptionState(stored) &&
+      customerId !== null &&
+      customerId === asNonEmptyString(stored.customer_id)
+    ) {
+      if (duplicateVerdict(current, stored) === "report") {
+        reportError(
+          "[team-billing] a team has a second live team plan subscription that did not start within two hours of the one it holds",
+          undefined,
+          { teamId, eventType, storedSubscriptionId, eventSubscriptionId: subscriptionId }
+        );
+        return;
+      }
+      // Recorded first: once revoked, a redelivery reads it as ended and
+      // would never record it. The link is superseded before the revoke for
+      // the same reason: a failed supersede is retried with the event.
+      await recordRefund({
+        target: { subscription: subscriptionId },
+        reason: "duplicate_plan",
+        teamId,
+      });
+      await supersedeCheckoutLinks(
+        asNonEmptyString(current.checkout_id),
+        current.metadata,
+        asNonEmptyString(current.customer_id)
       );
-      throw error;
+      await revokeSubscriptionQuietly(subscriptionId);
+      console.warn("[team-billing] ended a second team plan subscription", {
+        teamId,
+        eventType,
+        storedSubscriptionId,
+        eventSubscriptionId: subscriptionId,
+      });
+      return;
     }
   }
+  const details = {
+    teamId,
+    eventType,
+    storedSubscriptionId,
+    eventSubscriptionId: subscriptionId,
+  };
+  // An ended subscription's late event needs nobody.
+  if (!isLiveSubscriptionState(current)) {
+    console.warn(
+      "[team-billing] ignored an event for an ended subscription the team does not hold",
+      details
+    );
+    return;
+  }
+  reportError(
+    "[team-billing] ignored an event for a subscription the team does not hold",
+    undefined,
+    details
+  );
 }
 
 async function applyTeamSubscriptionState(
   eventType: string,
   teamId: string,
-  event: Record<string, unknown>
+  event: Record<string, unknown>,
+  afterLostActivation = false
 ): Promise<void> {
   const admin = createAdminClient();
   const { data: team, error } = await admin
@@ -1673,23 +1964,16 @@ async function applyTeamSubscriptionState(
   const subscriptionId = asNonEmptyString(data.id);
   const customerId = asNonEmptyString(data.customer_id);
 
-  // The team already tracks a live subscription and this event describes a
-  // different one. Applying it would let a stale cross-subscription event (or
-  // a double-checkout's second subscription) overwrite the row that gates
-  // access and billing. The Polar-side orphan is deliberately NOT auto-revoked;
-  // this log line is the remediation signal.
+  // The team already tracks a subscription and this event describes a
+  // different one: never applied. A second live one (two paid checkout
+  // sessions) is ended and refunded; see settleForeignTeamSubscription.
   if (
     team.polar_subscription_id !== null &&
     team.subscription_status !== null &&
     subscriptionId !== null &&
     subscriptionId !== team.polar_subscription_id
   ) {
-    console.error("[team-billing] ignoring event for foreign subscription", {
-      teamId,
-      eventType,
-      storedSubscriptionId: team.polar_subscription_id,
-      eventSubscriptionId: subscriptionId,
-    });
+    await settleForeignTeamSubscription(eventType, teamId, team.polar_subscription_id, data);
     return;
   }
 
@@ -1935,6 +2219,23 @@ async function applyTeamSubscriptionState(
 
   const { data: written, error: guardedError } = await guarded.select("id");
   if (guardedError) throw guardedError;
+  if (
+    (!written || written.length === 0) &&
+    team.polar_subscription_id === null &&
+    !afterLostActivation
+  ) {
+    // Two subscriptions activating the same unsubscribed team at once (two
+    // paid checkout sessions, their subscription.created events handled
+    // together): both read no subscription, and the write above, fenced on
+    // polar_subscription_id being null, lets only one through, whichever
+    // started first. This one is read again at once, so
+    // settleForeignTeamSubscription() settles it without waiting for Polar
+    // to redeliver: twin checkouts start within two hours of each other, so
+    // the loser is ended and refunded even when it started first
+    // (duplicateVerdict()); one that started further apart is reported.
+    await applyTeamSubscriptionState(eventType, teamId, event, true);
+    return;
+  }
   if (!written || written.length === 0) {
     // Another write got there first: fail, so Polar delivers the event again
     // and it is applied to Polar's state then.

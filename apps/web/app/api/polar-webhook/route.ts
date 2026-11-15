@@ -1,5 +1,6 @@
 import { captureBillingEvent } from "@/lib/analytics-billing";
 import { auditPolarEvent } from "@/lib/audit";
+import { settleCheckoutLinkFromWebhook } from "@/lib/billing/checkout-links";
 import { getPolarWebhookSecret, loggablePolarError, PolarConfigError } from "@/lib/polar";
 import { applyPolarWebhookEvent, resolveWebhookUserId } from "@/lib/supabase/billing";
 import {
@@ -49,6 +50,10 @@ export async function POST(request: Request) {
     const data = event.data as unknown as Record<string, unknown>;
     const teamId = extractTeamIdFromWebhook(data);
     try {
+      // Whether a checkout link may be settled from this event: not when an
+      // add-on found no account to apply to, since the link would read paid
+      // for something nobody got.
+      let settleLink = true;
       // The add-on products (extra requests) have their own subscriptions and
       // orders on the same customer; the plan handlers would read their events
       // as the plan's.
@@ -58,7 +63,12 @@ export async function POST(request: Request) {
         if (account) {
           await applyCapacityWebhookEvent(event.type, account, capacityKind, data);
         } else {
-          // Paid for, or charging, with no account to give it to.
+          settleLink = false;
+        }
+        if (!account && !event.type.startsWith("checkout.")) {
+          // Paid for, or charging, with no account to give it to. A
+          // checkout's own events pay for nothing (its order or
+          // subscription does), and a team's often name no team: normal.
           reportError("[capacity] add-on event for a customer with no account", undefined, {
             eventType: event.type,
             id: typeof data.id === "string" ? data.id : null,
@@ -76,6 +86,12 @@ export async function POST(request: Request) {
           if (account) await reconcileAddonsWithPlan(account);
         }
       }
+      // A checkout link (lib/billing/checkout-links.ts) whose session this
+      // order or subscription came from is paid, unless the handlers above
+      // just ended its subscription as a duplicate (superseded, which this
+      // never overwrites). Idempotent, so a redelivery after a later failure
+      // changes nothing.
+      if (settleLink) await settleCheckoutLinkFromWebhook(event.type, data);
     } catch (applyError) {
       // Polar redelivers on a 5xx, so a failed apply shows up as an error row
       // followed by the retry's row.

@@ -13,7 +13,9 @@ export type NetworkNotice = { level: "warning" | "caution"; text: string } | nul
 export function networkNotice(
   network: "same" | "different" | "unknown",
   remote: boolean,
-  noun: "login" | "request" = "login"
+  noun: "login" | "request" | "checkout link" = "login",
+  /** What the person would do: approve it, or pay for a checkout link. */
+  act: "Approve" | "Pay for" = "Approve"
 ): NetworkNotice {
   if (network === "same") return null;
   const claim = remote
@@ -22,11 +24,11 @@ export function networkNotice(
   if (network === "different") {
     return {
       level: "warning",
-      text: `This ${noun} came from a different network than this browser.${claim} Approve it only if you started it yourself, just now.`,
+      text: `This ${noun} came from a different network than this browser.${claim} ${act} it only if you started it yourself, just now.`,
     };
   }
   return {
     level: "caution",
-    text: `We could not check that this ${noun} came from your network.${claim} Approve it only if you started it yourself, just now.`,
+    text: `We could not check that this ${noun} came from your network.${claim} ${act} it only if you started it yourself, just now.`,
   };
 }
