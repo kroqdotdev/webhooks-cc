@@ -1626,7 +1626,10 @@ export const REMOTE_MIN_POLL_MS = 1_000;
  * Why a signing credential cannot be the provider's, for the providers whose
  * credential has a fixed form; null when it may be. Checked before
  * create_endpoint creates anything, so a mistyped key never leaves an
- * endpoint behind that verifies nothing.
+ * endpoint behind that verifies nothing. PATCH /api/endpoints/{slug} refuses
+ * the same with the same message (signingCredentialProblem() in
+ * apps/web/lib/signing-config.ts; this package cannot import web code):
+ * change both together.
  */
 export function signingCredentialProblem(provider: string, secret: string): string | null {
   // Discord's application public key: an Ed25519 key of 32 bytes, in hex.

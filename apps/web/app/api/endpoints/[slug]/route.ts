@@ -20,7 +20,11 @@ import {
 } from "@/lib/supabase/endpoints";
 import { checkOwnerHeaders } from "@/lib/forwarding/owner-headers";
 import { checkSentField } from "@/lib/forwarding/timing";
-import { isValidSigningHeaderName, isValidSigningProvider } from "@/lib/signing-config";
+import {
+  isValidSigningHeaderName,
+  isValidSigningProvider,
+  signingCredentialProblem,
+} from "@/lib/signing-config";
 import { resolveEndpointAccess } from "@/lib/supabase/teams";
 import { isFavoriteEndpoint } from "@/lib/supabase/endpoint-favorites";
 import { allowPrivateTargets } from "@/lib/forwarding/config";
@@ -361,6 +365,11 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ sl
           { error: `A ${secretLabel} is required for ${nextProvider}` },
           { status: 400 }
         );
+      }
+
+      if (nextProvider && hasNewSecret) {
+        const problem = signingCredentialProblem(nextProvider, body.signingSecret as string);
+        if (problem) return Response.json({ error: problem }, { status: 400 });
       }
 
       if (nextProvider === "generic-hmac") {

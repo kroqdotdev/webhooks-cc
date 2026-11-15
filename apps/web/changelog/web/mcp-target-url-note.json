@@ -1,7 +1,7 @@
 {
-  "title": "Clearer answers from the hosted MCP server",
+  "title": "Discord keys checked, clearer hosted MCP answers",
   "items": [
-    "The hosted MCP server at webhooks.cc/mcp says so when a client still passes targetUrl to render_email or test_webhook_flow: nothing was posted there, and posting to your own URL needs the local server (npx -y @webhooks-cc/mcp)",
-    "create_endpoint on the hosted server refuses a Discord public key that is not 64 hex characters before it creates the endpoint"
+    "Saving Discord signature verification on an endpoint refuses a public key that is not 64 hex characters, from the dashboard, the API, the CLI, the SDKs and the MCP server alike, so a mistyped key no longer leaves an endpoint that verifies nothing",
+    "The hosted MCP server at webhooks.cc/mcp says so when a client still passes targetUrl to render_email or test_webhook_flow: nothing was posted there, and posting to your own URL needs the local server (npx -y @webhooks-cc/mcp)"
   ]
 }

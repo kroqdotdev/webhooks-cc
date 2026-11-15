@@ -16,3 +16,18 @@ export function isValidSigningHeaderName(value: unknown): value is string {
 export function isValidSigningProvider(value: unknown): value is string {
   return typeof value === "string" && VALID_SIGNING_PROVIDERS.has(value);
 }
+
+/**
+ * Why a signing credential cannot be the provider's, for the providers whose
+ * credential has a fixed form; null when it may be. The MCP server checks
+ * the same before create_endpoint creates anything
+ * (signingCredentialProblem() in packages/mcp/src/tools.ts, which cannot
+ * import web code): change both together.
+ */
+export function signingCredentialProblem(provider: string, secret: string): string | null {
+  // Discord's application public key: an Ed25519 key of 32 bytes, in hex.
+  if (provider === "discord" && !/^[0-9a-fA-F]{64}$/.test(secret)) {
+    return "signingSecret for discord is the application's public key: 64 hex characters, from the Discord developer portal's General Information page.";
+  }
+  return null;
+}
