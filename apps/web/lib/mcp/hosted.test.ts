@@ -1,6 +1,12 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { TOOL_GROUP_NAMES } from "@webhooks-cc/mcp/tools";
-import { INSTRUCTIONS, requestClientName, toolSelection, unknownGroupsNote } from "./hosted";
+import {
+  INSTRUCTIONS,
+  listingToolSelection,
+  requestClientName,
+  toolSelection,
+  unknownGroupsNote,
+} from "./hosted";
 
 const META = "io.modelcontextprotocol/clientInfo";
 const url = (query = "") => new URL(`https://webhooks.cc/mcp${query}`);
@@ -36,10 +42,30 @@ describe("unknown groups in ?tools=", () => {
     expect(chosen.unknown).toEqual(["teamz"]);
     const note = unknownGroupsNote(chosen.unknown);
     expect(note).toBe(
-      `Unknown tool groups in ?tools=: teamz (known: all, ${TOOL_GROUP_NAMES.join(", ")}).`
+      `Unknown tool groups in ?tools=: "teamz" (known: all, ${TOOL_GROUP_NAMES.join(", ")}).`
     );
     expect(unknownGroupsNote([])).toBeNull();
     expect(toolSelection(url("?tools=core,teams"), []).unknown).toEqual([]);
+  });
+
+  it("names a client by its registration when ?tools= names no group", async () => {
+    const registration = vi.fn(async () => "Claude");
+    const typo = await listingToolSelection(url("?tools=typo"), null, registration);
+    expect([...typo.groups].sort()).toEqual([...TOOL_GROUP_NAMES].sort());
+    expect(typo.unknown).toEqual(["typo"]);
+    expect(registration).toHaveBeenCalledTimes(1);
+    // No ?tools= at all: the registration decides too.
+    const plain = await listingToolSelection(url(), null, registration);
+    expect(plain.groups.has("teams")).toBe(true);
+  });
+
+  it("reads no registration when ?tools= or the request decides", async () => {
+    const registration = vi.fn(async () => "Claude");
+    const core = await listingToolSelection(url("?tools=core,typo"), null, registration);
+    expect([...core.groups]).toEqual(["core"]);
+    const named = await listingToolSelection(url("?tools=typo"), "cursor-vscode", registration);
+    expect([...named.groups]).toEqual(["core"]);
+    expect(registration).not.toHaveBeenCalled();
   });
 
   it("reports at most five short names of plain characters", () => {

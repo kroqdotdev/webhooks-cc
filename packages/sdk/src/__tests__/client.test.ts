@@ -2684,6 +2684,27 @@ describe("WebhooksCC", () => {
       expect(error.code).toBe("invalid_input");
     });
 
+    it("never splits a surrogate pair when it cuts a long message", async () => {
+      // 999 plain characters, then emoji: the cut falls on the first emoji.
+      const message = "a".repeat(999) + "\u{1F600}".repeat(5);
+      const error = await failWith(400, JSON.stringify({ error: "invalid_input", message }));
+      expect(error.apiMessage).toBe("a".repeat(999) + "\u{1F600}...");
+    });
+
+    it("names the stream's path on a refused stream", async () => {
+      globalThis.fetch = vi.fn().mockResolvedValue(
+        new Response('{"error":"Endpoint not found"}', {
+          status: 404,
+          headers: { "content-type": "application/json" },
+        })
+      );
+      const iterator = createClient().requests.subscribe("acme")[Symbol.asyncIterator]();
+      const error = (await iterator.next().catch((caught: unknown) => caught)) as WebhooksCCError;
+      expect(error).toBeInstanceOf(NotFoundError);
+      expect(error.path).toBe("/stream/acme");
+      expect(error.apiMessage).toBe("Endpoint not found");
+    });
+
     it("cuts a long body that is not JSON short", async () => {
       const error = await failWith(500, "z".repeat(400));
       expect(error.apiMessage).toBe("z".repeat(200) + "...");

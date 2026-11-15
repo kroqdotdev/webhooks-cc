@@ -1178,7 +1178,7 @@ export function toolHint(error: WebhooksCCError, remote: boolean): string | null
   if (error.statusCode === 401) {
     return remote
       ? "The connection to webhooks.cc was refused: reconnect this MCP server (sign in again) and retry."
-      : "The API key was refused: set WHK_API_KEY to a working key (https://webhooks.cc/account/api-keys), or remove it and restart the server to sign in with connect_account.";
+      : "The API key or agent connection was refused: if WHK_API_KEY is set, use a working key (https://webhooks.cc/account/api-keys); otherwise restart the server and connect again with connect_account.";
   }
   if (error.statusCode !== 404) return null;
   const path = error.path ?? "";
@@ -2028,6 +2028,16 @@ export function registerTools(
               throw new Error(
                 `Signing could not be set (${reason}), and the endpoint "${endpoint.slug}" could not be deleted: it exists without signing. Fix it with update_endpoint, or delete it with delete_endpoint.`
               );
+            }
+            // Said in the error itself, keeping its class and code.
+            const deleted =
+              "The endpoint was deleted, so nothing was created: fix the signing options and call create_endpoint again.";
+            if (err instanceof WebhooksCCError) {
+              err.apiMessage = `${err.apiMessage ?? err.message} ${deleted}`;
+            } else if (err instanceof Error) {
+              err.message = `${err.message} ${deleted}`;
+            } else {
+              throw new Error(`${String(err)} ${deleted}`);
             }
             throw err;
           }
@@ -4465,6 +4475,6 @@ export {
   type ToolGroup,
 } from "./catalog";
 
-export { sdkToolResult, toolCallFrom } from "./sdk-call";
+export { listedInputSchema, sdkToolResult, toolCallFrom } from "./sdk-call";
 export { attachSkill } from "./skills";
 export { attachInspector, INSPECTOR_URI, INSPECTOR_URI_TEMPLATE, APP_MIME_TYPE } from "./app";

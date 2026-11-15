@@ -1497,10 +1497,38 @@ describe("registerTools", () => {
     expect(error).toMatchObject({
       error: true,
       code: "validation_error",
-      message: "Invalid signing secret",
+      message:
+        "Invalid signing secret The endpoint was deleted, so nothing was created: fix the signing options and call create_endpoint again.",
     });
     expect(error).not.toHaveProperty("warning");
     expect(remove).toHaveBeenCalledWith("acme-2");
+  });
+
+  it("says the endpoint was deleted on a plain error too, keeping its code", async () => {
+    const create = vi
+      .fn()
+      .mockResolvedValue({ slug: "acme-4", url: "https://go.webhooks.cc/w/acme-4" });
+    const update = vi.fn().mockRejectedValue(new Error("socket hang up"));
+    const remove = vi.fn().mockResolvedValue(undefined);
+    const tools = getRegisteredTools(
+      createMockClient({
+        endpoints: { create, update, delete: remove } as unknown as WebhooksCC["endpoints"],
+      })
+    );
+    const error = parseJsonResult(
+      await tools.create_endpoint.handler({ signingProvider: "stripe", signingSecret: "abc" })
+    );
+    expect(error.code).toBe("validation_error");
+    expect(error.message).toMatch(
+      /^socket hang up The endpoint was deleted, so nothing was created/
+    );
+    // A server error keeps its own code.
+    update.mockRejectedValue(new WebhooksCCError(503, "Service unavailable"));
+    const server = parseJsonResult(
+      await tools.create_endpoint.handler({ signingProvider: "stripe", signingSecret: "abc" })
+    );
+    expect(server.code).toBe("server_error");
+    expect(server.message).toContain("Service unavailable The endpoint was deleted");
   });
 
   it("names the endpoint left without signing when it cannot be deleted either", async () => {
@@ -4214,7 +4242,9 @@ describe("errors from the API", () => {
     }
     expect(toolHint(new NotFoundError("x"), false)).toContain("list_endpoints");
     expect(toolHint(new WebhooksCCError(401, "x"), true)).toContain("reconnect");
-    expect(toolHint(new WebhooksCCError(401, "x"), false)).toContain("WHK_API_KEY");
+    expect(toolHint(new WebhooksCCError(401, "x"), false)).toBe(
+      "The API key or agent connection was refused: if WHK_API_KEY is set, use a working key (https://webhooks.cc/account/api-keys); otherwise restart the server and connect again with connect_account."
+    );
   });
 
   it("refuses a timeout that is not a duration with a validation error", async () => {

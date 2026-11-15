@@ -2553,7 +2553,7 @@ export const CHANGELOG: ChangelogEntry[] = [
     track: "sdk",
     items: [
       "An error from the API carries its text, not its JSON: the `message` of a JSON error body, else its `error`, so a long answer is no longer cut into broken JSON; the recovery hint for a short message is still added",
-      "`WebhooksCCError` has `apiMessage`, what the API said without the SDK's hint, and `path`, the API route that answered",
+      "`WebhooksCCError` has `apiMessage`, what the API said without the SDK's hint, and `path`, the API route that answered, on downloads and `requests.subscribe()` streams too",
     ],
   },
   {
@@ -3189,7 +3189,7 @@ export const CHANGELOG: ChangelogEntry[] = [
     title: "Plain Error Messages",
     track: "go",
     items: [
-      "An `Error`'s `Message` is the API's text, not its JSON: the `message` of a JSON error body, else its `error`, so a long answer is no longer cut into broken JSON; `errors.Is(err, ErrInvalidCursor)` reads the body's code as before",
+      'An `Error`\'s `Message` is the API\'s text, not its JSON: the `message` of a JSON error body, else its `error`, so a long answer is no longer cut into broken JSON; a short one gets its hint after ": " (404) or ". " (401), as in the other SDKs, and `errors.Is(err, ErrInvalidCursor)` reads the body\'s code as before',
     ],
   },
   {
@@ -3319,10 +3319,10 @@ export const CHANGELOG: ChangelogEntry[] = [
     track: "mcp",
     items: [
       "Tool errors say what the API said, never its raw JSON, and their hint names this server's tools (`list_requests`, `list_endpoints`, `list_shares`, `list_names`, `list_teams`) instead of SDK methods; a refused key says to set `WHK_API_KEY` or connect an account, and on the hosted server to reconnect",
-      "`create_endpoint` and `update_endpoint` take only signing providers webhooks.cc verifies, and when signing cannot be saved, `create_endpoint` deletes the endpoint it just made and answers the error, rather than leave an endpoint that verifies nothing",
+      "`create_endpoint` and `update_endpoint` take only signing providers webhooks.cc verifies, and when signing cannot be saved, `create_endpoint` deletes the endpoint it just made and answers the error, saying nothing was created, rather than leave an endpoint that verifies nothing",
       'A timeout or poll interval that is not a duration (`"banana"`, `-5`) is a validation error saying why, on both servers, rather than a silent default',
       "`describe` answers the SDK version and its sections' operation names (about 2.5 KB, from 33 KB); `section` returns one section's parameters and types",
-      "The tool list is smaller: conditions of response rules, filters and layouts are described once per list, and a rule's response once as `mockResponse`. The hosted core list is 59.6 KB (from 62.0 KB), the full one 121.8 KB (from 124.9 KB)",
+      "The tool list is smaller: conditions of response rules, filters and layouts are described once per list, a rule's response once as `mockResponse`, and input schemas leave out the `$schema` URI (MCP reads JSON Schema 2020-12 without it). The core list is 59.1 KB as sent (from 63.4 KB), the full one 119.3 KB (from 128.1 KB)",
       "On the hosted server, names in `?tools=` that are no group are reported on `describe` and in the instructions, and when none of the names is a group the client's own default applies rather than the core",
     ],
   },

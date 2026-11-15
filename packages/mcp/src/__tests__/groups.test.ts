@@ -251,22 +251,15 @@ describe("the size of the hosted tool lists", () => {
     return tools;
   }
 
-  /** What a list costs a client: each tool's name, description, input schema and annotations. */
-  const listSize = (tools: Awaited<ReturnType<typeof remoteList>>) =>
-    JSON.stringify(
-      tools.map(({ name, description, inputSchema, annotations }) => ({
-        name,
-        description,
-        inputSchema,
-        annotations,
-      }))
-    ).length;
+  /** What a list costs a client: every tool object as it receives it, title and _meta included. */
+  const listSize = (tools: Awaited<ReturnType<typeof remoteList>>) => JSON.stringify(tools).length;
 
   it("keeps the core list and the full list within their budgets", async () => {
     const core = listSize(await remoteList(["core"]));
     const all = listSize(await remoteList([...TOOL_GROUP_NAMES]));
-    // A client pays for its whole list on every request. Measured at
-    // 59.4 KB and 121.6 KB in mcp 2.5.0 (from 62.0 KB and 124.9 KB).
+    // A client pays for its whole list on every request. Measured whole at
+    // 59.1 KB and 119.3 KB in mcp 2.5.0 (from 63.4 KB and 128.1 KB); the
+    // hosted server's own list is measured in apps/web (hosted-app.test.ts).
     expect(core).toBeLessThanOrEqual(60 * 1024);
     expect(all).toBeLessThanOrEqual(140 * 1024);
   });

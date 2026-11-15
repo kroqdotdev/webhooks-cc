@@ -523,6 +523,16 @@ func errorText(body []byte) (string, bool) {
 	return "", false
 }
 
+// withHint adds a recovery hint to a short message as the TypeScript and
+// Python SDKs do: "Not found: Use Endpoints.List ...".
+func withHint(message, separator, hint string) string {
+	message = strings.TrimSpace(message)
+	if message == "" {
+		return hint
+	}
+	return message + separator + hint
+}
+
 func errorFromResponse(response *apiResponse, path string) *Error {
 	message, ok := errorText(response.body)
 	if !ok {
@@ -542,11 +552,11 @@ func errorFromResponse(response *apiResponse, path string) *Error {
 	switch response.status {
 	case http.StatusUnauthorized:
 		if generic {
-			apiErr.Message = strings.TrimSpace(message + " Get an API key at https://webhooks.cc/account/api-keys")
+			apiErr.Message = withHint(message, ". ", "Get an API key at https://webhooks.cc/account/api-keys")
 		}
 	case http.StatusNotFound:
 		if generic {
-			apiErr.Message = strings.TrimSpace(message + " " + notFoundHint(path))
+			apiErr.Message = withHint(message, ": ", notFoundHint(path))
 		}
 	case http.StatusTooManyRequests:
 		if seconds, ok := headerInt(response.header, "Retry-After"); ok {

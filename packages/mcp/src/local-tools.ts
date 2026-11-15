@@ -4,7 +4,7 @@ import {
   type ServerContext,
   type Transport,
 } from "@modelcontextprotocol/server";
-import { sdkToolResult, toolCallFrom } from "./sdk-call";
+import { listedInputSchema, sdkToolResult, toolCallFrom } from "./sdk-call";
 import type { WebhooksCC } from "@webhooks-cc/sdk";
 import type { DashboardOrigins } from "./app";
 import { z } from "zod";
@@ -42,7 +42,7 @@ export function asToolServer(server: McpServer): ToolServer {
         {
           title: annotations?.title,
           description,
-          inputSchema: z.object(shape),
+          inputSchema: listedInputSchema(z.object(shape)),
           annotations,
           ...(meta ? { _meta: meta } : {}),
         },

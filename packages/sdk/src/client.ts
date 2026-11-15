@@ -315,7 +315,9 @@ function errorTextOf(body: string): string | undefined {
         ? error
         : undefined;
   if (text === undefined) return undefined;
-  return text.length > MAX_ERROR_TEXT ? text.slice(0, MAX_ERROR_TEXT) + "..." : text;
+  // By code point, so a surrogate pair is never split.
+  const points = Array.from(text);
+  return points.length > MAX_ERROR_TEXT ? points.slice(0, MAX_ERROR_TEXT).join("") + "..." : text;
 }
 
 /**
@@ -1112,7 +1114,8 @@ export class WebhooksCC {
           response.status,
           text.length > 200 ? text.slice(0, 200) + "..." : text,
           response,
-          path
+          path,
+          text
         );
       }
       const disposition = response.headers.get("content-disposition") ?? "";
@@ -4728,7 +4731,8 @@ export class WebhooksCC {
             // Resume from the last request, or from the floor recorded at the first
             // connection; the very first connection sends no `since` (server default).
             const since = lastReceivedAt !== undefined ? lastReceivedAt - 1 : resumeFloor;
-            const url = `${baseUrl}${buildStreamPath(slug, since)}`;
+            const streamPath = buildStreamPath(slug, since);
+            const url = `${baseUrl}${streamPath}`;
             const connectStartedAt = Date.now();
             // Bound the connect phase; the idle watchdog takes over once the stream is open
             const connectTimeout = setTimeout(
@@ -4750,7 +4754,14 @@ export class WebhooksCC {
 
             if (!response.ok) {
               const text = await response.text();
-              throw mapStatusToError(response.status, text, response);
+              throw mapStatusToError(
+                response.status,
+                text.length > 200 ? text.slice(0, 200) + "..." : text,
+                response,
+                // The API path as the other calls name it, after /api.
+                streamPath.replace(/^\/api/, ""),
+                text
+              );
             }
 
             if (!response.body) {

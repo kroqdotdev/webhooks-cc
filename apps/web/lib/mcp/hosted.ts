@@ -10,6 +10,7 @@ import { WebhooksCC } from "@webhooks-cc/sdk";
 import {
   defaultToolGroups,
   errorResult,
+  listedInputSchema,
   parseToolGroups,
   registerTools,
   sdkToolResult,
@@ -130,7 +131,7 @@ export const TARGET_URL_NOTE =
  * out) is marked before the object schema drops the key, so the result can
  * say nothing was posted rather than succeed in silence.
  */
-function noticingTargetUrl(schema: z.ZodObject): StandardSchemaWithJSON {
+function noticingTargetUrl(schema: StandardSchemaWithJSON): StandardSchemaWithJSON {
   const standard = schema["~standard"];
   return {
     "~standard": {
@@ -158,7 +159,7 @@ const NOTED_TOOL = "describe";
 function toolServer(server: McpServer, account: string, note: string | null): ToolServer {
   return {
     tool(name, description, shape, handler, annotations, meta) {
-      const schema = z.object(shape);
+      const schema = listedInputSchema(z.object(shape));
       return server.registerTool(
         name,
         {
@@ -255,7 +256,8 @@ function warnUnknown(names: string[]): void {
 /** What the server says about unknown names in ?tools=, or null when there are none. */
 export function unknownGroupsNote(unknown: readonly string[] | undefined): string | null {
   if (!unknown || unknown.length === 0) return null;
-  return `Unknown tool groups in ?tools=: ${unknown.join(", ")} (known: all, ${TOOL_GROUP_NAMES.join(", ")}).`;
+  const named = unknown.map((name) => `"${name}"`).join(", ");
+  return `Unknown tool groups in ?tools=: ${named} (known: all, ${TOOL_GROUP_NAMES.join(", ")}).`;
 }
 
 /**
@@ -282,8 +284,24 @@ export function toolSelection(
   return { groups: defaultToolGroups(name), readOnly, unknown };
 }
 
+/**
+ * The tools a tools/list caller gets, naming the client by the request
+ * (`requestName`) or else by the OAuth app or agent its token was granted to.
+ * The registration is read only when it can decide the list: the request
+ * names no client and ?tools= names no group (absent, or only unknown names,
+ * which fall back to the client's default).
+ */
+export async function listingToolSelection(
+  url: URL,
+  requestName: string | null,
+  registrationName: () => Promise<string | null>
+): Promise<{ groups: Set<ToolGroup>; readOnly: boolean; unknown: string[] }> {
+  const needsRegistration = !requestName && !hasKnownName(url.searchParams.get("tools"));
+  return toolSelection(url, [requestName, needsRegistration ? await registrationName() : null]);
+}
+
 /** Whether a ?tools= value names any group (core or all included). */
-function hasKnownName(setting: string | null): boolean {
+export function hasKnownName(setting: string | null): boolean {
   return (setting ?? "").split(/[\s,+]+/).some((raw) => {
     const name = raw.trim().toLowerCase();
     return name === "all" || (TOOL_GROUP_NAMES as string[]).includes(name);

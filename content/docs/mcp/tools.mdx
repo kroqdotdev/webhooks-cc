@@ -25,7 +25,7 @@ Create a new webhook endpoint. Returns the endpoint slug and full URL.
 | `mockResponse`    | `object`  | no       | Mock response config (see fields below)                                      |
 | `responseRules`   | `array`   | no       | Conditional response rules (method/path/header/body conditions + responses)  |
 | `notificationUrl` | `string`  | no       | Adds a Notifications destination: a chat message, at most one a second       |
-| `signingProvider` | `string`  | no       | Provider for automatic signature verification (e.g., `stripe`, `github`)     |
+| `signingProvider` | `string`  | no       | Provider for automatic signature verification: one of the signature-verification providers (`stripe`, `github`, `shopify` and the rest [`list_provider_templates`](#list_provider_templates) lists) or `generic-hmac`; anything else is refused before the endpoint is created |
 | `signingSecret`   | `string`  | no       | Signing secret (encrypted server-side). Required when signingProvider is set |
 | `signingHeader`   | `string`  | no       | Custom header name (only for `generic-hmac` provider)                        |
 | `site`            | `string`  | no       | Which site's dashboard lists it: `webhooks`, `mailhooks` or `both` (default) |
@@ -86,7 +86,7 @@ Update an endpoint's name, mock response, notification webhook, signing configur
 | `mockResponse`      | `object`  | no       | Mock response config (see fields above), or `null` to clear                   |
 | `responseRules`     | `array`   | no       | Conditional response rules, or `null` to clear                                |
 | `notificationUrl`   | `string`  | no       | Sets the Notifications [destination](#add_destination), or `null` removes it  |
-| `signingProvider`   | `string`  | no       | Signing provider (e.g., `stripe`), or `null` to disable                       |
+| `signingProvider`   | `string`  | no       | Signing provider: one of the signature-verification providers (`stripe`, `github`, `shopify` and the rest [`list_provider_templates`](#list_provider_templates) lists) or `generic-hmac`; or `null` to disable |
 | `signingSecret`     | `string`  | no       | New signing secret (encrypted server-side), or `null` to clear                |
 | `signingHeader`     | `string`  | no       | Custom header name (only for `generic-hmac`), or `null` to clear              |
 | `showEmailExtracts` | `boolean` | no       | Pick codes and links out of emails (dashboard and forwarded JSON); owner only |
@@ -987,7 +987,26 @@ Example:
 
 ### describe
 
-Self-documenting schema of all available operations and their parameters. No parameters.
+The SDK's operations and their parameters, a section at a time.
+
+| Parameter | Type     | Required | Description                                               |
+| --------- | -------- | -------- | --------------------------------------------------------- |
+| `section` | `string` | no       | A section name from the answer without one, e.g. `endpoints` |
+
+Without `section` it answers the SDK version and each section's operation names (about 2.5 KB; a section that is a single operation, such as `usage`, lists none). Shortened to two sections:
+
+```json
+{
+  "version": "1.31.0",
+  "sections": {
+    "requests": ["list", "listPaginated", "get", "waitForAll", "waitFor", "subscribe", "replay", "redeliver", "raw", "attachment", "export", "search", "searchPage", "count", "countPage", "clear"],
+    "usage": []
+  },
+  "note": "Call describe with section for its operations' parameters and types."
+}
+```
+
+With `section` it answers `{ "version", "section", "operations" }`, that section's operations with their parameters and types. A section that does not exist is an error naming the sections.
 
 ## Without an API key: the agent sandbox
 

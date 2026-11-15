@@ -1258,9 +1258,10 @@ func TestErrorMessagesAreThePlainTextOfTheBody(t *testing.T) {
 		body    string
 		message string
 	}{
-		{404, `{"error":"Endpoint not found"}`, "Endpoint not found Use Endpoints.List to see your endpoints"},
+		{404, `{"error":"Endpoint not found"}`, "Endpoint not found: Use Endpoints.List to see your endpoints"},
 		{400, `{"error":"invalid_input","message":"name is too long"}`, "name is too long"},
 		{502, "Bad gateway", "Bad gateway"},
+		{401, `{"error":"Unauthorized"}`, "Unauthorized. Get an API key at https://webhooks.cc/account/api-keys"},
 		{400, `{"error":"invalid_input","message":"` + strings.Repeat("y", 250) + `"}`, strings.Repeat("y", 250)},
 		{500, strings.Repeat("z", 400), strings.Repeat("z", 200) + "..."},
 	}
