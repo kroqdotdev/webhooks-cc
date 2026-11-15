@@ -3,7 +3,7 @@ title: "CLI"
 description: "Install the webhooks.cc CLI (whk), log in, tunnel webhooks to localhost, stream and wait for requests, and script it from CI or a coding agent with JSON output and stable exit codes."
 section: cli
 order: 1
-lastUpdated: 2026-11-13
+lastUpdated: 2026-11-14
 schema: none
 keywords: ["webhook CLI", "whk", "webhook forward", "localhost webhook"]
 seo:
@@ -83,7 +83,7 @@ Puts your local site at a public link on sharehooks.cc, for showing work in prog
 | 9 | `confirmation_required`, `cancelled`, `approval_denied` | A destructive command was not confirmed, or the account's owner refused an approval |
 
 - Nothing waits for input without a terminal. `whk delete` and `whk requests clear` ask first in a terminal; anywhere else they stop with `confirmation_required` unless you pass `--yes`.
-- `whk api <path>` calls any [API route](/docs/api) with your credentials, for whatever has no command of its own yet: `whk api endpoints/<slug>/alerts`, or `whk api -X PATCH endpoints/<slug> -d '{"retentionDays":7}'`.
+- `whk api <path>` calls any [API route](/docs/api) with your credentials, for whatever has no command of its own, such as saving response rules or layouts: `whk api -X PATCH endpoints/<slug> -d '{"retentionDays":7}'`.
 
 An agent can also capture webhooks without an account, and without a browser:
 

@@ -1326,6 +1326,8 @@ export interface WaitForEmailsOptions extends WaitForEmailOptions {
 export interface SendTestEmailOptions {
   /** Deliver to `{slug}+{tag}@...` instead of the plain address */
   tag?: string;
+  /** A ready-made layout's id: send that template's sample email instead */
+  template?: string;
 }
 
 /** Result of `emails.sendTest()`. */

@@ -6,6 +6,9 @@ use std::future::Future;
 use std::time::{Duration, Instant};
 
 use super::ApiClient;
+
+/// How long a download may take: a stored message can be tens of megabytes.
+const DOWNLOAD_TIMEOUT: Duration = Duration::from_secs(300);
 use super::client::Fetched;
 use crate::error::ApiError;
 use crate::types::{
@@ -452,6 +455,53 @@ impl ApiClient {
         self.delete(&format!("/api/endpoints/{}/requests{qs}", encode(slug)))
             .await?;
         Ok(())
+    }
+
+    /// A stored email's exact message (`message/rfc822`).
+    pub async fn download_raw(&self, request_id: &str) -> Result<super::client::RawResponse> {
+        self.require_auth()?;
+        self.get_file(
+            &format!("/api/requests/{}/raw", encode(request_id)),
+            DOWNLOAD_TIMEOUT,
+        )
+        .await
+    }
+
+    /// One decoded attachment of a stored email, by its position from 0.
+    pub async fn download_attachment(
+        &self,
+        request_id: &str,
+        index: u32,
+    ) -> Result<super::client::RawResponse> {
+        self.require_auth()?;
+        self.get_file(
+            &format!("/api/requests/{}/attachments/{index}", encode(request_id)),
+            DOWNLOAD_TIMEOUT,
+        )
+        .await
+    }
+
+    /// Sends a captured request through its endpoint's destinations again
+    /// (an email with layouts is parsed again first): `{ queued }`.
+    pub async fn replay_request(&self, request_id: &str) -> Result<Fetched<Value>> {
+        self.require_auth()?;
+        let resp = self
+            .post(
+                &format!("/api/requests/{}/replay", encode(request_id)),
+                &serde_json::json!({}),
+            )
+            .await?;
+        resp.parse("replay")
+    }
+
+    /// The same for an endpoint's requests in a range (`since`, `until` in
+    /// ms, `kind`): `{ requests, queued, limit }`.
+    pub async fn replay_range(&self, slug: &str, body: &Value) -> Result<Fetched<Value>> {
+        self.require_auth()?;
+        let resp = self
+            .post(&format!("/api/endpoints/{}/replay", encode(slug)), body)
+            .await?;
+        resp.parse("replay")
     }
 }
 

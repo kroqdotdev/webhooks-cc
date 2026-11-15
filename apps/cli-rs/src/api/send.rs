@@ -11,6 +11,17 @@ impl ApiClient {
         serde_json::from_str(&resp.body).context("failed to parse send response")
     }
 
+    /// Has the server deliver a sample email to an endpoint, or to its
+    /// `+tag` address: `{ status, requestId }`.
+    pub async fn send_test_email(
+        &self,
+        body: &serde_json::Value,
+    ) -> Result<super::client::Fetched<serde_json::Value>> {
+        self.require_auth()?;
+        let resp = self.post("/api/send-test-email", body).await?;
+        resp.parse("test email")
+    }
+
     /// Send a webhook directly to an arbitrary URL.
     pub async fn send_to(
         &self,

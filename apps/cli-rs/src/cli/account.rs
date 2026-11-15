@@ -347,13 +347,7 @@ pub async fn domains_verify(
     Ok(())
 }
 
-fn is_uuid(value: &str) -> bool {
-    value.len() == 36
-        && value.char_indices().all(|(i, c)| match i {
-            8 | 13 | 18 | 23 => c == '-',
-            _ => c.is_ascii_hexdigit(),
-        })
-}
+use crate::util::is_uuid;
 
 /// An endpoint id, from a slug or an id.
 async fn endpoint_id(client: &ApiClient, slug_or_id: &str) -> Result<String> {

@@ -245,7 +245,7 @@ fn continue_command(
 }
 
 /// `s` as one shell word: as it is when plain, else in single quotes.
-fn shell_word(s: &str) -> String {
+pub(crate) fn shell_word(s: &str) -> String {
     let plain = !s.is_empty()
         && s.chars()
             .all(|c| c.is_ascii_alphanumeric() || "_-./:=@%+,".contains(c));

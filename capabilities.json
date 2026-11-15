@@ -78,7 +78,7 @@
       "sdk": ["endpoints.previewResponse"],
       "python": ["endpoints.preview_response"],
       "go": ["Endpoints.PreviewResponse"],
-      "cli": "no command yet: `whk api` reaches it",
+      "cli": ["mock preview"],
       "mcp": ["preview_response"]
     },
     {
@@ -88,7 +88,7 @@
       "sdk": ["endpoints.previewLayouts"],
       "python": ["endpoints.preview_layouts"],
       "go": ["Endpoints.PreviewLayouts"],
-      "cli": "no command yet: `whk api` reaches it",
+      "cli": ["layouts preview"],
       "mcp": ["preview_layouts"]
     },
     {
@@ -142,7 +142,7 @@
       "sdk": ["alerts.get", "alerts.update"],
       "python": "testing-focused SDK: added on demand",
       "go": "testing-focused SDK: added on demand",
-      "cli": "no command yet: `whk api` reaches it",
+      "cli": ["alerts get", "alerts set"],
       "mcp": "no tool yet"
     },
     {
@@ -189,7 +189,7 @@
       "sdk": ["requests.raw", "requests.attachment"],
       "python": ["requests.raw", "requests.attachment"],
       "go": ["Requests.Raw", "Requests.Attachment"],
-      "cli": "no command yet: `whk api` reaches it",
+      "cli": ["requests download"],
       "mcp": "a tool answer carries text; get_email links the attachments"
     },
     {
@@ -224,7 +224,7 @@
       "sdk": ["requests.redeliver", "endpoints.redeliver"],
       "python": "testing-focused SDK: added on demand",
       "go": "testing-focused SDK: added on demand",
-      "cli": "no command yet: `whk api` reaches it",
+      "cli": ["requests replay", "requests replay-range"],
       "mcp": "no tool yet"
     },
     {
@@ -279,7 +279,7 @@
       "sdk": ["emails.sendTest"],
       "python": ["emails.send_test"],
       "go": ["Emails.SendTest"],
-      "cli": "no command yet: `whk api` reaches it",
+      "cli": ["send-email"],
       "mcp": ["send_test_email"]
     },
     {
