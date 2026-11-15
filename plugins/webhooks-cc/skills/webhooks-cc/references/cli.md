@@ -30,6 +30,7 @@
 | Responses and alerts               | `whk mock preview <slug>`, `whk alerts get <slug>`, `whk alerts set <slug> --silence-hours 24`                    |
 | Email setup                        | `whk fields preview`, `whk layouts preview`, `whk layouts`, `whk ai setup`, `whk domains`                         |
 | Account                            | `whk usage`, `whk billing`, `whk keys`, `whk agents`, `whk account`, `whk share-links`, `whk teams`, `whk google` |
+| Connect this machine's agents      | `whk setup agent [--agent cursor] [--local] [--dry-run]`                                                          |
 | Anything else                      | `whk api <path> [-X METHOD] [-d JSON]`                                                                            |
 
 `whk wait` exits at the first match: start it in the background, trigger
@@ -68,6 +69,15 @@ Commands that need the person's approval (`whk keys create`,
 `whk share-links create`, `whk teams invite`, `whk domains remove`, ...)
 print the link and wait; with `--no-wait` they print the approval and exit,
 and `whk approvals wait <id>` collects it later.
+
+`whk setup agent` adds the MCP server and this skill to every coding agent
+on the machine (Claude Code, Codex, Cursor, VS Code, Claude Desktop, Devin);
+without a terminal it needs `--yes`, and `--dry-run --json` says what it
+would change first. Codex signs in to the remote server while it is added,
+so without a terminal whk leaves that to the person: Codex reports that it
+needs a sign-in (exit 0, skill still copied), and the person runs
+`codex mcp add webhooks-cc --url https://webhooks.cc/mcp` in a terminal.
+Do not switch to `--local` to get around it unless the person asks.
 
 Signed provider templates are sent from the MCP tools or the SDKs, not the
 CLI: `whk send` and `whk send-to` send the body and headers you give them.

@@ -1,0 +1,10 @@
+{
+  "title": "Docs for whk setup agent",
+  "items": [
+    "The CLI command reference describes whk setup agent, which adds the MCP server and the agent skill to every coding agent on your machine in one step, with no key written anywhere",
+    "The MCP server, agent skill and AI agents pages point to it as the quickest way to connect Claude Code, Codex, Cursor, VS Code, Claude Desktop and Devin Desktop",
+    "The MCP server page shows how to add the remote server to Devin Desktop and the Devin CLI, and `devin mcp login webhooks-cc` to sign in",
+    "The MCP server and CLI pages say that whk setup agent gives Claude Desktop the local server, which starts in the agent sandbox unless a connection was saved before, and that the remote server goes in through Settings, Connectors",
+    "The CLI page describes how whk setup agent keeps its record: saved with every change, kept per Claude Code and Codex configuration, and repaired by a re-run after an interrupted one"
+  ]
+}

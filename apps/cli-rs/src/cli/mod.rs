@@ -21,6 +21,7 @@ pub mod replay;
 pub mod requests;
 pub mod sandbox;
 pub mod send;
+pub mod setup;
 pub mod share;
 pub mod teams;
 pub mod tunnel;
@@ -531,6 +532,12 @@ deletion) refuse API keys.")]
         action: SandboxAction,
     },
 
+    /// Set things up on this machine: `whk setup agent` connects your coding agents to webhooks.cc
+    Setup {
+        #[command(subcommand)]
+        action: SetupAction,
+    },
+
     /// Show usage and quota info, including team pools
     Usage,
 
@@ -542,6 +549,89 @@ deletion) refuse API keys.")]
         /// Shell type
         shell: clap_complete::Shell,
     },
+}
+
+#[derive(Subcommand, Debug)]
+pub enum SetupAction {
+    /// Connect the coding agents on this machine to webhooks.cc: the MCP server and the agent skill
+    #[command(long_about = SETUP_AGENT_ABOUT)]
+    Agent(SetupAgentArgs),
+}
+
+const SETUP_AGENT_ABOUT: &str = "\
+Connect the coding agents on this machine to webhooks.cc.
+
+Each agent found (its program on PATH, or its config directory) gets the
+remote MCP server, https://webhooks.cc/mcp, in its user-level config, and
+the webhooks.cc agent skill. No key is written anywhere: the agent signs in
+with OAuth in your browser the first time it connects. --local installs the
+local server (npx -y @webhooks-cc/mcp) instead, which starts in the agent
+sandbox until the agent connects your account.
+
+Agents: claude-code and codex (through `claude mcp add` and `codex mcp add`),
+claude-desktop, cursor, vscode and devin (Devin Desktop, formerly Windsurf;
+`windsurf` works too). Claude Desktop gets the local server, the only kind
+its config file runs, and so does Windsurf from before the rename; Devin
+signs in with `devin mcp login webhooks-cc`. With the webhooks.cc Claude
+Code plugin installed, Claude Code gets neither the server nor the skill:
+the plugin brings both, so a server entry and a skill copy whk added before
+the plugin are taken out when they are unchanged. Claude Code or Codex found without its program on PATH is skipped, with the
+command to run once it is; named with --agent, it fails.
+
+A re-run changes nothing that is already in place. A config file is backed
+up to <file>.bak the first time it is changed, keeps its indentation, line
+endings and key order, and is left alone when it is read-only, is not valid
+JSON, or holds a number too large to write back exactly (VS Code's mcp.json
+with comments is skipped unless --agent vscode is given, then it fails).
+Cursor and VS Code get no copy of the skill when ~/.agents/skills or
+~/.claude/skills has one, since they read those too, and the copy whk gave
+them before is taken out once a shared copy is there (a run that leaves
+them out says so instead). A copy the skills CLI (`npx skills`) manages is
+never updated or removed. --remove takes out
+what this command installed and nothing else, for agents uninstalled since
+too. Without a terminal it changes nothing unless --yes is given.
+
+Codex signs in to the remote server while `codex mcp add` adds it, in the
+browser. Without a terminal no one can, so whk does not add it: Codex is
+reported as needs_sign_in (exit 0) with the command to run in a terminal,
+`codex mcp add webhooks-cc --url https://webhooks.cc/mcp`, and its skill is
+still copied.";
+
+#[derive(clap::Args, Debug)]
+pub struct SetupAgentArgs {
+    /// Only this agent (repeatable): claude-code, claude-desktop, cursor, vscode, codex, devin (or windsurf). Default: every agent found on this machine
+    #[arg(long = "agent", value_name = "NAME", value_enum)]
+    pub agents: Vec<setup::Agent>,
+
+    /// Install the local server (npx -y @webhooks-cc/mcp) instead of the remote one
+    #[arg(long)]
+    pub local: bool,
+
+    /// Say what would change, and change nothing
+    #[arg(long)]
+    pub dry_run: bool,
+
+    /// Remove what this command installed, and nothing else
+    #[arg(long)]
+    pub remove: bool,
+
+    /// Go ahead without asking (needed without a terminal)
+    #[arg(short = 'y', long = "yes")]
+    pub yes: bool,
+}
+
+impl From<SetupAgentArgs> for setup::Options {
+    fn from(args: SetupAgentArgs) -> Self {
+        setup::Options {
+            agents: args.agents,
+            local: args.local,
+            dry_run: args.dry_run,
+            remove: args.remove,
+            yes: args.yes,
+            // Set by `setup::run` from the process's own terminal.
+            terminal: false,
+        }
+    }
 }
 
 #[derive(Subcommand, Debug)]
