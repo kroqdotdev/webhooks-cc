@@ -1429,12 +1429,18 @@ describe("registerTools", () => {
     const tools = getRegisteredTools(
       createMockClient({ endpoints: { create, update } as unknown as WebhooksCC["endpoints"] })
     );
-    for (const signingSecret of ["abc", "g".repeat(64), "a".repeat(63), ` ${"a".repeat(64)}`]) {
+    for (const signingSecret of [
+      "abc",
+      "g".repeat(64),
+      "a".repeat(63),
+      ` ${"a".repeat(64)}`,
+      `${"a".repeat(64)}\n`,
+    ]) {
       const result = await tools.create_endpoint.handler({
         signingProvider: "discord",
         signingSecret,
       });
-      expect(result.isError, signingSecret).toBe(true);
+      expect(result.isError, JSON.stringify(signingSecret)).toBe(true);
       expect(result.content[0].text).toContain("64 hex characters");
     }
     expect(create).not.toHaveBeenCalled();

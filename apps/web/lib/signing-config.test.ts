@@ -7,6 +7,18 @@ import {
   signingCredentialProblem,
 } from "./signing-config";
 
+/** A well-formed Discord public key, in mixed case. */
+const DISCORD_KEY = "0123456789abcdefABCDEF0123456789abcdef0123456789abcdef0123456789";
+
+const REFUSED_DISCORD_KEYS = [
+  "abc",
+  "g".repeat(64),
+  "a".repeat(63),
+  "a".repeat(65),
+  ` ${"a".repeat(64)}`,
+  `${"a".repeat(64)}\n`,
+];
+
 describe("signing-config", () => {
   test("accepts compact HTTP header names used for Generic HMAC", () => {
     expect(isValidSigningHeaderName("x-signature")).toBe(true);
@@ -33,18 +45,12 @@ describe("signing-config", () => {
   });
 
   test("refuses a Discord public key that is not 64 hex characters", () => {
-    for (const key of [
-      "abc",
-      "g".repeat(64),
-      "a".repeat(63),
-      "a".repeat(65),
-      ` ${"a".repeat(64)}`,
-    ]) {
-      expect(signingCredentialProblem("discord", key), key).toContain("64 hex characters");
+    for (const key of REFUSED_DISCORD_KEYS) {
+      expect(signingCredentialProblem("discord", key), JSON.stringify(key)).toContain(
+        "64 hex characters"
+      );
     }
-    expect(
-      signingCredentialProblem("discord", "0123456789abcdefABCDEF".padEnd(64, "0"))
-    ).toBeNull();
+    expect(signingCredentialProblem("discord", DISCORD_KEY)).toBeNull();
   });
 
   test("leaves other providers' credentials to the provider", () => {
@@ -53,12 +59,12 @@ describe("signing-config", () => {
   });
 
   test("says the same as the MCP server's check", () => {
-    for (const [provider, key] of [
-      ["discord", "abc"],
-      ["discord", "a".repeat(64)],
+    const cases: [string, string][] = [
+      ...[...REFUSED_DISCORD_KEYS, DISCORD_KEY].map((key): [string, string] => ["discord", key]),
       ["stripe", "abc"],
-    ]) {
-      expect(signingCredentialProblem(provider, key), `${provider} ${key}`).toBe(
+    ];
+    for (const [provider, key] of cases) {
+      expect(signingCredentialProblem(provider, key), `${provider} ${JSON.stringify(key)}`).toBe(
         mcpSigningCredentialProblem(provider, key)
       );
     }

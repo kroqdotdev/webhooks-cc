@@ -136,7 +136,7 @@ describe("the hosted server", () => {
       tools: Array<{
         name: string;
         description: string;
-        inputSchema: { properties?: Record<string, unknown> };
+        inputSchema: { properties?: Record<string, unknown>; required?: string[] };
       }>;
     };
     const byName = Object.fromEntries(tools.map((tool) => [tool.name, tool]));
@@ -147,6 +147,16 @@ describe("the hosted server", () => {
       );
       expect(byName[name].description, name).not.toContain("targetUrl");
     }
+    // The rest of each schema is still listed, so a wrapper that lost the
+    // JSON Schema fails here.
+    const render = byName.render_email.inputSchema;
+    expect(Object.keys(render.properties ?? {})).toEqual(
+      expect.arrayContaining(["requestId", "format", "mailgunSigningKey"])
+    );
+    expect(render.required).toEqual(expect.arrayContaining(["requestId", "format"]));
+    expect(Object.keys(byName.test_webhook_flow.inputSchema.properties ?? {})).toEqual(
+      expect.arrayContaining(["provider", "event", "secret", "mockStatus", "cleanup"])
+    );
   });
 
   it("drops a targetUrl sent anyway, so nothing is posted there", async () => {
@@ -181,6 +191,39 @@ describe("the hosted server", () => {
     // A client whose tools/list still offered targetUrl hears that nothing was posted.
     expect(result.content.map((item) => item.text)).toContain(TARGET_URL_NOTE);
     expect(TARGET_URL_NOTE).toContain("npx -y @webhooks-cc/mcp");
+  });
+
+  it("adds the note to test_webhook_flow too, and posts nothing to targetUrl", async () => {
+    const fetched: string[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: string | URL | Request) => {
+        fetched.push(
+          typeof input === "string" ? input : input instanceof URL ? input.href : input.url
+        );
+        // The flow stops at its first step, creating the endpoint.
+        return Response.json({ error: "Not in this test" }, { status: 400 });
+      })
+    );
+    const result = (await ask("tools/call", {
+      name: "test_webhook_flow",
+      arguments: { targetUrl: "http://localhost:3000/hook" },
+    })) as { isError?: boolean; content: Array<{ text: string }> };
+    expect(result.content.map((item) => item.text)).toContain(TARGET_URL_NOTE);
+    expect(fetched.length).toBeGreaterThan(0);
+    expect(fetched.some((target) => target.startsWith("http://localhost:3000/hook"))).toBe(false);
+  });
+
+  it("adds no note to a call the schema refuses", async () => {
+    const fetch = vi.fn(async () => Response.json({}));
+    vi.stubGlobal("fetch", fetch);
+    const result = (await ask("tools/call", {
+      name: "render_email",
+      arguments: { format: "postmark", targetUrl: "http://localhost:3000/inbound" },
+    })) as { isError?: boolean; content: Array<{ text: string }> };
+    expect(result.isError).toBe(true);
+    expect(result.content.map((item) => item.text)).not.toContain(TARGET_URL_NOTE);
+    expect(fetch).not.toHaveBeenCalled();
   });
 
   it("adds no note to a call without targetUrl", async () => {

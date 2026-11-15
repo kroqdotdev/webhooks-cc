@@ -485,7 +485,9 @@ function VerificationSection({ endpoint }: { endpoint: EndpointSettingsPanelProp
         updates.signingProvider = provider || null;
         if (provider !== "generic-hmac") updates.signingHeader = null;
       }
-      if (secret) updates.signingSecret = secret;
+      // A key pasted with a stray space or newline: the route takes the
+      // credential exactly as sent (a Discord key must be 64 hex characters).
+      if (secret.trim()) updates.signingSecret = secret.trim();
       if (provider === "generic-hmac" && header !== initialHeader)
         updates.signingHeader = header || null;
     };
