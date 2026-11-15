@@ -82,8 +82,9 @@ Exit status:
   5  not allowed by the plan, a limit or a permission (forbidden)
   6  rate limited; wait and retry (rate_limited)
   7  server or network failure; retry (server_error, network_error, request_timeout)
-  8  a wait ran out of time, an approval or checkout link expired, an approved
-     billing change was not made because its quote changed, or a checkout's
+  8  a wait ran out of time, an approval or checkout link expired, a billing
+     change (approved, or made on the agent budget) was not made because its
+     quote changed, or a checkout's
      purchase was undone as a duplicate (timeout, approval_expired, quote_changed,
      checkout_expired, checkout_superseded)
   9  a destructive command was not confirmed; pass --yes (confirmation_required, cancelled),

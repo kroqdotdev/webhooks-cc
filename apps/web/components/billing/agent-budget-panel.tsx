@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Meter } from "@/components/ui/meter";
 import { longDate } from "@/lib/dates";
-import { createLatestCall } from "@/lib/latest-call";
+import { createLatestCall, settleWrite } from "@/lib/latest-call";
 import {
   AGENT_BUDGET_RENEWAL_NOTE,
   agentBudgetDescription,
@@ -82,7 +82,9 @@ export function AgentBudgetPanel({
   const [message, setMessage] = useState<{ tone: "success" | "error"; text: string } | null>(null);
   // Reads and saves overlap (a reload while a save is on its way): only the
   // newest one's answer is shown, so a read begun before a save never puts
-  // back the budget the save replaced.
+  // back the budget the save replaced. A save superseded by a read begun
+  // after it reads again once it lands (settleWrite()), since that read may
+  // have answered before the save did.
   const [calls] = useState(createLatestCall);
 
   const load = useCallback(async () => {
@@ -124,11 +126,16 @@ export function AgentBudgetPanel({
       if (!response.ok || !data) {
         throw new Error(data?.error ?? "The budget could not be saved");
       }
-      // Saved whatever happens next; a read begun since shows it already.
-      if (current()) {
-        setView(data);
-        setField(dollarsField(data.budgetCents));
-      }
+      // Saved whatever happens next. A call begun since may have read the
+      // old budget, so the panel reads again rather than keep its answer.
+      settleWrite(
+        current,
+        () => {
+          setView(data);
+          setField(dollarsField(data.budgetCents));
+        },
+        () => void load()
+      );
       setMessage({
         tone: "success",
         text:

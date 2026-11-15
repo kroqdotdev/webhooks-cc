@@ -46,6 +46,7 @@ import { removeMemberShares } from "./teams-endpoints";
 import { recordRefund } from "@/lib/billing/refunds";
 import { detachCheckoutLinks, supersedeCheckoutLinks } from "@/lib/billing/checkout-link-rows";
 import { reportError } from "@/lib/observability";
+import { auditSystemEvent } from "@/lib/audit";
 import { closeRunsWithoutAccess } from "@/lib/tunnels/access";
 import { handOverTeamNames } from "@/lib/tunnels/names";
 
@@ -1886,6 +1887,9 @@ async function settleForeignTeamSubscription(
   const subscriptionId = asNonEmptyString(current.id);
   const productId =
     asNonEmptyString(current.product_id) ?? asNonEmptyString(asRecord(current.product)?.id);
+  // Why a live subscription the team does not hold was left alone, for the
+  // audit log beside the report.
+  let reason = subscriptionId === null ? "no_id" : "not_a_plan";
   if (
     subscriptionId !== null &&
     teamPlanForProduct(productId) !== null &&
@@ -1893,6 +1897,8 @@ async function settleForeignTeamSubscription(
   ) {
     const stored = asRecord(await createPolarClient().subscriptions.get(storedSubscriptionId));
     const customerId = asNonEmptyString(current.customer_id);
+    reason =
+      stored === null || !isLiveSubscriptionState(stored) ? "stored_not_live" : "other_customer";
     if (
       stored !== null &&
       isLiveSubscriptionState(stored) &&
@@ -1905,6 +1911,7 @@ async function settleForeignTeamSubscription(
           undefined,
           { teamId, eventType, storedSubscriptionId, eventSubscriptionId: subscriptionId }
         );
+        await auditDuplicateReported(teamId, storedSubscriptionId, subscriptionId, "not_a_twin");
         return;
       }
       // Recorded first: once revoked, a redelivery reads it as ended and
@@ -1949,6 +1956,27 @@ async function settleForeignTeamSubscription(
     undefined,
     details
   );
+  await auditDuplicateReported(teamId, storedSubscriptionId, subscriptionId, reason);
+}
+
+/**
+ * Keeps a live team subscription left for a person in the audit log too,
+ * so the report outlives a dropped StatOSS event. Ids and our own reason
+ * code only (not_a_twin, not_a_plan, other_customer, stored_not_live, no_id).
+ */
+async function auditDuplicateReported(
+  teamId: string,
+  storedSubscriptionId: string,
+  subscriptionId: string | null,
+  reason: string
+): Promise<void> {
+  await auditSystemEvent({
+    action: "team.duplicate_plan_reported",
+    outcome: "refused",
+    teamId,
+    targetId: subscriptionId,
+    metadata: { stored_subscription_id: storedSubscriptionId, reason },
+  });
 }
 
 async function applyTeamSubscriptionState(

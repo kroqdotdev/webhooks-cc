@@ -319,6 +319,38 @@ describe("trySpendFromBudget", () => {
     expect(claim.args.p_cents).toBe(3000);
   });
 
+  it("says what is left from a fresh read when the claim finds the budget lowered", async () => {
+    db.rpc.take_agent_budget = () => ({
+      status: "existing",
+      id: "spend-1",
+      spend_status: "unsettled",
+      outcome: null,
+      age_seconds: 60,
+      quoted_cents: 3000,
+      amount_cents: 3000,
+      period_end: PERIOD_END,
+      budget: 10_000,
+      others: 0,
+    });
+    // Lowered to $40 since the take: the take's $100 would say $70 left.
+    db.rpc.claim_agent_budget_retry = () => ({ amount: 3000, resend: false });
+    db.rpc.agent_budget_state = () => ({
+      status: "ok",
+      budget: 4000,
+      spent: 3000,
+      left: 1000,
+      next_release: null,
+      spends: [],
+    });
+    // A webhook made the change meanwhile: answered as made, with what is left.
+    db.rpc.settle_agent_budget_spend = () => "applied";
+    const attempt = await trySpendFromBudget(request(), CALLER, null, CHANGE);
+    const response = (attempt as { response: Response }).response;
+    expect(response.status).toBe(200);
+    expect((await response.json()).budget).toMatchObject({ leftCents: 1000 });
+    expect(mocks.makeBillingChange).not.toHaveBeenCalled();
+  });
+
   it("keeps the 3-D Secure mark when its settle fails, so a retry never sends it again", async () => {
     db.rpc.take_agent_budget = () => ({ status: "taken", id: "spend-1", left: 7000 });
     let failed = false;

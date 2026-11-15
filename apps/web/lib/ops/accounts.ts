@@ -109,11 +109,65 @@ export interface AccountDetail extends AccountSummary {
   }[];
   apiKeys: number;
   agents: number;
-  activity: { action: string; outcome: string; via: string | null; at: string }[];
+  /**
+   * The newest audit events the account made or that were done to it (by
+   * the system, Polar, an agent or another account, staff included), newest
+   * first. `by` is the actor's kind (audit_events.actor_type) when someone
+   * other than the account acted, else null.
+   */
+  activity: ActivityEntry[];
   tickets: { id: string; number: number; subject: string; status: string; lastMessageAt: string }[];
   /** The ticket whose grant lets staff view contents now, if any. */
   activeGrant: { ticketId: string; number: number } | null;
 }
+
+export interface ActivityEntry {
+  action: string;
+  outcome: string;
+  via: string | null;
+  at: string;
+  by: string | null;
+}
+
+/** How many audit events the account page lists. */
+export const ACTIVITY_LIMIT = 30;
+
+interface AuditRow {
+  id: number | string;
+  action: string;
+  outcome: string;
+  via: string | null;
+  occurred_at: string;
+  actor_type: string;
+  actor_user_id: string | null;
+}
+
+/**
+ * The account's activity from two reads, each on its own index: the events
+ * it made (audit_events_actor) and those done to it (audit_events_target_user),
+ * each the newest `limit`. Merged newest first, an event in both once.
+ */
+export function mergeActivity(
+  userId: string,
+  asActor: AuditRow[],
+  asTarget: AuditRow[],
+  limit = ACTIVITY_LIMIT
+): ActivityEntry[] {
+  const rows = new Map<number | string, AuditRow>();
+  for (const row of [...asActor, ...asTarget]) rows.set(row.id, row);
+  return [...rows.values()]
+    .sort((a, b) => Date.parse(b.occurred_at) - Date.parse(a.occurred_at))
+    .slice(0, limit)
+    .map((row) => ({
+      action: row.action,
+      outcome: row.outcome,
+      via: row.via,
+      at: row.occurred_at,
+      by: row.actor_user_id === userId ? null : row.actor_type,
+    }));
+}
+
+const AUDIT_COLUMNS = "id, action, outcome, via, occurred_at, actor_type, actor_user_id";
 
 export async function accountDetail(userId: string): Promise<AccountDetail | null> {
   const admin = createAdminClient();
@@ -128,7 +182,7 @@ export async function accountDetail(userId: string): Promise<AccountDetail | nul
   const since = new Date(Date.now() - 7 * 86_400_000);
   const sinceDay = since.toISOString().slice(0, 10);
 
-  const [authUser, staffRow, memberships, endpoints, stats, keys, audit, tickets] =
+  const [authUser, staffRow, memberships, endpoints, stats, keys, audit, auditOn, tickets] =
     await Promise.all([
       admin.auth.admin.getUserById(userId),
       admin.from("staff").select("user_id").eq("user_id", userId).maybeSingle(),
@@ -148,12 +202,20 @@ export async function accountDetail(userId: string): Promise<AccountDetail | nul
         .from("api_keys")
         .select("id, is_agent_issued, agent_registration_id")
         .eq("user_id", userId),
+      // Two reads rather than one with `or`, so each walks its own index
+      // (actor, target user) newest first and stops at the limit.
       admin
         .from("audit_events")
-        .select("action, outcome, via, occurred_at")
+        .select(AUDIT_COLUMNS)
         .eq("actor_user_id", userId)
         .order("occurred_at", { ascending: false })
-        .limit(30),
+        .limit(ACTIVITY_LIMIT),
+      admin
+        .from("audit_events")
+        .select(AUDIT_COLUMNS)
+        .eq("target_user_id", userId)
+        .order("occurred_at", { ascending: false })
+        .limit(ACTIVITY_LIMIT),
       admin
         .from("support_tickets")
         .select("id, number, subject, status, closed_at, access_granted, last_message_at")
@@ -241,12 +303,7 @@ export async function accountDetail(userId: string): Promise<AccountDetail | nul
     agents: new Set(
       (keys.data ?? []).map((key) => key.agent_registration_id).filter((id): id is string => !!id)
     ).size,
-    activity: (audit.data ?? []).map((row) => ({
-      action: row.action,
-      outcome: row.outcome,
-      via: row.via,
-      at: row.occurred_at,
-    })),
+    activity: mergeActivity(userId, audit.data ?? [], auditOn.data ?? []),
     tickets: (tickets.data ?? []).map((ticket) => ({
       id: ticket.id,
       number: ticket.number,

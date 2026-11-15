@@ -1221,14 +1221,19 @@ async function resumeSpend(
   const countedCents = claimed.amount;
   // The claim checks the budget again under the account's lock: one lowered
   // since the read above leaves the try only a look, never a resend.
-  const refused: ResendRefusal | null =
-    refusal ?? (!awaitingCardholder && claimed.resend !== true ? "over_budget" : null);
+  const lowered = refusal === null && !awaitingCardholder && claimed.resend !== true;
+  const refused: ResendRefusal | null = refusal ?? (lowered ? "over_budget" : null);
+  // What is left after this spend: from the take's read, unless the claim
+  // found the budget lowered since, when that read's budget is stale and a
+  // fresh read says what is left.
+  const left = lowered
+    ? await leftNow(context.account)
+    : Math.max(0, existing.budgetCents - existing.othersCents - countedCents);
   // Polar has no idempotency key: if the subscription is at the target
   // already, the first try was made, and sending it again would only
   // repeat it.
   try {
     if (await polarAtTarget(context.state.subscriptionId!, context.target!)) {
-      const left = Math.max(0, existing.budgetCents - existing.othersCents - countedCents);
       // Made by the first try: answered with what the row counts.
       return finishSpend(
         { ...context, costCents: countedCents },
@@ -1242,10 +1247,8 @@ async function resumeSpend(
       "[agent-budget] could not read the subscription before a retry",
       loggablePolarError(readError)
     );
-    const left = Math.max(0, existing.budgetCents - existing.othersCents - countedCents);
     return keepUnsettled(context, id, left, "outcome_unknown", OUTCOME_UNKNOWN_WORDS);
   }
-  const left = Math.max(0, existing.budgetCents - existing.othersCents - countedCents);
   const counted = { ...context, costCents: countedCents };
   if (awaitingCardholder) {
     const status = await settle(id, "unsettled", null);
@@ -1257,6 +1260,18 @@ async function resumeSpend(
   }
   // A second try: whatever it finds, it never gives the spend back.
   return runSpend(counted, id, left, true);
+}
+
+/**
+ * What is left of the budget now, from a fresh read (agent_budget_state),
+ * or 0 when it cannot be read: an answer never says more is left than is.
+ */
+async function leftNow(account: BudgetAccount): Promise<number> {
+  try {
+    return Math.max(0, (await getAgentBudgetState(account))?.leftCents ?? 0);
+  } catch {
+    return 0;
+  }
 }
 
 /**

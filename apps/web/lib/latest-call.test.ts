@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createLatestCall } from "./latest-call";
+import { createLatestCall, settleWrite } from "./latest-call";
 
 describe("createLatestCall", () => {
   it("lets a read begun before a save not apply once the save began", () => {
@@ -24,5 +24,34 @@ describe("createLatestCall", () => {
     const only = calls.begin();
     expect(only()).toBe(true);
     expect(only()).toBe(true);
+  });
+});
+
+describe("settleWrite", () => {
+  it("applies a save that is still the newest call", () => {
+    const calls = createLatestCall();
+    const save = calls.begin();
+    const applied: string[] = [];
+    settleWrite(
+      save,
+      () => applied.push("apply"),
+      () => applied.push("reload")
+    );
+    expect(applied).toEqual(["apply"]);
+  });
+
+  it("reads again when a read begun during the save superseded it", () => {
+    // The read may have answered with the budget the save replaced, so the
+    // panel must not stay on it: it reads once more, after the save landed.
+    const calls = createLatestCall();
+    const save = calls.begin();
+    calls.begin();
+    const applied: string[] = [];
+    settleWrite(
+      save,
+      () => applied.push("apply"),
+      () => applied.push("reload")
+    );
+    expect(applied).toEqual(["reload"]);
   });
 });

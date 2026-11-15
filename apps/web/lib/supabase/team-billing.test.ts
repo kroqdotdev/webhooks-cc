@@ -6,12 +6,14 @@ const mockFns = vi.hoisted(() => ({
   recordRefund: vi.fn(),
   detachCheckoutLinks: vi.fn(),
   supersedeCheckoutLinks: vi.fn(),
+  auditSystemEvent: vi.fn(),
 }));
 
 // The customer the event names, which a link named by its metadata must have.
 const CUSTOMER_OF_EVENT = "cus_team_1";
 
 vi.mock("@/lib/billing/refunds", () => ({ recordRefund: mockFns.recordRefund }));
+vi.mock("@/lib/audit", () => ({ auditSystemEvent: mockFns.auditSystemEvent }));
 vi.mock("@/lib/billing/checkout-link-rows", () => ({
   detachCheckoutLinks: mockFns.detachCheckoutLinks,
   supersedeCheckoutLinks: mockFns.supersedeCheckoutLinks,
@@ -2066,6 +2068,14 @@ describe("subscription event guards", () => {
         "[team-billing] ignored an event for a subscription the team does not hold",
         expect.objectContaining({ eventSubscriptionId: "sub_addon" })
       );
+      // Kept in the audit log as well, with ids and the reason only.
+      expect(mockFns.auditSystemEvent).toHaveBeenCalledWith({
+        action: "team.duplicate_plan_reported",
+        outcome: "refused",
+        teamId: "team_1",
+        targetId: "sub_addon",
+        metadata: { stored_subscription_id: "sub_live", reason: "not_a_plan" },
+      });
     });
 
     test("an older one is reported for a person, neither ended nor refunded", async () => {
@@ -2098,6 +2108,14 @@ describe("subscription event guards", () => {
         "[team-billing] a team has a second live team plan subscription that did not start within two hours of the one it holds",
         expect.objectContaining({ eventSubscriptionId: "sub_older" })
       );
+      expect(mockFns.auditSystemEvent).toHaveBeenCalledTimes(1);
+      expect(mockFns.auditSystemEvent).toHaveBeenCalledWith({
+        action: "team.duplicate_plan_reported",
+        outcome: "refused",
+        teamId: "team_1",
+        targetId: "sub_older",
+        metadata: { stored_subscription_id: "sub_live", reason: "not_a_twin" },
+      });
     });
 
     test("twin checkouts: the one that started first is ended when its event arrives second", async () => {
@@ -2134,6 +2152,8 @@ describe("subscription event guards", () => {
       expect(revoke).toHaveBeenCalledWith("sub_first");
       expect(revoke).not.toHaveBeenCalledWith("sub_live");
       expect(teamsUpdates()).toEqual([]);
+      // Ended, not reported.
+      expect(mockFns.auditSystemEvent).not.toHaveBeenCalled();
     });
 
     test("twin checkouts: the one that started second is ended when its event arrives second", async () => {

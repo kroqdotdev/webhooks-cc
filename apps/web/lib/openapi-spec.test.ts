@@ -3,10 +3,12 @@ import SwaggerParser from "@apidevtools/swagger-parser";
 import path from "path";
 import { readFileSync } from "fs";
 
+// Needs no database, so it runs with the unit suites in CI.
+const SPEC = path.resolve(__dirname, "../public/openapi.yaml");
+
 describe("OpenAPI specification", () => {
   it("is a valid OpenAPI 3.1 document", async () => {
-    const specPath = path.resolve(__dirname, "../../public/openapi.yaml");
-    const api = await SwaggerParser.validate(specPath);
+    const api = await SwaggerParser.validate(SPEC);
 
     expect((api as Record<string, unknown>).openapi).toBe("3.1.0");
     expect(api.info.title).toBe("webhooks.cc API");
@@ -15,18 +17,16 @@ describe("OpenAPI specification", () => {
   });
 
   it("has no unresolved $ref references", async () => {
-    const specPath = path.resolve(__dirname, "../../public/openapi.yaml");
-    const api = await SwaggerParser.dereference(specPath);
+    const api = await SwaggerParser.dereference(SPEC);
     expect(api).toBeDefined();
   });
 
   it("names every approval action the server can answer with", async () => {
-    const specPath = path.resolve(__dirname, "../../public/openapi.yaml");
-    const api = (await SwaggerParser.dereference(specPath)) as unknown as {
+    const api = (await SwaggerParser.dereference(SPEC)) as unknown as {
       components: { schemas: Record<string, { properties: Record<string, { enum?: string[] }> }> };
     };
     const documented = api.components.schemas.Approval.properties.action.enum ?? [];
-    const source = readFileSync(path.resolve(__dirname, "../../lib/approvals/actions.ts"), "utf8");
+    const source = readFileSync(path.resolve(__dirname, "approvals/actions.ts"), "utf8");
     const union = /export type ApprovalAction =([^;]+);/.exec(source)?.[1] ?? "";
     const actions = [...union.matchAll(/"([a-z_.]+)"/g)].map((match) => match[1]);
     expect(actions).toContain("billing.agent_budget");
@@ -34,8 +34,7 @@ describe("OpenAPI specification", () => {
   });
 
   it("documents a browser's plan change apart from one made on the agent budget", async () => {
-    const specPath = path.resolve(__dirname, "../../public/openapi.yaml");
-    const api = (await SwaggerParser.dereference(specPath)) as unknown as {
+    const api = (await SwaggerParser.dereference(SPEC)) as unknown as {
       paths: Record<string, Record<string, { responses: Record<string, unknown> }>>;
     };
     for (const route of ["/api/billing/change-plan", "/api/teams/{teamId}/billing/plan"]) {
