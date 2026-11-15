@@ -1,4 +1,5 @@
 import { createHash, randomInt } from "node:crypto";
+import { zeroAgentBudgetsForUser } from "@/lib/billing/agent-budget";
 import { sendEmail, type EmailMessage } from "@/lib/email/mailer";
 import { reportError } from "@/lib/observability";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -60,8 +61,18 @@ export async function remainingRecoveryCodes(userId: string): Promise<number> {
   return count ?? 0;
 }
 
-/** Removes every authenticator of the account and its recovery codes. Returns how many factors went. */
-export async function removeTwoFactor(userId: string): Promise<number> {
+/**
+ * Removes every authenticator of the account and its recovery codes. Returns
+ * how many factors went. Every agent spend budget the person controls is
+ * turned off first (lib/billing/agent-budget.ts), so a failure there stops
+ * the removal rather than leaving a budget on an account whose second factor
+ * is gone.
+ */
+export async function removeTwoFactor(
+  userId: string,
+  how: "recovery_code" | "support"
+): Promise<number> {
+  await zeroAgentBudgetsForUser(userId, how);
   const admin = createAdminClient();
   const { data, error } = await admin.auth.admin.mfa.listFactors({ userId });
   if (error) throw error;
@@ -101,7 +112,7 @@ export async function redeemRecoveryCode(userId: string, input: string): Promise
     .select("id");
   if (error) throw error;
   if (!data || data.length === 0) return false;
-  await removeTwoFactor(userId);
+  await removeTwoFactor(userId, "recovery_code");
   return true;
 }
 

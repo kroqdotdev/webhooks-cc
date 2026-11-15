@@ -70,6 +70,20 @@ describe("apiKeys and approvals", () => {
     await expect(client().approvals.wait(ID)).rejects.toBeInstanceOf(ApprovalExpiredError);
   });
 
+  it("says when a budget raise was refused because the budget changed", async () => {
+    globalThis.fetch = vi
+      .fn()
+      .mockResolvedValue(
+        answer({ approval: approval("denied"), result: { code: "budget_changed" } })
+      );
+    const error = await client()
+      .approvals.wait(ID)
+      .catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(ApprovalDeniedError);
+    expect((error as ApprovalDeniedError).code).toBe("budget_changed");
+    expect((error as Error).message).toContain("Read the budget again");
+  });
+
   it("gives up after its own timeout", async () => {
     globalThis.fetch = vi.fn().mockResolvedValue(answer({ approval: approval("pending") }));
     await expect(client().approvals.wait(ID, { timeout: 0 })).rejects.toThrow(
@@ -357,5 +371,105 @@ describe("billing changes", () => {
       );
     const pending = await client().billing.cancel();
     expect(await pending.wait({ pollInterval: 1_000 })).toEqual(result);
+  });
+});
+
+describe("the agent spend budget", () => {
+  const TEAM = "4f8d6a5e-1c2f-4f3a-9d7e-2a1b3c4d5e6f";
+  const original = globalThis.fetch;
+  afterEach(() => {
+    globalThis.fetch = original;
+  });
+
+  const view = {
+    budgetCents: 10_000,
+    spentCents: 1_250,
+    leftCents: 8_750,
+    nextReleaseAt: null,
+    windowDays: 30,
+    maxCents: 50_000,
+    note: "The budget bounds the charge made at once and the rise of the next renewal.",
+    spends: [],
+  };
+
+  it("reads the account's budget and a team's", async () => {
+    const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(answer(view)));
+    globalThis.fetch = fetchMock;
+    expect(await client().billing.getBudget()).toEqual(view);
+    await client().billing.getBudget({ teamId: TEAM });
+    expect(fetchMock.mock.calls.map(([url]) => url.replace(BASE_URL, ""))).toEqual([
+      "/api/billing/agent-budget",
+      `/api/teams/${TEAM}/billing/agent-budget`,
+    ]);
+  });
+
+  it("lowers it at once and asks the owner to raise it", async () => {
+    const asked = { ...approval("pending"), action: "billing.agent_budget" };
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(answer({ ...view, budgetCents: 0, previousCents: 10_000 }))
+      .mockResolvedValueOnce(answer({ approval: asked }, 202));
+    globalThis.fetch = fetchMock;
+
+    const lowered = await client().billing.setBudget({ budgetCents: 0 });
+    expect(lowered.status).toBe("completed");
+    expect(await lowered.wait()).toMatchObject({ budgetCents: 0, previousCents: 10_000 });
+    const raised = await client().billing.setBudget({ budgetCents: 20_000, teamId: TEAM });
+    expect(raised.action).toBe("billing.agent_budget");
+    expect(raised.status).toBe("pending");
+    expect(fetchMock.mock.calls[1][1].method).toBe("PUT");
+    expect(JSON.parse(fetchMock.mock.calls[1][1].body)).toEqual({ budgetCents: 20_000 });
+    await expect(client().billing.setBudget({ budgetCents: 50_001 })).rejects.toThrow("50000");
+  });
+
+  it("hands over a change the budget paid for, and why one went to the owner", async () => {
+    const spent = {
+      executed: true,
+      applied: "now",
+      viaBudget: true,
+      chargedCents: 1_250,
+      change: 'Change the team "Acme" from 3 to 5 seats.',
+    };
+    const fallback = {
+      used: false,
+      reason: "over_budget",
+      message: "Less is left",
+      leftCents: 100,
+      neededCents: 1_250,
+    };
+    globalThis.fetch = vi
+      .fn()
+      .mockResolvedValueOnce(answer(spent))
+      .mockResolvedValueOnce(
+        answer(
+          { approval: { ...approval("pending"), action: "billing.change" }, budget: fallback },
+          202
+        )
+      );
+    const made = await client().billing.setSeats(TEAM, 5);
+    expect(made.status).toBe("completed");
+    expect(await made.wait()).toEqual(spent);
+    const asked = await client().billing.setSeats(TEAM, 9);
+    expect(asked.status).toBe("pending");
+    expect(asked.budget).toEqual(fallback);
+  });
+
+  it("throws a change on the budget whose outcome is not known with its code", async () => {
+    globalThis.fetch = vi.fn().mockResolvedValueOnce(
+      answer(
+        {
+          error: "The change may or may not have been made.",
+          code: "outcome_unknown",
+          executed: null,
+          reason: "The change may or may not have been made.",
+          viaBudget: true,
+        },
+        502
+      )
+    );
+    await expect(client().billing.setSeats(TEAM, 5)).rejects.toMatchObject({
+      statusCode: 502,
+      code: "outcome_unknown",
+    });
   });
 });

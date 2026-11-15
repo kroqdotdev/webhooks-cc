@@ -71,10 +71,10 @@ pub const AFTER_HELP: &str = "\
 Exit status:
   0  success
   1  any other failure, the server refused the input (bad_request), a test
-     delivery was not accepted by the destination (delivery_failed), an approved
-     billing change was refused with nothing changed (billing_refused, the
-     server's code in \"reason\"), or it may or may not have been made; check
-     billing before asking again (outcome_unknown)
+     delivery was not accepted by the destination (delivery_failed), a billing
+     change (approved, or on the agent budget) was refused with nothing changed
+     (billing_refused, the server's code in \"reason\"), or it may or may not
+     have been made; check billing before asking again (outcome_unknown)
   2  bad arguments (usage)
   3  not logged in, or the credentials were refused (not_logged_in, unauthorized,
      connection_revoked, login_expired, login_denied)
@@ -1454,6 +1454,15 @@ needs the team's owner.")]
     CheckoutCancel {
         /// The checkout link's id
         id: String,
+    },
+
+    /// The agent spend budget: show it, or set it in dollars per 30 days ("off" or 0 turns it off; at most 500). Keys may lower it; a raise is approved by the owner
+    Budget {
+        /// The new budget in dollars before tax, such as 50 or 12.50, or "off"; shows the budget when left out
+        amount: Option<String>,
+
+        #[command(flatten)]
+        target: BillingTarget,
     },
 }
 

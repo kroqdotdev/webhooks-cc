@@ -529,6 +529,17 @@ async fn run(args: Cli) -> Result<()> {
                     .await?;
                     return Ok(());
                 }
+                Some(B::Budget { amount, target }) => {
+                    cli::billing::budget(
+                        &client,
+                        target.team.as_deref(),
+                        amount.as_deref(),
+                        target.approval.into(),
+                        args.json,
+                    )
+                    .await?;
+                    return Ok(());
+                }
                 Some(B::Plan {
                     plan,
                     interval,

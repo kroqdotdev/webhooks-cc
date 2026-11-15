@@ -34,7 +34,32 @@ change; never to spend money on your own.
 - An unknown outcome means Polar was asked and then something failed: the
   change may have been made. Read `get_billing` before asking again.
 
-CLI: `whk billing plan|keep-plan|seats|blocks|buy|overage|cancel|resume`.
+## Agent spend budget (account group)
+
+The owner can set an agent budget: cents before tax, per 30 days, that
+keys may charge at once without an approval (0, the default, is off; at
+most $500). While enough is left, more seats, Pro to Business monthly and
+Teams to Team Business monthly are made at once and the owner is emailed;
+fewer seats or monthly blocks are made at once too. Everything else (annual,
+downgrades, cancelling, overage, checkouts) stays an approval, and so does
+a change the budget cannot cover: the answer says why (what is left, what
+is needed).
+
+- `get_agent_budget` reads it; `set_agent_budget` lowers it at once, and a
+  raise is an approval. Only when the person asks.
+- Each change counts at its charge now plus how much it raises the next
+  renewal (monthly plans always; annual plans when the renewal is at most 31
+  days away, else the larger of the two, and a seat added more than 60 days
+  before that renewal is not bounded at it). Later renewals keep the new
+  price: say so when you spend it.
+- Any change of the budget refuses a raise still waiting: `wait_for_approval`
+  says the budget changed; read it again and ask again only if still needed.
+- An "outcome unknown" answer (HTTP 502) means the change may have been
+  made: read `get_billing` first; if it was not, send the same request again
+  (same `Idempotency-Key`); nothing is charged twice. A key names one change.
+- On Business the personal budget only covers reductions.
+
+CLI: `whk billing plan|keep-plan|seats|blocks|buy|overage|cancel|resume|budget`.
 
 ## Checkout links (account group)
 

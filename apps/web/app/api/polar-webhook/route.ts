@@ -1,4 +1,5 @@
 import { captureBillingEvent } from "@/lib/analytics-billing";
+import { settleAgentBudgetFromWebhook } from "@/lib/billing/agent-budget";
 import { auditPolarEvent } from "@/lib/audit";
 import { settleCheckoutLinkFromWebhook } from "@/lib/billing/checkout-links";
 import { getPolarWebhookSecret, loggablePolarError, PolarConfigError } from "@/lib/polar";
@@ -80,6 +81,12 @@ export async function POST(request: Request) {
         } else {
           await applyPolarWebhookEvent(event.type, event.data);
         }
+        // Agent budget spends on the plan or team subscription settle from
+        // its state and its orders. A subscription event never throws here;
+        // a paid order that could not be counted does, so Polar delivers it
+        // again (the plan handlers do nothing for an order, and the count is
+        // keyed by the order's id).
+        await settleAgentBudgetFromWebhook(event.type, data);
         // Add-ons follow the plan: they end with it and need it to count.
         if (event.type.startsWith("subscription.")) {
           const account = await webhookAccount(teamId, data);

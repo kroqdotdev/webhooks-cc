@@ -190,6 +190,18 @@ async function auditDone(
           : {}),
       },
     });
+  } else if (decided.action === "billing.agent_budget") {
+    await auditUserAction(request, userId, {
+      action: "billing.agent_budget_set",
+      status: 200,
+      teamId: typeof params.teamId === "string" ? params.teamId : null,
+      metadata: {
+        ...via,
+        previousCents: result.previousCents,
+        budgetCents: result.budgetCents,
+        direction: "raised",
+      },
+    });
   } else if (decided.action === "account.rename") {
     await auditUserAction(request, userId, {
       action: "account.name_updated",

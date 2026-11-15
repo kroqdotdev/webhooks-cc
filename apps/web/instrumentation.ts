@@ -70,6 +70,11 @@ export async function register() {
     const { startRefundWorker } = await import("./lib/billing/refunds");
     startRefundWorker();
 
+    // Agent budget emails that failed or were never sent (a spend a webhook
+    // settled, a run that died): lib/billing/agent-budget.ts.
+    const { startAgentBudgetEmailPoller } = await import("./lib/billing/agent-budget");
+    startAgentBudgetEmailPoller();
+
     // The preview domain's reputation with Google Web Risk, once a day
     // (lib/tunnels/reputation.ts); starts only with WEB_RISK_API_KEY.
     const { startReputationChecker } = await import("./lib/tunnels/reputation");

@@ -16,6 +16,7 @@ import {
 } from "@/components/settings/panel";
 import { QuotaMeter, seatSlotsFor } from "@/components/settings/quota-meter";
 import { useSettingsData } from "@/components/settings/settings-data";
+import { AgentBudgetPanel } from "@/components/billing/agent-budget-panel";
 import { CapacityPanel } from "@/components/billing/capacity-panel";
 import { ParsedPagesPanel } from "@/components/billing/parsed-pages-panel";
 import { DomainsPanel } from "@/components/settings/domains-panel";
@@ -574,6 +575,14 @@ function TeamDetailContent() {
               team.periodEnd,
               team.blockRequests,
             ].join(":")}
+          />
+        )}
+
+        {subscribed && isOwner && (
+          <AgentBudgetPanel
+            accessToken={accessToken}
+            teamId={team.id}
+            reloadKey={[team.seats, team.business, team.subscriptionStatus].join(":")}
           />
         )}
 

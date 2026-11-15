@@ -334,30 +334,21 @@ export async function decideApproval(
   if (!row) throw new ApprovalError(400, "This code has expired or was already answered.");
   if (row.user_id !== userId) throw new ApprovalError(403, OTHER_ACCOUNT);
   const admin = createAdminClient();
-  const now = new Date();
   const spec = actionSpec(row.action);
   const runsNow = approve && spec.runAt === "approve";
-  const expiresAt = new Date(now.getTime() + APPROVAL_TTL_MS).toISOString();
-  const { data, error } = await admin
-    .from("approvals")
-    .update(
-      !approve
-        ? { status: "denied", decided_at: now.toISOString() }
-        : runsNow
-          ? {
-              status: "completed",
-              decided_at: now.toISOString(),
-              completed_at: now.toISOString(),
-              expires_at: expiresAt,
-            }
-          : { status: "approved", decided_at: now.toISOString(), expires_at: expiresAt }
-    )
-    .eq("id", row.id)
-    .eq("status", row.status)
-    .select("id")
-    .maybeSingle();
+  // Decided only while the row is still as read and unexpired, both by the
+  // database's clock: an approval refused meanwhile (a lowered budget
+  // refuses its raises) or run out is never approved.
+  const { data: decided, error } = await admin.rpc("decide_approval", {
+    p_id: row.id,
+    p_from: row.status,
+    p_status: !approve ? "denied" : runsNow ? "completed" : "approved",
+    p_ttl_seconds: Math.round(APPROVAL_TTL_MS / 1000),
+  });
   if (error) throw error;
-  if (!data) throw new ApprovalError(400, "This code has expired or was already answered.");
+  if (decided !== true) {
+    throw new ApprovalError(400, "This code has expired or was already answered.");
+  }
   if (!runsNow) {
     return {
       id: row.id,
@@ -383,16 +374,38 @@ export async function decideApproval(
     // approving again would run it twice: the row stays completed without
     // a result, and the asker's poll ends at expiry.
     if (!(err instanceof ActionError)) throw err;
-    await admin
-      .from("approvals")
-      .update({
-        status: "pending",
-        decided_at: null,
-        completed_at: null,
-        expires_at: row.expires_at,
-      })
-      .eq("id", row.id)
-      .eq("status", "completed");
+    // A refusal that can never come out otherwise (deniedWith) refuses the
+    // approval for good, with a result the asker's poll returns.
+    const denied = err.deniedWith !== undefined && err.deniedWith !== null;
+    // Tried twice: a write that fails both times leaves the row completed
+    // without a result (the asker's poll ends at expiry), which is ours to
+    // look at. Nothing ran, so the person is still told why.
+    let undoError: unknown = null;
+    for (let attempt = 0; attempt < 2; attempt++) {
+      ({ error: undoError } = await admin
+        .from("approvals")
+        .update(
+          denied
+            ? { status: "denied", completed_at: null, result: err.deniedWith }
+            : {
+                status: "pending",
+                decided_at: null,
+                completed_at: null,
+                expires_at: row.expires_at,
+              }
+        )
+        .eq("id", row.id)
+        .eq("status", "completed"));
+      if (!undoError) break;
+    }
+    if (undoError) {
+      reportError(
+        denied
+          ? "Recording a refused approval failed"
+          : "Giving back an approval whose run was refused failed",
+        undoError
+      );
+    }
     throw new ApprovalError(err.status, err.message);
   }
   // The action is done whatever happens next, so the row never goes back
@@ -401,10 +414,13 @@ export async function decideApproval(
   // at "approved" until the row expires, then "expired".
   let recordError: unknown = null;
   for (let attempt = 0; attempt < 2; attempt++) {
+    // Only while it is still completed: one refused meanwhile (a two-factor
+    // reset refuses budget raises) keeps the refusal its asker reads.
     ({ error: recordError } = await admin
       .from("approvals")
       .update({ result: stored })
-      .eq("id", row.id));
+      .eq("id", row.id)
+      .eq("status", "completed"));
     if (!recordError) break;
   }
   // Done all the same: the person is told so and the trail records it; only
@@ -502,6 +518,11 @@ export async function pollApproval(
     }
     const expired = new Date(row.expires_at).getTime() <= Date.now();
     return { approval: { ...view(row), status: expired ? "expired" : "approved" } };
+  }
+  // A refusal that says why (a budget raise refused because the budget
+  // changed: {"code": "budget_changed"}) carries it, so the asker can act.
+  if (row.status === "denied" && row.result !== null && typeof row.result === "object") {
+    return { approval: view(row), result: row.result as Record<string, unknown> };
   }
   if (statusOf(row) !== "approved") return { approval: view(row) };
 

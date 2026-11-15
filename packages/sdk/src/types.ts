@@ -1937,6 +1937,11 @@ export interface Approval {
 /** An approval being waited on; `wait()` resolves with what it grants. */
 export interface PendingApproval<T> extends Approval {
   wait(options?: WaitForApprovalOptions): Promise<T>;
+  /**
+   * A billing change the agent budget could have paid for but did not, and
+   * why (over the budget, a stop). Absent otherwise.
+   */
+  budget?: AgentBudgetFallback;
 }
 
 export interface WaitForApprovalOptions {
@@ -2317,6 +2322,69 @@ export type BillingChangeResult =
 /** Where a billing change goes: the account's own billing, or a team you own. */
 export interface BillingTarget {
   teamId?: string;
+}
+
+/**
+ * An agent spend budget: what API keys and agent tokens of the owner may
+ * have charged to the saved card at once, before tax, without the owner
+ * approving each change, each change counted for 30 days or more. Only more seats, Pro to Business
+ * monthly and Teams to Team Business monthly run on it; 0 is off.
+ */
+export interface AgentBudget {
+  budgetCents: number;
+  /** What the counted spends take now (each counts until its countsUntil). */
+  spentCents: number;
+  leftCents: number;
+  /** When the first counted spend stops counting (ISO), or null. */
+  nextReleaseAt: string | null;
+  windowDays: number;
+  /** The most a budget can be ($500). */
+  maxCents: number;
+  /**
+   * How changes count: the charge now plus the rise of the next renewal (on
+   * a monthly plan always, on an annual one when the renewal is at most 31
+   * days away), else the larger of the two.
+   */
+  note: string;
+  spends: AgentBudgetSpend[];
+  /** Set by setBudget: what it was before. */
+  previousCents?: number;
+}
+
+export interface AgentBudgetSpend {
+  id: string;
+  change: string;
+  amountCents: number;
+  /** "unsettled": Polar's answer was lost; it stays counted until known. */
+  status: "running" | "applied" | "unsettled" | "returned";
+  takenAt: string;
+  /**
+   * Until when it counts (ISO): 30 days from takenAt, or from the renewal it
+   * was priced on when that is at most 60 days away, or from a payment
+   * confirmed later.
+   */
+  countsUntil?: string;
+  /** Whether it is in spentCents now. */
+  counted?: boolean;
+  keyId: string | null;
+}
+
+/** Why a billing change went to the owner's approval rather than the budget. */
+export interface AgentBudgetFallback {
+  used: false;
+  reason:
+    | "budget_off"
+    | "pre_claim"
+    | "not_owner"
+    | "no_subscription"
+    | "past_due"
+    | "change_running"
+    | "over_budget"
+    | "budget_currency_unsupported"
+    | "budget_currency_unknown";
+  message: string;
+  leftCents?: number;
+  neededCents?: number;
 }
 
 /** The price of changing a team's seat count (the team's owner only). */

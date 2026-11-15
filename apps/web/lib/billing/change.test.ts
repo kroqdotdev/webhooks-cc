@@ -262,6 +262,24 @@ describe("quoting", () => {
     expect(quote.effectiveAt).toBe("2026-12-01T00:00:00.000Z");
   });
 
+  test("gives an agent budget the renewal before and after, and the credit, beside the quote", async () => {
+    polar.state.credit = 500;
+    const loaded = await loadBillingQuote("owner", ask);
+    expect(loaded.budget?.(Date.now())).toEqual({
+      creditAppliedCents: 500,
+      renewalBeforeCents: 3600,
+      renewalAfterCents: 6000,
+      annual: false,
+    });
+    // Not in the quote, which an approval compares whole.
+    expect(Object.keys(loaded.at(Date.now()))).not.toContain("renewalBeforeCents");
+
+    // A reduction waiting for the renewal renews lower without the change.
+    polar.state.pendingSeats = 2;
+    const pending = await loadBillingQuote("owner", ask);
+    expect(pending.budget?.(Date.now()).renewalBeforeCents).toBe(2400);
+  });
+
   test("refuses a seat count the team has already", async () => {
     await expect(
       loadBillingQuote("owner", { ...ask, change: { kind: "seats", seats: 3 } })

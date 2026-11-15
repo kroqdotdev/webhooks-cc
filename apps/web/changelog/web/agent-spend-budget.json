@@ -1,0 +1,9 @@
+{
+  "title": "An agent spend budget",
+  "items": [
+    "Set an agent spend budget on the billing page (for your plan, or for each team you own): while what each change counts fits in that much before tax, your API keys and agents can add seats or move up to Business or Team Business monthly without asking you each time. It is off until you set it, and at most $500",
+    "Each change counts at what it charges now plus how much it raises the next renewal when that renewal is near (at most 31 days away), counted until 30 days after that renewal; when the renewal is further, as on an annual plan, at the larger of the two. Reductions an agent makes are gathered into one email an hour at most. You get an email for every change made on the budget, with what it charged, what it counted, which key asked, what is left and the new recurring price, and another if the outcome of one is not known. Reductions an agent makes on the budget are emailed too",
+    "Everything else, and any change the budget cannot cover, still waits for your approval, and the answer says why. An agent can lower or turn off the budget, and asks you to raise it",
+    "Read and set it from the API, the TypeScript SDK (billing.getBudget, billing.setBudget), the MCP server (get_agent_budget, set_agent_budget) and the CLI (whk billing budget)"
+  ]
+}

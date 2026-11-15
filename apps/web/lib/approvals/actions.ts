@@ -55,6 +55,15 @@ import {
   type BillingQuote,
 } from "@/lib/billing/change";
 import { formatCents } from "@/lib/team-pricing";
+import {
+  AGENT_BUDGET_RENEWAL_NOTE,
+  getAgentBudget,
+  keyLabel,
+  MAX_AGENT_BUDGET_CENTS,
+  parseBudgetCents,
+  emailBudgetSet,
+  setAgentBudget,
+} from "@/lib/billing/agent-budget";
 
 /**
  * What an approval can ask for. Each action checks its parameters when the
@@ -82,23 +91,34 @@ export type ApprovalAction =
   | "ai.assist"
   | "teams.delete"
   | "teams.invite"
-  | "billing.change";
+  | "billing.change"
+  | "billing.agent_budget";
 
 export interface ActionDetail {
   label: string;
   value: string;
 }
 
-/** A refusal the person or the asker should read, with its HTTP status. */
+/**
+ * A refusal the person or the asker should read, with its HTTP status.
+ * Checked, nothing done: the approval goes back to pending to be approved
+ * again, unless `deniedWith` is given, which refuses it for good with that
+ * result for the asker's poll (an approval that can no longer be right,
+ * such as a budget raise asked against a budget that has changed).
+ */
 export class ActionError extends Error {
   constructor(
     readonly status: number,
-    message: string
+    message: string,
+    readonly deniedWith: Json | null = null
   ) {
     super(message);
     this.name = "ActionError";
   }
 }
+
+/** The result a refused budget raise carries: the budget changed while it waited. */
+export const BUDGET_CHANGED_RESULT = { code: "budget_changed" } as const;
 
 type Parsed<P> = { ok: true; params: P } | { ok: false; error: string; status?: number };
 
@@ -883,6 +903,130 @@ const billingChange: ActionSpec<BillingParams> = {
   },
 };
 
+// ---------------------------------------------------------------------------
+// Raising an agent spend budget
+// ---------------------------------------------------------------------------
+
+interface AgentBudgetParams {
+  teamId: string | null;
+  teamName: string | null;
+  budgetCents: number;
+  previousCents: number;
+  /** The key that asked, named in the owner's email once it is set. */
+  keyId: string | null;
+  /** The agent registration that asked with an agent token, which outlives the token. */
+  agentRegistrationId?: string | null;
+}
+
+function budgetAccountWords(teamName: string | null): string {
+  return teamName ? `the team "${teamName}"` : "your account";
+}
+
+const agentBudget: ActionSpec<AgentBudgetParams> = {
+  runAt: "approve",
+  async parse(input, userId) {
+    const body = (input ?? {}) as Record<string, unknown>;
+    const teamId = body.teamId ?? null;
+    if (teamId !== null && (typeof teamId !== "string" || !isUuid(teamId))) {
+      return { ok: false, error: "Team not found or not owner", status: 404 };
+    }
+    const budgetCents = parseBudgetCents(body.budgetCents);
+    if (budgetCents === null) {
+      return {
+        ok: false,
+        error: `Give budgetCents as whole cents from 0 to ${MAX_AGENT_BUDGET_CENTS}`,
+      };
+    }
+    let teamName: string | null = null;
+    if (teamId) {
+      const team = await ownedTeam(userId, teamId);
+      if (!team) return { ok: false, error: "Team not found or not owner", status: 404 };
+      teamName = team.name;
+    }
+    const current = await getAgentBudget({ userId, teamId: teamId as string | null });
+    if (!current) return { ok: false, error: "Not found", status: 404 };
+    if (budgetCents <= current.budgetCents) {
+      return { ok: false, error: "That does not raise the budget; lower it without an approval" };
+    }
+    const keyId = typeof body.keyId === "string" && isUuid(body.keyId) ? body.keyId : null;
+    const agentRegistrationId =
+      typeof body.agentRegistrationId === "string" && isUuid(body.agentRegistrationId)
+        ? body.agentRegistrationId
+        : null;
+    return {
+      ok: true,
+      params: {
+        teamId: teamId as string | null,
+        teamName,
+        budgetCents,
+        previousCents: current.budgetCents,
+        keyId,
+        agentRegistrationId,
+      },
+    };
+  },
+  // The budget it is now is read when the page renders (details), not
+  // kept from when it was asked: it may have been lowered since.
+  summary: ({ teamName, budgetCents }) =>
+    `Set the agent budget of ${budgetAccountWords(teamName)} to ${formatCents(budgetCents)} per 30 days.`,
+  details: async ({ teamId, teamName, budgetCents }, userId) => {
+    const current = await getAgentBudget({ userId, teamId });
+    const now = current ? current.budgetCents : null;
+    return [
+      { label: "Account", value: teamName ? `The team "${teamName}"` : "Your account" },
+      { label: "New budget", value: `${formatCents(budgetCents)} before tax, per 30 days` },
+      { label: "Now", value: now === null ? "Unknown" : now === 0 ? "Off" : formatCents(now) },
+      {
+        label: "What it allows",
+        value:
+          "Your API keys and agent tokens may add seats, or move to the higher monthly plan, charged to the card on file at once, without asking you each time, while what a change charges now plus how much it raises the next renewal fits in what is left. Anything else still needs your approval.",
+      },
+      { label: "Renewals", value: AGENT_BUDGET_RENEWAL_NOTE },
+      { label: "Emails", value: "You are emailed on every change made on the budget." },
+    ];
+  },
+  async run(
+    userId,
+    { teamId, budgetCents, previousCents, keyId, agentRegistrationId },
+    _input,
+    context
+  ) {
+    if (teamId && !(await ownedTeam(userId, teamId))) {
+      throw new ActionError(404, "Team not found or not owner");
+    }
+    const account = { userId, teamId };
+    // Set only from the budget it was asked against: one lowered (or
+    // turned off) since is the owner's later word, which this never undoes.
+    // And only while this approval still stands: a two-factor reset refuses
+    // it even while it runs (zero_agent_budgets_for_user).
+    const set = await setAgentBudget(
+      account,
+      budgetCents,
+      false,
+      previousCents,
+      context?.approvalId ?? null
+    );
+    if (set.status === "changed") {
+      // Refused for good: approving it again could never set it, and the
+      // asker's poll tells the agent to read the budget and ask again.
+      throw new ActionError(
+        409,
+        `The budget has changed since this was asked (it is ${formatCents(set.previousCents)} now), so it is not set and the request is refused. Ask again if it should still be raised.`,
+        BUDGET_CHANGED_RESULT
+      );
+    }
+    if (set.status !== "ok") throw new ActionError(404, "Not found");
+    if (set.budgetCents > set.previousCents) {
+      const by = `your approval of a request from ${await keyLabel(keyId, agentRegistrationId)}`;
+      await emailBudgetSet(account, set.previousCents, set.budgetCents, by).catch((error) =>
+        reportError("[agent-budget] the budget email was not sent", error)
+      );
+    }
+    const result = { budgetCents: set.budgetCents, previousCents: set.previousCents };
+    return { result, stored: result };
+  },
+};
+
 function days(count: number): string {
   if (count === 1) return "1 day";
   if (count % 365 === 0) return count === 365 ? "1 year" : `${count / 365} years`;
@@ -900,6 +1044,7 @@ const ACTIONS: Record<ApprovalAction, ActionSpec<unknown>> = {
   "teams.delete": deleteTeamAction as ActionSpec<unknown>,
   "teams.invite": inviteToTeam as ActionSpec<unknown>,
   "billing.change": billingChange as ActionSpec<unknown>,
+  "billing.agent_budget": agentBudget as ActionSpec<unknown>,
 };
 
 export function actionSpec(action: ApprovalAction): ActionSpec<unknown> {

@@ -434,7 +434,8 @@ export interface Database {
             | "ai.assist"
             | "teams.delete"
             | "teams.invite"
-            | "billing.change";
+            | "billing.change"
+            | "billing.agent_budget";
           params: Json;
           summary: string;
           user_code: string;
@@ -464,7 +465,8 @@ export interface Database {
             | "ai.assist"
             | "teams.delete"
             | "teams.invite"
-            | "billing.change";
+            | "billing.change"
+            | "billing.agent_budget";
           params?: Json;
           summary: string;
           user_code: string;
@@ -494,7 +496,8 @@ export interface Database {
             | "ai.assist"
             | "teams.delete"
             | "teams.invite"
-            | "billing.change";
+            | "billing.change"
+            | "billing.agent_budget";
           params?: Json;
           summary?: string;
           user_code?: string;
@@ -761,6 +764,7 @@ export interface Database {
       };
       users: {
         Row: {
+          agent_budget_cents: number;
           id: string;
           email: string;
           name: string | null;
@@ -826,6 +830,7 @@ export interface Database {
           tunnels_suspended: boolean;
         };
         Insert: {
+          agent_budget_cents?: number;
           id: string;
           email: string;
           name?: string | null;
@@ -883,6 +888,7 @@ export interface Database {
           extra_domains?: number;
         };
         Update: {
+          agent_budget_cents?: number;
           id?: string;
           email?: string;
           name?: string | null;
@@ -1076,6 +1082,7 @@ export interface Database {
       };
       teams: {
         Row: {
+          agent_budget_cents: number;
           id: string;
           name: string;
           created_by: string;
@@ -1130,6 +1137,7 @@ export interface Database {
           extra_domains: number;
         };
         Insert: {
+          agent_budget_cents?: number;
           id?: string;
           name: string;
           created_by: string;
@@ -1181,6 +1189,7 @@ export interface Database {
           extra_domains?: number;
         };
         Update: {
+          agent_budget_cents?: number;
           id?: string;
           name?: string;
           created_by?: string;
@@ -1309,6 +1318,164 @@ export interface Database {
           expired_reason?: BillingCheckoutExpiredReason | null;
           expires_at?: string;
           paid_at?: string | null;
+        };
+        Relationships: [];
+      };
+      // Agent spend budget ledger (migration 00107); written only through its RPCs.
+      agent_budget_spends: {
+        Row: {
+          id: string;
+          user_id: string | null;
+          team_id: string | null;
+          idempotency_key: string;
+          key_id: string | null;
+          agent_registration_id: string | null;
+          change: Json;
+          description: string;
+          quoted_cents: number;
+          amount_cents: number;
+          status: "running" | "applied" | "unsettled" | "returned";
+          polar_subscription_id: string | null;
+          target: Json;
+          polar_order_id: string | null;
+          outcome: Json | null;
+          period_end: string | null;
+          facts: Json;
+          emailed_at: string | null;
+          unknown_emailed_at: string | null;
+          email_claimed_at: string | null;
+          email_attempts: number;
+          email_next_at: string;
+          email_undeliverable: boolean;
+          taken_at: string;
+          counts_until: string;
+          unsettled_at: string | null;
+          status_changed_at: string;
+          retry_claimed_at: string | null;
+          target_seen_at: string | null;
+          returned_at: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id?: string | null;
+          team_id?: string | null;
+          idempotency_key?: string;
+          key_id?: string | null;
+          agent_registration_id?: string | null;
+          change?: Json;
+          description?: string;
+          quoted_cents?: number;
+          amount_cents?: number;
+          status?: "running" | "applied" | "unsettled" | "returned";
+          polar_subscription_id?: string | null;
+          target?: Json;
+          polar_order_id?: string | null;
+          outcome?: Json | null;
+          period_end?: string | null;
+          facts?: Json;
+          emailed_at?: string | null;
+          unknown_emailed_at?: string | null;
+          email_claimed_at?: string | null;
+          email_attempts?: number;
+          email_next_at?: string;
+          email_undeliverable?: boolean;
+          taken_at?: string;
+          counts_until?: string;
+          unsettled_at?: string | null;
+          status_changed_at?: string;
+          retry_claimed_at?: string | null;
+          target_seen_at?: string | null;
+          returned_at?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          user_id?: string | null;
+          team_id?: string | null;
+          idempotency_key?: string;
+          key_id?: string | null;
+          agent_registration_id?: string | null;
+          change?: Json;
+          description?: string;
+          quoted_cents?: number;
+          amount_cents?: number;
+          status?: "running" | "applied" | "unsettled" | "returned";
+          polar_subscription_id?: string | null;
+          target?: Json;
+          polar_order_id?: string | null;
+          outcome?: Json | null;
+          period_end?: string | null;
+          facts?: Json;
+          emailed_at?: string | null;
+          unknown_emailed_at?: string | null;
+          email_claimed_at?: string | null;
+          email_attempts?: number;
+          email_next_at?: string;
+          email_undeliverable?: boolean;
+          taken_at?: string;
+          counts_until?: string;
+          unsettled_at?: string | null;
+          status_changed_at?: string;
+          retry_claimed_at?: string | null;
+          target_seen_at?: string | null;
+          returned_at?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
+      // Reductions a key made on the agent budget, for their notices (migration 00107).
+      agent_budget_reductions: {
+        Row: {
+          id: string;
+          user_id: string | null;
+          team_id: string | null;
+          key_id: string | null;
+          agent_registration_id: string | null;
+          description: string;
+          renewal_cents: number | null;
+          made_at: string;
+          emailed_at: string | null;
+          email_claim: string | null;
+          email_claimed_at: string | null;
+          email_attempts: number;
+          email_next_at: string;
+          email_undeliverable: boolean;
+        };
+        Insert: {
+          id?: string;
+          user_id?: string | null;
+          team_id?: string | null;
+          key_id?: string | null;
+          agent_registration_id?: string | null;
+          description?: string;
+          renewal_cents?: number | null;
+          made_at?: string;
+          emailed_at?: string | null;
+          email_claim?: string | null;
+          email_claimed_at?: string | null;
+          email_attempts?: number;
+          email_next_at?: string;
+          email_undeliverable?: boolean;
+        };
+        Update: {
+          id?: string;
+          user_id?: string | null;
+          team_id?: string | null;
+          key_id?: string | null;
+          agent_registration_id?: string | null;
+          description?: string;
+          renewal_cents?: number | null;
+          made_at?: string;
+          emailed_at?: string | null;
+          email_claim?: string | null;
+          email_claimed_at?: string | null;
+          email_attempts?: number;
+          email_next_at?: string;
+          email_undeliverable?: boolean;
         };
         Relationships: [];
       };
@@ -2823,6 +2990,126 @@ export interface Database {
         Returns: Json;
       };
       ai_assists_left_for_user: {
+        Args: { p_user_id: string };
+        Returns: Json;
+      };
+      agent_budget_state: {
+        Args: { p_user_id: string | null; p_team_id: string | null };
+        Returns: Json;
+      };
+      agent_budget_decrease_check: {
+        Args: { p_user_id: string | null; p_team_id: string | null; p_seats: number | null };
+        Returns: string | null;
+      };
+      set_agent_budget: {
+        Args: {
+          p_user_id: string | null;
+          p_team_id: string | null;
+          p_cents: number;
+          p_only_lower: boolean;
+          p_expected?: number | null;
+          p_approval?: string | null;
+        };
+        Returns: Json;
+      };
+      agent_budget_counted_cents: {
+        Args: { p_user_id: string | null; p_team_id: string | null; p_except: string | null };
+        Returns: number;
+      };
+      deny_agent_budget_raises: {
+        Args: { p_user_id: string | null; p_team_id: string | null };
+        Returns: number;
+      };
+      decide_approval: {
+        Args: { p_id: string; p_from: string; p_status: string; p_ttl_seconds: number };
+        Returns: boolean;
+      };
+      take_agent_budget: {
+        Args: {
+          p_user_id: string | null;
+          p_team_id: string | null;
+          p_idempotency_key: string;
+          p_cents: number;
+          p_key_id: string | null;
+          p_agent_registration_id: string | null;
+          p_change: Json;
+          p_description: string;
+          p_subscription_id: string | null;
+          p_target: Json;
+          p_period_end: string | null;
+          p_facts: Json;
+          p_id?: string | null;
+        };
+        Returns: Json;
+      };
+      retire_agent_budget_key: {
+        Args: { p_id: string };
+        Returns: boolean;
+      };
+      claim_agent_budget_email: {
+        Args: { p_id: string; p_kind: string };
+        Returns: boolean;
+      };
+      finish_agent_budget_email: {
+        Args: { p_id: string; p_kind: string; p_result: "sent" | "undeliverable" | "failed" };
+        Returns: undefined;
+      };
+      pending_agent_budget_emails: {
+        Args: { p_limit: number };
+        Returns: { spend_id: string; kind: "spent" | "unknown" }[];
+      };
+      record_agent_budget_reduction: {
+        Args: {
+          p_user_id: string | null;
+          p_team_id: string | null;
+          p_key_id: string | null;
+          p_description: string;
+          p_renewal_cents: number | null;
+          p_agent_registration_id?: string | null;
+        };
+        Returns: string;
+      };
+      claim_agent_budget_reduction_notice: {
+        Args: { p_user_id: string | null; p_team_id: string | null };
+        Returns: Json;
+      };
+      finish_agent_budget_reduction_notice: {
+        Args: { p_claim: string; p_result: "sent" | "undeliverable" | "failed" };
+        Returns: undefined;
+      };
+      pending_agent_budget_reduction_notices: {
+        Args: { p_limit: number };
+        Returns: { user_id: string | null; team_id: string | null }[];
+      };
+      claim_agent_budget_retry: {
+        Args: { p_id: string; p_cents: number | null };
+        Returns: Json | null;
+      };
+      bury_lost_agent_budget_take: {
+        Args: { p_id: string; p_user_id: string | null; p_team_id: string | null };
+        Returns: string | null;
+      };
+      settle_agent_budget_spend: {
+        Args: { p_id: string; p_status: string; p_outcome: Json | null };
+        Returns: string;
+      };
+      settle_agent_budget_from_subscription: {
+        Args: { p_subscription_id: string; p_seats: number | null; p_product_id: string | null };
+        Returns: Json;
+      };
+      raise_agent_budget_from_order: {
+        Args: {
+          p_subscription_id: string;
+          p_order_id: string;
+          p_net_cents: number;
+          p_ordered_at: string;
+          p_product_id: string | null;
+          p_seats: number | null;
+          p_paid_at?: string | null;
+        };
+        Returns: Json;
+      };
+      zero_agent_budgets_for_user: {
         Args: { p_user_id: string };
         Returns: Json;
       };
