@@ -135,6 +135,7 @@ impl ApiClient {
                             status: 401,
                             message,
                             retry_after: None,
+                            code: None,
                         }
                         .into());
                     }
@@ -143,6 +144,7 @@ impl ApiClient {
                             status,
                             message,
                             retry_after: None,
+                            code: None,
                         }
                         .into());
                     }

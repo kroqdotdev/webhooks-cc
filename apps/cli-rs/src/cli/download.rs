@@ -851,6 +851,7 @@ mod tests {
                 status,
                 message: message.into(),
                 retry_after: None,
+                code: None,
             })
         };
         let error = explain(api("not_found", 404), "r1", Download::Attachment(3));

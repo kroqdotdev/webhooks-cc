@@ -113,6 +113,7 @@ fn explain_search_error(error: anyhow::Error) -> anyhow::Error {
         status: e.status,
         message: message.to_string(),
         retry_after: e.retry_after,
+        code: e.code.clone(),
     })
 }
 

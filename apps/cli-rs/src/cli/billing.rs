@@ -117,9 +117,16 @@ pub async fn change(
     } else {
         answer
     };
+    if !json && let Some(line) = budget_fallback_line(&answer) {
+        println!("  {}", dim(&line));
+    }
     ask(client, answer, opts, json, |done| {
         if let Some(url) = done.get("url").and_then(Value::as_str) {
             println!("  Pay at the checkout to finish: {}", bold(url));
+        } else if done.get("viaBudget").and_then(Value::as_bool) == Some(true) {
+            for line in budget_spend_lines(done) {
+                println!("{line}");
+            }
         } else {
             println!("  {} Done.", green("✓"));
         }
@@ -157,6 +164,209 @@ pub(crate) fn outcome_error(result: &Value) -> Option<CliError> {
         Value::Null => Some(CliError::OutcomeUnknown(reason())),
         _ => None,
     }
+}
+
+/// Cents as dollars: 1250 is "$12.50".
+fn dollars(cents: u64) -> String {
+    format!("${}.{:02}", cents / 100, cents % 100)
+}
+
+/// A budget typed in dollars ("50", "12.50", "0", "off") as cents.
+pub(crate) fn parse_budget(input: &str) -> Result<u32> {
+    let text = input.trim().trim_start_matches('$');
+    if text.eq_ignore_ascii_case("off") {
+        return Ok(0);
+    }
+    let bad = || {
+        CliError::Usage(format!(
+            "give the budget in dollars, 0 to 500 (such as 50 or 12.50), or off; not {input:?}"
+        ))
+    };
+    let (whole, frac) = match text.split_once('.') {
+        Some((w, f)) => (w, f),
+        None => (text, ""),
+    };
+    if whole.is_empty()
+        || !whole.bytes().all(|b| b.is_ascii_digit())
+        || frac.len() > 2
+        || !frac.bytes().all(|b| b.is_ascii_digit())
+    {
+        return Err(bad().into());
+    }
+    let whole: u64 = whole.parse().map_err(|_| bad())?;
+    let frac: u64 = if frac.is_empty() {
+        0
+    } else {
+        format!("{frac:0<2}").parse().map_err(|_| bad())?
+    };
+    let cents = whole.saturating_mul(100).saturating_add(frac);
+    if cents > 50_000 {
+        return Err(bad().into());
+    }
+    Ok(cents as u32)
+}
+
+/// Why a change went to the owner's approval when the budget could have paid it.
+fn budget_fallback_line(answer: &Value) -> Option<String> {
+    let budget = answer.get("budget")?;
+    answer.get("approval")?;
+    let message = sanitize(budget.get("message").and_then(Value::as_str).unwrap_or(""));
+    let amounts = match (
+        budget.get("leftCents").and_then(Value::as_u64),
+        budget.get("neededCents").and_then(Value::as_u64),
+    ) {
+        (Some(left), Some(needed)) => {
+            format!(" ({} left, {} needed)", dollars(left), dollars(needed))
+        }
+        _ => String::new(),
+    };
+    Some(format!(
+        "Not paid from the agent budget: {message}{amounts}."
+    ))
+}
+
+/// What a change made on the agent budget did.
+fn budget_spend_lines(done: &Value) -> Vec<String> {
+    let change = sanitize(done.get("change").and_then(Value::as_str).unwrap_or(""));
+    let mut lines = vec![format!("  {} {change}", green("Done on the agent budget."))];
+    let charged = done
+        .get("chargedCents")
+        .and_then(Value::as_u64)
+        .unwrap_or(0);
+    if charged > 0 {
+        let about = if done.get("approximate").and_then(Value::as_bool) == Some(true) {
+            "about "
+        } else {
+            ""
+        };
+        lines.push(format!(
+            "  Charged now: {about}{} before tax.",
+            dollars(charged)
+        ));
+    }
+    if let Some(renewal) = done.get("renewalCents").and_then(Value::as_u64) {
+        lines.push(format!(
+            "  Renews at {} from the next renewal.",
+            dollars(renewal)
+        ));
+    }
+    if let Some(counted) = done.get("countedCents").and_then(Value::as_u64) {
+        let larger = match done.get("riseCounted").and_then(Value::as_bool) {
+            Some(counted) => !counted,
+            None => done.get("annual").and_then(Value::as_bool) == Some(true),
+        };
+        let how = if larger {
+            "the larger of the charge now and the rise of the next renewal"
+        } else {
+            "the charge now plus the rise of the next renewal"
+        };
+        lines.push(format!(
+            "  Counted against the budget: {} ({how}).",
+            dollars(counted)
+        ));
+    }
+    if let Some(left) = done.pointer("/budget/leftCents").and_then(Value::as_u64) {
+        lines.push(format!("  Left of the budget: {}.", dollars(left)));
+    }
+    let emailed = done.get("ownerEmail").and_then(Value::as_str) == Some("sent");
+    lines.push(format!(
+        "  {}",
+        dim(if emailed {
+            "The owner was emailed."
+        } else {
+            "The owner's email is queued."
+        })
+    ));
+    lines
+}
+
+/// The budget as text.
+fn budget_lines(view: &Value) -> Vec<String> {
+    let budget = view.get("budgetCents").and_then(Value::as_u64).unwrap_or(0);
+    let spent = view.get("spentCents").and_then(Value::as_u64).unwrap_or(0);
+    let left = view.get("leftCents").and_then(Value::as_u64).unwrap_or(0);
+    let mut lines = Vec::new();
+    if budget == 0 {
+        lines.push(format!(
+            "  {} off: every billing change asked with a key is approved by the owner.",
+            bold("Agent budget:")
+        ));
+    } else {
+        lines.push(format!(
+            "  {} {} per 30 days ({} spent, {} left)",
+            bold("Agent budget:"),
+            dollars(budget),
+            dollars(spent),
+            dollars(left)
+        ));
+        lines.push(format!(
+            "  {}",
+            dim("More seats and a monthly move up a tier are made at once from it; the owner is emailed on each.")
+        ));
+    }
+    if let Some(note) = view.get("note").and_then(Value::as_str) {
+        lines.push(format!("  {}", dim(&sanitize(note))));
+    }
+    if let Some(spends) = view.get("spends").and_then(Value::as_array)
+        && !spends.is_empty()
+    {
+        lines.push(String::new());
+        lines.push(format!("  {}", bold("Spends (last 30 days):")));
+        for spend in spends {
+            let when = date(spend.get("takenAt").unwrap_or(&Value::Null)).unwrap_or_default();
+            let amount = spend
+                .get("amountCents")
+                .and_then(Value::as_u64)
+                .unwrap_or(0);
+            let status = spend.get("status").and_then(Value::as_str).unwrap_or("");
+            let change = sanitize(spend.get("change").and_then(Value::as_str).unwrap_or(""));
+            lines.push(format!(
+                "    {when}  {:>9}  {status:<9}  {change}",
+                dollars(amount)
+            ));
+        }
+    }
+    lines
+}
+
+/// `whk billing budget [amount]`: shows the agent budget, or sets it.
+pub async fn budget(
+    client: &ApiClient,
+    team: Option<&str>,
+    amount: Option<&str>,
+    opts: ApprovalOptions,
+    json: bool,
+) -> Result<()> {
+    let cents = amount.map(parse_budget).transpose()?;
+    let team = match team {
+        Some(needle) => Some(crate::cli::teams::find_team(client, needle).await?),
+        None => None,
+    };
+    let team_id = team.as_ref().map(|t| t.id.as_str());
+    let Some(cents) = cents else {
+        let view = client.get_agent_budget(team_id).await?;
+        if json {
+            println!("{}", serde_json::to_string_pretty(&view)?);
+        } else {
+            for line in budget_lines(&view) {
+                println!("{line}");
+            }
+        }
+        return Ok(());
+    };
+    let answer = client.set_agent_budget(team_id, cents).await?;
+    ask(client, answer, opts, json, |done| {
+        let now = done
+            .get("budgetCents")
+            .and_then(Value::as_u64)
+            .unwrap_or(cents as u64);
+        println!(
+            "  {} The agent budget is {} per 30 days.",
+            green("✓"),
+            dollars(now)
+        );
+    })
+    .await
 }
 
 /// What an approved billing change did (one that was not made is reported
@@ -1025,6 +1235,64 @@ mod tests {
                 json!({ "action": "set_overage", "enabled": true, "resource": "pages", "maxBlocks": 4 })
             )
         );
+    }
+
+    #[test]
+    fn budgets_are_typed_in_dollars() {
+        assert_eq!(parse_budget("50").unwrap(), 5000);
+        assert_eq!(parse_budget("12.5").unwrap(), 1250);
+        assert_eq!(parse_budget("$12.05").unwrap(), 1205);
+        assert_eq!(parse_budget("off").unwrap(), 0);
+        assert_eq!(parse_budget("500").unwrap(), 50_000);
+        for bad in ["500.01", "-1", "1.234", "ten", "", "1e3"] {
+            assert!(parse_budget(bad).is_err(), "{bad}");
+        }
+    }
+
+    #[test]
+    fn a_spend_and_a_fallback_read_as_text() {
+        let spent = budget_spend_lines(&json!({
+            "executed": true, "viaBudget": true, "change": "Change the team from 3 to 5 seats.",
+            "chargedCents": 1250, "renewalCents": 6000, "budget": { "leftCents": 8750 }
+        }))
+        .join("\n");
+        assert!(spent.contains("$12.50 before tax"));
+        assert!(spent.contains("Renews at $60.00"));
+        assert!(spent.contains("Left of the budget: $87.50"));
+        assert!(!spent.contains("Counted against"));
+        assert!(spent.contains("The owner's email is queued."));
+        let counted = budget_spend_lines(&json!({
+            "executed": true, "viaBudget": true, "change": "Change the team from 3 to 5 seats.",
+            "chargedCents": 1250, "countedCents": 3650, "renewalCents": 6000,
+            "ownerEmail": "sent", "budget": { "leftCents": 6350 }
+        }))
+        .join("\n");
+        assert!(counted.contains(
+            "Counted against the budget: $36.50 (the charge now plus the rise of the next renewal)"
+        ));
+        assert!(counted.contains("The owner was emailed."));
+        let annual = budget_spend_lines(&json!({
+            "executed": true, "viaBudget": true, "chargedCents": 6000, "countedCents": 12000,
+            "annual": true, "ownerEmail": "queued"
+        }))
+        .join("\n");
+        assert!(annual.contains("the larger of the charge now and the rise of the next renewal"));
+        assert!(annual.contains("queued"));
+        // An annual plan renewing within 30 days counts both: riseCounted wins.
+        let near = budget_spend_lines(&json!({
+            "executed": true, "viaBudget": true, "chargedCents": 6000, "countedCents": 18000,
+            "annual": true, "riseCounted": true, "ownerEmail": "queued"
+        }))
+        .join("\n");
+        assert!(near.contains("the charge now plus the rise of the next renewal"));
+        let line = budget_fallback_line(&json!({
+            "approval": { "id": "a" },
+            "budget": { "used": false, "reason": "over_budget", "message": "Less is left", "leftCents": 100, "neededCents": 4000 }
+        }))
+        .unwrap();
+        assert!(line.contains("$1.00 left, $40.00 needed"));
+        let view = budget_lines(&json!({ "budgetCents": 0, "spends": [] })).join("\n");
+        assert!(view.contains("off"));
     }
 
     #[test]

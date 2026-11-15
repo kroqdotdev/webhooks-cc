@@ -383,6 +383,9 @@ pub fn api_error(status: StatusCode, body: &str, retry_after: Option<u64>) -> Ap
         status: status.as_u16(),
         message: api_error_message(status, body),
         retry_after,
+        code: serde_json::from_str::<serde_json::Value>(body)
+            .ok()
+            .and_then(|v| v.get("code")?.as_str().map(str::to_string)),
     }
 }
 

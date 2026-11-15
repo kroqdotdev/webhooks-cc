@@ -1455,6 +1455,15 @@ needs the team's owner.")]
         /// The checkout link's id
         id: String,
     },
+
+    /// The agent spend budget: show it, or set it in dollars per 30 days ("off" or 0 turns it off; at most 500). Keys may lower it; a raise is approved by the owner
+    Budget {
+        /// The new budget in dollars before tax, such as 50 or 12.50, or "off"; shows the budget when left out
+        amount: Option<String>,
+
+        #[command(flatten)]
+        target: BillingTarget,
+    },
 }
 
 #[derive(Subcommand, Debug)]

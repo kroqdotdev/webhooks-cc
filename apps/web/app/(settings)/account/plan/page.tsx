@@ -3,6 +3,7 @@
 import { Suspense, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
+import { AgentBudgetPanel } from "@/components/billing/agent-budget-panel";
 import { CapacityPanel } from "@/components/billing/capacity-panel";
 import { BillingPortalButton } from "@/components/billing/billing-portal";
 import { ManageSubscriptionDialog } from "@/components/billing/manage-subscription-dialog";
@@ -440,6 +441,16 @@ export default function PlanPage() {
             profile.pending_plan,
           ].join(":")}
         />
+
+        {!isFree && !comped && (
+          <AgentBudgetPanel
+            accessToken={accessToken}
+            plan={profile.plan}
+            reloadKey={[profile.plan, profile.subscription_status, profile.billing_interval].join(
+              ":"
+            )}
+          />
+        )}
 
         {activeTeams.length > 0 && (
           <Panel

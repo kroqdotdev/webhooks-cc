@@ -40,6 +40,9 @@ export type AuditAction =
   | "billing.capacity.buy_blocks"
   | "billing.capacity.set_monthly_blocks"
   | "billing.capacity.set_overage"
+  | "billing.agent_budget_set"
+  | "billing.agent_budget_spent"
+  | "billing.agent_budget_returned"
   | "endpoint.created"
   | "endpoint.updated"
   | "endpoint.deleted"
@@ -254,7 +257,11 @@ export async function auditUserAction(
  * amounts and our own codes go in.
  */
 export async function auditSystemEvent(input: {
-  action: "billing.refund_issued";
+  action:
+    | "billing.refund_issued"
+    | "billing.agent_budget_zeroed"
+    | "billing.agent_budget_settled"
+    | "billing.agent_budget_raised";
   outcome: AuditOutcome;
   userId?: string | null;
   teamId?: string | null;

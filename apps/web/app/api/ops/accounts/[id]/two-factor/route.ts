@@ -25,7 +25,7 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ i
         { status: 403 }
       );
     }
-    const removed = await removeTwoFactor(id);
+    const removed = await removeTwoFactor(id, "support");
     await auditUserAction(request, auth.userId, {
       action: "ops.mfa_reset",
       status: 200,

@@ -391,6 +391,10 @@ export async function loadPlanQuoteForUser(
   interval: BillingInterval
 ): Promise<{
   basis: Record<string, string | number | boolean | null>;
+  /** What the subscription renews at before the change (Polar's amount). */
+  currentAmountCents: number;
+  /** What Polar bills in, lower case ("" when it names none): beside `basis`, which approvals compare. */
+  currency: string;
   at(nowMs: number): PersonalPlanQuote;
 }> {
   const user = await getBillingUser(userId);
@@ -420,6 +424,8 @@ export async function loadPlanQuoteForUser(
   }
   const currentPlan = user.plan as PaidPlan;
   return {
+    currentAmountCents: subscription.amount,
+    currency: currencyOf(subscription),
     basis: {
       subscriptionId: subscription.id,
       status: subscription.status,
@@ -530,6 +536,12 @@ export async function createCustomerPortalForUser(userId: string): Promise<strin
     return_url: `${await returnOrigin(polarAppUrl())}/account/plan`,
   });
   return session.customer_portal_url;
+}
+
+/** The currency Polar bills a subscription in, lower case ("" when it names none). */
+export function currencyOf(subscription: unknown): string {
+  const currency = (subscription as { currency?: unknown } | null)?.currency;
+  return typeof currency === "string" ? currency.toLowerCase() : "";
 }
 
 /**

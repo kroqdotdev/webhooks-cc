@@ -398,9 +398,14 @@ whk billing checkout monthly-blocks --blocks 2 --resource pages
 whk billing checkout overage
 whk billing checkout-status <id> --wait --timeout 30m
 whk billing checkout-cancel <id>
+whk billing budget                            # the agent spend budget, what is left, the spends
+whk billing budget 50                         # $50 per 30 days; a key may lower it, a raise is approved
+whk billing budget off --team Payments        # turn a team's budget off
 ```
 
 Each change is quoted and waits for the account's owner (the team's owner with `--team`) to approve it, as `keys create` does, with the same `--remote`, `--no-browser`, `--no-wait` and `--timeout`: the page shows what changes, when, and what is charged now. Approving makes it only while a fresh quote still matches; otherwise nothing is changed and whk exits with `quote_changed` (status 8), so ask again. Refused with nothing changed for another reason (a declined card, fewer seats than members), it exits with `billing_refused` (status 1), the server's own code in the JSON error's `reason`; if Polar was asked and then something failed, it exits with `outcome_unknown` (status 1): the change may have been made, so check `whk billing` before asking again. Adding blocks or turning overage on for the first time sends the owner to a Polar checkout; whk reports only that a checkout was opened. A browser session's change is made at once.
+
+With an [agent spend budget](/docs/agents#agent-spend-budget) above 0, `whk billing seats` (more seats) and a monthly move up a tier are made at once from it while enough is left, and whk prints what was charged, what was counted (the charge plus the rise of the next renewal), what is left and the new renewal price; otherwise it says why the budget did not pay and asks for the approval. `whk billing budget` shows the budget or sets it in dollars (`off` or `0` turns it off, at most 500). Each change counts at what it charges now plus how much it raises the next renewal (on a monthly plan always, on an annual plan when the renewal is at most 31 days away); on an annual plan whose renewal is further, at the larger of the two, so the budget then bounds less than both together, and a seat added more than 60 days before that renewal is not bounded at it. Later renewals keep the new price.
 
 ## keys
 

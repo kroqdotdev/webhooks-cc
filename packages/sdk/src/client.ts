@@ -48,6 +48,8 @@ import type {
   Approval,
   CreatedApiKey,
   PendingApproval,
+  AgentBudget,
+  AgentBudgetFallback,
   WaitForApprovalOptions,
   AlertEvent,
   AlertSettings,
@@ -276,18 +278,32 @@ function mapStatusToError(
   status: number,
   message: string,
   response: Response,
-  path?: string
+  path?: string,
+  /** The whole body, when `message` was cut short, to find its code in. */
+  body?: string
 ): WebhooksCCError {
   const error = statusError(status, message, response, path);
-  const code = errorCodeOf(message);
+  const code = errorCodeOf(body ?? message);
   if (code !== undefined) error.code = code;
   return error;
 }
 
-/** The API's error code in a JSON error body (`{ "error": "invalid_cursor" }`), when it is one. */
+/**
+ * The API's error code in a JSON error body, when it names one: the error
+ * itself as a code (`{ "error": "invalid_cursor" }`), or a `code` beside the
+ * message (`{ "error": "...", "code": "outcome_unknown" }`).
+ */
 function errorCodeOf(body: string): string | undefined {
-  // Matched rather than parsed: a long body arrives here cut short.
-  return /^\{\s*"error"\s*:\s*"([a-z][a-z0-9_]*)"/.exec(body)?.[1];
+  // Matched rather than parsed first: a body may arrive here cut short.
+  const bare = /^\{\s*"error"\s*:\s*"([a-z][a-z0-9_]*)"/.exec(body)?.[1];
+  if (bare !== undefined) return bare;
+  try {
+    const parsed = JSON.parse(body) as { code?: unknown } | null;
+    const code = parsed && typeof parsed === "object" ? parsed.code : undefined;
+    return typeof code === "string" && /^[a-z][a-z0-9_]*$/.test(code) ? code : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 function statusError(
@@ -1207,7 +1223,13 @@ export class WebhooksCC {
           const errorText = await response.text();
           const sanitizedError =
             errorText.length > 200 ? errorText.slice(0, 200) + "..." : errorText;
-          const error = mapStatusToError(response.status, sanitizedError, response, path);
+          const error = mapStatusToError(
+            response.status,
+            sanitizedError,
+            response,
+            path,
+            errorText
+          );
           try {
             this.hooks.onError?.({ method, url, error, durationMs });
           } catch {
@@ -2053,7 +2075,7 @@ export class WebhooksCC {
         },
         setSeats: {
           description:
-            "Change a team's seat count: more now (charged pro rata), fewer at the renewal (PendingApproval with an API key)",
+            "Change a team's seat count: more now (charged pro rata), fewer at the renewal (PendingApproval with an API key, unless the agent budget pays for it)",
           params: { teamId: "string", seats: "number" },
         },
         setMonthlyBlocks: {
@@ -2115,6 +2137,16 @@ export class WebhooksCC {
           description:
             "Cancel a checkout link the person has not opened yet, so it can no longer be paid (it then reads expired); one already opened expires on its own",
           params: { id: "string" },
+        },
+        getBudget: {
+          description:
+            "Read the agent spend budget (cents before tax per 30 days that keys may charge at once without an approval), what is left and the spends",
+          params: { teamId: "string?" },
+        },
+        setBudget: {
+          description:
+            "Set the agent budget (0 to 50000 cents; 0 is off). A key lowers it at once; raising it is a PendingApproval. Each change counts at the charge now plus the rise of the next renewal (on an annual plan whose renewal is more than 31 days away, the larger of the two)",
+          params: { teamId: "string?", budgetCents: "number" },
         },
       },
       apiKeys: {
@@ -2623,9 +2655,11 @@ export class WebhooksCC {
 
   /**
    * What the account pays for: the plan, its subscription, the add-ons and
-   * every team's, and checkout links to hand the person. Paying stays with
-   * them: a checkout link charges nothing until they enter their card on
-   * Polar's page, and changing or cancelling a plan takes a browser.
+   * every team's, changes to them, and checkout links to hand the person.
+   * With an API key a change is the owner's approval, unless the agent
+   * budget pays for it (more seats, a higher monthly plan), when it is made
+   * at once. A checkout link charges nothing until the person enters their
+   * card on Polar's page.
    */
   billing = {
     /** The plan, its subscription and add-ons, and every team's. */
@@ -2912,7 +2946,56 @@ export class WebhooksCC {
       );
       return answer.checkout;
     },
+
+    /**
+     * The agent spend budget of the account, or of a team you own: what
+     * keys may have charged at once without the owner approving each change
+     * (each change counted for 30 days or more), what is left, and the spends.
+     */
+    getBudget: async (options: BillingTarget = {}): Promise<AgentBudget> => {
+      return this.request<AgentBudget>("GET", this.budgetPath(options.teamId));
+    },
+
+    /**
+     * Set the agent budget, in cents before tax per 30 days (0 to 50000; 0
+     * turns it off). With an API key, lowering it applies at once; raising
+     * it is an approval the owner gives (show them `url`, then `wait()`).
+     * Each change counts at its charge now plus the rise of the next renewal
+     * (on a monthly plan always, on an annual one when the renewal is at most
+     * 31 days away), so the budget bounds both; on an annual plan whose
+     * renewal is further, at the larger of the two, so the budget bounds less
+     * than both together, and a seat added more than 60 days before that
+     * renewal is not bounded at it. Later renewals keep the new price.
+     */
+    setBudget: async (
+      options: BillingTarget & { budgetCents: number }
+    ): Promise<PendingApproval<AgentBudget | { budgetCents: number; previousCents: number }>> => {
+      if (
+        !Number.isInteger(options.budgetCents) ||
+        options.budgetCents < 0 ||
+        options.budgetCents > 50_000
+      ) {
+        throw new Error("budgetCents must be whole cents from 0 to 50000");
+      }
+      const answer = await this.request<(AgentBudget & { approval?: Approval }) | undefined>(
+        "PUT",
+        this.budgetPath(options.teamId),
+        { budgetCents: options.budgetCents },
+        { repeatable: false }
+      );
+      return this.pendingOr<AgentBudget | { budgetCents: number; previousCents: number }>(
+        answer,
+        "billing.agent_budget",
+        "Set the agent budget.",
+        () => answer as AgentBudget
+      );
+    },
   };
+
+  private budgetPath(teamId: string | undefined): string {
+    if (teamId !== undefined) validatePathSegment(teamId, "teamId");
+    return teamId ? `/teams/${teamId}/billing/agent-budget` : "/billing/agent-budget";
+  }
 
   /**
    * Sends a billing change to the account's billing route (or the team's);
@@ -2936,12 +3019,15 @@ export class WebhooksCC {
       "billing.change",
       "Made the billing change.",
       (): BillingChangeResult =>
-        typeof answer?.url === "string"
-          ? { executed: true, applied: "checkout", checkout: "opened", checkoutUrl: answer.url }
-          : {
-              executed: true,
-              applied: answer?.applied === "renewal" ? "renewal" : "now",
-            }
+        // Made on the agent budget: the route's own answer.
+        answer?.executed === true
+          ? (answer as BillingChangeResult)
+          : typeof answer?.url === "string"
+            ? { executed: true, applied: "checkout", checkout: "opened", checkoutUrl: answer.url }
+            : {
+                executed: true,
+                applied: answer?.applied === "renewal" ? "renewal" : "now",
+              }
     );
   }
 
@@ -2957,8 +3043,10 @@ export class WebhooksCC {
   ): PendingApproval<T> {
     if (answer?.approval) {
       const approval = answer.approval;
+      const budget = (answer as { budget?: AgentBudgetFallback }).budget;
       return {
         ...approval,
+        ...(budget ? { budget } : {}),
         wait: (waitOptions) => this.approvals.wait<T>(approval.id, waitOptions),
       };
     }
@@ -3331,7 +3419,20 @@ export class WebhooksCC {
             "This approval was already collected; what it granted is only handed over once."
           );
         }
-        if (approval.status === "denied") throw new ApprovalDeniedError(id);
+        if (approval.status === "denied") {
+          // A refused budget raise says why: the budget changed while it
+          // waited, so read it again and ask again if the raise is needed.
+          const code = (result as { code?: unknown } | undefined)?.code;
+          if (code === "budget_changed") {
+            const denied = new ApprovalDeniedError(
+              id,
+              "The agent budget changed while this raise waited for approval, so it was refused. Read the budget again and ask again if it should still be raised."
+            );
+            denied.code = code;
+            throw denied;
+          }
+          throw new ApprovalDeniedError(id);
+        }
         if (approval.status === "expired") throw new ApprovalExpiredError(id);
         const remaining = deadline - Date.now();
         if (remaining <= 0) throw timedOut();

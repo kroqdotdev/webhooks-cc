@@ -122,8 +122,9 @@ function internalEntry(route: string): string | undefined {
 const SESSION_AUTH = /authenticateSessionRequest\(/;
 const KEY_AUTH = /authenticateRequest(?:RequireUser)?\(|domainAccount\(/;
 // A route that answers an API key with an approval (lib/approvals/request.ts,
-// or lib/billing/ask.ts for billing changes).
-const ASKS_APPROVAL = /requestApproval\(|askForBillingChange\(/;
+// lib/billing/ask.ts for billing changes, or lib/billing/agent-budget-route.ts
+// for a raised agent budget).
+const ASKS_APPROVAL = /requestApproval\(|askForBillingChange\(|setAgentBudgetOrAskApproval\(/;
 
 describe("capabilities.json", () => {
   it("has a description and every surface for each capability", () => {

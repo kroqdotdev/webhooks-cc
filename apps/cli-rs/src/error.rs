@@ -6,7 +6,7 @@
 //! | Status | Code                    | Meaning                                         |
 //! | ------ | ----------------------- | ----------------------------------------------- |
 //! | 0      |                         | Success                                         |
-//! | 1      | `error`, `bad_request`, `delivery_failed`, `billing_refused`, `outcome_unknown` | Any other failure, the server refused input, a test delivery was not accepted, an approved billing change was refused with nothing changed (the server's code in `reason`), or it may or may not have been made (check billing) |
+//! | 1      | `error`, `bad_request`, `delivery_failed`, `billing_refused`, `outcome_unknown` | Any other failure, the server refused input, a test delivery was not accepted, an approved billing change was refused with nothing changed (the server's code in `reason`), or it (or a change made on the agent budget) may or may not have been made (check billing) |
 //! | 2      | `usage`                 | Bad arguments (clap answers these itself)        |
 //! | 3      | `not_logged_in`, `unauthorized`, `connection_revoked`, `login_expired`, `login_denied` | No credentials, or they were refused |
 //! | 4      | `not_found`             | No such endpoint, request, team or share         |
@@ -28,6 +28,8 @@ pub struct ApiError {
     pub message: String,
     /// Seconds from the `Retry-After` header.
     pub retry_after: Option<u64>,
+    /// The `code` the answer's body named, when it named one.
+    pub code: Option<String>,
 }
 
 impl std::fmt::Display for ApiError {
@@ -172,6 +174,8 @@ fn from_status(status: u16, retry_after: Option<u64>) -> Classified {
     c
 }
 
+const OUTCOME_UNKNOWN_HINT: &str = "The change may have been made. Check `whk billing` (or the team's billing) before asking again.";
+
 /// The code, exit status and next step for a failure, from the first error
 /// in its chain that says what went wrong.
 pub fn classify(error: &anyhow::Error) -> Classified {
@@ -218,12 +222,20 @@ pub fn classify(error: &anyhow::Error) -> Classified {
                     c.reason = Some(code.clone());
                     c
                 }
-                CliError::OutcomeUnknown(_) => Classified::new("outcome_unknown", 1).hint(
-                    "The change may have been made. Check `whk billing` (or the team's billing) before asking again.",
-                ),
+                CliError::OutcomeUnknown(_) => {
+                    Classified::new("outcome_unknown", 1).hint(OUTCOME_UNKNOWN_HINT)
+                }
             };
         }
         if let Some(e) = cause.downcast_ref::<ApiError>() {
+            // A billing change made on the agent budget whose outcome is not
+            // known answers with an error status and this code: the same
+            // next step as an approved change's.
+            if e.code.as_deref() == Some("outcome_unknown") {
+                let mut c = Classified::new("outcome_unknown", 1).hint(OUTCOME_UNKNOWN_HINT);
+                c.status = Some(e.status);
+                return c;
+            }
             return from_status(e.status, e.retry_after);
         }
         if let Some(e) = cause.downcast_ref::<AgentError>() {
@@ -285,6 +297,7 @@ mod tests {
             status,
             message: "nope".into(),
             retry_after: None,
+            code: None,
         })
     }
 
@@ -348,6 +361,24 @@ mod tests {
         );
         let c = classify(&anyhow::Error::new(CliError::OutcomeUnknown("x".into())));
         assert_eq!((c.code, c.exit), ("outcome_unknown", 1));
+        // A change on the agent budget answers it as an error status.
+        let c = classify(&anyhow::Error::new(ApiError {
+            status: 502,
+            message: "maybe".into(),
+            retry_after: None,
+            code: Some("outcome_unknown".into()),
+        }));
+        assert_eq!(
+            (c.code, c.exit, c.status),
+            ("outcome_unknown", 1, Some(502))
+        );
+        let c = classify(&anyhow::Error::new(ApiError {
+            status: 502,
+            message: "down".into(),
+            retry_after: None,
+            code: Some("something_else".into()),
+        }));
+        assert_eq!(c.code, "server_error");
     }
 
     #[test]
@@ -367,6 +398,7 @@ mod tests {
             status: 429,
             message: "slow down".into(),
             retry_after: Some(7),
+            code: None,
         });
         let c = classify(&error);
         assert_eq!(c.retry_after, Some(7));

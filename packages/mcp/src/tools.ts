@@ -827,6 +827,9 @@ async function waitForApprovalText(client: WebhooksCC, id: string, ms: number): 
     return approvalResultText(result);
   } catch (error) {
     if (error instanceof ApprovalDeniedError) {
+      if (error.code === "budget_changed") {
+        return "Refused: the agent budget changed while this raise waited for approval. Read it again with get_agent_budget, and ask again only if the raise is still needed.";
+      }
       return "The person refused it on the approval page. Do not ask again unless they tell you to.";
     }
     if (error instanceof ApprovalExpiredError) {
@@ -899,6 +902,7 @@ const APPROVAL_TOOLS = new Set([
   "change_addons",
   "cancel_subscription",
   "resume_subscription",
+  "set_agent_budget",
 ]);
 /** How long a retried call waits for the person, within the hosted server's cap. */
 const APPROVAL_RETRY_WAIT_MS = 45_000;
@@ -2971,10 +2975,46 @@ export function registerTools(
   );
 
   // Billing changes: each is quoted and waits for the owner's approval.
-  const billingAsk = (pending: Awaited<ReturnType<typeof client.billing.cancel>>) =>
-    pending.id ? approvalAsk(pending) : textContent("Done: the change was made at once.");
+  const cents = (n: number) => `$${(n / 100).toFixed(2)}`;
+  const billingAsk = async (pending: Awaited<ReturnType<typeof client.billing.cancel>>) => {
+    if (pending.id) {
+      const ask = approvalAsk(pending);
+      const budget = pending.budget;
+      if (!budget) return ask;
+      const amounts =
+        budget.leftCents !== undefined && budget.neededCents !== undefined
+          ? ` (${cents(budget.leftCents)} left, ${cents(budget.neededCents)} needed)`
+          : "";
+      const text = `Not paid from the agent budget: ${budget.message}${amounts}.\n${ask.content[0].text}`;
+      return { ...ask, content: [{ type: "text" as const, text }] };
+    }
+    const done = (await pending.wait()) as Record<string, unknown>;
+    if (done.viaBudget !== true) return textContent("Done: the change was made at once.");
+    const budget = (done.budget ?? {}) as { leftCents?: number };
+    const charged = typeof done.chargedCents === "number" ? done.chargedCents : 0;
+    return textContent(
+      [
+        `Done on the agent budget, without an approval: ${String(done.change ?? "the change was made")}`,
+        charged > 0
+          ? `Charged now: ${done.approximate ? "about " : ""}${cents(charged)} before tax.`
+          : "Nothing was charged.",
+        ...(typeof done.renewalCents === "number"
+          ? [`It renews at ${cents(done.renewalCents)} from the next renewal.`]
+          : []),
+        ...(typeof done.countedCents === "number"
+          ? [
+              `Counted against the budget: ${cents(done.countedCents)}, ${(typeof done.riseCounted === "boolean" ? !done.riseCounted : done.annual === true) ? "the larger of the charge now and the rise of the next renewal" : "the charge now plus the rise of the next renewal"}.`,
+            ]
+          : []),
+        ...(typeof budget.leftCents === "number"
+          ? [`Left of the budget: ${cents(budget.leftCents)}.`]
+          : []),
+        done.ownerEmail === "sent" ? "The owner was emailed." : "The owner's email is queued.",
+      ].join("\n")
+    );
+  };
   const BILLING_APPROVAL =
-    "The account's owner (the team's owner for a team) approves the quoted change, with what is charged now and when it applies: this returns a link and a code to show them, then call wait_for_approval. If the price or the subscription changed before they approve, nothing is changed and you ask again. Only when the person asks for it; never to spend money on your own.";
+    "The account's owner (the team's owner for a team) approves the quoted change, with what is charged now and when it applies: this returns a link and a code to show them, then call wait_for_approval. If the price or the subscription changed before they approve, nothing is changed and you ask again. Only when the person asks for it; never to spend money on your own. When the owner has set an agent budget (get_agent_budget), more seats and a monthly move up a tier are made at once from it instead, and the answer says so.";
   const teamIdShape = z
     .string()
     .min(1)
@@ -3016,6 +3056,32 @@ export function registerTools(
     withErrorHandling(async ({ teamId, seats }) =>
       billingAsk(await client.billing.setSeats(teamId, seats))
     )
+  );
+
+  server.tool(
+    "get_agent_budget",
+    "The agent spend budget of the account (or a team you own): how much, in cents before tax per 30 days, your keys may charge at once without the owner approving each change (more seats, Pro to Business or Teams to Team Business monthly), how much is spent and left, and the spends. 0 means off: every billing change is an approval.",
+    { teamId: teamIdShape },
+    withErrorHandling(async ({ teamId }) =>
+      textContent(serializeJson(await client.billing.getBudget({ teamId })))
+    )
+  );
+
+  server.tool(
+    "set_agent_budget",
+    "Set the agent spend budget, in cents before tax per 30 days (0 to 50000; 0 turns it off). Lowering it, or turning it off, applies at once. Raising it lets keys charge the card without asking, so the owner approves a raise: this returns a link and a code to show them, then call wait_for_approval. Each change counts at what it charges now plus how much it raises the next renewal (on a monthly plan always, on an annual plan when the renewal is at most 31 days away); on an annual plan whose renewal is further, at the larger of the two, so the budget then bounds less than both together, and a seat added more than 60 days before that renewal is not bounded at it. Later renewals keep the new price. Any change of the budget refuses a raise still waiting: wait_for_approval then says the budget changed, so read it again and ask again if needed. Only when the person asks for it.",
+    {
+      budgetCents: z.number().int().min(0).max(50_000).describe("The budget in cents (0 is off)"),
+      teamId: teamIdShape,
+    },
+    withErrorHandling(async ({ budgetCents, teamId }) => {
+      const pending = await client.billing.setBudget({ budgetCents, teamId });
+      if (pending.id) return approvalAsk(pending);
+      const view = (await pending.wait()) as { budgetCents?: number };
+      return textContent(
+        `The agent budget is now ${cents(view.budgetCents ?? budgetCents)} per 30 days.\n${serializeJson(view)}`
+      );
+    })
   );
 
   server.tool(

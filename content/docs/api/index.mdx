@@ -86,6 +86,7 @@ Every route an API key can call. Timestamps are Unix milliseconds unless a field
 | `GET /api/billing`                                                       | What the account pays for, read only                                                           |
 | `POST` `DELETE /api/billing/change-plan`, `POST /api/billing/capacity`, `.../cancel`, `.../resubscribe` | [Billing changes](#billing-changes) (an approval, with its quote)       |
 | `POST /api/billing/checkouts`, `GET .../:id`                             | [Checkout links](#checkout-links): make one for the person to pay, follow it                   |
+| `GET` `PUT /api/billing/agent-budget`, `/api/teams/:teamId/billing/agent-budget` | [Agent spend budget](#agent-spend-budget) (a raise with a key is an approval) |
 | `PATCH /api/account`                                                     | [Set the display name](#display-name) (an approval)                                            |
 | `GET /api/agent/registrations`, `DELETE .../:id`                         | [Connected agents](#connected-agents): list, disconnect                                        |
 | `GET /api/request-shares`, `DELETE .../:id`, `GET` `POST /api/requests/:id/shares` | [Share links](#share-links): list, revoke, ask for one (an approval)                 |
@@ -1423,6 +1424,12 @@ The page opens nothing by itself: it first shows the signed-in account (and the 
 `DELETE /api/billing/checkouts/:id` cancels a link the person has not opened yet, for whoever may read it: it answers the link, now `expired`, and it can no longer be paid. A link already opened has a Polar checkout that cannot be ended, so it gets `409` (`code: "opened"`) and expires on its own; a paid one gets `409` (`code: "not_open"`).
 
 The TypeScript SDK (`client.billing.createCheckout()`, `waitForCheckout()`, `cancelCheckout()`), the Python and Go SDKs, `whk billing checkout`, `checkout-status` and `checkout-cancel`, and the MCP server's `create_checkout`, `wait_for_checkout` and `cancel_checkout` do it for you.
+
+### Agent spend budget
+
+`GET /api/billing/agent-budget` (and `/api/teams/:teamId/billing/agent-budget` for a team you own) answers `{ "budgetCents", "spentCents", "leftCents", "nextReleaseAt", "windowDays": 30, "maxCents": 50000, "note", "spends": [{ "id", "change", "amountCents", "status", "takenAt", "keyId" }] }`. `PUT` with `{ "budgetCents" }` (0 to 50000; 0 is off) sets it in a session; with an API key or agent token a lower budget applies at once and a higher one answers `202` with a `billing.agent_budget` approval.
+
+With a budget above 0, a billing change asked with a key that Polar charges at once (Pro to Business monthly, Teams to Team Business monthly, more seats) answers `200` with `{ "executed": true, "applied": "now", "viaBudget": true, "change", "chargedCents", "approximate", "renewalCents", "budget": { "budgetCents", "leftCents", "spendId" }, "note" }` while enough is left. Fewer seats or monthly blocks answer `200` with `chargedCents: 0`. Otherwise the change is the usual `202` approval, with `budget: { "used": false, "reason", "message", "leftCents", "neededCents" }` saying why the budget did not pay. Send an `Idempotency-Key` header (8 to 200 printable characters) to name the change; it is scoped to the billing account, and the same key with a different change answers `409` with `code: "idempotency_key_reused"`. A change refused before anything was charged is given back at once and answers with its own code. A `502` with `{ "code": "outcome_unknown", "executed": null }` means Polar was asked and then something failed: the change may have been made, so check billing; it stays counted for 30 days unless Polar shows it made, and sending the same request with the same key finishes it only if it was not made, without charging twice. A `409` with `code: "change_running"` means it is still being made.
 
 ### API keys
 

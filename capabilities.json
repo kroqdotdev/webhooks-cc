@@ -578,7 +578,7 @@
         "POST /api/billing/cancel",
         "POST /api/billing/resubscribe"
       ],
-      "approval": "a change can charge the account's card, so the account's owner approves each one an API key or agent asks for, shown with its quote (what changes, when, and what is charged now); approving makes it only while a fresh quote still matches",
+      "approval": "a change can charge the account's card, so the account's owner approves each one an API key or agent asks for, shown with its quote (what changes, when, and what is charged now); approving makes it only while a fresh quote still matches. Pro to Business monthly runs on the agent budget instead while enough of it is left, and fewer monthly blocks run at once while it is on (billing.agent-budget)",
       "sdk": [
         "billing.changePlan",
         "billing.keepPlan",
@@ -1023,7 +1023,7 @@
         "POST /api/teams/[teamId]/billing/cancel",
         "POST /api/teams/[teamId]/billing/resubscribe"
       ],
-      "approval": "a change can charge the team's card, so the team's owner approves each one an API key or agent of theirs asks for, shown with its quote; approving makes it only while a fresh quote still matches, and members' keys are refused",
+      "approval": "a change can charge the team's card, so the team's owner approves each one an API key or agent of theirs asks for, shown with its quote; approving makes it only while a fresh quote still matches, and members' keys are refused. More seats and Teams to Team Business monthly run on the team's agent budget instead while enough of it is left, and fewer seats or monthly blocks run at once while it is on (billing.agent-budget)",
       "sdk": [
         "billing.changePlan",
         "billing.keepPlan",
@@ -1053,6 +1053,22 @@
         "cancel_subscription",
         "resume_subscription"
       ]
+    },
+    {
+      "id": "billing.agent-budget",
+      "does": "Read or set the agent spend budget of the account or a team it owns: what its keys may spend without the owner approving each change (more seats, a higher monthly plan; each counted for 30 days or more at its charge now plus the rise of the next renewal when that renewal is near, else the larger of the two)",
+      "routes": [
+        "GET /api/billing/agent-budget",
+        "PUT /api/billing/agent-budget",
+        "GET /api/teams/[teamId]/billing/agent-budget",
+        "PUT /api/teams/[teamId]/billing/agent-budget"
+      ],
+      "approval": "a higher budget lets keys charge the card without asking, so the owner approves a raise an API key or agent asks for; lowering it or turning it off with a key applies at once",
+      "sdk": ["billing.getBudget", "billing.setBudget"],
+      "python": "testing-focused SDK: added on demand",
+      "go": "testing-focused SDK: added on demand",
+      "cli": ["billing budget"],
+      "mcp": ["get_agent_budget", "set_agent_budget"]
     },
     {
       "id": "sandbox",

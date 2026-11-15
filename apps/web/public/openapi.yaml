@@ -2979,6 +2979,8 @@ paths:
         approval (202) for the account's owner, who approves it on its page; approving makes
         the change only while a fresh quote still matches the one shown, else nothing changes
         and the approval's result says why (`executed: false`).
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
       requestBody:
         required: true
         content:
@@ -2995,13 +2997,27 @@ paths:
                   enum: [month, year]
       responses:
         "200":
-          description: Changed at once (a browser session)
+          description: >-
+            Changed at once: by a browser session, or on the agent spend budget for an API key
+            or agent token (this body, with `viaBudget`).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BillingChangeOnBudget"
         "202":
           $ref: "#/components/responses/BillingChangeAsked"
         "400":
           $ref: "#/components/responses/BadRequest"
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "402":
+          description: >-
+            The card was declined (`code: payment_failed`): Polar changed nothing, and a change on
+            the agent spend budget is given back. Counted again if Polar collects the charge later.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "409":
           description: Not possible for this subscription now (no subscription, unchanged, set to end, a change waiting)
           content:
@@ -3010,6 +3026,8 @@ paths:
                 $ref: "#/components/schemas/Error"
         "429":
           $ref: "#/components/responses/RateLimited"
+        "502":
+          $ref: "#/components/responses/BillingChangeUnsettled"
     delete:
       operationId: keepPlan
       tags: [Usage]
@@ -3051,6 +3069,8 @@ paths:
         approval (202) for the account's owner, who approves it on its page; approving makes
         the change only while a fresh quote still matches the one shown, else nothing changes
         and the approval's result says why (`executed: false`).
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
       requestBody:
         required: true
         content:
@@ -3060,12 +3080,16 @@ paths:
       responses:
         "200":
           description: >-
-            Changed at once (a browser session): `{ url }` for a change paid at a Polar checkout
-            (send the person there), else `{ state }`, the add-ons as they are now.
+            Changed at once: by a browser session, `{ url }` for a change paid at a Polar
+            checkout (send the person there), else `{ state }`, the add-ons as they are now; or,
+            for an API key or agent token, fewer monthly blocks made on the agent spend budget
+            (that body, with `viaBudget`).
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/CapacityChanged"
+                oneOf:
+                  - $ref: "#/components/schemas/CapacityChanged"
+                  - $ref: "#/components/schemas/BillingChangeOnBudget"
         "202":
           $ref: "#/components/responses/BillingChangeAsked"
         "400":
@@ -3080,6 +3104,8 @@ paths:
                 $ref: "#/components/schemas/Error"
         "429":
           $ref: "#/components/responses/RateLimited"
+        "502":
+          $ref: "#/components/responses/BillingChangeUnsettled"
 
   /api/billing/cancel:
     post:
@@ -3139,6 +3165,86 @@ paths:
         "429":
           $ref: "#/components/responses/RateLimited"
 
+  /api/billing/agent-budget:
+    get:
+      operationId: getAgentBudget
+      tags: [Usage]
+      summary: Read the account's agent spend budget
+      description: >-
+        What API keys and agent tokens of the owner may spend, in cents before tax, without the
+        owner approving each change (more seats, Pro to Business or Teams to Team Business
+        monthly; each counted for 30 days or more at its charge now plus the rise of the next
+        renewal, or on an annual plan whose renewal is more than 31 days away the larger of the
+        two), what the
+        counted spends take, what is left, and the spends. 0 is off.
+      responses:
+        "200":
+          description: The budget
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentBudget"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: Not the team's owner
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    put:
+      operationId: setAgentBudget
+      tags: [Usage]
+      summary: Set the account's agent spend budget
+      description: >-
+        A browser session sets it. An API key or agent token lowers it (or turns it off) at
+        once; a raise answers 202 with a `billing.agent_budget` approval the owner gives. Each
+        change counts at what it charges now plus how much it raises the next renewal (on a
+        monthly plan always, on an annual plan when the renewal is at most 31 days away), so the
+        budget bounds both; on an annual plan whose renewal is further, at the larger of the two,
+        so the budget bounds less than both together, and a seat added more than 60 days before
+        that renewal is not bounded at it. Later renewals keep the new price. Any change of the budget refuses every raise of it
+        still waiting for approval, and the asker's poll of each answers `denied` with the result
+        `{"code": "budget_changed"}`: read the budget again and ask again if the raise is still
+        needed.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [budgetCents]
+              properties:
+                budgetCents:
+                  type: integer
+                  minimum: 0
+                  maximum: 50000
+      responses:
+        "200":
+          description: Set; the budget as it is now, with `previousCents`
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentBudget"
+        "202":
+          $ref: "#/components/responses/ApprovalAsked"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: Not the team's owner
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+
   /api/teams/{teamId}/billing/plan:
     parameters:
       - $ref: "#/components/parameters/teamId"
@@ -3154,6 +3260,8 @@ paths:
         token of the owner gets a quoted approval (202), approved on its page; approving makes
         the change only while a fresh quote still matches, else nothing changes and the
         approval's result says why (`executed: false`). Members' keys are refused.
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
       requestBody:
         required: true
         content:
@@ -3174,7 +3282,13 @@ paths:
                   description: Keep the current plan, dropping a change waiting for the renewal
       responses:
         "200":
-          description: Changed at once (a browser session)
+          description: >-
+            Changed at once: by a browser session, or on the agent spend budget for an API key
+            or agent token (this body, with `viaBudget`).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BillingChangeOnBudget"
         "202":
           $ref: "#/components/responses/BillingChangeAsked"
         "400":
@@ -3183,6 +3297,14 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "404":
           $ref: "#/components/responses/NotFound"
+        "402":
+          description: >-
+            The card was declined (`code: payment_failed`): Polar changed nothing, and a change on
+            the agent spend budget is given back. Counted again if Polar collects the charge later.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "409":
           description: Not possible for this subscription now (no subscription, unchanged, set to end, a change waiting)
           content:
@@ -3191,6 +3313,8 @@ paths:
                 $ref: "#/components/schemas/Error"
         "429":
           $ref: "#/components/responses/RateLimited"
+        "502":
+          $ref: "#/components/responses/BillingChangeUnsettled"
 
   /api/teams/{teamId}/billing/seats:
     parameters:
@@ -3205,6 +3329,8 @@ paths:
         token of the owner gets a quoted approval (202), approved on its page; approving makes
         the change only while a fresh quote still matches, else nothing changes and the
         approval's result says why (`executed: false`). Members' keys are refused.
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
       requestBody:
         required: true
         content:
@@ -3220,6 +3346,14 @@ paths:
       responses:
         "204":
           description: Changed at once (a browser session)
+        "200":
+          description: >-
+            Changed at once: by a browser session, or on the agent spend budget for an API key
+            or agent token (this body, with `viaBudget`).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BillingChangeOnBudget"
         "202":
           $ref: "#/components/responses/BillingChangeAsked"
         "400":
@@ -3228,6 +3362,14 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "404":
           $ref: "#/components/responses/NotFound"
+        "402":
+          description: >-
+            The card was declined (`code: payment_failed`): Polar changed nothing, and a change on
+            the agent spend budget is given back. Counted again if Polar collects the charge later.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "409":
           description: Not possible for this subscription now (no subscription, unchanged, set to end, a change waiting)
           content:
@@ -3236,6 +3378,8 @@ paths:
                 $ref: "#/components/schemas/Error"
         "429":
           $ref: "#/components/responses/RateLimited"
+        "502":
+          $ref: "#/components/responses/BillingChangeUnsettled"
 
   /api/teams/{teamId}/billing/capacity:
     parameters:
@@ -3250,6 +3394,8 @@ paths:
         token of the owner gets a quoted approval (202), approved on its page; approving makes
         the change only while a fresh quote still matches, else nothing changes and the
         approval's result says why (`executed: false`). Members' keys are refused.
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
       requestBody:
         required: true
         content:
@@ -3259,12 +3405,16 @@ paths:
       responses:
         "200":
           description: >-
-            Changed at once (a browser session): `{ url }` for a change paid at a Polar checkout
-            (send the person there), else `{ state }`, the add-ons as they are now.
+            Changed at once: by a browser session, `{ url }` for a change paid at a Polar
+            checkout (send the person there), else `{ state }`, the add-ons as they are now; or,
+            for an API key or agent token, fewer monthly blocks made on the agent spend budget
+            (that body, with `viaBudget`).
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/CapacityChanged"
+                oneOf:
+                  - $ref: "#/components/schemas/CapacityChanged"
+                  - $ref: "#/components/schemas/BillingChangeOnBudget"
         "202":
           $ref: "#/components/responses/BillingChangeAsked"
         "400":
@@ -3281,6 +3431,8 @@ paths:
                 $ref: "#/components/schemas/Error"
         "429":
           $ref: "#/components/responses/RateLimited"
+        "502":
+          $ref: "#/components/responses/BillingChangeUnsettled"
 
   /api/teams/{teamId}/billing/cancel:
     parameters:
@@ -3541,6 +3693,88 @@ paths:
                     enum: [opened, not_open, opening]
 
   # -- Teams -------------------------------------------------------------------
+
+  /api/teams/{teamId}/billing/agent-budget:
+    parameters:
+      - $ref: "#/components/parameters/teamId"
+    get:
+      operationId: getTeamAgentBudget
+      tags: [Teams]
+      summary: Read a team's agent spend budget
+      description: >-
+        What API keys and agent tokens of the owner may spend, in cents before tax, without the
+        owner approving each change (more seats, Pro to Business or Teams to Team Business
+        monthly; each counted for 30 days or more at its charge now plus the rise of the next
+        renewal, or on an annual plan whose renewal is more than 31 days away the larger of the
+        two), what the
+        counted spends take, what is left, and the spends. 0 is off. The team's owner only.
+      responses:
+        "200":
+          description: The budget
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentBudget"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: Not the team's owner
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    put:
+      operationId: setTeamAgentBudget
+      tags: [Teams]
+      summary: Set a team's agent spend budget
+      description: >-
+        A browser session sets it. An API key or agent token lowers it (or turns it off) at
+        once; a raise answers 202 with a `billing.agent_budget` approval the owner gives. Each
+        change counts at what it charges now plus how much it raises the next renewal (on a
+        monthly plan always, on an annual plan when the renewal is at most 31 days away), so the
+        budget bounds both; on an annual plan whose renewal is further, at the larger of the two,
+        so the budget bounds less than both together, and a seat added more than 60 days before
+        that renewal is not bounded at it. Later renewals keep the new price. Any change of the budget refuses every raise of it
+        still waiting for approval, and the asker's poll of each answers `denied` with the result
+        `{"code": "budget_changed"}`: read the budget again and ask again if the raise is still
+        needed. The team's owner only.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [budgetCents]
+              properties:
+                budgetCents:
+                  type: integer
+                  minimum: 0
+                  maximum: 50000
+      responses:
+        "200":
+          description: Set; the budget as it is now, with `previousCents`
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentBudget"
+        "202":
+          $ref: "#/components/responses/ApprovalAsked"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: Not the team's owner
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/RateLimited"
 
   /api/teams:
     get:
@@ -5044,7 +5278,10 @@ paths:
         Only the API key that asked (or any token of the same connected agent) may poll. Once the
         owner approves a new API key, the next poll creates it and carries it in `result`, once:
         later polls answer `completed` without it. Other actions run when the owner approves
-        them, and every later poll carries their `result`. Poll every two seconds at most.
+        them, and every later poll carries their `result`. A raise of an agent budget refused
+        because the budget changed while it waited answers `denied` with the result
+        `{"code": "budget_changed"}`, and one refused because the key or agent that asked was
+        revoked carries `{"code": "asker_revoked"}`. Poll every two seconds at most.
       parameters:
         - name: id
           in: path
@@ -5609,6 +5846,20 @@ components:
               anonymous agent registrations, never by this flow.
 
   parameters:
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: false
+      description: >-
+        Names a billing change made on the agent budget (8 to 200 printable characters), scoped to
+        the billing account, so the same request sent again (after a 502 `outcome_unknown`
+        answer, say) finishes the same change and is never charged twice. A key names one change:
+        sent again with a different change it is refused with 409 `idempotency_key_reused`.
+        Without it the key is derived from the account, the change and the subscription.
+      schema:
+        type: string
+        minLength: 8
+        maxLength: 200
     DomainTeam:
       name: team
       in: query
@@ -5941,6 +6192,157 @@ components:
             Once paid, whether what was bought is what the link asked for (the product, and its
             seats or blocks); null while that is not known yet (a team plan's seats arrive with
             its subscription, after the order), which is no mismatch: only false is.
+
+    AgentBudget:
+      type: object
+      required: [budgetCents, spentCents, leftCents, windowDays, maxCents, spends]
+      properties:
+        budgetCents:
+          type: integer
+          description: Cents before tax per rolling 30 days; 0 is off
+        spentCents:
+          type: integer
+        leftCents:
+          type: integer
+        nextReleaseAt:
+          type: [string, "null"]
+          format: date-time
+          description: When the first counted spend stops counting, so more is left
+        windowDays:
+          type: integer
+        maxCents:
+          type: integer
+        note:
+          type: string
+        previousCents:
+          type: integer
+          description: Set by PUT, what it was before
+        spends:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: string
+              change:
+                type: string
+              amountCents:
+                type: integer
+              status:
+                type: string
+                enum: [running, applied, unsettled, returned]
+              takenAt:
+                type: string
+                format: date-time
+              countsUntil:
+                type: string
+                format: date-time
+                description: >-
+                  Until when it counts: 30 days from when it was taken, or from the renewal whose
+                  rise it counts when that is later, or from a payment confirmed later
+              counted:
+                type: boolean
+                description: Whether it is in spentCents now
+              keyId:
+                type: [string, "null"]
+
+    BillingChangeOnBudget:
+      description: >-
+        Made at once on the account's agent spend budget (an API key or agent token, a budget
+        above 0, enough left): more seats, Pro to Business or Teams to Team Business monthly,
+        charged `chargedCents` before tax and counted at `countedCents`: the charge now (before
+        account credit) plus `renewalRiseCents`, the rise of the next renewal (`riseCounted`:
+        always on a monthly plan, on an annual plan when the renewal is at most 31 days away;
+        else the larger of the two). Later renewals keep the new price. The owner is emailed (`ownerEmail`). Fewer seats or monthly blocks are
+        made at once too while some of the budget is left, with `chargedCents` 0; their notices
+        are gathered into one email an hour at most.
+      type: object
+      required: [executed, applied, viaBudget]
+      properties:
+        executed:
+          type: boolean
+          enum: [true]
+        applied:
+          type: string
+          enum: [now, renewal]
+        viaBudget:
+          type: boolean
+          enum: [true]
+        change:
+          type: string
+        chargedCents:
+          type: integer
+        countedCents:
+          type: integer
+          description: >-
+            What the change counts against the budget: the charge now plus the rise of the next
+            renewal (on an annual plan whose renewal is more than 31 days away, the larger of the
+            two), never below an earlier count of the same change
+        annual:
+          type: boolean
+          description: The subscription renews yearly
+        riseCounted:
+          type: boolean
+          description: >-
+            The rise of the next renewal counts on top of the charge now: always on a monthly
+            plan, and on an annual plan when the renewal is at most 31 days away; false when it
+            counts at the larger of the two
+        ownerEmail:
+          type: string
+          enum: [sent, queued]
+          description: >-
+            `sent` when this request emailed the owner; `queued` when the email (or, for a
+            reduction, the hourly notice) goes out later
+        renewalRiseCents:
+          type: integer
+          description: How much the change raises the next renewal; 0 when it does not
+        approximate:
+          type: boolean
+        renewalCents:
+          type: [integer, "null"]
+        budget:
+          type: object
+          properties:
+            budgetCents:
+              type: integer
+            leftCents:
+              type: integer
+            spendId:
+              type: string
+        note:
+          type: string
+        replayed:
+          type: boolean
+          description: The same Idempotency-Key again, answered from the first time
+
+    AgentBudgetFallback:
+      type: object
+      description: Why a change the agent budget could have paid went to the owner's approval
+      required: [used, reason, message]
+      properties:
+        used:
+          type: boolean
+          enum: [false]
+        reason:
+          type: string
+          enum:
+            [
+              budget_off,
+              pre_claim,
+              not_owner,
+              no_subscription,
+              past_due,
+              change_running,
+              over_budget,
+              budget_currency_unsupported,
+              budget_currency_unknown,
+            ]
+        message:
+          type: string
+        leftCents:
+          type: integer
+        neededCents:
+          type: integer
 
     Approval:
       type: object
@@ -9172,6 +9574,37 @@ components:
             properties:
               approval:
                 $ref: "#/components/schemas/Approval"
+              budget:
+                $ref: "#/components/schemas/AgentBudgetFallback"
+
+    BillingChangeUnsettled:
+      description: >-
+        A change made on the agent budget whose outcome is not known: Polar was asked, then
+        something failed (or the bank wants the cardholder to confirm the payment), so it may or
+        may not have been made. It stays counted against the agent budget for 30 days unless
+        Polar shows it made. Check billing before asking again; sending the same request again
+        (with the same `Idempotency-Key`, echoed as `idempotencyKey` when one was sent) finishes
+        it if it was not made, and charges nothing twice. A payment waiting for 3-D Secure is never
+        sent again from here.
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [error, code, executed, reason]
+            properties:
+              error:
+                type: string
+              code:
+                type: string
+                enum: [outcome_unknown]
+              executed:
+                type: "null"
+              reason:
+                type: string
+              viaBudget:
+                type: boolean
+              idempotencyKey:
+                type: string
 
     ApprovalAsked:
       description: >-

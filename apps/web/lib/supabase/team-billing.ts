@@ -20,7 +20,13 @@ import {
   type SeatChangeQuote,
 } from "@/lib/team-pricing";
 import { createAdminClient } from "./admin";
-import { addMonthsUtc, annualQuotaWindow, MIN_ANNUAL_WINDOW_MS, remainingShare } from "./billing";
+import {
+  addMonthsUtc,
+  annualQuotaWindow,
+  currencyOf,
+  MIN_ANNUAL_WINDOW_MS,
+  remainingShare,
+} from "./billing";
 import {
   asNonEmptyString,
   asRecord,
@@ -1065,6 +1071,8 @@ export async function loadTeamSeatQuote(
 ): Promise<{
   team: BillingTeam;
   basis: Record<string, string | number | boolean | null>;
+  /** What Polar bills in, lower case ("" when it names none): beside `basis`, which approvals compare. */
+  currency: string;
   at(nowMs: number): SeatChangeQuote;
 }> {
   const team = await getTeamForOwner(userId, teamId);
@@ -1106,6 +1114,7 @@ export async function loadTeamSeatQuote(
       teamPendingSeats: team.pending_seats,
       pendingProduct: subscription.pending_update?.product_id ?? null,
     },
+    currency: currencyOf(subscription),
     at: (nowMs) =>
       quoteSeatChange({
         currentSeats,
@@ -1387,6 +1396,10 @@ export async function loadTeamPlanQuote(
   team: BillingTeam;
   current: { plan: TeamPlan; interval: BillingInterval };
   basis: Record<string, string | number | boolean | null>;
+  /** What the subscription renews at before the change (Polar's amount). */
+  currentAmountCents: number;
+  /** What Polar bills in, lower case ("" when it names none): beside `basis`, which approvals compare. */
+  currency: string;
   at(nowMs: number): PlanChangeQuote;
 }> {
   const { team, current, productId, applies } = await teamForPlanChange(
@@ -1424,6 +1437,8 @@ export async function loadTeamPlanQuote(
   return {
     team,
     current,
+    currentAmountCents: subscription.amount,
+    currency: currencyOf(subscription),
     basis: {
       subscriptionId: subscription.id,
       status: subscription.status,

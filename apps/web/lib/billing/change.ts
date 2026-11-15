@@ -282,6 +282,39 @@ export interface LoadedQuote {
   /** The team's name as the owner's page shows it (cleanTeamName), null for the account itself. */
   teamName: string | null;
   at(nowMs: number): BillingQuote;
+  /**
+   * What an agent spend budget counts a change at (lib/billing/agent-budget.ts),
+   * for the changes it may pay: a plan switch and a seat change. Kept out
+   * of the quote itself, which an approval compares whole.
+   */
+  budget?(nowMs: number): BudgetFacts;
+}
+
+/** A change's cost to an agent spend budget, beside its quote. All amounts in cents. */
+export interface BudgetFacts {
+  /** Account credit Polar spends before the card: the charge before it is dueNowCents plus this. */
+  creditAppliedCents: number;
+  /**
+   * What the next renewal costs without the change: the lower of today's
+   * price and a reduction already scheduled for the renewal, so the rise
+   * is never undercounted.
+   */
+  renewalBeforeCents: number;
+  /** What the next renewal costs with the change. */
+  renewalAfterCents: number;
+  /**
+   * Whether the subscription renews yearly after the change. A monthly
+   * renewal falls inside the budget's 30 days, so its rise counts on top of
+   * the charge now; a yearly one does not, and the change counts at the
+   * larger of the two (a seat at the full year's price).
+   */
+  annual: boolean;
+  /**
+   * What Polar bills the subscription in, lower case ("" when it names
+   * none): the budget is in US dollars. Kept here rather than in the
+   * quote's basis, which an approval asked before it was read compares.
+   */
+  currency: string;
 }
 
 /**
@@ -520,6 +553,16 @@ async function loadPersonalQuote(
           basis: loaded.basis,
         };
       },
+      budget: (nowMs) => {
+        const q = loaded.at(nowMs);
+        return {
+          creditAppliedCents: q.creditAppliedCents,
+          renewalBeforeCents: loaded.currentAmountCents,
+          renewalAfterCents: q.renewalCents,
+          annual: q.interval === "year",
+          currency: loaded.currency,
+        };
+      },
     };
   }
 
@@ -631,6 +674,22 @@ async function loadTeamQuote(
           basis: loaded.basis,
         };
       },
+      budget: (nowMs) => {
+        const q = loaded.at(nowMs);
+        // A seat reduction waiting for the renewal renews lower without the
+        // change; count the rise from there.
+        const pending = [loaded.basis.pendingSeats, loaded.basis.teamPendingSeats].filter(
+          (value): value is number => typeof value === "number" && value > 0 && value < q.seats
+        );
+        const renewsSeats = pending.length > 0 ? Math.min(...pending) : q.seats;
+        return {
+          creditAppliedCents: q.creditAppliedCents,
+          renewalBeforeCents: Math.floor((loaded.currentAmountCents * renewsSeats) / q.seats),
+          renewalAfterCents: q.renewalCents,
+          annual: q.interval === "year",
+          currency: loaded.currency,
+        };
+      },
     };
   }
   if (change.kind === "seats") {
@@ -665,6 +724,21 @@ async function loadTeamQuote(
           // The seats and the period the charge is for: the increase checks
           // them again right before Polar is asked (updateTeamSeats).
           basis: { ...loaded.basis, currentSeats: q.currentSeats, periodEnd: q.periodEnd },
+        };
+      },
+      budget: (nowMs) => {
+        const q = loaded.at(nowMs);
+        const pending = [q.pendingSeats, loaded.team.pending_seats].filter(
+          (value): value is number =>
+            typeof value === "number" && value > 0 && value < q.currentSeats
+        );
+        const renewsSeats = pending.length > 0 ? Math.min(...pending) : q.currentSeats;
+        return {
+          creditAppliedCents: q.creditAppliedCents,
+          renewalBeforeCents: renewsSeats * q.pricePerSeatCents,
+          renewalAfterCents: q.renewalCents,
+          annual: loaded.team.billing_interval === "year",
+          currency: loaded.currency,
         };
       },
     };
@@ -1041,17 +1115,18 @@ export function capacityQuote(
 
 /** A quote as one canonical string, to compare two. */
 export function quoteFingerprint(quote: BillingQuote): string {
-  return canonical(quote);
+  return canonicalJson(quote);
 }
 
-function canonical(value: unknown): string {
+/** A value as one canonical JSON string: object keys sorted, undefined left out. */
+export function canonicalJson(value: unknown): string {
   if (value === null || typeof value !== "object") return JSON.stringify(value ?? null);
-  if (Array.isArray(value)) return `[${value.map(canonical).join(",")}]`;
+  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
   const record = value as Record<string, unknown>;
   return `{${Object.keys(record)
     .filter((key) => record[key] !== undefined)
     .sort()
-    .map((key) => `${JSON.stringify(key)}:${canonical(record[key])}`)
+    .map((key) => `${JSON.stringify(key)}:${canonicalJson(record[key])}`)
     .join(",")}}`;
 }
 
@@ -1200,7 +1275,7 @@ class ChangeLease implements PolarMutationGuard {
     if (this.mutations === 0) {
       throw new BillingChangeRetry(
         503,
-        `Nothing was changed: ${why} before billing was asked. Try approving again in a minute.`
+        `Nothing was changed: ${why} before billing was asked. Try again in a minute.`
       );
     }
     throw new LeaseLostMidChange(why);
@@ -1248,18 +1323,45 @@ export async function runBillingChange(
   approved: BillingQuote,
   options: BillingChangeRunOptions = {}
 ): Promise<BillingChangeRun> {
-  return withSupabaseCallTimeout(SUPABASE_CALL_MS, () =>
-    runLeased(userId, request, approved, options)
+  return withBillingChangeLease(
+    userId,
+    request.teamId,
+    (lease) => runLocked(userId, request, approved, lease),
+    options
   );
 }
 
-async function runLeased(
+/** The account's lease as a run inside withBillingChangeLease sees it. */
+export interface BillingChangeLease {
+  /** Mutating Polar calls let through so far: 0 means nothing reached Polar. */
+  readonly mutations: number;
+}
+
+/**
+ * Runs `fn` holding the billing account's change lease (billing_change_locks),
+ * with every mutating Polar call it makes checked against the lease first
+ * (ChangeLease) and every database call cut off after SUPABASE_CALL_MS. One
+ * change per account at a time, whether an approval or the agent budget
+ * makes it. Throws BillingChangeRetry, before `fn` runs, when the lease is
+ * held (409) or cannot be taken (503). `options.whileHeld` gets what `fn`
+ * returned before the lease is given back.
+ */
+export function withBillingChangeLease<T>(
   userId: string,
-  request: BillingChangeRequest,
-  approved: BillingQuote,
-  options: BillingChangeRunOptions
-): Promise<BillingChangeRun> {
-  const key = accountKey(userId, request.teamId);
+  teamId: string | null,
+  fn: (lease: BillingChangeLease) => Promise<T>,
+  options: { holder?: string; whileHeld?: (value: T) => Promise<void> } = {}
+): Promise<T> {
+  return withSupabaseCallTimeout(SUPABASE_CALL_MS, () => leased(userId, teamId, fn, options));
+}
+
+async function leased<T>(
+  userId: string,
+  teamId: string | null,
+  fn: (lease: BillingChangeLease) => Promise<T>,
+  options: { holder?: string; whileHeld?: (value: T) => Promise<void> }
+): Promise<T> {
+  const key = accountKey(userId, teamId);
   const holder = options.holder ?? crypto.randomUUID();
   const admin = createAdminClient();
   const { data: claimed, error: claimError } = await admin.rpc("claim_billing_change_lock", {
@@ -1271,28 +1373,26 @@ async function runLeased(
     reportError("Taking the billing change lease failed", claimError);
     throw new BillingChangeRetry(
       503,
-      "Billing could not be reached just now, so nothing was changed. Try approving again in a minute."
+      "Billing could not be reached just now, so nothing was changed. Try again in a minute."
     );
   }
   if (claimed !== true) {
     throw new BillingChangeRetry(
       409,
-      "Another billing change for this account is being made. Nothing was changed; try approving again in a moment."
+      "Another billing change for this account is being made. Nothing was changed; try again in a moment."
     );
   }
   const lease = new ChangeLease(key, holder);
   try {
-    const run = await withPolarMutationGuard(lease, () =>
-      runLocked(userId, request, approved, lease)
-    );
+    const value = await withPolarMutationGuard(lease, () => fn(lease));
     if (options.whileHeld) {
       try {
-        await options.whileHeld(run);
+        await options.whileHeld(value);
       } catch (error) {
         reportError("Recording a billing change's outcome under its lease failed", error);
       }
     }
-    return run;
+    return value;
   } finally {
     const { error } = await admin.rpc("release_billing_change_lock", {
       p_account_key: key,
@@ -1335,7 +1435,7 @@ async function runLocked(
   userId: string,
   request: BillingChangeRequest,
   approved: BillingQuote,
-  lease: ChangeLease
+  lease: BillingChangeLease
 ): Promise<BillingChangeRun> {
   const quotedAt = Date.parse(approved.quotedAt);
   let again: BillingQuote;
@@ -1380,7 +1480,7 @@ async function runLocked(
   }
 
   try {
-    return await makeChange(userId, request, again);
+    return await makeBillingChange(userId, request, again);
   } catch (error) {
     // The lease ran out or the run got too slow before its first change:
     // nothing reached Polar, so the approval may be approved again.
@@ -1422,17 +1522,24 @@ async function runLocked(
   }
 }
 
-const PAYMENT_ACTION_REQUIRED =
+export const PAYMENT_ACTION_REQUIRED =
   "The bank wants the cardholder to confirm this payment (3-D Secure), so the change is not finished: Polar emails a link to confirm it, and once confirmed the change may be made. Check billing before asking again.";
 
-function isPaymentActionRequired(error: unknown): boolean {
+export function isPaymentActionRequired(error: unknown): boolean {
   return (
     (error instanceof BillingActionError || error instanceof TeamBillingError) &&
     error.code === "payment_action_required"
   );
 }
 
-async function makeChange(
+/**
+ * Makes a change at once, priced by `quote`, with no quote check: the
+ * approval's run above, and the agent budget (lib/billing/agent-budget.ts),
+ * which quotes it under the same lease. Throws a refusal, or any error
+ * Polar or the database raised; the caller holds the account's lease
+ * (withBillingChangeLease) and reads errors as runLocked does.
+ */
+export async function makeBillingChange(
   userId: string,
   { teamId, change }: BillingChangeRequest,
   quote: BillingQuote

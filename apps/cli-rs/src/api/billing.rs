@@ -80,4 +80,23 @@ impl ApiClient {
             .await?;
         resp.parse("cancelled checkout link")
     }
+
+    /// The agent spend budget of the account or a team
+    /// (`GET .../billing/agent-budget`).
+    pub async fn get_agent_budget(&self, team_id: Option<&str>) -> Result<Value> {
+        self.require_auth()?;
+        let resp = self.get(&billing_path(team_id, "agent-budget")).await?;
+        raw(resp)
+    }
+
+    /// Sets it (`PUT .../billing/agent-budget`). With an API key a lower
+    /// budget applies at once and a higher one answers 202 with an approval.
+    pub async fn set_agent_budget(&self, team_id: Option<&str>, cents: u32) -> Result<Value> {
+        self.require_auth()?;
+        let body = serde_json::json!({ "budgetCents": cents });
+        let resp = self
+            .put_json(&billing_path(team_id, "agent-budget"), &body)
+            .await?;
+        raw(resp)
+    }
 }

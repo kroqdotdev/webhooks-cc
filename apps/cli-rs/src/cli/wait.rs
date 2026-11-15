@@ -276,6 +276,7 @@ pub async fn run(client: &ApiClient, options: WaitOptions, json: bool) -> Result
                     status: 404,
                     message: format!("Endpoint {slug} was deleted while waiting."),
                     retry_after: None,
+                    code: None,
                 }
                 .into());
             }
@@ -380,6 +381,7 @@ mod tests {
                         status: 503,
                         message: "busy".into(),
                         retry_after: None,
+                        code: None,
                     }))
                 } else {
                     Ok(n)
@@ -399,6 +401,7 @@ mod tests {
                     status: 404,
                     message: "gone".into(),
                     retry_after: None,
+                    code: None,
                 }))
             }
         })

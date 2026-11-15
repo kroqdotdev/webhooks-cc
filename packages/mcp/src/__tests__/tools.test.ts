@@ -86,6 +86,8 @@ const EXPECTED_TOOLS = [
   "change_addons",
   "cancel_subscription",
   "resume_subscription",
+  "get_agent_budget",
+  "set_agent_budget",
   "list_api_keys",
   "create_api_key",
   "wait_for_approval",
@@ -303,7 +305,7 @@ describe("registerTools", () => {
     const waitFor = vi.fn().mockResolvedValue({ id: "req1", method: "POST", headers: {} });
     const client = createMockClient({ requests: { waitFor } as unknown as WebhooksCC["requests"] });
     const tools = getRegisteredTools(client, { remote: true });
-    expect(Object.keys(tools)).toHaveLength(99);
+    expect(Object.keys(tools)).toHaveLength(101);
     expect(tools).not.toHaveProperty("send_to");
     expect(tools).not.toHaveProperty("replay_request");
     expect(tools).not.toHaveProperty("share_port");
@@ -358,7 +360,7 @@ describe("registerTools", () => {
   it("registers all wrapper and legacy tools", () => {
     const tools = getRegisteredTools(createMockClient());
 
-    expect(Object.keys(tools)).toHaveLength(102);
+    expect(Object.keys(tools)).toHaveLength(104);
     for (const name of EXPECTED_TOOLS) {
       expect(tools).toHaveProperty(name);
     }
@@ -2039,6 +2041,20 @@ describe("registerTools", () => {
 
     const done = await tools.wait_for_approval.handler({ id: "ap1", timeout: "1s" });
     expect(done.content[0].text).toContain('The team "Payments" was deleted');
+  });
+
+  it("says when a budget raise was refused because the budget changed", async () => {
+    const denied = new ApprovalDeniedError("ap9", "The agent budget changed");
+    denied.code = "budget_changed";
+    const wait = vi.fn(async () => {
+      throw denied;
+    });
+    const tools = getRegisteredTools(
+      createMockClient({ approvals: { wait } as unknown as WebhooksCC["approvals"] })
+    );
+    const done = await tools.wait_for_approval.handler({ id: "ap9", timeout: "1s" });
+    expect(done.content[0].text).toContain("the agent budget changed");
+    expect(done.content[0].text).toContain("get_agent_budget");
   });
 
   it("manages members and invites of a team by id", async () => {
@@ -3823,5 +3839,119 @@ describe("the request inspector's tools", () => {
     const tools = getRegisteredTools(client);
     const result = await tools.get_request.handler({ requestId: "req_1" });
     expect(result).not.toHaveProperty("structuredContent");
+  });
+});
+
+describe("the agent spend budget", () => {
+  const asked = {
+    id: "0b8d6a5e-1c2f-4f3a-9d7e-2a1b3c4d5e6f",
+    status: "pending",
+    action: "billing.agent_budget",
+    summary: "Set the agent budget of your account to $200.00 per 30 days (it is off now).",
+    code: "ABCD-EFGH",
+    url: "https://webhooks.cc/approve?code=ABCD-EFGH",
+    expiresAt: "2026-11-14T12:15:00.000Z",
+    wait: vi.fn(),
+  };
+
+  it("reads the budget and asks the owner to raise it", async () => {
+    const view = { budgetCents: 0, spentCents: 0, leftCents: 0, spends: [] };
+    const billing = {
+      getBudget: vi.fn().mockResolvedValue(view),
+      setBudget: vi.fn().mockResolvedValue(asked),
+    };
+    const tools = getRegisteredTools(
+      createMockClient({ billing: billing as unknown as WebhooksCC["billing"] })
+    );
+    const read = await tools.get_agent_budget.handler({ teamId: "t1" });
+    expect(billing.getBudget).toHaveBeenCalledWith({ teamId: "t1" });
+    expect(read.content[0].text).toContain('"budgetCents": 0');
+    const raised = await tools.set_agent_budget.handler({ budgetCents: 20_000 });
+    expect(billing.setBudget).toHaveBeenCalledWith({ budgetCents: 20_000, teamId: undefined });
+    expect(raised.content[0].text).toContain("Asked for approval: Set the agent budget");
+  });
+
+  it("lowers it at once", async () => {
+    const lowered = {
+      id: "",
+      status: "completed",
+      wait: vi.fn().mockResolvedValue({ budgetCents: 500, previousCents: 20_000 }),
+    };
+    const billing = { setBudget: vi.fn().mockResolvedValue(lowered) };
+    const tools = getRegisteredTools(
+      createMockClient({ billing: billing as unknown as WebhooksCC["billing"] })
+    );
+    const result = await tools.set_agent_budget.handler({ budgetCents: 500 });
+    expect(result.content[0].text).toContain("now $5.00 per 30 days");
+  });
+
+  it("says when the budget paid for a change, and why it did not", async () => {
+    const made = {
+      id: "",
+      status: "completed",
+      wait: vi.fn().mockResolvedValue({
+        executed: true,
+        applied: "now",
+        viaBudget: true,
+        change: 'Change the team "Acme" from 3 to 5 seats.',
+        chargedCents: 1250,
+        countedCents: 3650,
+        renewalCents: 6000,
+        budget: { leftCents: 6350 },
+      }),
+    };
+    const fellBack = {
+      ...asked,
+      action: "billing.change",
+      summary: 'Change the team "Acme" from 3 to 9 seats.',
+      budget: {
+        used: false,
+        reason: "over_budget",
+        message: "Less is left of the agent budget than this change counts",
+        leftCents: 100,
+        neededCents: 4000,
+      },
+    };
+    const setSeats = vi.fn().mockResolvedValueOnce(made).mockResolvedValueOnce(fellBack);
+    const tools = getRegisteredTools(
+      createMockClient({ billing: { setSeats } as unknown as WebhooksCC["billing"] })
+    );
+    const done = await tools.set_seats.handler({ teamId: "t1", seats: 5 });
+    expect(done.content[0].text).toContain("Done on the agent budget");
+    expect(done.content[0].text).toContain("$12.50 before tax");
+    expect(done.content[0].text).toContain("renews at $60.00");
+    expect(done.content[0].text).toContain(
+      "Counted against the budget: $36.50, the charge now plus the rise of the next renewal."
+    );
+    expect(done.content[0].text).toContain("Left of the budget: $63.50");
+    // Emailed only when the answer says the send went out.
+    expect(done.content[0].text).toContain("The owner's email is queued.");
+    expect(done.content[0].text).not.toContain("The owner was emailed.");
+    const fallback = await tools.set_seats.handler({ teamId: "t1", seats: 9 });
+    expect(fallback.content[0].text).toContain("Not paid from the agent budget");
+    // The wording follows riseCounted over the interval: an annual plan
+    // renewing within 30 days counts both, one further away the larger.
+    const words = async (extra: Record<string, unknown>) => {
+      const answer = {
+        ...made,
+        wait: vi.fn().mockResolvedValue({ ...(await made.wait()), ...extra }),
+      };
+      const tool = getRegisteredTools(
+        createMockClient({
+          billing: {
+            setSeats: vi.fn().mockResolvedValue(answer),
+          } as unknown as WebhooksCC["billing"],
+        })
+      );
+      return (await tool.set_seats.handler({ teamId: "t1", seats: 5 })).content[0].text as string;
+    };
+    expect(await words({ annual: true, riseCounted: true })).toContain(
+      "the charge now plus the rise of the next renewal."
+    );
+    expect(await words({ annual: true, riseCounted: false })).toContain(
+      "the larger of the charge now and the rise of the next renewal."
+    );
+    expect(fallback.content[0].text).toContain("$1.00 left, $40.00 needed");
+    expect(fallback.content[0].text).toContain("Asked for approval");
   });
 });

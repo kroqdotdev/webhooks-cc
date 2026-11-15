@@ -22,7 +22,7 @@ export const TOOL_GROUPS = {
   extras: "Bulk endpoint changes, favourites, request counts and payload schemas",
   teams: "Teams: members, invites, sharing endpoints with a team, and pricing team changes",
   account:
-    "The account: billing, changes to it (each approved by the owner) and checkout links for the person to pay, API keys, connected agents, public share links to requests, and the display name",
+    "The account: billing, changes to it (each approved by the owner, or paid from the agent budget the owner set) and checkout links for the person to pay, API keys, connected agents, public share links to requests, and the display name",
   domains: "Custom inbound email domains: add, verify, route and remove them",
   sheets: "Google Sheets destinations: Google accounts, spreadsheets and their tabs",
   names: "Preview names: reserve, release and password-protect them",
@@ -157,6 +157,9 @@ export const TOOL_CATALOG: Record<string, CatalogEntry> = {
     change_addons: write,
     cancel_subscription: { destructive: true },
     resume_subscription: write,
+    get_agent_budget: read,
+    // Lowering applies at once; a raise asks the owner.
+    set_agent_budget: update,
     list_api_keys: read,
     create_api_key: write,
     revoke_api_key: remove,

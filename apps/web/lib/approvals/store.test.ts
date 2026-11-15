@@ -138,3 +138,48 @@ describe("an approval that ran and left no result", () => {
     expect((await pollApproval(String(mocks.row.id), asker))?.approval.status).toBe("expired");
   });
 });
+
+describe("a refused budget raise", () => {
+  const now = Date.parse("2026-11-16T12:00:00Z");
+  const row = (result: unknown) => ({
+    id: "00000000-0000-4000-8000-0000000000bb",
+    user_id: "owner",
+    action: "billing.agent_budget",
+    params: {},
+    summary: "Set the agent budget of your account to $100.00 per 30 days.",
+    user_code: "ABCD-EFGH",
+    status: "denied",
+    requested_by_key: "key-1",
+    requested_by_agent: null,
+    requester: "an API key",
+    client: null,
+    country: null,
+    network: null,
+    created_at: new Date(now - 60_000).toISOString(),
+    completed_at: null,
+    expires_at: new Date(now + 14 * 60_000).toISOString(),
+    result,
+  });
+  const asker = { userId: "owner", keyId: "key-1" };
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(now);
+    mocks.later = [];
+    mocks.unrecorded = undefined;
+  });
+
+  test("says the budget changed, so the agent reads it again and asks again", async () => {
+    mocks.row = row({ code: "budget_changed" });
+    const polled = await pollApproval(String(mocks.row.id), asker);
+    expect(polled?.approval.status).toBe("denied");
+    expect(polled?.result).toEqual({ code: "budget_changed" });
+  });
+
+  test("a refusal by the owner carries no result", async () => {
+    mocks.row = row(null);
+    const polled = await pollApproval(String(mocks.row.id), asker);
+    expect(polled?.approval.status).toBe("denied");
+    expect(polled?.result).toBeUndefined();
+  });
+});
