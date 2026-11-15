@@ -23,6 +23,8 @@ interface AttemptView {
   clientName: string | null;
   kind: "anonymous" | "service_auth" | "identity_assertion";
   provider: string | null;
+  /** An organisation's ID-JAG: the team it connects through, and the full issuer. */
+  trustedBy?: { team: string; issuer: string } | null;
   registeredAt: number;
   attemptExpiresAt: number | null;
   requestedFor: string;
@@ -310,7 +312,15 @@ function AttemptPanel(props: {
   return (
     <div>
       <h1 className="text-2xl font-bold mb-2 text-center">Connect an agent</h1>
-      {view.provider ? (
+      {view.trustedBy ? (
+        <p className="ph-no-capture text-muted-foreground mb-6 text-center">
+          You are connecting through the team{" "}
+          <span className="font-medium text-foreground">{view.trustedBy.team}</span>, which trusts
+          the issuer below to sign its members in. Confirm only if you just asked an agent there to
+          connect: it will act on your behalf as{" "}
+          <span className="font-mono">{view.signedInAs}</span>.
+        </p>
+      ) : view.provider ? (
         <p className="text-muted-foreground mb-6 text-center">
           <span className="font-medium text-foreground">{view.provider}</span> is asking to link
           this account so the agent it runs can act on your behalf as{" "}
@@ -324,6 +334,22 @@ function AttemptPanel(props: {
       )}
 
       <Card className="p-4 mb-6 space-y-2 text-sm" render={<dl />}>
+        {view.trustedBy && (
+          <>
+            <div className="flex justify-between gap-4">
+              <dt className="text-muted-foreground">Connecting for team</dt>
+              <dd className="ph-no-capture text-right font-medium break-all">
+                {view.trustedBy.team}
+              </dd>
+            </div>
+            <div className="flex justify-between gap-4">
+              <dt className="text-muted-foreground">Issuer</dt>
+              <dd className="ph-no-capture text-right font-mono text-xs break-all">
+                {view.trustedBy.issuer}
+              </dd>
+            </div>
+          </>
+        )}
         {view.provider ? (
           <div className="flex justify-between gap-4">
             <dt className="text-muted-foreground">Identity provider</dt>

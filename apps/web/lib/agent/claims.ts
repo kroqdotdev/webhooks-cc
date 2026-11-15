@@ -22,6 +22,7 @@ import { providerDisplayName } from "./trusted-providers";
 import {
   generateClaimToken,
   hashClaimToken,
+  InvalidGrantError,
   mintAccessToken,
   type AccessToken,
   type RegistrationRow,
@@ -304,6 +305,14 @@ export interface AttemptView {
   kind: RegistrationRow["kind"];
   /** For an ID-JAG identity: its provider, named by our trust list. */
   provider: string | null;
+  /**
+   * For an organisation's ID-JAG: the team the member connects through (the
+   * one whose trust row the registration came by, even when another team
+   * of theirs trusts the same issuer) and the issuer's full URL, since one
+   * host serves every organisation's issuer. Only for a viewer who is a
+   * member of that team.
+   */
+  trustedBy: { team: string; issuer: string } | null;
   registeredAt: number;
   attemptExpiresAt: number | null;
   requestedFor: string;
@@ -363,6 +372,10 @@ export async function readClaimAttempt(
   if (everError) throw everError;
 
   const hint = registration.attempt_login_hint ?? "";
+  const trustedBy =
+    registration.kind === "identity_assertion" && registration.idjag_team_issuer_id
+      ? await trustingTeam(registration.idjag_team_issuer_id, user.id)
+      : null;
   return {
     state,
     clientName: registration.client_name,
@@ -371,6 +384,7 @@ export async function readClaimAttempt(
       registration.kind === "identity_assertion" && registration.idjag_iss
         ? providerDisplayName(registration.idjag_iss)
         : null,
+    trustedBy,
     registeredAt: Date.parse(registration.created_at),
     attemptExpiresAt: attemptExpires,
     requestedFor: maskEmail(hint),
@@ -383,6 +397,35 @@ export async function readClaimAttempt(
       requestCount: row.request_count,
     })),
   };
+}
+
+/** The team behind a trust row and its issuer, for one of its members. */
+async function trustingTeam(
+  trustId: string,
+  userId: string
+): Promise<{ team: string; issuer: string } | null> {
+  const admin = createAdminClient();
+  const { data: trust, error } = await admin
+    .from("team_idjag_issuers")
+    .select("team_id, issuer")
+    .eq("id", trustId)
+    .maybeSingle();
+  if (error) throw error;
+  if (!trust) return null;
+  const [{ data: team, error: teamError }, { data: member, error: memberError }] =
+    await Promise.all([
+      admin.from("teams").select("name").eq("id", trust.team_id).maybeSingle(),
+      admin
+        .from("team_members")
+        .select("user_id")
+        .eq("team_id", trust.team_id)
+        .eq("user_id", userId)
+        .maybeSingle(),
+    ]);
+  if (teamError) throw teamError;
+  if (memberError) throw memberError;
+  if (!team || !member) return null;
+  return { team: team.name, issuer: trust.issuer };
 }
 
 export type CompleteResult =
@@ -480,8 +523,13 @@ export type PollResult =
   | {
       status: "claimed";
       token: AccessToken;
-      assertion: string;
-      assertionExpires: Date;
+      /**
+       * Our claimed identity assertion, or null for a registration bound
+       * through a team's organisation issuer: that agent gets each new
+       * token with a fresh ID-JAG, never with a 90-day assertion of ours.
+       */
+      assertion: string | null;
+      assertionExpires: Date | null;
       registration: RegistrationRow;
     };
 
@@ -517,12 +565,25 @@ export async function pollClaim(claimToken: string): Promise<PollResult> {
     if (!consumed) return { status: "invalid", description: "This claim was already collected." };
 
     const now = Date.now();
-    const token = await mintAccessToken(registration, {
-      userId: registration.user_id,
-      scopes: POST_CLAIM_SCOPES,
-      issuedAtMs: now,
-      expiresAtMs: now + ACCESS_TOKEN_TTL_SECONDS * 1000,
-    });
+    // Inserted only while the registration is still unrevoked (in SQL), so
+    // a revocation since the read above leaves no token behind.
+    let token: AccessToken;
+    try {
+      token = await mintAccessToken(registration, {
+        userId: registration.user_id,
+        scopes: POST_CLAIM_SCOPES,
+        issuedAtMs: now,
+        expiresAtMs: now + ACCESS_TOKEN_TTL_SECONDS * 1000,
+      });
+    } catch (error) {
+      if (error instanceof InvalidGrantError) {
+        return { status: "invalid", description: "Unknown or revoked claim token." };
+      }
+      throw error;
+    }
+    if (registration.idjag_team_issuer_id) {
+      return { status: "claimed", token, assertion: null, assertionExpires: null, registration };
+    }
     const assertionExpires = new Date(now + CLAIMED_ASSERTION_TTL_SECONDS * 1000);
     const assertion = await signAssertion({
       registrationId: registration.id,

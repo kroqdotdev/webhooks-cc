@@ -1,0 +1,6 @@
+{
+  "title": "Agent sign-in from your organisation (not yet available)",
+  "items": [
+    "A team's owner can trust the organisation's ID-JAG issuer, so members' agents connect with their organisation sign-in. Each member chooses Connect on the team page, and their agent's next sign-in within 10 minutes connects at once; Disconnect ends it. Built and tested, but switched off until it is announced"
+  ]
+}

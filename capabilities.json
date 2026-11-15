@@ -602,6 +602,44 @@
       "mcp": ["change_plan", "change_addons", "cancel_subscription", "resume_subscription"]
     },
     {
+      "id": "team.idjag-issuers.list",
+      "does": "See which ID-JAG issuers a team trusts, with your own connect window and the agents you connected through each (members; off until announced)",
+      "routes": ["GET /api/teams/[teamId]/idjag-issuers"],
+      "sdk": "off until announced: added with the announcement, while the route answers 404",
+      "python": "testing-focused SDK: added on demand",
+      "go": "testing-focused SDK: added on demand",
+      "cli": "off until announced: added with the announcement, while the route answers 404",
+      "mcp": "off until announced: added with the announcement, while the route answers 404"
+    },
+    {
+      "id": "team.idjag-issuers",
+      "does": "Trust the organisation's ID-JAG issuer so members' agents connect with its assertions (the owner only; off until announced)",
+      "routes": [
+        "POST /api/teams/[teamId]/idjag-issuers",
+        "DELETE /api/teams/[teamId]/idjag-issuers/[issuerId]"
+      ],
+      "sessionOnly": "trusting an issuer lets it connect agents to members' accounts, so the owner decides in a signed-in session; agents use the result at the token endpoint",
+      "sdk": "session only",
+      "python": "session only",
+      "go": "session only",
+      "cli": "session only",
+      "mcp": "session only"
+    },
+    {
+      "id": "team.idjag-connect",
+      "does": "Let your next sign-in from a trusted issuer connect your agent at once (a 10-minute window), or disconnect what it connected (each member for themselves; off until announced)",
+      "routes": [
+        "POST /api/teams/[teamId]/idjag-issuers/[issuerId]/connect",
+        "DELETE /api/teams/[teamId]/idjag-issuers/[issuerId]/connect"
+      ],
+      "sessionOnly": "the window lets an assertion connect an agent to the member's account without a code, so the member opens it in a signed-in session; an agent that is not connected yet gets the team page's address in its interaction_required answer",
+      "sdk": "session only",
+      "python": "session only",
+      "go": "session only",
+      "cli": "session only",
+      "mcp": "session only"
+    },
+    {
       "id": "support.tickets",
       "does": "Open and follow support tickets, and see when staff looked at your data",
       "routes": [

@@ -219,6 +219,14 @@ export async function exchangeAssertion(assertion: string): Promise<AccessToken>
   if (!registration || registration.revoked_at) {
     throw new InvalidGrantError("The registration was revoked or no longer exists.");
   }
+  // A delegation made through a team's organisation issuer lives only as
+  // long as each fresh ID-JAG from that issuer: our own long-lived assertion
+  // would outlast the member's sign-in there, so it is never accepted.
+  if (registration.idjag_team_issuer_id) {
+    throw new InvalidGrantError(
+      "This agent connects through its organisation's issuer. Present a fresh ID-JAG from it."
+    );
+  }
 
   const now = Date.now();
   let userId: string | null;
@@ -253,6 +261,33 @@ export async function exchangeAssertion(assertion: string): Promise<AccessToken>
 }
 
 /**
+ * A one-hour access token for a claimed registration, read again here so a
+ * revocation since the caller looked takes effect (an organisation ID-JAG
+ * that linked, lib/agent/org-id-jag.ts). No assertion of ours is involved.
+ */
+export async function issueClaimedAccessToken(registrationId: string): Promise<AccessToken> {
+  const { data: registration, error } = await createAdminClient()
+    .from("agent_registrations")
+    .select("*")
+    .eq("id", registrationId)
+    .maybeSingle();
+  if (error) throw error;
+  if (!registration || registration.revoked_at) {
+    throw new InvalidGrantError("The registration was revoked or no longer exists.");
+  }
+  if (!registration.claimed_at || !registration.user_id) {
+    throw new InvalidGrantError("The registration is not connected to an account.");
+  }
+  const now = Date.now();
+  return mintAccessToken(registration, {
+    userId: registration.user_id,
+    scopes: POST_CLAIM_SCOPES,
+    issuedAtMs: now,
+    expiresAtMs: now + ACCESS_TOKEN_TTL_SECONDS * 1000,
+  });
+}
+
+/**
  * `expires_in` for a token issued at `issuedAtMs`: counted from the same
  * clock reading as its expiry, so a new token reports its full lifetime
  * rather than one second less, and never more than it has.
@@ -265,6 +300,13 @@ export function tokenLifetimeSeconds(issuedAtMs: number, expiresAtMs: number): n
  * Inserts an access token for the registration and keeps at most
  * MAX_LIVE_TOKENS of them. `userId` is null for a pre-claim token;
  * `issuedAtMs` is the clock reading `expiresAtMs` was computed from.
+ *
+ * The insert is conditional in SQL (insert_agent_access_token(), migration
+ * 00105): only while the registration is unrevoked and claimed by `userId`
+ * (unclaimed for a pre-claim token). `registration` may have been read
+ * before a revocation or a claim; then nothing is inserted and this throws
+ * InvalidGrantError, so a token is never left behind for a registration
+ * that has gone.
  */
 export async function mintAccessToken(
   registration: RegistrationRow,
@@ -272,21 +314,21 @@ export async function mintAccessToken(
 ): Promise<AccessToken> {
   const admin = createAdminClient();
   const rawKey = generateApiKey();
-  const { error: insertError } = await admin.from("api_keys").insert({
-    user_id: input.userId,
-    key_hash: hashApiKey(rawKey),
-    key_prefix: rawKey.slice(0, 12),
-    name: registration.client_name
+  const { data: inserted, error: insertError } = await admin.rpc("insert_agent_access_token", {
+    p_registration_id: registration.id,
+    p_user_id: input.userId,
+    p_key_hash: hashApiKey(rawKey),
+    p_key_prefix: rawKey.slice(0, 12),
+    p_name: registration.client_name
       ? `Agent token (${registration.client_name})`
       : `Agent token (${registration.kind})`,
-    expires_at: new Date(input.expiresAtMs).toISOString(),
-    scopes: input.scopes,
-    is_agent_issued: true,
-    client_name: registration.client_name,
-    claimed_at: registration.claimed_at,
-    agent_registration_id: registration.id,
+    p_expires_at: new Date(input.expiresAtMs).toISOString(),
+    p_scopes: input.scopes,
   });
   if (insertError) throw insertError;
+  if (inserted !== true) {
+    throw new InvalidGrantError("The registration was revoked or changed. Connect again.");
+  }
 
   await pruneTokens(registration.id);
 

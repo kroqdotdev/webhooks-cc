@@ -843,6 +843,64 @@ describe("agent identity (auth.md v0.6)", () => {
       expect(linkedBody.registration_id).toBe(body.registration_id);
       expect((await exchange(routes, linkedBody.identity_assertion)).status).toBe(200);
     });
+
+    it("never hands out our assertion for a registration bound through a team's issuer", async () => {
+      // A team trusts the same issuer (migration 00105), and a delegation
+      // came through it: it lives only as long as each fresh ID-JAG at the
+      // token endpoint, so this endpoint refuses it rather than sign a 90-day
+      // assertion of ours.
+      const { data: user } = await admin
+        .from("users")
+        .select("id")
+        .eq("email", USER_EMAIL)
+        .single();
+      const { data: team, error: teamError } = await admin.rpc("create_team_with_owner", {
+        p_user_id: user!.id,
+        p_name: `ID-JAG identity ${RUN}`,
+      });
+      if (teamError) throw teamError;
+      const teamId = (team as { id: string }).id;
+      try {
+        const { data: trust, error: trustError } = await admin
+          .from("team_idjag_issuers")
+          .insert({ team_id: teamId, issuer: `${TEST_ISS}/org` })
+          .select("id")
+          .single();
+        if (trustError) throw trustError;
+        const sub = `team-bound-${RUN}`;
+        const { data: registration, error } = await admin
+          .from("agent_registrations")
+          .insert({
+            kind: "identity_assertion",
+            user_id: user!.id,
+            claimed_at: new Date().toISOString(),
+            expires_at: new Date().toISOString(),
+            idjag_iss: TEST_ISS,
+            idjag_sub: sub,
+            idjag_team_issuer_id: trust!.id,
+          })
+          .select("id")
+          .single();
+        if (error) throw error;
+        created.add(registration!.id);
+
+        const res = await presentIdJag(await mintIdJag(sub, { email: USER_EMAIL }));
+        expect(res.status).toBe(400);
+        const body = await res.json();
+        expect(body.error).toBe("invalid_request");
+        expect(body.error_description).toContain("token endpoint");
+        expect(body.identity_assertion).toBeUndefined();
+        // Nothing changed on the registration.
+        const { data: after } = await admin
+          .from("agent_registrations")
+          .select("revoked_at, idjag_team_issuer_id")
+          .eq("id", registration!.id)
+          .single();
+        expect(after).toEqual({ revoked_at: null, idjag_team_issuer_id: trust!.id });
+      } finally {
+        await admin.from("teams").delete().eq("id", teamId);
+      }
+    });
   });
 
   describe("security events (RFC 8935)", () => {

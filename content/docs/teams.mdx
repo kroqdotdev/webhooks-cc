@@ -140,6 +140,22 @@ Deleting a team ends its subscription at once and cannot be undone, so when an A
 - **Members who leave or are removed** hand their team names to the owner, and their previews under team names stop. When a team's subscription ends, previews under its names stop and its names wait, kept but unusable, until it is back.
 - **Teammates' runs**: `whk shares ls` and `GET /api/shares` list teammates' previews under the team's names and teammates' live tunnels on endpoints you own. You can stop either: a preview under a team name, and as an endpoint's owner a teammate's `--live` tunnel on it.
 
+## Agent sign-in from your organisation
+
+<Callout type="warning">
+Not yet available. This section describes a feature that is built but switched off; it will appear in team settings once it is announced.
+</Callout>
+
+Some organisations' AI platforms can sign their members in to other services with an identity assertion (an ID-JAG, the IETF Identity Assertion JWT Authorization Grant), Claude for organisations among them. When your team trusts your organisation's issuer, a member's agent connects to webhooks.cc with the member's organisation sign-in instead of a separate sign-in each time.
+
+- **Who sets it up**: the team's owner adds the issuer URL in the team's settings, signed in (API keys cannot add or remove one). The URL is the one your organisation's platform publishes, for Claude organisations `https://identity.anthropic.com/issuers/...`. The owner can limit the issuer to named client ids; a client id is only what the assertion names, not proof of which client asked (whoever holds a valid assertion from the issuer can present it with that id), so it narrows which of your organisation's clients connect rather than authenticating them. Every member can see the list, signed in or with an API key or agent token (`GET /api/teams/{teamId}/idjag-issuers`).
+- **Who can connect**: a member of the team whose webhooks.cc email equals the email in the assertion, and whose account email is verified. Nobody else, and no account is ever created this way.
+- **Connecting**: on the team's page, choose **Connect** next to the issuer (signed in, past two-factor sign-in if your account has it) and confirm the full issuer URL it shows. For the next 10 minutes, the first sign-in from that issuer with your email connects your agent at once, for example by adding webhooks.cc as a connector in Claude. The page then says what connected (the client's name, the issuer and the time) with a one-click **Disconnect** for a sign-in you did not expect, and you get an email saying the same. A window that closes unused connects nothing, and one opened while your agent is already connected closes the next time that agent signs in; open a new one when you are ready.
+- **Without a window**: an agent that is not connected yet is told to have you open the team page, and can instead show you a code to confirm on a page that names the team you are connecting for and the issuer's full URL, the same step as any other [agent claim](/docs/agents). After either, the agent's later sign-ins connect directly. Each new token takes a fresh assertion from the issuer: such an agent never gets a long-lived webhooks.cc assertion of its own.
+- **Ending it**: **Disconnect** on the team page disconnects your agents connected through that issuer and ends their tokens at once. Removing the issuer does the same for every member's agents, even a member's whose other team trusts the same issuer (they connect again through that team); the owner is told how many agents it disconnects before confirming, and which ones afterwards. A member leaving the team or being removed disconnects their agents too, except that an agent stays connected while another of the member's teams still trusts the same issuer (for that client): it then belongs to that team's trust instead. Each addition, removal, connection window (opened, used, or closed unused) and disconnection is recorded in the audit trail.
+
+For agents and identity providers, the token request and every check the assertion must pass are in [`/auth.md`](/auth.md).
+
 ## How It Works
 
 - Sharing is **view and edit only**: team members can see requests, rename the endpoint and change its responses, but cannot change its forwarding, layouts or other settings, delete it, or clear its requests

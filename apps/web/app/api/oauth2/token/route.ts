@@ -1,4 +1,4 @@
-import { checkRateLimitByKeyWithInfo, checkRateLimitWithInfo } from "@/lib/rate-limit";
+import { checkRateLimitByKeyWithInfo } from "@/lib/rate-limit";
 import { auditAgentEvent } from "@/lib/audit";
 import { assertionSigningConfigured } from "@/lib/agent/assertion";
 import { pollClaim } from "@/lib/agent/claims";
@@ -12,6 +12,9 @@ import {
 import { oauthError, oauthJson } from "@/lib/agent/errors";
 import { issuer, readAgentBody } from "@/lib/agent/http";
 import { exchangeAssertion, hashClaimToken, InvalidGrantError } from "@/lib/agent/registrations";
+import { orgIssuerCandidate } from "@/lib/agent/org-id-jag";
+import { orgIdJagGrant } from "@/lib/agent/org-id-jag-grant";
+import { tokenRateLimit } from "@/lib/agent/token-rate-limit";
 import { acceptedResources, normalizeResource } from "@/lib/oauth/authorize";
 import { preflight, withCors } from "@/lib/oauth/cors";
 import {
@@ -25,10 +28,13 @@ import { reportError } from "@/lib/observability";
 /**
  * POST /api/oauth2/token. Four grants:
  *   - jwt-bearer (RFC 7523, auth.md Step 5) exchanges a registration's
- *     identity assertion for a one-hour access token;
+ *     identity assertion for a one-hour access token, or an organisation's
+ *     ID-JAG from an issuer a team trusts (lib/agent/org-id-jag-grant.ts);
  *   - the claim grant (auth.md Step 4c) is the agent's poll during a claim
  *     ceremony, in RFC 8628's vocabulary, and on success returns account
- *     credentials plus a claimed identity assertion;
+ *     credentials plus a claimed identity assertion (not for a registration
+ *     made through a team's organisation issuer, which only ever gets the
+ *     one-hour token);
  *   - authorization_code (with PKCE) and refresh_token are OAuth 2.1 for
  *     remote MCP clients (lib/oauth).
  * Form-encoded per RFC 6749; JSON is accepted too. Answers use the RFC 6749
@@ -51,12 +57,11 @@ async function token(request: Request): Promise<Response> {
 
   // Hosted MCP clients (claude.ai, ChatGPT) refresh for many users from few
   // addresses; their codes and refresh tokens cannot be guessed, so they
-  // get a wider budget than the agent grants.
+  // get a wider budget than the agent grants. So does an issuer a team
+  // trusts, counted per issuer (lib/agent/token-rate-limit.ts).
   const oauthGrant =
     body.grant_type === AUTHORIZATION_CODE_GRANT || body.grant_type === REFRESH_TOKEN_GRANT;
-  const limit = oauthGrant
-    ? await checkRateLimitWithInfo(request, "oauth-token", 600, 60_000)
-    : await checkRateLimitWithInfo(request, "agent-token", 60, 60_000);
+  const limit = await tokenRateLimit(request, body);
   if (limit.response) {
     return oauthError(429, "rate_limited", "Too many requests. Wait and retry.", {
       "Retry-After": limit.response.headers.get("Retry-After") ?? "60",
@@ -95,6 +100,13 @@ async function token(request: Request): Promise<Response> {
   try {
     if (!(await assertionSigningConfigured())) {
       return oauthError(503, "temporarily_unavailable", "Token issuance is not available.");
+    }
+    // An organisation's ID-JAG: chosen by its (unverified) issuer, under a
+    // configured prefix and never our own, since our assertions carry the
+    // same typ. With the feature off it falls through and is refused like
+    // any foreign assertion.
+    if (orgIssuerCandidate(body.assertion)) {
+      return await orgIdJagGrant(request, body, body.assertion);
     }
     const token = await exchangeAssertion(body.assertion);
     await auditAgentEvent(request, {
@@ -169,8 +181,14 @@ async function claimGrant(request: Request, body: Record<string, unknown>): Prom
           token_type: "Bearer",
           expires_in: result.token.expiresIn,
           scope: result.token.scope,
-          identity_assertion: result.assertion,
-          assertion_expires: result.assertionExpires.toISOString(),
+          // None for an agent bound through a team's organisation issuer:
+          // it presents a fresh ID-JAG for each new token.
+          ...(result.assertion && result.assertionExpires
+            ? {
+                identity_assertion: result.assertion,
+                assertion_expires: result.assertionExpires.toISOString(),
+              }
+            : {}),
         });
     }
   } catch (error) {

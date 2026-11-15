@@ -40,7 +40,16 @@ export interface AgentMetadataOptions {
   idJagEnabled: boolean;
   /** AGENT_IDJAG_MAX_AUTH_AGE_SECONDS, quoted in /auth.md. */
   idJagMaxAuthAgeSeconds?: number;
+  /**
+   * True when teams may trust organisation ID-JAG issuers
+   * (AGENT_IDJAG_ORG_ISSUER_PREFIXES): the token endpoint then takes an
+   * ID-JAG as a jwt-bearer assertion (lib/agent/org-id-jag.ts).
+   */
+  orgIdJagEnabled?: boolean;
 }
+
+/** draft-ietf-oauth-identity-assertion-authz-grant Section 7.2. */
+export const ID_JAG_GRANT_PROFILE = "urn:ietf:params:oauth:grant-profile:id-jag";
 
 /** Resource identifier of the protected API (the audience of an ID-JAG). */
 function resourceUrl(appUrl: string): string {
@@ -205,6 +214,8 @@ export interface AuthorizationServerMetadata {
   client_id_metadata_document_supported: boolean;
   authorization_response_iss_parameter_supported: boolean;
   service_documentation: string;
+  /** Only while teams may trust organisation issuers. */
+  authorization_grant_profiles_supported?: string[];
   agent_auth: AgentAuthMetadata;
 }
 
@@ -246,6 +257,9 @@ export function buildAuthorizationServerMetadata(
     // RFC 9207: every authorization response carries `iss`.
     authorization_response_iss_parameter_supported: true,
     service_documentation: u.authMd,
+    ...(options.orgIdJagEnabled
+      ? { authorization_grant_profiles_supported: [ID_JAG_GRANT_PROFILE] }
+      : {}),
     agent_auth: {
       skill: u.authMd,
       identity_endpoint: u.identity,
@@ -758,5 +772,48 @@ secevent+jwt\`, signed with the same keys, \`aud\` \`${appUrl}\`, a unique
 that identity is revoked with its tokens, and the next ID-JAG for it links
 again as above. The answer is 202 with no body (also for a SET already
 received), or 400 with \`{ "err", "description" }\` (RFC 8935).
+${options.orgIdJagEnabled ? orgIdJagSection(appUrl, u.token, maxAuthAge) : ""}`;
+}
+
+/** /auth.md on organisation issuers a team trusts, only while that is on. */
+function orgIdJagSection(appUrl: string, tokenUrl: string, maxAuthAge: number): string {
+  return `
+## Organisation issuers a team trusts (ID-JAG)
+
+A team's owner can trust their organisation's ID-JAG issuer in the team's
+settings. A member's agent then sends the member's ID-JAG to ${tokenUrl}
+as \`grant_type=${JWT_BEARER_GRANT}\` with \`assertion\` and \`client_id\`.
+The assertion must be \`typ: oauth-id-jag+jwt\` signed with ES256 (keys from
+the issuer's \`/.well-known/openid-configuration\`), \`aud\` \`${appUrl}\` (our
+authorization server's issuer) or \`${appUrl}/api/\` (the API, as on the
+ID-JAG path of the identity endpoint), as a string or a one-element array, a
+\`client_id\` equal to the request's, a unique \`jti\`, and an \`email\`
+belonging to a member of a team that trusts the issuer. The token request is
+a bearer assertion: its \`client_id\` is not authenticated, so a team's list
+of allowed client ids only narrows which client ids an assertion may name. \`auth_time\`, when
+present, must be within the last ${maxAuthAge} seconds; without it, \`exp\`
+must be at most 300 seconds after \`iat\`. \`email_verified\` may be left
+out, but \`false\` is refused. No account is ever created this way.
+
+To connect, the member opens the team's page on webhooks.cc and chooses
+Connect next to the issuer: for 10 minutes, the first assertion from that
+issuer with the member's email answers an access token at once. Outside
+that window, an identity that is not connected yet answers 400
+\`interaction_required\`; its \`error_description\` names the team page, and
+a \`claim\` block lets an agent that can show the human a code confirm
+through Step 4b instead. Once connected, later assertions answer an access
+token at once, with no refresh token, and the claim grant pays out only
+the access token: no \`identity_assertion\` of ours is ever issued for such
+an identity, and one would be refused, so every new token takes a fresh
+ID-JAG. Disconnecting on the team page, removing the issuer, or the member
+leaving the team revokes the connection and its tokens (unless another team
+of the member still trusts the issuer, for that client).
+
+Until the signature holds, every refusal is the same \`invalid_grant\`
+("The assertion could not be verified."). Before the signature is checked,
+the token endpoint counts an assertion naming an issuer under a configured
+prefix per address, 1,200 a minute, and per issuer and address, 600 a
+minute; once verified, per issuer, 600 a minute, and per identity, 30 a
+minute. Other assertions count per address, 60 a minute.
 `;
 }

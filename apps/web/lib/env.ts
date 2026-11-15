@@ -55,6 +55,28 @@ function isResolverAddress(entry: string): boolean {
   return withPort !== null && z.ipv4().safeParse(withPort[1]).success && port(withPort[2]);
 }
 
+/**
+ * An organisation issuer prefix: an https URL with a host, no credentials,
+ * query or fragment, ending in "/".
+ */
+function isIssuerPrefix(value: string): boolean {
+  if (!value.endsWith("/")) return false;
+  try {
+    const url = new URL(value);
+    return (
+      url.protocol === "https:" &&
+      url.hostname.length > 0 &&
+      !url.username &&
+      !url.password &&
+      !url.search &&
+      !url.hash &&
+      url.href === value
+    );
+  } catch {
+    return false;
+  }
+}
+
 function blankToUndefined<T extends z.ZodTypeAny>(schema: T) {
   return z.preprocess(
     (value) => (typeof value === "string" && value.trim() === "" ? undefined : value),
@@ -255,6 +277,30 @@ const serverEnvSchema = z
       .int()
       .min(60)
       .default(DEFAULT_IDJAG_MAX_AUTH_AGE_SECONDS),
+    // Organisation ID-JAG issuers (lib/agent/org-issuers.ts): a team owner
+    // may trust an issuer only under one of these https prefixes, each ending
+    // in "/" so a prefix can never match another host. Empty turns the
+    // feature off entirely (routes 404, the settings section hidden).
+    AGENT_IDJAG_ORG_ISSUER_PREFIXES: z
+      .string()
+      .default("")
+      .transform((value, ctx) => {
+        const prefixes = value
+          .split(",")
+          .map((entry) => entry.trim())
+          .filter((entry) => entry !== "");
+        for (const prefix of prefixes) {
+          if (!isIssuerPrefix(prefix)) {
+            ctx.addIssue({
+              code: "custom",
+              message:
+                "AGENT_IDJAG_ORG_ISSUER_PREFIXES takes comma separated https URL prefixes ending in /",
+            });
+            return z.NEVER;
+          }
+        }
+        return prefixes;
+      }),
     // Agent registration (auth.md v0.6, lib/agent). Identity assertions are
     // ES256 JWTs signed with this P-256 key (PKCS#8 PEM; newlines may be
     // written as \n). The kid defaults to the key's RFC 7638 thumbprint. A
@@ -396,6 +442,7 @@ export function serverEnv() {
       AGENT_IDJAG_RATE_LIMIT: process.env.AGENT_IDJAG_RATE_LIMIT,
       AGENT_IDJAG_PROVIDERS: process.env.AGENT_IDJAG_PROVIDERS,
       AGENT_IDJAG_MAX_AUTH_AGE_SECONDS: process.env.AGENT_IDJAG_MAX_AUTH_AGE_SECONDS,
+      AGENT_IDJAG_ORG_ISSUER_PREFIXES: process.env.AGENT_IDJAG_ORG_ISSUER_PREFIXES,
       AGENT_ASSERTION_SIGNING_KEY: process.env.AGENT_ASSERTION_SIGNING_KEY,
       AGENT_ASSERTION_SIGNING_KID: process.env.AGENT_ASSERTION_SIGNING_KID,
       AGENT_ASSERTION_PREVIOUS_PUBLIC_JWK: process.env.AGENT_ASSERTION_PREVIOUS_PUBLIC_JWK,

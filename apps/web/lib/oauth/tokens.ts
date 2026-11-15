@@ -8,7 +8,12 @@ import {
   OAUTH_REFRESH_TTL_SECONDS,
   POST_CLAIM_SCOPES,
 } from "@/lib/agent/constants";
-import { mintAccessToken, revokeAgentToken, type RegistrationRow } from "@/lib/agent/registrations";
+import {
+  InvalidGrantError,
+  mintAccessToken,
+  revokeAgentToken,
+  type RegistrationRow,
+} from "@/lib/agent/registrations";
 import { hashCode } from "./authorize";
 import { closeRunsWithoutAccess } from "@/lib/tunnels/access";
 
@@ -59,15 +64,24 @@ async function loadRegistration(id: string): Promise<RegistrationRow> {
 async function issueTokens(registrationId: string, refreshToken: string): Promise<OAuthTokens> {
   const registration = await loadRegistration(registrationId);
   const issuedAtMs = Date.now();
-  const token = await mintAccessToken(registration, {
-    userId: registration.user_id,
-    scopes: POST_CLAIM_SCOPES,
-    issuedAtMs,
-    expiresAtMs: issuedAtMs + ACCESS_TOKEN_TTL_SECONDS * 1000,
-  });
-  // A disconnect, a replayed code or a replayed refresh token may have
-  // revoked the grant between the grant check and the insert above; the
-  // bearer check never reads the registration, so take the token back.
+  // Inserted only while the grant is unrevoked (insert_agent_access_token()).
+  let token: Awaited<ReturnType<typeof mintAccessToken>>;
+  try {
+    token = await mintAccessToken(registration, {
+      userId: registration.user_id,
+      scopes: POST_CLAIM_SCOPES,
+      issuedAtMs,
+      expiresAtMs: issuedAtMs + ACCESS_TOKEN_TTL_SECONDS * 1000,
+    });
+  } catch (error) {
+    if (error instanceof InvalidGrantError) {
+      throw new OAuthGrantError("invalid_grant", "The connection was ended. Connect again.");
+    }
+    throw error;
+  }
+  // The insert holds the grant until it commits, so a revocation either
+  // came first or deletes this token too; kept as a second check, since the
+  // bearer check never reads the registration.
   if ((await loadRegistration(registrationId)).revoked_at) {
     await revokeAgentToken(token.accessToken);
     throw new OAuthGrantError("invalid_grant", "The connection was ended. Connect again.");

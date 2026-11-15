@@ -1,0 +1,74 @@
+import { authenticateSessionRequest } from "@/lib/api-auth";
+import { auditUserAction } from "@/lib/audit";
+import { orgIssuersEnabled, removeTeamIssuer } from "@/lib/agent/org-issuers";
+import { reportError } from "@/lib/observability";
+import { closeRunsWithoutAccess } from "@/lib/tunnels/access";
+
+/**
+ * Stop trusting an organisation ID-JAG issuer (the owner only, session
+ * only). Every agent connection made through it is revoked with its tokens
+ * in the same transaction (remove_team_idjag_issuer(), migration 00105),
+ * even one whose member is in another team trusting the same issuer: the
+ * owner was told every agent it connected is disconnected. The answer
+ * counts them and names each one (its client and member), so the owner
+ * sees what went. 404 while the feature is off.
+ */
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function notFound(): Response {
+  return Response.json({ error: "Not found" }, { status: 404 });
+}
+
+export async function DELETE(
+  request: Request,
+  { params }: { params: Promise<{ teamId: string; issuerId: string }> }
+) {
+  if (!orgIssuersEnabled()) return notFound();
+  const auth = await authenticateSessionRequest(request);
+  if (!auth.success) return auth.response;
+
+  const { teamId, issuerId } = await params;
+  if (!UUID.test(teamId) || !UUID.test(issuerId)) return notFound();
+
+  try {
+    const result = await removeTeamIssuer({ teamId, userId: auth.userId, issuerId });
+    if (result.status !== "ok") {
+      await auditUserAction(request, auth.userId, {
+        action: "team.idjag_issuer_removed",
+        status: 404,
+        teamId,
+        targetId: issuerId,
+      });
+      return Response.json({ error: "Issuer not found or not owner" }, { status: 404 });
+    }
+    await auditUserAction(request, auth.userId, {
+      action: "team.idjag_issuer_removed",
+      status: 200,
+      teamId,
+      targetId: issuerId,
+      metadata: { issuer: result.issuer.slice(0, 200), revoked: result.revoked.length },
+    });
+    // Tunnels opened with their tokens end with them.
+    if (result.revoked.length > 0) await closeRunsWithoutAccess();
+    return Response.json({
+      success: true,
+      revoked_connections: result.revoked.length,
+      disconnected: result.disconnected.map((agent) => ({
+        id: agent.id,
+        client_name: agent.clientName,
+        pending: agent.pending,
+        member_email: agent.memberEmail,
+      })),
+    });
+  } catch (error) {
+    reportError("Failed to remove a team ID-JAG issuer", error);
+    await auditUserAction(request, auth.userId, {
+      action: "team.idjag_issuer_removed",
+      status: 500,
+      teamId,
+      targetId: issuerId,
+    });
+    return Response.json({ error: "Internal server error" }, { status: 500 });
+  }
+}

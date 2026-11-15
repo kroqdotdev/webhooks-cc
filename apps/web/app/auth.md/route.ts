@@ -1,5 +1,6 @@
 import { serverEnv } from "@/lib/env";
 import { buildAuthMd } from "@/lib/agent/metadata";
+import { orgIssuersEnabled } from "@/lib/agent/org-issuers";
 import { hasTrustedProviders } from "@/lib/agent/trusted-providers";
 
 // Whether an ID-JAG issuer is trusted is runtime configuration.
@@ -10,6 +11,7 @@ export async function GET() {
   const markdown = buildAuthMd({
     idJagEnabled: hasTrustedProviders(),
     idJagMaxAuthAgeSeconds: serverEnv().AGENT_IDJAG_MAX_AUTH_AGE_SECONDS,
+    orgIdJagEnabled: orgIssuersEnabled(),
   });
   return new Response(markdown, {
     headers: {

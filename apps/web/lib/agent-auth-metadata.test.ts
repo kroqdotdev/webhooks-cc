@@ -187,6 +187,27 @@ describe("agent auth.md: Authorization Server Metadata", () => {
       assertion_types_supported: ["urn:ietf:params:oauth:token-type:id-jag"],
     });
   });
+
+  test("names the ID-JAG grant profile only while teams may trust organisation issuers", () => {
+    expect(as).not.toHaveProperty("authorization_grant_profiles_supported");
+    const org = buildAuthorizationServerMetadata({ idJagEnabled: false, orgIdJagEnabled: true });
+    expect(org.authorization_grant_profiles_supported).toEqual([
+      "urn:ietf:params:oauth:grant-profile:id-jag",
+    ]);
+    expect(buildAuthMd({ idJagEnabled: false })).not.toContain("Organisation issuers");
+    expect(buildAuthMd({ idJagEnabled: false, orgIdJagEnabled: true })).toContain(
+      "## Organisation issuers a team trusts (ID-JAG)"
+    );
+  });
+
+  test("names both audiences an organisation ID-JAG may carry, and the bearer client id", () => {
+    const md = buildAuthMd({ idJagEnabled: false, orgIdJagEnabled: true });
+    const section = md.slice(md.indexOf("## Organisation issuers a team trusts"));
+    expect(section).toContain(`\`aud\` \`${APP_URL}\``);
+    expect(section).toContain(`\`${APP_URL}/api/\``);
+    expect(section).toMatch(/`client_id` is not\s+authenticated/);
+    expect(section).toMatch(/no `identity_assertion` of ours is ever issued/);
+  });
 });
 
 describe("agent auth.md: proactive discovery pointers", () => {
