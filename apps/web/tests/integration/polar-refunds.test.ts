@@ -400,6 +400,21 @@ describe("webhooks that record a refund", () => {
       .eq("action", "billing.plan_adopted")
       .eq("target_user_id", userId);
     expect(adoptions).toBe(0);
+
+    // Nor does it become the account's on its own next event, with no plan
+    // held to guard on: a renewal, or the redelivery of its first event.
+    await deliver("subscription.updated", {
+      ...second,
+      current_period_start: second.current_period_end,
+      current_period_end: new Date(Date.now() + 60 * 86_400_000).toISOString(),
+    });
+    await deliver("subscription.created", second);
+    const { data: still } = await admin
+      .from("users")
+      .select("polar_subscription_id, plan")
+      .eq("id", userId)
+      .single();
+    expect(still).toEqual({ polar_subscription_id: null, plan: "free" });
   });
 
   it("a live plan whose refund a person dismissed is adopted when the account's plan ends", async () => {

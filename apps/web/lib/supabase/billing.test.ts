@@ -1431,6 +1431,59 @@ describe("a revoked plan hands over to a plan the customer still has live", () =
     });
   });
 
+  test("a live plan adoption skipped for its refund is not applied by its own later event", async () => {
+    // The account holds no plan (adoption skipped the refunded one), and the
+    // skipped subscription's renewal, or the redelivery of the event whose
+    // revoke failed, arrives with no stored id to guard on.
+    for (const event of ["subscription.updated", "subscription.created"] as const) {
+      recorded = [];
+      mockFns.reportError.mockClear();
+      mockFns.createAdminClient.mockReturnValue(
+        createFakeAdmin({
+          "users:select": [storedUser({ polar_subscription_id: null, plan: "free" })],
+          "polar_refunds:select": [{ data: [{ target: "subscription:sub_newest" }] }],
+        })
+      );
+
+      await applyPolarWebhookEvent(
+        event,
+        subscriptionEvent({ id: "sub_newest", product_id: "prod_pro" })
+      );
+
+      const refundRead = recorded.find(
+        (call) => call.table === "polar_refunds" && call.op === "select"
+      );
+      expect(refundRead?.filters).toContainEqual(["neq", "status", "dismissed"]);
+      expect(userUpdates()).toHaveLength(0);
+      expect(polarRevoke).not.toHaveBeenCalled();
+      expect(mockFns.recordRefund).not.toHaveBeenCalled();
+      expect(mockFns.reportError).toHaveBeenCalledTimes(1);
+      expect(mockFns.reportError.mock.calls[0][2]).toEqual({
+        userId: "user_1",
+        storedSubscriptionId: null,
+        eventSubscriptionId: "sub_newest",
+      });
+    }
+  });
+
+  test("a new plan subscription with no refund recorded is applied after the refund check", async () => {
+    mockFns.createAdminClient.mockReturnValue(
+      createFakeAdmin({
+        "users:select": [storedUser({ polar_subscription_id: null, plan: "free" })],
+        "polar_refunds:select": [{ data: [] }],
+      })
+    );
+
+    await applyPolarWebhookEvent(
+      "subscription.created",
+      subscriptionEvent({ id: "sub_new", product_id: "prod_pro" })
+    );
+
+    expect(userUpdates()).toHaveLength(1);
+    expect(userUpdates()[0]).toMatchObject({ plan: "pro", polar_subscription_id: "sub_new" });
+    expect(mockFns.reportError).not.toHaveBeenCalled();
+  });
+
   test("a live plan whose refund a person dismissed is adopted", async () => {
     mockFns.createAdminClient.mockReturnValue(
       createFakeAdmin({

@@ -927,6 +927,24 @@ async function applyPlanSubscription(
       await revokeSubscriptionQuietly(subscriptionId);
       return true;
     }
+    // With no live plan held, one already recorded for a refund (a second
+    // plan whose revoke failed, which adoption skipped) is on its way out
+    // and never becomes the account's on a later event of its own (a
+    // renewal, the redelivery of the event whose revoke failed): a person
+    // settles it, as adoptLivePlanSubscription() leaves it. One whose
+    // refund a person dismissed was kept on purpose, and is applied.
+    if (subscriptionId !== null && (await subscriptionsWithRefunds([subscriptionId])).size > 0) {
+      reportError(
+        "[billing] a live plan subscription recorded for a refund was not applied",
+        undefined,
+        {
+          userId,
+          storedSubscriptionId: stored.polar_subscription_id,
+          eventSubscriptionId: subscriptionId,
+        }
+      );
+      return true;
+    }
   }
 
   const incomingPeriodStartMs = currentPeriodStart ? Date.parse(currentPeriodStart) : null;
