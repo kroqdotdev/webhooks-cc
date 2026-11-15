@@ -19,6 +19,7 @@ const STATUS: Record<string, number> = {
   not_offered: 400,
   unchanged: 409,
   payment_failed: 402,
+  payment_action_required: 402,
 };
 
 /**

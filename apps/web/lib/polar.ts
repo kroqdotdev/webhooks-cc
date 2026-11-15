@@ -1,5 +1,6 @@
 import { PolarError, PolarNetworkError } from "@polar-sh/sdk";
 import { createPolar, type Polar } from "@polar-sh/sdk/2026-10";
+import { currentPolarMutationGuard, guardPolarClient } from "./billing/polar-guard";
 import { publicEnv } from "./env";
 
 class PolarConfigError extends Error {
@@ -20,14 +21,19 @@ function requireEnv(name: string): string {
 export function createPolarClient(): Polar {
   const accessToken = requireEnv("POLAR_ACCESS_TOKEN");
 
-  return createPolar({
+  const client = createPolar({
     accessToken,
     environment: process.env.POLAR_SANDBOX === "true" ? "sandbox" : "production",
     // The SDK gives up after 5 seconds by default and nothing retries, so a
     // slow Polar response would fail a checkout or seat charge that Polar
-    // still completes. Stays under the 60 second checkout lease.
+    // still completes. Stays under the 60 second checkout lease, and under
+    // POLAR_CALL_MS (lib/billing/polar-guard.ts), the time an approved
+    // billing change keeps for a call.
     timeout: 30,
   });
+  // Inside an approved billing change, every mutating call first checks
+  // that the change still holds its lease (lib/billing/polar-guard.ts).
+  return currentPolarMutationGuard() ? guardPolarClient(client) : client;
 }
 
 /** The app's origin, which checkouts return to (by way of returnOrigin()). */

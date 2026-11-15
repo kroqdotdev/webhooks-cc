@@ -2243,6 +2243,36 @@ describe("changeTeamPlan", () => {
     ).rejects.toMatchObject({ code: "payment_failed" });
     expect(recorded.filter((call) => call.op === "update")).toEqual([]);
   });
+
+  test("a payment the bank wants confirmed has its own code", async () => {
+    const action = Object.create(errors.SubscriptionsUpdate402Error.prototype) as {
+      error: { error: string };
+    };
+    action.error = { error: "PaymentActionRequired" };
+    const update = vi.fn().mockRejectedValue(action);
+    mockFns.createPolarClient.mockReturnValue({ subscriptions: { update } });
+    mockFns.createAdminClient.mockReturnValue(admin(subscribed()));
+
+    await expect(
+      changeTeamPlan("user_1", "team_1", "team_business", "month")
+    ).rejects.toMatchObject({ code: "payment_action_required" });
+  });
+
+  test("an approved switch made now refuses before Polar within a minute of the period end", async () => {
+    const update = vi.fn();
+    mockFns.createPolarClient.mockReturnValue({ subscriptions: { update } });
+    mockFns.createAdminClient.mockReturnValue(admin(subscribed()));
+    const soon = new Date(Date.now() + 30_000).toISOString();
+    await expect(
+      changeTeamPlan("user_1", "team_1", "team_business", "month", { periodEnd: soon })
+    ).rejects.toMatchObject({ code: "quote_changed" });
+    mockFns.createAdminClient.mockReturnValue(admin(subscribed()));
+    const past = new Date(Date.now() - 86_400_000).toISOString();
+    await expect(
+      changeTeamPlan("user_1", "team_1", "team_business", "month", { periodEnd: past })
+    ).rejects.toMatchObject({ code: "quote_changed" });
+    expect(update).not.toHaveBeenCalled();
+  });
 });
 
 describe("keepTeamPlan", () => {

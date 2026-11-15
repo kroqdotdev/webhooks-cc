@@ -40,8 +40,13 @@ import {
 } from "@/lib/integrations/google";
 import { googleRefreshToken, listGoogleConnections } from "@/lib/supabase/google-connections";
 import {
+  BILLING_CHANGE_MAX_RUN_MS,
+  BILLING_OUTCOME_UNKNOWN,
   BillingChangeRetry,
+  cleanTeamName,
   loadBillingQuote,
+  loadTeamIdentity,
+  teamAccountLine,
   parseBillingChangeRequest,
   refusalOf,
   runBillingChange,
@@ -124,6 +129,13 @@ interface ActionSpec<P> {
   }>;
   /** Takes back what `run` did, when the owner withdrew while it ran ("collect" only). */
   undo?(userId: string, stored: Json): Promise<void>;
+  /**
+   * What the asker reads for an approval that ran ("approve" only) and has
+   * no recorded result `afterMs` after it started, when no run can still be
+   * going (a crash mid-run, or a result that could not be written). Without
+   * it the asker reads "approved" until the row expires.
+   */
+  unrecorded?: { afterMs: number; result(params: P): Record<string, unknown> };
 }
 
 // ---------------------------------------------------------------------------
@@ -411,7 +423,7 @@ const deleteTeamAction: ActionSpec<TeamDeleteParams> = {
     return { ok: true, params: { teamId, name: team.name } };
   },
   summary: ({ name }) =>
-    `Delete the team "${name}": its members lose the endpoints shared with it, and this cannot be undone.`,
+    `Delete the team "${cleanTeamName(name)}": its members lose the endpoints shared with it, and this cannot be undone.`,
   async details({ teamId }, userId) {
     // Read now, not when it was asked: a rename since then needed no approval.
     const team = await ownedTeam(userId, teamId);
@@ -420,7 +432,7 @@ const deleteTeamAction: ActionSpec<TeamDeleteParams> = {
     }
     const others = Math.max(team.memberCount - 1, 0);
     return [
-      { label: "Team", value: team.name },
+      { label: "Team", value: cleanTeamName(team.name) },
       { label: "Created", value: new Date(team.createdAt).toISOString().slice(0, 10) },
       { label: "Team id", value: team.id },
       {
@@ -483,11 +495,11 @@ const inviteToTeam: ActionSpec<TeamInviteParams> = {
     return { ok: true, params: { teamId, name: team.name, email } };
   },
   summary: ({ name, email }) =>
-    `Invite ${email} to the team "${name}": webhooks.cc emails them, and accepting takes one of its seats.`,
+    `Invite ${email} to the team "${cleanTeamName(name)}": webhooks.cc emails them, and accepting takes one of its seats.`,
   async details({ teamId, name, email }, userId) {
     const team = await ownedTeam(userId, teamId);
     return [
-      { label: "Team", value: name },
+      { label: "Team", value: cleanTeamName(team?.name ?? name) },
       { label: "Invite goes to", value: email },
       {
         label: "Seats",
@@ -712,6 +724,27 @@ function chargeWords(quote: BillingQuote): string {
     : `${amount}, charged to the card on file when you approve`;
 }
 
+/**
+ * The Account row for a team: its name (the asker can change it) with the
+ * facts the asker cannot, read when the page loads.
+ */
+async function teamAccountValue(
+  userId: string,
+  teamId: string,
+  askedName: string | null
+): Promise<string> {
+  const fallback = `A team you own, named ${askedName ?? "(no name)"}`;
+  try {
+    const identity = await loadTeamIdentity(userId, teamId);
+    return identity
+      ? teamAccountLine(identity)
+      : `${fallback}, which is gone or no longer yours: approving changes nothing`;
+  } catch (error) {
+    reportError("Reading a team for a billing approval failed", error);
+    return `${fallback} (its other details could not be read just now; reload to see them)`;
+  }
+}
+
 const billingChange: ActionSpec<BillingParams> = {
   runAt: "approve",
   async parse(input, userId) {
@@ -740,11 +773,11 @@ const billingChange: ActionSpec<BillingParams> = {
           : " Nothing is charged now.";
     return `${quote.change}${money}`;
   },
-  details: ({ quote, teamName }) => {
+  details: async ({ quote, teamId, teamName }, userId) => {
     const facts: ActionDetail[] = [
       {
         label: "Account",
-        value: teamName ? `A team you own, named ${teamName}` : "Your account",
+        value: teamId ? await teamAccountValue(userId, teamId, teamName) : "Your account",
       },
       { label: "Change", value: quote.change },
       {
@@ -784,6 +817,12 @@ const billingChange: ActionSpec<BillingParams> = {
     approximate: quote.approximate,
     ...(typeof quote.maxPeriodCents === "number" ? { maxPeriodCents: quote.maxPeriodCents } : {}),
   }),
+  // A run ends within its lease (runBillingChange); past it with no result,
+  // the process died mid-run, after Polar may have made the change.
+  unrecorded: {
+    afterMs: BILLING_CHANGE_MAX_RUN_MS,
+    result: ({ quote }) => ({ ...BILLING_OUTCOME_UNKNOWN, change: quote.change }),
+  },
   async run(userId, { teamId, change, quote }) {
     let run;
     try {

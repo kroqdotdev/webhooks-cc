@@ -1,11 +1,15 @@
 import { describe, expect, it, vi } from "vitest";
 
 // The route helpers pull in the billing modules; parsing needs none of them.
-vi.mock("@/lib/supabase/capacity-billing", () => ({}));
+const billing = vi.hoisted(() => ({
+  assertCanManage: vi.fn(async () => {}),
+  changeMonthlyBlocks: vi.fn(),
+}));
+vi.mock("@/lib/supabase/capacity-billing", () => billing);
 vi.mock("@/lib/supabase/team-billing", () => ({ TeamBillingError: class extends Error {} }));
 vi.mock("@/lib/audit", () => ({ auditUserAction: vi.fn() }));
 
-import { parseCapacityAction } from "./capacity-route";
+import { applyCapacityAction, parseCapacityAction } from "./capacity-route";
 
 describe("parseCapacityAction", () => {
   it("reads the three actions", () => {
@@ -74,5 +78,23 @@ describe("parseCapacityAction", () => {
     expect(parseCapacityAction({ action: "set_overage", enabled: "yes" })).toBeNull();
     expect(parseCapacityAction({ action: "set_overage", enabled: true, maxBlocks: 0 })).toBeNull();
     expect(parseCapacityAction({ action: "refund_everything" })).toBeNull();
+  });
+});
+
+describe("applyCapacityAction", () => {
+  it("says when the monthly blocks renewed at that count already", async () => {
+    const account = { kind: "user" as const, userId: "owner" };
+    const action = {
+      resource: "requests" as const,
+      action: "set_monthly_blocks" as const,
+      blocks: 2,
+    };
+    billing.changeMonthlyBlocks.mockResolvedValueOnce({ kind: "unchanged" });
+    await expect(applyCapacityAction(account, "owner", action)).resolves.toEqual({
+      url: null,
+      unchanged: true,
+    });
+    billing.changeMonthlyBlocks.mockResolvedValueOnce({ kind: "scheduled", units: 2 });
+    await expect(applyCapacityAction(account, "owner", action)).resolves.toEqual({ url: null });
   });
 });

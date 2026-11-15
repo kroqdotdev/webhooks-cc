@@ -2175,8 +2175,10 @@ export interface TeamPlanQuote {
  *   for a new quote), or the refusal's own code (`payment_failed`,
  *   `seats_below_members`, ...), with `reason` in plain words.
  * - `executed: null` (`code: "outcome_unknown"`): Polar was asked to make
- *   it and then something failed, so it may or may not have happened.
- *   Check billing before asking again.
+ *   it and then something failed, the bank wants the cardholder to confirm
+ *   the payment (3-D Secure, from the link in Polar's email), or the run
+ *   was cut off before its result was recorded, so it may or may not have
+ *   happened. Check billing before asking again.
  */
 export type BillingChangeResult =
   | {

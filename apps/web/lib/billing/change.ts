@@ -47,9 +47,11 @@ import {
 } from "@/lib/supabase/team-billing";
 import { reportError } from "@/lib/observability";
 import { createPolarClient, loggablePolarError } from "@/lib/polar";
+import { POLAR_CALL_MS, withPolarMutationGuard, type PolarMutationGuard } from "./polar-guard";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { formatCents, teamPlanLabel } from "@/lib/team-pricing";
 import { isUuid } from "@/lib/uuid";
+import { cleanUntrustedName } from "@/lib/untrusted-name";
 
 /**
  * A billing change an API key or agent token asks for, which the account's
@@ -125,6 +127,8 @@ const PERSONAL_STATUS: Record<string, number> = {
   not_scheduled: 409,
   user_not_found: 404,
   payment_failed: 402,
+  payment_action_required: 402,
+  quote_changed: 409,
 };
 
 const TEAM_STATUS: Record<string, number> = {
@@ -142,6 +146,7 @@ const TEAM_STATUS: Record<string, number> = {
   change_pending: 409,
   seats_below_minimum: 409,
   quote_changed: 409,
+  payment_action_required: 402,
 };
 
 /**
@@ -178,6 +183,7 @@ const BEFORE_POLAR = {
     "unchanged",
     "not_scheduled",
     "payment_failed",
+    "quote_changed",
   ]),
   team: new Set([
     "not_owner",
@@ -280,16 +286,89 @@ export interface LoadedQuote {
  * A team's name for the owner's page. The asker controls it (a key may
  * rename a team without an approval), so it is only ever shown as the name
  * in the Account row, never inside the sentence that says what changes,
- * and without quotes or control and formatting characters that could make
- * it read as part of that sentence.
+ * and cleaned like every name someone else chose (cleanUntrustedName) so it
+ * cannot read as part of that sentence.
  */
 export function cleanTeamName(name: string): string {
-  const cleaned = name
-    .replace(/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}"'`\u201C\u201D\u2018\u2019\u00AB\u00BB]/gu, "")
-    .replace(/\s+/g, " ")
-    .trim()
-    .slice(0, 80);
-  return cleaned || "(no name)";
+  return cleanUntrustedName(name, 80) || "(no name)";
+}
+
+/**
+ * What identifies a team to its owner beyond its name, which the asker can
+ * change: facts a key cannot set (when it was made, how many members it
+ * has, its plan and seats), and how many teams the owner owns under the
+ * same name.
+ */
+export interface TeamIdentity {
+  name: string;
+  createdAt: string;
+  members: number;
+  plan: string | null;
+  seats: number;
+  /** Teams the owner owns whose name reads the same, this one included. */
+  sameName: number;
+}
+
+/** The Account row for a team: its cleaned name and the facts the asker cannot set. */
+export function teamAccountLine(identity: TeamIdentity): string {
+  const created = new Date(identity.createdAt).toLocaleDateString("en-US", {
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+    timeZone: "UTC",
+  });
+  const members = `${identity.members} ${identity.members === 1 ? "member" : "members"}`;
+  const seats = `${identity.seats} ${identity.seats === 1 ? "seat" : "seats"}`;
+  const plan = identity.plan ? `on ${identity.plan} with ${seats}` : "with no subscription";
+  const line = `A team you own, named ${identity.name}: created ${created}, ${members}, ${plan}.`;
+  return identity.sameName > 1
+    ? `${line} You own ${identity.sameName} teams with this name, so check these facts against the team you mean.`
+    : line;
+}
+
+/** Comparing names as the owner reads them: cleaned, ignoring case. */
+function nameKey(name: string): string {
+  return cleanTeamName(name).toLocaleLowerCase("en-US");
+}
+
+/** Reads a team's identity for its owner's page, null when it is gone or no longer theirs. */
+export async function loadTeamIdentity(
+  userId: string,
+  teamId: string
+): Promise<TeamIdentity | null> {
+  const admin = createAdminClient();
+  const [team, members, owned] = await Promise.all([
+    admin
+      .from("teams")
+      .select("id, name, created_at, seats, business, billing_interval, subscription_status")
+      .eq("id", teamId)
+      .maybeSingle(),
+    admin
+      .from("team_members")
+      .select("user_id", { count: "exact", head: true })
+      .eq("team_id", teamId),
+    admin.from("team_members").select("team_id").eq("user_id", userId).eq("role", "owner"),
+  ]);
+  if (team.error) throw team.error;
+  if (members.error) throw members.error;
+  if (owned.error) throw owned.error;
+  const ownedIds = (owned.data ?? []).map((row) => row.team_id);
+  if (!team.data || !ownedIds.includes(teamId)) return null;
+  const { data: names, error } = await admin.from("teams").select("name").in("id", ownedIds);
+  if (error) throw error;
+  const key = nameKey(team.data.name);
+  const interval = team.data.billing_interval === "year" ? "year" : "month";
+  return {
+    name: cleanTeamName(team.data.name),
+    createdAt: team.data.created_at,
+    members: members.count ?? 0,
+    plan:
+      team.data.subscription_status === null
+        ? null
+        : teamPlanLabel(team.data.business ? "team_business" : "team", interval),
+    seats: team.data.seats,
+    sameName: Math.max(1, (names ?? []).filter((row) => nameKey(row.name) === key).length),
+  };
 }
 
 function planName(plan: string, interval: Interval): string {
@@ -566,7 +645,7 @@ async function loadTeamQuote(
           quotedAt: iso(nowMs),
           change:
             q.newSeats === q.currentSeats
-              ? `Keep ${q.currentSeats} seats on the team: drop the reduction to ${q.pendingSeats} waiting for the renewal.`
+              ? sameSeatsSentence(q.currentSeats, q.pendingSeats, loaded.team)
               : `Change the team from ${q.currentSeats} to ${q.newSeats} seats.`,
           applies: more || q.newSeats === q.currentSeats ? "now" : "renewal",
           effectiveAt: q.appliesAtRenewal ? q.periodEnd : iso(nowMs),
@@ -670,6 +749,38 @@ async function loadTeamQuote(
       basis,
     }),
   };
+}
+
+function seatWord(n: number): string {
+  return `${n} ${n === 1 ? "seat" : "seats"}`;
+}
+
+/**
+ * The sentence for asking for the seats Polar bills already (`seats`):
+ * dropping the reduction Polar has waiting, or, when Polar and this
+ * database disagree (a write that failed after Polar acted), setting ours
+ * to match Polar's. Exported for its tests.
+ */
+export function sameSeatsSentence(
+  seats: number,
+  polarPending: number | null,
+  team: { seats: number; pending_seats: number | null }
+): string {
+  if (polarPending !== null) {
+    return `Keep ${seatWord(seats)} on the team: drop the reduction to ${polarPending} waiting for the renewal.`;
+  }
+  // updateTeamSeats compares with our count: higher than ours is recorded
+  // at once, lower is scheduled for the renewal like any reduction.
+  if (team.seats < seats) {
+    return `Keep ${seatWord(seats)} on the team, the count Polar bills already: this account shows ${team.seats} and is set to ${seats} now. Nothing more is charged.`;
+  }
+  if (team.seats > seats) {
+    return `Keep ${seatWord(seats)} on the team, the count Polar bills already: this account shows ${team.seats} and is set to ${seats} from the renewal. Nothing is charged or credited.`;
+  }
+  if (team.pending_seats !== null) {
+    return `Keep ${seatWord(seats)} on the team: drop the reduction to ${team.pending_seats} this account shows for the renewal, which Polar no longer has.`;
+  }
+  return `Keep ${seatWord(seats)} on the team.`;
 }
 
 /** What one block of a resource is, and costs. */
@@ -977,12 +1088,118 @@ export interface BillingChangeRun {
 const OUTCOME_UNKNOWN =
   "The change may or may not have been made: Polar was asked to make it, and then something failed. Check billing before asking again.";
 
-/** How long one account's change may hold its lease (re-quote, Polar, the writes after). */
+/**
+ * What the asker reads for a billing approval whose run left no result (the
+ * process died after it started, maybe after Polar acted): the same as any
+ * other outcome that cannot be known.
+ */
+export const BILLING_OUTCOME_UNKNOWN = {
+  executed: null,
+  code: "outcome_unknown",
+  reason: OUTCOME_UNKNOWN,
+} as const satisfies BillingChangeOutcome;
+
+/** How long one account's change holds its lease at a time; each mutating Polar call renews it. */
 const LOCK_SECONDS = 120;
+
+/**
+ * The most a run may take from the moment it took the lease: no mutating
+ * Polar call starts later than POLAR_CALL_MS before it. Each such call
+ * renews the lease for LOCK_SECONDS first, which outlasts the call, so a
+ * change never reaches Polar on a lease another run could take.
+ */
+const RUN_DEADLINE_MS = 100_000;
+
+/** A lease renewal slower than this counts as failed: the change stops before Polar. */
+const EXTEND_TIMEOUT_MS = 5_000;
+
+/**
+ * When a billing approval's run is surely over: past its deadline, its last
+ * Polar call and the lease that call renewed. A completed approval with no
+ * result by then answers BILLING_OUTCOME_UNKNOWN.
+ */
+export const BILLING_CHANGE_MAX_RUN_MS = 5 * 60_000;
 
 /** The billing account a change is for, as the lease names it. */
 function accountKey(userId: string, teamId: string | null): string {
   return teamId ? `team:${teamId}` : `user:${userId}`;
+}
+
+/**
+ * The lease was lost or ran short after Polar had already been asked to
+ * change something in this run: what it did stays unknown.
+ */
+class LeaseLostMidChange extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "LeaseLostMidChange";
+  }
+}
+
+/**
+ * The account's lease, held for one run, checked before each mutating
+ * Polar call (the PolarMutationGuard): the run must be inside its deadline
+ * and the lease renewed, still held by this run. Until the first mutating
+ * call goes out, a failed check is a BillingChangeRetry (nothing was
+ * touched); after one, it ends the run as outcome_unknown.
+ */
+class ChangeLease implements PolarMutationGuard {
+  /** Mutating Polar calls let through so far. */
+  mutations = 0;
+  private readonly startedAt = Date.now();
+
+  constructor(
+    private readonly key: string,
+    private readonly holder: string
+  ) {}
+
+  async beforeMutation(): Promise<void> {
+    if (Date.now() + POLAR_CALL_MS > this.startedAt + RUN_DEADLINE_MS) {
+      this.refuse("the change took too long to start");
+    }
+    if (!(await this.renew())) this.refuse("its lease ran out");
+    // The renewal itself may have been slow: the call still needs its time.
+    if (Date.now() + POLAR_CALL_MS > this.startedAt + RUN_DEADLINE_MS) {
+      this.refuse("the change took too long to start");
+    }
+    this.mutations += 1;
+  }
+
+  /** True when this run still held the lease and now holds it for LOCK_SECONDS more. */
+  private async renew(): Promise<boolean> {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const timedOut = new Promise<null>((resolve) => {
+      timer = setTimeout(() => resolve(null), EXTEND_TIMEOUT_MS);
+    });
+    try {
+      const renewed = await Promise.race([
+        createAdminClient().rpc("extend_billing_change_lock", {
+          p_account_key: this.key,
+          p_holder: this.holder,
+          p_seconds: LOCK_SECONDS,
+        }),
+        timedOut,
+      ]);
+      if (renewed === null) return false;
+      if (renewed.error) {
+        reportError("Renewing the billing change lease failed", renewed.error);
+        return false;
+      }
+      return renewed.data === true;
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  private refuse(why: string): never {
+    if (this.mutations === 0) {
+      throw new BillingChangeRetry(
+        503,
+        `Nothing was changed: ${why} before billing was asked. Try approving again in a minute.`
+      );
+    }
+    throw new LeaseLostMidChange(why);
+  }
 }
 
 /**
@@ -995,9 +1212,12 @@ function accountKey(userId: string, teamId: string | null): string {
  *
  * Changes for one billing account run one at a time (a lease in
  * billing_change_locks), so two approvals approved together cannot both
- * pass against the state before either. BillingChangeRetry means nothing
- * was touched (the lease is held, or billing could not be read), and the
- * approval may be approved again.
+ * pass against the state before either. The lease is renewed, and must
+ * still be this run's, right before each Polar call that changes or
+ * charges anything (ChangeLease), and a run that passes its deadline makes
+ * no further call. BillingChangeRetry means nothing was touched (the lease
+ * is held or was lost before any change, or billing could not be read),
+ * and the approval may be approved again.
  */
 export async function runBillingChange(
   userId: string,
@@ -1025,8 +1245,9 @@ export async function runBillingChange(
       "Another billing change for this account is being made. Nothing was changed; try approving again in a moment."
     );
   }
+  const lease = new ChangeLease(key, holder);
   try {
-    return await runLocked(userId, request, approved);
+    return await withPolarMutationGuard(lease, () => runLocked(userId, request, approved, lease));
   } finally {
     const { error } = await admin.rpc("release_billing_change_lock", {
       p_account_key: key,
@@ -1040,7 +1261,8 @@ export async function runBillingChange(
 async function runLocked(
   userId: string,
   request: BillingChangeRequest,
-  approved: BillingQuote
+  approved: BillingQuote,
+  lease: ChangeLease
 ): Promise<BillingChangeRun> {
   const quotedAt = Date.parse(approved.quotedAt);
   let again: BillingQuote;
@@ -1087,6 +1309,9 @@ async function runLocked(
   try {
     return await makeChange(userId, request, again);
   } catch (error) {
+    // The lease ran out or the run got too slow before its first change:
+    // nothing reached Polar, so the approval may be approved again.
+    if (error instanceof BillingChangeRetry && lease.mutations === 0) throw error;
     const refusal = changeRefusalOf(error);
     if (refusal) {
       return {
@@ -1094,6 +1319,18 @@ async function runLocked(
           executed: false,
           code: refusal.code,
           reason: `Nothing was changed: ${refusal.message}`,
+        },
+      };
+    }
+    // A charge the cardholder's bank wants them to confirm (3-D Secure):
+    // Polar may take the payment once they do, so it is neither made nor
+    // refused yet.
+    if (isPaymentActionRequired(error)) {
+      return {
+        outcome: {
+          executed: null,
+          code: "outcome_unknown",
+          reason: PAYMENT_ACTION_REQUIRED,
         },
       };
     }
@@ -1108,8 +1345,18 @@ async function runLocked(
         change: request.change.kind,
       }
     );
-    return { outcome: { executed: null, code: "outcome_unknown", reason: OUTCOME_UNKNOWN } };
+    return { outcome: { ...BILLING_OUTCOME_UNKNOWN } };
   }
+}
+
+const PAYMENT_ACTION_REQUIRED =
+  "The bank wants the cardholder to confirm this payment (3-D Secure), so the change is not finished: Polar emails a link to confirm it, and once confirmed the change may be made. Check billing before asking again.";
+
+function isPaymentActionRequired(error: unknown): boolean {
+  return (
+    (error instanceof BillingActionError || error instanceof TeamBillingError) &&
+    error.code === "payment_action_required"
+  );
 }
 
 async function makeChange(
@@ -1120,9 +1367,20 @@ async function makeChange(
   if (change.kind === "capacity") {
     const account: CapacityAccount = teamId ? { kind: "team", teamId } : { kind: "user", userId };
     // A checkout sells exactly the approved count.
-    const { url } = await applyCapacityAction(account, userId, change.capacity, {
+    const { url, unchanged } = await applyCapacityAction(account, userId, change.capacity, {
       exactUnits: true,
     });
+    // The blocks renewed at that count already (Polar's own count, which the
+    // quote could not see): nothing was made.
+    if (unchanged) {
+      return {
+        outcome: {
+          executed: false,
+          code: "unchanged",
+          reason: "Nothing was changed: the monthly blocks renew at that count already.",
+        },
+      };
+    }
     return url
       ? { outcome: { executed: true, applied: "checkout", checkout: "opened" }, checkoutUrl: url }
       : {
@@ -1139,13 +1397,17 @@ async function makeChange(
           userId,
           teamId,
           change.plan as "team" | "team_business",
-          change.interval
+          change.interval,
+          { periodEnd: String(quote.basis.periodEnd) }
         );
         return { outcome: { executed: true, ...result } };
       }
       case "seats": {
+        // The seats as the database had them: what the increase compares
+        // with right before Polar is asked (Polar's may differ after a
+        // failed write, and asking again for its count is how that heals).
         await updateTeamSeats(userId, teamId, change.seats, {
-          currentSeats: Number(quote.basis.currentSeats),
+          currentSeats: Number(quote.basis.teamSeats ?? quote.basis.currentSeats),
           periodEnd: String(quote.basis.periodEnd),
         });
         return {
@@ -1185,7 +1447,9 @@ async function makeChange(
       return {
         outcome: {
           executed: true,
-          ...(await changePlanForUser(userId, change.plan as "pro" | "business", change.interval)),
+          ...(await changePlanForUser(userId, change.plan as "pro" | "business", change.interval, {
+            periodEnd: String(quote.basis.periodEnd),
+          })),
         },
       };
     case "keep_plan":

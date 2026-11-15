@@ -1,4 +1,5 @@
 import { userCodePart } from "@/lib/ids";
+import { cleanUntrustedName } from "@/lib/untrusted-name";
 import { reportError } from "@/lib/observability";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { Json } from "@/lib/supabase/database";
@@ -54,12 +55,13 @@ type Row = {
   country: string | null;
   network: string | null;
   created_at: string;
+  completed_at: string | null;
   expires_at: string;
   result: Json | null;
 };
 
 const COLUMNS =
-  "id, user_id, action, params, summary, user_code, status, requested_by_key, requested_by_agent, requester, client, country, network, created_at, expires_at, result";
+  "id, user_id, action, params, summary, user_code, status, requested_by_key, requested_by_agent, requester, client, country, network, created_at, completed_at, expires_at, result";
 
 function appUrl(): string {
   return process.env.NEXT_PUBLIC_APP_URL || "https://webhooks.cc";
@@ -90,7 +92,34 @@ function view(row: Row): ApprovalView {
   };
 }
 
-/** How the page names whoever asked, from the key or registration behind the token. */
+/** The longest asker-chosen name the page and the email show, in code points. */
+const MAX_ASKER_NAME = 64;
+
+/**
+ * How the page and the email name whoever asked, from the key or
+ * registration behind the token. An agent's client_name (an OAuth client's
+ * name too) is whatever the agent said it is, so it is cleaned like a team's
+ * name (cleanUntrustedName) and always shown as the name the agent gave
+ * itself, never as who it is. Exported for its tests.
+ */
+export function requesterLabelFor(
+  asker:
+    | { kind: "agent"; clientName: string | null }
+    | { kind: "key"; name: string; keyPrefix: string }
+    | { kind: "unknown" }
+): string {
+  if (asker.kind === "agent") {
+    const name = cleanUntrustedName(asker.clientName ?? "", MAX_ASKER_NAME);
+    return name ? `a connected agent that calls itself "${name}"` : "a connected agent";
+  }
+  if (asker.kind === "key") {
+    const name = cleanUntrustedName(asker.name, MAX_ASKER_NAME);
+    const prefix = cleanUntrustedName(asker.keyPrefix, 16);
+    return name ? `the API key "${name}" (${prefix}...)` : `the API key ${prefix}...`;
+  }
+  return "an API key";
+}
+
 async function requesterLabel(asker: Asker): Promise<string> {
   const admin = createAdminClient();
   if (asker.agentRegistrationId) {
@@ -99,8 +128,7 @@ async function requesterLabel(asker: Asker): Promise<string> {
       .select("client_name")
       .eq("id", asker.agentRegistrationId)
       .maybeSingle();
-    const name = data?.client_name?.trim();
-    return name ? `the connected agent "${name}"` : "a connected agent";
+    return requesterLabelFor({ kind: "agent", clientName: data?.client_name ?? null });
   }
   if (asker.keyId) {
     const { data } = await admin
@@ -108,9 +136,11 @@ async function requesterLabel(asker: Asker): Promise<string> {
       .select("name, key_prefix")
       .eq("id", asker.keyId)
       .maybeSingle();
-    if (data) return `the API key "${data.name}" (${data.key_prefix}...)`;
+    if (data) {
+      return requesterLabelFor({ kind: "key", name: data.name, keyPrefix: data.key_prefix });
+    }
   }
-  return "an API key";
+  return requesterLabelFor({ kind: "unknown" });
 }
 
 /**
@@ -413,8 +443,15 @@ export async function pollApproval(
     if (row.result !== null) {
       return { approval: view(row), result: row.result as Record<string, unknown> };
     }
-    // Still running, or it ran and its result was never recorded (a crash):
-    // the asker stops waiting when the row expires.
+    // Still running, or it ran and its result was never recorded (a crash).
+    // An action that says what that means (a billing change: it may or may
+    // not have been made) answers it once the run is surely over; the rest
+    // leave the asker waiting until the row expires.
+    const unrecorded = actionSpec(row.action).unrecorded;
+    const startedAt = new Date(row.completed_at ?? row.created_at).getTime();
+    if (unrecorded && Date.now() - startedAt >= unrecorded.afterMs) {
+      return { approval: view(row), result: unrecorded.result(row.params) };
+    }
     const expired = new Date(row.expires_at).getTime() <= Date.now();
     return { approval: { ...view(row), status: expired ? "expired" : "approved" } };
   }

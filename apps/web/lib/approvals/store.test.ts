@@ -1,0 +1,107 @@
+import { beforeEach, describe, expect, test, vi } from "vitest";
+
+const mocks = vi.hoisted(() => ({
+  row: null as Record<string, unknown> | null,
+  unrecorded: undefined as
+    { afterMs: number; result(params: unknown): Record<string, unknown> } | undefined,
+}));
+
+vi.mock("@/lib/observability", () => ({ reportError: vi.fn() }));
+
+vi.mock("@/lib/supabase/admin", () => ({
+  createAdminClient: () => {
+    const query = {
+      select: () => query,
+      eq: () => query,
+      maybeSingle: async () => ({ data: mocks.row, error: null }),
+    };
+    return { from: () => query };
+  },
+}));
+
+vi.mock("./actions", () => ({
+  ActionError: class ActionError extends Error {},
+  actionSpec: () => ({ runAt: "approve", unrecorded: mocks.unrecorded }),
+}));
+
+const { pollApproval, requesterLabelFor } = await import("./store");
+
+describe("who asked", () => {
+  test("an agent's name is the one it gave itself, cleaned", () => {
+    expect(
+      requesterLabelFor({
+        kind: "agent",
+        clientName: 'Claude" (verified by webhooks.cc)\u202E\u200B\u0301',
+      })
+    ).toBe('a connected agent that calls itself "Claude (verified by webhooks.cc)"');
+    expect(requesterLabelFor({ kind: "agent", clientName: '"\u200B"' })).toBe("a connected agent");
+    expect(requesterLabelFor({ kind: "agent", clientName: null })).toBe("a connected agent");
+  });
+
+  test("a long name is cut by code point without splitting a surrogate pair", () => {
+    const label = requesterLabelFor({ kind: "agent", clientName: "\u{1F600}".repeat(100) });
+    const name = label.slice(label.indexOf('"') + 1, label.lastIndexOf('"'));
+    expect(Array.from(name)).toHaveLength(64);
+    expect(name).toBe("\u{1F600}".repeat(64));
+  });
+
+  test("an API key is named by its cleaned name and prefix", () => {
+    expect(
+      requesterLabelFor({ kind: "key", name: 'deploy"\n bot', keyPrefix: "whcc_abc1234" })
+    ).toBe('the API key "deploy bot" (whcc_abc1234...)');
+    expect(requesterLabelFor({ kind: "unknown" })).toBe("an API key");
+  });
+});
+
+describe("an approval that ran and left no result", () => {
+  const now = Date.parse("2026-11-16T12:00:00Z");
+  const row = (completedAgoMs: number) => ({
+    id: "00000000-0000-4000-8000-0000000000aa",
+    user_id: "owner",
+    action: "billing.change",
+    params: {},
+    summary: "Change the team from 3 to 5 seats.",
+    user_code: "ABCD-EFGH",
+    status: "completed",
+    requested_by_key: "key-1",
+    requested_by_agent: null,
+    requester: "an API key",
+    client: null,
+    country: null,
+    network: null,
+    created_at: new Date(now - completedAgoMs - 60_000).toISOString(),
+    completed_at: new Date(now - completedAgoMs).toISOString(),
+    expires_at: new Date(now - completedAgoMs + 15 * 60_000).toISOString(),
+    result: null,
+  });
+  const asker = { userId: "owner", keyId: "key-1" };
+  const unknown = { executed: null, code: "outcome_unknown", reason: "Check billing." };
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(now);
+    mocks.unrecorded = { afterMs: 5 * 60_000, result: () => unknown };
+  });
+
+  test("still reads as running while a run could be going", async () => {
+    mocks.row = row(60_000);
+    const polled = await pollApproval(String(mocks.row.id), asker);
+    expect(polled?.approval.status).toBe("approved");
+    expect(polled?.result).toBeUndefined();
+  });
+
+  test("answers the action's unknown outcome once no run can still be going", async () => {
+    mocks.row = row(6 * 60_000);
+    const polled = await pollApproval(String(mocks.row.id), asker);
+    expect(polled?.approval.status).toBe("completed");
+    expect(polled?.result).toEqual(unknown);
+  });
+
+  test("an action without one keeps the asker waiting until the row expires", async () => {
+    mocks.unrecorded = undefined;
+    mocks.row = row(6 * 60_000);
+    expect((await pollApproval(String(mocks.row.id), asker))?.approval.status).toBe("approved");
+    mocks.row = row(16 * 60_000);
+    expect((await pollApproval(String(mocks.row.id), asker))?.approval.status).toBe("expired");
+  });
+});

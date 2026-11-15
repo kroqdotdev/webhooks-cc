@@ -11,60 +11,72 @@ const fake = vi.hoisted(() => ({
   failNextUpdate: false,
   // The next read fails like Polar being unreachable.
   failNextGet: false,
+  // Runs on every read (a lease taken over while the change quotes again).
+  onGet: null as null | (() => Promise<void>),
 }));
 
 vi.mock("@/lib/polar", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/polar")>();
+  // Through the real mutation guard, as the real client goes inside an
+  // approved change: each update renews the lease in the database first.
+  const { guardPolarClient } = await import("@/lib/billing/polar-guard");
   return {
     ...actual,
-    createPolarClient: () => ({
-      subscriptions: {
-        get: async (id: string) => {
-          if (fake.failNextGet) {
-            fake.failNextGet = false;
-            throw new Error("connect ECONNREFUSED");
-          }
-          const sub = fake.subs.get(id);
-          if (!sub) throw new Error(`no fake subscription ${id}`);
-          return { ...sub };
+    createPolarClient: () =>
+      guardPolarClient({
+        subscriptions: {
+          get: async (id: string) => {
+            if (fake.onGet) await fake.onGet();
+            if (fake.failNextGet) {
+              fake.failNextGet = false;
+              throw new Error("connect ECONNREFUSED");
+            }
+            const sub = fake.subs.get(id);
+            if (!sub) throw new Error(`no fake subscription ${id}`);
+            return { ...sub };
+          },
+          update: async (id: string, body: Record<string, unknown>) => {
+            fake.updates.push({ id, body });
+            const sub = fake.subs.get(id)!;
+            if (typeof body.seats === "number" && body.proration_behavior === "invoice") {
+              sub.amount = ((sub.amount as number) / (sub.seats as number)) * body.seats;
+              sub.seats = body.seats;
+            }
+            if (typeof body.cancel_at_period_end === "boolean") {
+              sub.cancel_at_period_end = body.cancel_at_period_end;
+            }
+            if (fake.failNextUpdate) {
+              fake.failNextUpdate = false;
+              throw new Error("socket hang up");
+            }
+            return { ...sub };
+          },
         },
-        update: async (id: string, body: Record<string, unknown>) => {
-          fake.updates.push({ id, body });
-          const sub = fake.subs.get(id)!;
-          if (typeof body.seats === "number" && body.proration_behavior === "invoice") {
-            sub.amount = ((sub.amount as number) / (sub.seats as number)) * body.seats;
-            sub.seats = body.seats;
-          }
-          if (typeof body.cancel_at_period_end === "boolean") {
-            sub.cancel_at_period_end = body.cancel_at_period_end;
-          }
-          if (fake.failNextUpdate) {
-            fake.failNextUpdate = false;
-            throw new Error("socket hang up");
-          }
-          return { ...sub };
+        checkouts: {
+          create: async (body: Record<string, unknown>) => {
+            fake.checkouts.push(body);
+            return {
+              id: `chk_${fake.checkouts.length}`,
+              url: `https://polar.test/checkout/${fake.checkouts.length}`,
+            };
+          },
         },
-      },
-      checkouts: {
-        create: async (body: Record<string, unknown>) => {
-          fake.checkouts.push(body);
-          return {
-            id: `chk_${fake.checkouts.length}`,
-            url: `https://polar.test/checkout/${fake.checkouts.length}`,
-          };
+        orders: {
+          iterList: async function* () {
+            // No orders: no account credit.
+          },
         },
-      },
-      orders: {
-        iterList: async function* () {
-          // No orders: no account credit.
-        },
-      },
-    }),
+      }),
   };
 });
 
 import { requestApproval } from "@/lib/approvals/request";
-import { decideApproval, pollApproval, type ApprovalView } from "@/lib/approvals/store";
+import {
+  decideApproval,
+  pollApproval,
+  reviewApproval,
+  type ApprovalView,
+} from "@/lib/approvals/store";
 import type { BillingQuote } from "@/lib/billing/change";
 import { generateApiKey, hashApiKey } from "@/lib/supabase/api-keys";
 
@@ -198,6 +210,7 @@ describe("billing changes an agent asks for", () => {
     fake.checkouts = [];
     fake.failNextUpdate = false;
     fake.failNextGet = false;
+    fake.onGet = null;
   });
 
   afterAll(async () => {
@@ -396,5 +409,107 @@ describe("billing changes an agent asks for", () => {
     // Asking to cancel again is refused before anyone is asked.
     const twice = await ask(owner, ownerKey, { teamId: null, change: { kind: "cancel" } });
     expect(twice.status).toBe(409);
+  });
+
+  it("stops before Polar when the lease was taken over while it quoted again", async () => {
+    const asked = await ask(owner, ownerKey, { teamId, change: { kind: "seats", seats: 4 } });
+    expect(asked.status).toBe(202);
+    const key = `team:${teamId}`;
+    fake.onGet = async () => {
+      fake.onGet = null;
+      const { error } = await admin
+        .from("billing_change_locks")
+        .update({
+          holder: crypto.randomUUID(),
+          expires_at: new Date(Date.now() + 60_000).toISOString(),
+        })
+        .eq("account_key", key);
+      if (error) throw error;
+    };
+    try {
+      await expect(approve(owner, asked.body.approval.code)).rejects.toMatchObject({
+        status: 503,
+      });
+      expect(fake.updates).toEqual([]);
+      const { data: row } = await admin
+        .from("approvals")
+        .select("status")
+        .eq("id", asked.body.approval.id)
+        .single();
+      expect(row!.status).toBe("pending");
+    } finally {
+      await admin.from("billing_change_locks").delete().eq("account_key", key);
+    }
+    // Once the lease is free it runs, renewing it right before Polar.
+    const decided = await approve(owner, asked.body.approval.code);
+    expect(decided.result).toMatchObject({ executed: true });
+    expect(fake.updates).toHaveLength(1);
+    await admin.from("teams").update({ seats: 3 }).eq("id", teamId);
+  });
+
+  it("names the team by what the asker cannot set, and warns of a second team with its name", async () => {
+    const asked = await ask(owner, ownerKey, { teamId, change: { kind: "seats", seats: 4 } });
+    expect(asked.status).toBe(202);
+    const account = async () => {
+      const review = await reviewApproval(asked.body.approval.code, owner, null);
+      return review!.details.find((detail) => detail.label === "Account")!.value;
+    };
+    const created = new Date(
+      (await admin.from("teams").select("created_at").eq("id", teamId).single()).data!.created_at
+    ).toLocaleDateString("en-US", {
+      year: "numeric",
+      month: "long",
+      day: "numeric",
+      timeZone: "UTC",
+    });
+    expect(await account()).toBe(
+      `A team you own, named Acme agents: created ${created}, 2 members, on Teams with 3 seats.`
+    );
+
+    const { data: twin, error } = await admin.rpc("create_team_with_owner", {
+      p_user_id: owner,
+      p_name: "ACME agents\u200B",
+    });
+    if (error) throw error;
+    try {
+      expect(await account()).toContain("You own 2 teams with this name");
+    } finally {
+      await admin
+        .from("teams")
+        .delete()
+        .eq("id", (twin as { id: string }).id);
+    }
+    await decideApproval(asked.body.approval.code, owner, false);
+  });
+
+  it("answers an unknown outcome for a run that left no result", async () => {
+    const asked = await ask(owner, ownerKey, { teamId, change: { kind: "seats", seats: 4 } });
+    expect(asked.status).toBe(202);
+    const id = asked.body.approval.id;
+    // As a crash mid-run leaves it: completed, with no result.
+    const markCompleted = (agoMs: number) =>
+      admin
+        .from("approvals")
+        .update({
+          status: "completed",
+          decided_at: new Date(Date.now() - agoMs).toISOString(),
+          completed_at: new Date(Date.now() - agoMs).toISOString(),
+          expires_at: new Date(Date.now() - agoMs + 15 * 60_000).toISOString(),
+        })
+        .eq("id", id);
+    await markCompleted(30_000);
+    const running = await pollApproval(id, { userId: owner, keyId: ownerKey });
+    expect(running?.approval.status).toBe("approved");
+    expect(running?.result).toBeUndefined();
+
+    await markCompleted(6 * 60_000);
+    const lost = await pollApproval(id, { userId: owner, keyId: ownerKey });
+    expect(lost?.approval.status).toBe("completed");
+    expect(lost?.result).toMatchObject({
+      executed: null,
+      code: "outcome_unknown",
+      change: "Change the team from 3 to 4 seats.",
+    });
+    expect(String(lost?.result?.reason)).toMatch(/Check billing/);
   });
 });

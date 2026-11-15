@@ -121,15 +121,17 @@ export async function handleCapacityGet(
 /**
  * Makes a capacity change for `userId` (the account itself, or the team's
  * owner): a checkout's link when the change is paid at a checkout, else
- * null. Shared by the route and the billing approval, whose checkouts are
- * pinned to the approved count (`units.exactUnits`).
+ * null, and `unchanged` when the monthly blocks already renewed at that
+ * count, so nothing was asked of Polar. Shared by the route and the billing
+ * approval, whose checkouts are pinned to the approved count
+ * (`units.exactUnits`).
  */
 export async function applyCapacityAction(
   account: CapacityAccount,
   userId: string,
   action: CapacityAction,
   units: CheckoutUnits = {}
-): Promise<{ url: string | null }> {
+): Promise<{ url: string | null; unchanged?: true }> {
   await assertCanManage(account, userId);
   const resource = action.resource ?? "requests";
   const blockSize = resource === "pages" ? BLOCK_PAGES : BLOCK_REQUESTS;
@@ -140,6 +142,7 @@ export async function applyCapacityAction(
   }
   if (action.action === "set_monthly_blocks") {
     const result = await changeMonthlyBlocks(account, userId, action.blocks, resource, units);
+    if (result.kind === "unchanged") return { url: null, unchanged: true };
     return { url: result.kind === "checkout" ? result.url : null };
   }
   const result = await setOverage(

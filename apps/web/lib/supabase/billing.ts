@@ -14,6 +14,7 @@ import { planEntitlements } from "@/lib/entitlements";
 import { recordRefund } from "@/lib/billing/refunds";
 import {
   creditBalanceFromOrders,
+  pastApprovedPeriod,
   prorateProductSwitch,
   type ProductSwitchPrice,
 } from "@/lib/team-pricing";
@@ -241,12 +242,22 @@ const PLAN_RANK: Record<string, number> = { free: 0, pro: 1, business: 2 };
 export async function changePlanForUser(
   userId: string,
   plan: PaidPlan,
-  interval: BillingInterval
+  interval: BillingInterval,
+  /**
+   * For a billing.change approval: the end of the period it was priced on.
+   * A switch made now refuses within a minute of it or past it (the
+   * period moved since the quote), since Polar would charge for another.
+   */
+  approved?: { periodEnd: string }
 ): Promise<{ applied: "now" | "renewal" }> {
   const user = await getBillingUser(userId);
   const { productId, applies } = planChangeFor(user, plan, interval);
   const now = applies === "now";
 
+  // Checked with no await before the update.
+  if (approved && now && pastApprovedPeriod(approved.periodEnd)) {
+    throw new BillingActionError("quote_changed", "The billing period moved since this was priced");
+  }
   try {
     await createPolarClient().subscriptions.update(user.polar_subscription_id!, {
       product_id: productId,
@@ -254,11 +265,13 @@ export async function changePlanForUser(
     });
   } catch (error) {
     // 402: a declined card (PaymentFailed) or a charge the cardholder must
-    // authenticate (PaymentActionRequired); neither changes the subscription.
+    // authenticate (PaymentActionRequired, its own code: Polar emails a link
+    // to confirm it, so the change may still go through once they do).
     if (error instanceof errors.SubscriptionsUpdate402Error) {
+      const action = error.error.error === "PaymentActionRequired";
       throw new BillingActionError(
-        "payment_failed",
-        error.error.error === "PaymentActionRequired"
+        action ? "payment_action_required" : "payment_failed",
+        action
           ? "Your bank needs you to approve this payment, so the plan was not changed yet. Approve it from the link in your Polar receipt email, or update the payment method under Invoices and payment method, and try again."
           : "Your payment method was declined, so the plan was not changed. Update the payment method under Invoices and payment method and try again."
       );
@@ -379,6 +392,8 @@ export async function loadPlanQuoteForUser(
       productId: subscription.product_id,
       pendingPlan: user.pending_plan,
       pendingProduct: subscription.pending_update?.product_id ?? null,
+      // The period a switch made now is charged for (changePlanForUser).
+      periodEnd: new Date(Date.parse(subscription.current_period_end)).toISOString(),
     },
     at: (nowMs) => ({
       plan,

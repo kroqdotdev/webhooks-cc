@@ -3,6 +3,7 @@ import { deviceRequester } from "@/lib/device-requester";
 import { buildApprovalRequestEmail } from "@/lib/email/approval-request-email";
 import { sendEmail } from "@/lib/email/mailer";
 import { reportError } from "@/lib/observability";
+import { loggablePolarError } from "@/lib/polar";
 import { actionSpec, type ApprovalAction } from "./actions";
 import { ApprovalError, approvalEmailRecipient, createApproval, type Asker } from "./store";
 
@@ -45,7 +46,9 @@ export async function requestApproval(
     if (err instanceof ApprovalError) {
       return Response.json({ error: err.message }, { status: err.status });
     }
-    reportError("Failed to record an approval", err);
+    // Quoting a billing change reads Polar, whose error messages embed the
+    // response body (customer emails among it).
+    reportError("Failed to record an approval", loggablePolarError(err));
     return Response.json({ error: "Failed to ask for approval" }, { status: 500 });
   }
 }

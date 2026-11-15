@@ -595,6 +595,44 @@ describe("changePlanForUser", () => {
     expect(userUpdatePayload()).toBeUndefined();
   });
 
+  test("a payment the bank wants confirmed has its own code, so an approval reads it as unknown", async () => {
+    const { errors } = await import("@polar-sh/sdk/2026-10");
+    mockFns.createAdminClient.mockReturnValue(createFakeAdmin({ "users:select": [billingUser()] }));
+    update.mockRejectedValueOnce(
+      new errors.SubscriptionsUpdate402Error(402, {
+        error: "PaymentActionRequired",
+        detail: "The payment needs to be confirmed.",
+      })
+    );
+
+    await expect(changePlanForUser("user_1", "business", "month")).rejects.toMatchObject({
+      name: "BillingActionError",
+      code: "payment_action_required",
+      message: expect.stringContaining("Polar receipt email"),
+    });
+  });
+
+  test("an approved switch made now refuses before Polar near or past the period it was priced on", async () => {
+    mockFns.createAdminClient.mockReturnValue(createFakeAdmin({ "users:select": [billingUser()] }));
+    const soon = new Date(Date.now() + 30_000).toISOString();
+    await expect(
+      changePlanForUser("user_1", "business", "month", { periodEnd: soon })
+    ).rejects.toMatchObject({ code: "quote_changed" });
+    mockFns.createAdminClient.mockReturnValue(createFakeAdmin({ "users:select": [billingUser()] }));
+    const past = new Date(Date.now() - 86_400_000).toISOString();
+    await expect(
+      changePlanForUser("user_1", "business", "month", { periodEnd: past })
+    ).rejects.toMatchObject({ code: "quote_changed" });
+    expect(update).not.toHaveBeenCalled();
+
+    // With the period well ahead it goes through.
+    mockFns.createAdminClient.mockReturnValue(createFakeAdmin({ "users:select": [billingUser()] }));
+    const later = new Date(Date.now() + 10 * 86_400_000).toISOString();
+    await expect(
+      changePlanForUser("user_1", "business", "month", { periodEnd: later })
+    ).resolves.toEqual({ applied: "now" });
+  });
+
   test("Pro to Business annual waits for the renewal and shows as pending", async () => {
     mockFns.createAdminClient.mockReturnValue(
       createFakeAdmin({ "users:select": [billingUser()], "users:update": [{}] })

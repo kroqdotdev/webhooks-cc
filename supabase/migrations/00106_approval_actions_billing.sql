@@ -61,6 +61,30 @@ begin
 end;
 $$;
 
+-- Extends the lease to `p_seconds` from now, only while `p_holder` still
+-- holds it (it has not run out, so nobody else could have taken it). True
+-- when it did. Called right before each Polar call that changes or charges
+-- anything, so a change never reaches Polar on a lease that expired while
+-- it was quoting again or waiting on a slow read.
+create or replace function public.extend_billing_change_lock(
+  p_account_key text,
+  p_holder uuid,
+  p_seconds integer
+)
+returns boolean
+language plpgsql
+security definer set search_path = ''
+as $$
+begin
+  update public.billing_change_locks
+     set expires_at = now() + make_interval(secs => p_seconds)
+   where account_key = p_account_key
+     and holder = p_holder
+     and expires_at > now();
+  return found;
+end;
+$$;
+
 -- Gives the lease back, only by the holder that took it.
 create or replace function public.release_billing_change_lock(p_account_key text, p_holder uuid)
 returns void
@@ -74,9 +98,12 @@ $$;
 
 revoke all on function public.claim_billing_change_lock(text, uuid, integer)
   from public, anon, authenticated;
+revoke all on function public.extend_billing_change_lock(text, uuid, integer)
+  from public, anon, authenticated;
 revoke all on function public.release_billing_change_lock(text, uuid)
   from public, anon, authenticated;
 grant execute on function public.claim_billing_change_lock(text, uuid, integer) to service_role;
+grant execute on function public.extend_billing_change_lock(text, uuid, integer) to service_role;
 grant execute on function public.release_billing_change_lock(text, uuid) to service_role;
 
 notify pgrst, 'reload schema';

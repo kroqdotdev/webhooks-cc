@@ -260,3 +260,19 @@ export function prorateProductSwitch(input: {
     periodEnd: new Date(periodEnd).toISOString(),
   };
 }
+
+/**
+ * How close to the renewal an approved charge (a billing.change approval)
+ * still goes ahead: inside it, or once past the period end it was priced
+ * on, Polar would charge for another period than the one approved.
+ */
+export const APPROVED_RENEWAL_MARGIN_MS = 60_000;
+
+/**
+ * Whether an approved charge priced on the period ending at `periodEnd`
+ * must not go ahead now: within APPROVED_RENEWAL_MARGIN_MS of it, past it
+ * (the period has moved since the quote), or unreadable.
+ */
+export function pastApprovedPeriod(periodEnd: string, nowMs: number = Date.now()): boolean {
+  return !(nowMs < Date.parse(periodEnd) - APPROVED_RENEWAL_MARGIN_MS);
+}

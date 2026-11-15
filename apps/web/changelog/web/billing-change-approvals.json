@@ -4,6 +4,8 @@
     "An API key or agent can ask for a billing change (the plan or its interval, a team's seats, add-on blocks and overage, cancelling or keeping a plan) instead of being refused: the route answers with an approval that shows the quote, what changes, when, and what is charged now",
     "Approving makes exactly the quoted change, and only while a fresh quote still matches; if the price or the subscription moved, nothing is changed and the asker is told to ask again",
     "Changes paid at a checkout (more monthly blocks, one-time blocks, overage the first time) take the owner to Polar's checkout when they approve",
-    "A team's change can only be asked for by a key or agent of the team's owner"
+    "A team's change can only be asked for by a key or agent of the team's owner",
+    "The approval page names a team by facts the asker cannot change (when it was made, its members, plan and seats), and says when two of your teams share its name",
+    "Every approval names a connected agent as the name it gave itself, cleaned so it cannot read as part of the request"
   ]
 }

@@ -20,6 +20,9 @@ const polar = vi.hoisted(() => ({
   updates: [] as number[],
   // Billing-change leases held, by account.
   locks: new Map<string, string>(),
+  // Lease renewals asked for, and whether the next one finds the lease gone.
+  extends: 0,
+  leaseGone: false,
 }));
 
 vi.mock("@/lib/observability", () => ({ reportError: vi.fn() }));
@@ -48,6 +51,11 @@ vi.mock("@/lib/supabase/admin", () => ({
         polar.locks.set(args.p_account_key, args.p_holder);
         return { data: true, error: null };
       }
+      if (name === "extend_billing_change_lock") {
+        polar.extends += 1;
+        if (polar.leaseGone) polar.locks.set(args.p_account_key, "someone else");
+        return { data: polar.locks.get(args.p_account_key) === args.p_holder, error: null };
+      }
       if (polar.locks.get(args.p_account_key) === args.p_holder) {
         polar.locks.delete(args.p_account_key);
       }
@@ -55,6 +63,12 @@ vi.mock("@/lib/supabase/admin", () => ({
     }),
   }),
 }));
+
+/** A Polar change as the real client makes it: through the mutation guard. */
+async function polarUpdate(): Promise<void> {
+  const { guardPolarClient } = await import("@/lib/billing/polar-guard");
+  await guardPolarClient({ subscriptions: { update: async () => ({}) } }).subscriptions.update();
+}
 
 vi.mock("@/lib/supabase/team-billing", () => {
   class TeamBillingError extends Error {
@@ -101,6 +115,7 @@ vi.mock("@/lib/supabase/team-billing", () => {
     }),
     updateTeamSeats: vi.fn(async (_user: string, _team: string, seats: number) => {
       // Polar charges the added seats and the subscription now has them.
+      await polarUpdate();
       polar.updates.push(seats);
       polar.state.amount = Math.round(polar.state.amount / polar.state.seats) * seats;
       polar.state.seats = seats;
@@ -163,7 +178,10 @@ const {
   parseBillingChangeRequest,
   quoteFingerprint,
   runBillingChange,
+  sameSeatsSentence,
+  teamAccountLine,
 } = await import("./change");
+const billing = await import("@/lib/supabase/billing");
 const teamBilling = await import("@/lib/supabase/team-billing");
 const capacityBilling = await import("@/lib/supabase/capacity-billing");
 const capacityRoute = await import("@/lib/capacity-route");
@@ -187,6 +205,8 @@ beforeEach(() => {
   polar.teamName = "Acme";
   polar.updates = [];
   polar.locks.clear();
+  polar.extends = 0;
+  polar.leaseGone = false;
   vi.mocked(teamBilling.updateTeamSeats).mockClear();
   vi.mocked(teamBilling.keepTeamPlan).mockReset();
   vi.mocked(observability.reportError).mockClear();
@@ -697,5 +717,253 @@ describe("parsing a stored change", () => {
 
   test("an unknown kind is refused", () => {
     expect(parseBillingChangeRequest({ teamId: null, change: { kind: "refund" } })).toBeNull();
+  });
+});
+
+describe("the lease around Polar", () => {
+  test("is renewed, still this run's, right before Polar is asked", async () => {
+    const approved = await quoteNow();
+    const { outcome } = await runBillingChange("owner", ask, approved);
+    expect(outcome).toMatchObject({ executed: true });
+    expect(polar.extends).toBe(1);
+    expect(polar.updates).toEqual([5]);
+    expect(polar.locks.size).toBe(0);
+  });
+
+  test("lost before the first change, nothing reaches Polar and the approval may be approved again", async () => {
+    const approved = await quoteNow();
+    polar.leaseGone = true;
+    await expect(runBillingChange("owner", ask, approved)).rejects.toBeInstanceOf(
+      BillingChangeRetry
+    );
+    expect(polar.updates).toEqual([]);
+  });
+
+  test("a run past its deadline starts no Polar call", async () => {
+    const approved = await quoteNow();
+    vi.mocked(teamBilling.updateTeamSeats).mockImplementationOnce(async () => {
+      // The re-quote and the reads took most of the lease.
+      vi.setSystemTime(Date.now() + 70_000);
+      await polarUpdate();
+      polar.updates.push(5);
+    });
+    await expect(runBillingChange("owner", ask, approved)).rejects.toBeInstanceOf(
+      BillingChangeRetry
+    );
+    expect(polar.updates).toEqual([]);
+    expect(polar.extends).toBe(0);
+  });
+
+  test("lost after a change went out, the outcome is unknown", async () => {
+    const approved = await quoteNow();
+    vi.mocked(teamBilling.updateTeamSeats).mockImplementationOnce(async () => {
+      await polarUpdate();
+      polar.updates.push(5);
+      polar.leaseGone = true;
+      await polarUpdate();
+      polar.updates.push(-5);
+    });
+    const { outcome } = await runBillingChange("owner", ask, approved);
+    expect(outcome).toMatchObject({ executed: null, code: "outcome_unknown" });
+    expect(polar.updates).toEqual([5]);
+  });
+});
+
+describe("outcomes Polar leaves open", () => {
+  test("a payment the bank wants confirmed (3-D Secure) is unknown, never nothing changed", async () => {
+    const approved = await quoteNow();
+    vi.mocked(teamBilling.updateTeamSeats).mockRejectedValueOnce(
+      new teamBilling.TeamBillingError("payment_action_required", "Your bank needs you to approve")
+    );
+    const { outcome } = await runBillingChange("owner", ask, approved);
+    expect(outcome).toMatchObject({ executed: null, code: "outcome_unknown" });
+    const reason = (outcome as { reason: string }).reason;
+    expect(reason).not.toMatch(/Nothing was changed/);
+    expect(reason).toMatch(/3-D Secure/);
+    expect(reason).toMatch(/Polar emails a link/);
+  });
+
+  test("monthly blocks already renewing at the count are not reported as made", async () => {
+    const state: CapacityState = {
+      offered: true,
+      eligible: true,
+      planEnding: false,
+      periodStart: "2026-11-01T00:00:00.000Z",
+      periodEnd: "2026-12-01T00:00:00.000Z",
+      planRequests: 100_000,
+      blockRequests: 50_000,
+      used: 0,
+      creditRequests: 0,
+      blocks: {
+        units: 2,
+        pendingUnits: 1,
+        cancelAtPeriodEnd: false,
+        pastDue: false,
+        periodEnd: null,
+      },
+      overage: {
+        subscribed: false,
+        active: false,
+        cancelAtPeriodEnd: false,
+        pastDue: false,
+        maxRequests: 0,
+        usedRequests: 0,
+      },
+    };
+    vi.mocked(capacityBilling.getCapacityState).mockResolvedValue(state);
+    vi.mocked(capacityRoute.applyCapacityAction).mockResolvedValueOnce({
+      url: null,
+      unchanged: true,
+    });
+    const keep = {
+      teamId: null,
+      change: {
+        kind: "capacity" as const,
+        capacity: {
+          resource: "requests" as const,
+          action: "set_monthly_blocks" as const,
+          blocks: 2,
+        },
+      },
+    };
+    const approved = (await loadBillingQuote("owner", keep)).at(Date.now());
+    const { outcome } = await runBillingChange("owner", keep, approved);
+    expect(outcome).toMatchObject({ executed: false, code: "unchanged" });
+  });
+});
+
+describe("plan switches made now", () => {
+  test("carry the period they were priced on to the switch's own renewal check", async () => {
+    vi.mocked(billing.loadPlanQuoteForUser).mockResolvedValue({
+      basis: { subscriptionId: "sub_p", periodEnd: "2026-12-01T00:00:00.000Z" },
+      at: () => ({
+        plan: "business",
+        interval: "month",
+        currentPlan: "pro",
+        currentInterval: "month",
+        applies: "now",
+        periodEnd: "2026-12-01T00:00:00.000Z",
+        dueNowCents: 1050,
+        chargeCents: 1450,
+        creditCents: 400,
+        creditAppliedCents: 0,
+        renewalCents: 2900,
+      }),
+    } as never);
+    vi.mocked(billing.changePlanForUser).mockResolvedValueOnce({ applied: "now" });
+    const up = {
+      teamId: null,
+      change: { kind: "plan" as const, plan: "business" as const, interval: "month" as const },
+    };
+    const approved = (await loadBillingQuote("owner", up)).at(Date.now());
+    const { outcome } = await runBillingChange("owner", up, approved);
+    expect(outcome).toEqual({ executed: true, applied: "now" });
+    expect(billing.changePlanForUser).toHaveBeenCalledWith("owner", "business", "month", {
+      periodEnd: "2026-12-01T00:00:00.000Z",
+    });
+  });
+
+  test("its refusal right before Polar reads as nothing changed", async () => {
+    vi.mocked(billing.changePlanForUser).mockRejectedValueOnce(
+      new billing.BillingActionError(
+        "quote_changed",
+        "The billing period moved since this was priced"
+      )
+    );
+    const up = {
+      teamId: null,
+      change: { kind: "plan" as const, plan: "business" as const, interval: "month" as const },
+    };
+    const approved = (await loadBillingQuote("owner", up)).at(Date.now());
+    const { outcome } = await runBillingChange("owner", up, approved);
+    expect(outcome).toMatchObject({ executed: false, code: "quote_changed" });
+  });
+});
+
+describe("asking for the seats Polar bills already", () => {
+  test("drops Polar's waiting reduction", () => {
+    expect(sameSeatsSentence(4, 2, { seats: 4, pending_seats: 2 })).toBe(
+      "Keep 4 seats on the team: drop the reduction to 2 waiting for the renewal."
+    );
+  });
+
+  test("after a failed write, says ours is set to match Polar's, never a null reduction", () => {
+    const up = sameSeatsSentence(5, null, { seats: 3, pending_seats: null });
+    expect(up).toBe(
+      "Keep 5 seats on the team, the count Polar bills already: this account shows 3 and is set to 5 now. Nothing more is charged."
+    );
+    expect(up).not.toContain("null");
+    expect(sameSeatsSentence(3, null, { seats: 5, pending_seats: null })).toContain(
+      "this account shows 5 and is set to 3 from the renewal"
+    );
+    const dropped = sameSeatsSentence(4, null, { seats: 4, pending_seats: 2 });
+    expect(dropped).toBe(
+      "Keep 4 seats on the team: drop the reduction to 2 this account shows for the renewal, which Polar no longer has."
+    );
+  });
+
+  test("the quote uses it when only this account has a reduction waiting", async () => {
+    polar.state.seats = 4;
+    polar.state.amount = 4800;
+    vi.mocked(teamBilling.getTeamForOwner).mockClear();
+    vi.mocked(teamBilling.loadTeamSeatQuote).mockImplementationOnce(async (_u, _t, seats) => {
+      const s = { ...polar.state };
+      return {
+        team: { seats: 4, pending_seats: 2, name: "Acme" },
+        basis: { subscriptionId: "sub_1", teamSeats: 4 },
+        at: (nowMs: number) =>
+          quoteSeatChange({
+            currentSeats: s.seats,
+            pendingSeats: null,
+            newSeats: seats,
+            pricePerSeatCents: 1200,
+            periodStartMs: s.periodStart,
+            periodEndMs: s.periodEnd,
+            creditBalanceCents: 0,
+            nowMs,
+          }),
+      } as never;
+    });
+    const quote = (
+      await loadBillingQuote("owner", { ...ask, change: { kind: "seats", seats: 4 } })
+    ).at(Date.now());
+    expect(quote.change).toContain("drop the reduction to 2 this account shows");
+    expect(quote.change).not.toContain("null");
+  });
+});
+
+describe("naming a team to its owner", () => {
+  test("combining marks are dropped and the name is cut by code point", () => {
+    expect(cleanTeamName("Acme\u0336\u0336\u0336 Bot")).toBe("Acme Bot");
+    const cut = cleanTeamName("\u{1F600}".repeat(90));
+    expect(Array.from(cut)).toHaveLength(80);
+    expect(cut).toBe("\u{1F600}".repeat(80));
+  });
+
+  test("the Account row carries what the asker cannot set", () => {
+    const line = teamAccountLine({
+      name: "Acme",
+      createdAt: "2026-03-04T10:00:00Z",
+      members: 4,
+      plan: "Team Business",
+      seats: 5,
+      sameName: 1,
+    });
+    expect(line).toBe(
+      "A team you own, named Acme: created March 4, 2026, 4 members, on Team Business with 5 seats."
+    );
+  });
+
+  test("says so when two of the owner's teams share the name", () => {
+    const line = teamAccountLine({
+      name: "Acme",
+      createdAt: "2026-03-04T10:00:00Z",
+      members: 1,
+      plan: null,
+      seats: 1,
+      sameName: 2,
+    });
+    expect(line).toContain("1 member, with no subscription.");
+    expect(line).toContain("You own 2 teams with this name");
   });
 });

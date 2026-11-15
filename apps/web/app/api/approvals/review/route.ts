@@ -2,6 +2,7 @@ import { deviceApprover } from "@/lib/device-session";
 import { networkOf } from "@/lib/device-requester";
 import { ApprovalError, reviewApproval } from "@/lib/approvals/store";
 import { reportError } from "@/lib/observability";
+import { loggablePolarError } from "@/lib/polar";
 import { checkRateLimit } from "@/lib/rate-limit";
 
 /**
@@ -33,7 +34,7 @@ export async function GET(request: Request) {
     if (err instanceof ApprovalError) {
       return Response.json({ error: err.message }, { status: err.status });
     }
-    reportError("GET /api/approvals/review failed", err);
+    reportError("GET /api/approvals/review failed", loggablePolarError(err));
     return Response.json({ error: "Internal server error" }, { status: 500 });
   }
 }

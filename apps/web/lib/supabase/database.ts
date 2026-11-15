@@ -3093,6 +3093,10 @@ export interface Database {
         Args: { p_account_key: string; p_holder: string; p_seconds: number };
         Returns: boolean;
       };
+      extend_billing_change_lock: {
+        Args: { p_account_key: string; p_holder: string; p_seconds: number };
+        Returns: boolean;
+      };
       release_billing_change_lock: {
         Args: { p_account_key: string; p_holder: string };
         Returns: undefined;

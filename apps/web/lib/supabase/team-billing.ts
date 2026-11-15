@@ -14,6 +14,7 @@ import { errors } from "@polar-sh/sdk/2026-10";
 import { ENTITLEMENTS, teamRequestLimit } from "@/lib/entitlements";
 import {
   creditBalanceFromOrders,
+  pastApprovedPeriod,
   quotePlanChange,
   quoteSeatChange,
   type PlanChangeQuote,
@@ -612,12 +613,20 @@ export async function resubscribeTeam(userId: string, teamId: string): Promise<v
  * either moved, because Polar would then charge for another period.
  */
 export interface ApprovedSeatIncrease {
+  /** The team's seats as this database had them when it was priced. */
   currentSeats: number;
   periodEnd: string;
 }
 
-/** How close to the renewal an approved increase still goes ahead. */
-const RENEWAL_MARGIN_MS = 60_000;
+/**
+ * What an approved plan switch was priced on (a `billing.change`
+ * approval): the end of the period its prorated charge covers. A switch
+ * made now refuses, right before Polar is asked, within a minute of that
+ * end or once past it, as a seat increase does.
+ */
+export interface ApprovedPlanSwitch {
+  periodEnd: string;
+}
 
 export async function updateTeamSeats(
   userId: string,
@@ -658,8 +667,7 @@ export async function updateTeamSeats(
     // nobody approved.
     if (
       approved &&
-      (team.seats !== approved.currentSeats ||
-        !(Date.now() < Date.parse(approved.periodEnd) - RENEWAL_MARGIN_MS))
+      (team.seats !== approved.currentSeats || pastApprovedPeriod(approved.periodEnd))
     ) {
       throw new TeamBillingError(
         "quote_changed",
@@ -883,12 +891,14 @@ export async function loadTeamSeatQuote(
 /** The Polar error a declined charge maps to, or null for any other error. */
 function declinedCharge(error: unknown, what: string): TeamBillingError | null {
   // 402 covers a declined card (PaymentFailed) and a charge that needs the
-  // cardholder to authenticate (PaymentActionRequired); neither changes the
-  // subscription.
+  // cardholder to authenticate (PaymentActionRequired, its own code: Polar
+  // emails a link to confirm it, so the change may still go through once
+  // they do).
   if (!(error instanceof errors.SubscriptionsUpdate402Error)) return null;
+  const action = error.error.error === "PaymentActionRequired";
   return new TeamBillingError(
-    "payment_failed",
-    error.error.error === "PaymentActionRequired"
+    action ? "payment_action_required" : "payment_failed",
+    action
       ? `Your bank needs you to approve this payment, so ${what} yet. Approve it from the link in your Polar receipt email, or update the payment method under Invoices and payment method, and try again.`
       : `Your payment method was declined, so ${what}. Update the payment method under Invoices and payment method and try again.`
   );
@@ -962,13 +972,20 @@ export async function changeTeamPlan(
   userId: string,
   teamId: string,
   plan: TeamPlan,
-  interval: BillingInterval
+  interval: BillingInterval,
+  approved?: ApprovedPlanSwitch
 ): Promise<{ applied: "now" | "renewal"; seatReductionLost?: number }> {
   const { team, productId, applies } = await teamForPlanChange(userId, teamId, plan, interval);
   const polar = createPolarClient();
 
   let updated: Record<string, unknown>;
   let updatedAt: Date;
+  // Checked with no await before the update: a switch made now is charged
+  // for the rest of the period, so one that crossed the renewal since the
+  // approval's quote would charge for a period nobody approved.
+  if (approved && applies === "now" && pastApprovedPeriod(approved.periodEnd)) {
+    throw new TeamBillingError("quote_changed", "The billing period moved since this was priced");
+  }
   try {
     updated = (await polar.subscriptions.update(team.polar_subscription_id, {
       product_id: productId,
@@ -1177,6 +1194,8 @@ export async function loadTeamPlanQuote(
       teamPendingSeats: team.pending_seats,
       pendingProduct: subscription.pending_update?.product_id ?? null,
       pendingSeats: subscription.pending_update?.seats ?? null,
+      // The period a switch made now is charged for (ApprovedPlanSwitch).
+      periodEnd: new Date(Date.parse(subscription.current_period_end)).toISOString(),
     },
     at: (nowMs) =>
       quotePlanChange({
