@@ -18,6 +18,11 @@ import {
 import { Button } from "@/components/ui/button";
 import { FieldControl } from "@/components/ui/field";
 import { longDate } from "@/lib/dates";
+import {
+  removalWarning,
+  removedText,
+  type DisconnectedAgent,
+} from "@/lib/agent/org-issuer-removal";
 
 /**
  * Organisation issuers a team trusts for agent sign-in
@@ -46,6 +51,8 @@ interface IssuerRow {
   issuer: string;
   allowed_client_ids: string[];
   created_at: string;
+  /** The owner's: agents removing the row disconnects, every member's. */
+  connected_agents?: number;
   connect?: { window_expires_at: string | null; connections: Connection[] };
 }
 
@@ -260,14 +267,13 @@ export function TeamIdJagIssuersPanel({
         setMessage({ tone: "error", text: await errorText(res, "Could not remove the issuer.") });
         return;
       }
-      const data = (await res.json().catch(() => ({}))) as { revoked_connections?: number };
-      const revoked = data.revoked_connections ?? 0;
+      const data = (await res.json().catch(() => ({}))) as {
+        revoked_connections?: number;
+        disconnected?: DisconnectedAgent[];
+      };
       setMessage({
         tone: "success",
-        text:
-          revoked === 0
-            ? "Issuer removed."
-            : `Issuer removed. ${revoked === 1 ? "One agent was" : `${revoked} agents were`} disconnected.`,
+        text: removedText(data.revoked_connections ?? 0, data.disconnected ?? []),
       });
       await load();
     } catch {
@@ -354,7 +360,7 @@ export function TeamIdJagIssuersPanel({
                     <AlertDialogHeader>
                       <AlertDialogTitle>Stop trusting this issuer?</AlertDialogTitle>
                       <AlertDialogDescription>
-                        Every agent it connected is disconnected now, and their tokens stop working.
+                        {removalWarning(row.connected_agents)}
                       </AlertDialogDescription>
                     </AlertDialogHeader>
                     <AlertDialogFooter>

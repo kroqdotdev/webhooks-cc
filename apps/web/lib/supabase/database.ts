@@ -2893,8 +2893,21 @@ export interface Database {
           p_user_id: string | null;
           p_team_id: string | null;
           p_source: string;
+          p_rehome: boolean;
         };
         Returns: string[];
+      };
+      insert_agent_access_token: {
+        Args: {
+          p_registration_id: string;
+          p_user_id: string | null;
+          p_key_hash: string;
+          p_key_prefix: string;
+          p_name: string;
+          p_expires_at: string;
+          p_scopes: string[];
+        };
+        Returns: boolean;
       };
       revoke_agent_delegation: {
         Args: { p_iss: string; p_sub: string };

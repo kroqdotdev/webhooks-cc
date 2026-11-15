@@ -64,8 +64,11 @@ import {
  * Every check runs before anything is looked up by email, and the trust
  * check (an issuer some team trusts, under a configured prefix) runs before
  * any key is fetched, so an arbitrary `iss` never makes us fetch anything.
- * A failure before the signature holds is marked unsigned: the grant answers
- * all of those alike, so nobody learns whether a team trusts an issuer.
+ * A failure before the signature holds is marked unsigned: the grant gives
+ * all of those the same answer, so the body never says whether a team
+ * trusts an issuer. Response times can (a trusted issuer's keys are read,
+ * an untrusted one is refused after a cached lookup); see
+ * lib/agent/org-id-jag-grant.ts for why that is accepted.
  */
 
 const ID_JAG_TYP = "oauth-id-jag+jwt";
@@ -85,6 +88,7 @@ export type OrgIdJagError =
   | "issuer_not_allowed"
   | "invalid_issuer"
   | "keys_unavailable"
+  | "keys_too_large"
   | "unknown_key"
   | "invalid_signature"
   | "invalid_audience"
@@ -174,7 +178,9 @@ export function orgAudiences(): string[] {
 }
 
 function mapVerifyError(err: unknown): OrgIdJagFailure {
-  if (err instanceof OrgJwksError) return { ok: false, error: "keys_unavailable" };
+  // Its own code when a document is over the outbound fetch's 1 KB limit,
+  // so the audit trail says what to fix (lib/agent/org-jwks.ts).
+  if (err instanceof OrgJwksError) return { ok: false, error: err.code };
   if (err instanceof jose.errors.JWKSNoMatchingKey) return { ok: false, error: "unknown_key" };
   if (err instanceof jose.errors.JOSEAlgNotAllowed) {
     return { ok: false, error: "unsupported_algorithm" };
@@ -302,6 +308,11 @@ export type OrgIdJagLink =
       bound: boolean;
       /** The trust row whose window bound it. */
       trustId: string | null;
+      /**
+       * Windows of the member's that closed because this identity was
+       * connected already (its trust rows), so nothing else binds in them.
+       */
+      windowsClosed: { trustId: string; teamId: string }[];
     }
   | {
       status: "interaction_required";
@@ -378,6 +389,7 @@ export async function linkOrgIdJag(verified: OrgIdJagSuccess): Promise<OrgIdJagL
     trust_id?: string | null;
     created?: boolean;
     bound?: boolean;
+    windows_closed?: { trust_id: string; team_id: string }[];
     attempt?: number;
     attempt_expires_at?: string;
   };
@@ -396,6 +408,10 @@ export async function linkOrgIdJag(verified: OrgIdJagSuccess): Promise<OrgIdJagL
         token,
         bound: result.bound === true,
         trustId: result.trust_id ?? null,
+        windowsClosed: (result.windows_closed ?? []).map((w) => ({
+          trustId: w.trust_id,
+          teamId: w.team_id,
+        })),
       };
     }
     case "pending": {

@@ -91,6 +91,32 @@ async function createAccount(email: string, fullName: string | null): Promise<st
   return data.user.id;
 }
 
+/**
+ * True when the identity's live registration came through a team's
+ * organisation issuer (migration 00105). Such a delegation lives only as
+ * long as each fresh ID-JAG from that issuer at the token endpoint, so this
+ * endpoint, which hands out a 90-day assertion of ours, never serves it.
+ */
+async function teamBoundRegistration(iss: string, sub: string): Promise<boolean> {
+  const { count, error } = await createAdminClient()
+    .from("agent_registrations")
+    .select("id", { count: "exact", head: true })
+    .eq("idjag_iss", iss)
+    .eq("idjag_sub", sub)
+    .is("revoked_at", null)
+    .not("idjag_team_issuer_id", "is", null);
+  if (error) throw error;
+  return (count ?? 0) > 0;
+}
+
+function teamBoundError(): AgentError {
+  return new AgentError(
+    400,
+    "invalid_request",
+    "This identity connects through its organisation's issuer, which a team trusts. Present the ID-JAG at the token endpoint (the jwt-bearer grant) instead."
+  );
+}
+
 async function readRegistration(id: string): Promise<RegistrationRow> {
   const admin = createAdminClient();
   const { data, error } = await admin.from("agent_registrations").select("*").eq("id", id).single();
@@ -114,6 +140,10 @@ export async function linkIdJagIdentity(verified: IdJagSuccess): Promise<IdJagLi
   ) {
     throw new AgentError(400, "invalid_request", "The assertion's email cannot be used here.");
   }
+
+  // Checked before the link, which would otherwise re-issue a pending
+  // team ceremony's claim, and again on the row it links below.
+  if (await teamBoundRegistration(verified.iss, verified.sub)) throw teamBoundError();
 
   let provisionedUserId: string | null = null;
   if (!(await hasLiveDelegation(verified.iss, verified.sub)) && !(await userIdByEmail(email))) {
@@ -148,6 +178,7 @@ export async function linkIdJagIdentity(verified: IdJagSuccess): Promise<IdJagLi
   switch (result.status) {
     case "linked": {
       const registration = await readRegistration(result.registration_id!);
+      if (registration.idjag_team_issuer_id) throw teamBoundError();
       const assertionExpires = new Date(Date.now() + CLAIMED_ASSERTION_TTL_SECONDS * 1000);
       const assertion = await signAssertion({
         registrationId: registration.id,
@@ -166,6 +197,7 @@ export async function linkIdJagIdentity(verified: IdJagSuccess): Promise<IdJagLi
     }
     case "pending": {
       const registration = await readRegistration(result.registration_id!);
+      if (registration.idjag_team_issuer_id) throw teamBoundError();
       return {
         status: "interaction_required",
         registration,

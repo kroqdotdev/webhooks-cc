@@ -138,7 +138,8 @@ export type AgentAuditAction =
   | "agent.oauth.client_registered"
   | "agent.oauth.approved"
   | "agent.oauth.denied"
-  | "team.idjag_connect_bound";
+  | "team.idjag_connect_bound"
+  | "team.idjag_connect_closed";
 
 export type AuditOutcome = "ok" | "refused" | "error";
 

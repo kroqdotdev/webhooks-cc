@@ -141,14 +141,43 @@ export function issuerUnderPrefix(issuer: string): boolean {
   );
 }
 
-/** True when any team trusts this exact issuer. */
+/** How long an answer of issuerTrustedByAnyTeam() is kept, yes or no. */
+export const TRUSTED_CACHE_TTL_MS = 30_000;
+const TRUSTED_CACHE_MAX_ENTRIES = 1000;
+const trustedCache = new Map<string, { trusted: boolean; until: number }>();
+
+/** Drops cached trust answers (tests). */
+export function clearTrustedIssuerCache(): void {
+  trustedCache.clear();
+}
+
+/**
+ * True when any team trusts this exact issuer. Asked for every assertion
+ * under a configured prefix before its signature is checked, so anyone can
+ * make us ask: the answer, a no included, is kept per process for
+ * TRUSTED_CACHE_TTL_MS, and assertions naming made-up issuers cost a map
+ * lookup, not a query. Adding or removing an issuer drops this process's
+ * entry at once; other processes see the change within the TTL. A removed issuer may still read as
+ * trusted for that long, which only lets its assertions reach the signature
+ * check: linking reads the trust rows again in the same transaction.
+ */
 export async function issuerTrustedByAnyTeam(issuer: string): Promise<boolean> {
+  const now = Date.now();
+  const cached = trustedCache.get(issuer);
+  if (cached && cached.until > now) return cached.trusted;
   const { count, error } = await createAdminClient()
     .from("team_idjag_issuers")
     .select("id", { count: "exact", head: true })
     .eq("issuer", issuer);
   if (error) throw error;
-  return (count ?? 0) > 0;
+  const trusted = (count ?? 0) > 0;
+  trustedCache.delete(issuer);
+  if (trustedCache.size >= TRUSTED_CACHE_MAX_ENTRIES) {
+    const oldest = trustedCache.keys().next().value;
+    if (oldest !== undefined) trustedCache.delete(oldest);
+  }
+  trustedCache.set(issuer, { trusted, until: now + TRUSTED_CACHE_TTL_MS });
+  return trusted;
 }
 
 type IssuerRow = {
@@ -210,6 +239,8 @@ export async function addTeamIssuer(input: {
   if (error) throw error;
   const result = data as { status: string; id?: string; created_at?: string };
   if (result.status === "ok") {
+    // Trusted now: this process stops answering from a cached no.
+    trustedCache.delete(input.issuer);
     return {
       status: "ok",
       issuer: {
@@ -227,8 +258,19 @@ export async function addTeamIssuer(input: {
   throw new Error(`Unexpected add_team_idjag_issuer status: ${result.status}`);
 }
 
+/** An agent connection that removing an issuer disconnected. */
+export interface DisconnectedAgent {
+  id: string;
+  clientName: string | null;
+  /** True for one still waiting for its member's confirmation. */
+  pending: boolean;
+  /** The member it belonged to (the owner sees the team's members anyway). */
+  memberEmail: string | null;
+}
+
 export type RemoveIssuerResult =
-  { status: "ok"; issuer: string; revoked: string[] } | { status: "not_owner" | "not_found" };
+  | { status: "ok"; issuer: string; revoked: string[]; disconnected: DisconnectedAgent[] }
+  | { status: "not_owner" | "not_found" };
 
 export async function removeTeamIssuer(input: {
   teamId: string;
@@ -241,14 +283,58 @@ export async function removeTeamIssuer(input: {
     p_issuer_id: input.issuerId,
   });
   if (error) throw error;
-  const result = data as { status: string; issuer?: string; revoked?: string[] };
+  const result = data as {
+    status: string;
+    issuer?: string;
+    revoked?: string[];
+    disconnected?: {
+      id: string;
+      client_name: string | null;
+      pending: boolean;
+      member_email: string | null;
+    }[];
+  };
   if (result.status === "ok") {
-    return { status: "ok", issuer: result.issuer!, revoked: result.revoked ?? [] };
+    // This process asks again; another team may still trust it.
+    trustedCache.delete(result.issuer!);
+    return {
+      status: "ok",
+      issuer: result.issuer!,
+      revoked: result.revoked ?? [],
+      disconnected: (result.disconnected ?? []).map((row) => ({
+        id: row.id,
+        clientName: row.client_name,
+        pending: row.pending,
+        memberEmail: row.member_email,
+      })),
+    };
   }
   if (result.status === "not_owner" || result.status === "not_found") {
     return { status: result.status };
   }
   throw new Error(`Unexpected remove_team_idjag_issuer status: ${result.status}`);
+}
+
+/**
+ * How many agents each trust row connected, every member's together, live
+ * ones and those waiting for a member's confirmation: what removing the row
+ * disconnects. For the owner's removal dialog.
+ */
+export async function trustRowConnectionCounts(trustIds: string[]): Promise<Map<string, number>> {
+  const counts = new Map<string, number>(trustIds.map((id) => [id, 0]));
+  if (trustIds.length === 0) return counts;
+  const { data, error } = await createAdminClient()
+    .from("agent_registrations")
+    .select("idjag_team_issuer_id")
+    .in("idjag_team_issuer_id", trustIds)
+    .is("revoked_at", null)
+    .limit(5000);
+  if (error) throw error;
+  for (const row of data ?? []) {
+    const id = row.idjag_team_issuer_id!;
+    counts.set(id, (counts.get(id) ?? 0) + 1);
+  }
+  return counts;
 }
 
 // ---------------------------------------------------------------------------

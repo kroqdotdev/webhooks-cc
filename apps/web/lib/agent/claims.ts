@@ -22,6 +22,7 @@ import { providerDisplayName } from "./trusted-providers";
 import {
   generateClaimToken,
   hashClaimToken,
+  InvalidGrantError,
   mintAccessToken,
   type AccessToken,
   type RegistrationRow,
@@ -564,12 +565,22 @@ export async function pollClaim(claimToken: string): Promise<PollResult> {
     if (!consumed) return { status: "invalid", description: "This claim was already collected." };
 
     const now = Date.now();
-    const token = await mintAccessToken(registration, {
-      userId: registration.user_id,
-      scopes: POST_CLAIM_SCOPES,
-      issuedAtMs: now,
-      expiresAtMs: now + ACCESS_TOKEN_TTL_SECONDS * 1000,
-    });
+    // Inserted only while the registration is still unrevoked (in SQL), so
+    // a revocation since the read above leaves no token behind.
+    let token: AccessToken;
+    try {
+      token = await mintAccessToken(registration, {
+        userId: registration.user_id,
+        scopes: POST_CLAIM_SCOPES,
+        issuedAtMs: now,
+        expiresAtMs: now + ACCESS_TOKEN_TTL_SECONDS * 1000,
+      });
+    } catch (error) {
+      if (error instanceof InvalidGrantError) {
+        return { status: "invalid", description: "Unknown or revoked claim token." };
+      }
+      throw error;
+    }
     if (registration.idjag_team_issuer_id) {
       return { status: "claimed", token, assertion: null, assertionExpires: null, registration };
     }

@@ -17,8 +17,14 @@ import { sendForward } from "@/lib/forwarding/send";
  * like Client ID Metadata Documents (lib/oauth/clients.ts), so the box's IP
  * stays hidden, else directly with the forwarding SSRF rules. The proxy and
  * the direct path return the first 1024 bytes, which caps both documents: a
- * P-256 key is about 200 bytes, so a few keys fit. Only P-256 signing keys
- * are kept, since ES256 is the one algorithm accepted.
+ * P-256 key is about 200 bytes, so a few keys fit. The notify proxy has no
+ * mode with a larger limit (EXCERPT_BYTES in infra/notify-proxy/src/
+ * worker.ts serves its forward and relay modes alike), so a document of
+ * 1024 bytes or more is refused with its own audit code,
+ * `keys_too_large`, and checking an issuer's two documents against the
+ * limit is a step of turning the feature on. Raising it means a proxy mode
+ * of its own, deployed before the web release that uses it. Only P-256
+ * signing keys are kept, since ES256 is the one algorithm accepted.
  *
  * Kept in memory for a few minutes; a kid nobody has seen refetches at most
  * every REFETCH_COOLDOWN_MS, so tokens with made-up kids cannot hammer the
@@ -39,8 +45,14 @@ const CACHE_MAX_ENTRIES = 200;
 /** What the proxy and the direct path hand back at most. */
 export const MAX_DOCUMENT_BYTES = 1024;
 
+/** Why an issuer's keys could not be had, for the audit row. */
+export type OrgJwksErrorCode = "keys_unavailable" | "keys_too_large";
+
 export class OrgJwksError extends Error {
-  constructor(message: string) {
+  constructor(
+    message: string,
+    readonly code: OrgJwksErrorCode = "keys_unavailable"
+  ) {
     super(message);
     this.name = "OrgJwksError";
   }
@@ -54,6 +66,7 @@ interface Entry {
   /** When `keys` was fetched. */
   keysFetchedAt: number;
   reason?: string;
+  code?: OrgJwksErrorCode;
   /** Until when the entry is used without asking again. */
   until: number;
   /** The last attempt, good or not: the cooldown counts from here. */
@@ -99,7 +112,10 @@ async function fetchDocument(url: string, label: string): Promise<unknown> {
     );
   }
   if (Buffer.byteLength(result.excerpt, "utf8") >= MAX_DOCUMENT_BYTES) {
-    throw new OrgJwksError(`The issuer's ${label} is larger than ${MAX_DOCUMENT_BYTES} bytes.`);
+    throw new OrgJwksError(
+      `The issuer's ${label} is larger than the ${MAX_DOCUMENT_BYTES} bytes the outbound fetch returns.`,
+      "keys_too_large"
+    );
   }
   try {
     return JSON.parse(result.excerpt);
@@ -189,11 +205,13 @@ async function fetchKeys(issuer: string): Promise<KeySet> {
   } catch (error) {
     const reason =
       error instanceof OrgJwksError ? error.message : "The issuer's keys could not be fetched.";
+    const code = error instanceof OrgJwksError ? error.code : "keys_unavailable";
     if (previous?.keys && now - previous.keysFetchedAt < STALE_MAX_MS) {
       // Keep the keys that worked; only the attempt is new.
       remember(issuer, {
         ...previous,
         reason,
+        code,
         until: now + NEGATIVE_CACHE_TTL_MS,
         attemptedAt: now,
       });
@@ -203,10 +221,11 @@ async function fetchKeys(issuer: string): Promise<KeySet> {
       keys: null,
       keysFetchedAt: 0,
       reason,
+      code,
       until: now + NEGATIVE_CACHE_TTL_MS,
       attemptedAt: now,
     });
-    throw new OrgJwksError(reason);
+    throw new OrgJwksError(reason, code);
   }
 }
 
@@ -225,7 +244,7 @@ async function keySet(issuer: string): Promise<KeySet> {
   const cached = cache.get(issuer);
   if (cached && cached.until > Date.now()) {
     if (cached.keys) return cached.keys;
-    throw new OrgJwksError(cached.reason ?? "The issuer's keys could not be fetched.");
+    throw new OrgJwksError(cached.reason ?? "The issuer's keys could not be fetched.", cached.code);
   }
   return load(issuer);
 }

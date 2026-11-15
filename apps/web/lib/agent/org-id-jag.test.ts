@@ -33,6 +33,8 @@ vi.mock("@/lib/env", () => ({
 // Which issuers some team trusts, which jtis were seen, and what the link
 // function answers.
 const trusted = new Set<string>();
+/** Queries of team_idjag_issuers, to see the trust cache work. */
+let trustLookups = 0;
 const seenJtis = new Set<string>();
 let linkAnswer: Record<string, unknown> = { status: "not_member" };
 
@@ -46,8 +48,22 @@ vi.mock("@/lib/supabase/admin", () => ({
       if (table === "team_idjag_issuers") {
         return {
           select: () => ({
-            eq: (_column: string, issuer: string) =>
-              thenable({ count: trusted.has(issuer) ? 1 : 0, error: null }),
+            eq: (_column: string, issuer: string) => {
+              trustLookups += 1;
+              return thenable({ count: trusted.has(issuer) ? 1 : 0, error: null });
+            },
+          }),
+        };
+      }
+      if (table === "agent_registrations") {
+        return {
+          select: () => ({
+            eq: (_column: string, id: string) => ({
+              single: async () => ({
+                data: { id, user_id: "user-1", client_name: "client.example.com" },
+                error: null,
+              }),
+            }),
           }),
         };
       }
@@ -69,11 +85,39 @@ vi.mock("@/lib/supabase/admin", () => ({
 
 vi.mock("@/lib/supabase/inbound-domains", () => ({ isInboundDomainAddress: async () => false }));
 vi.mock("@/lib/observability", () => ({ reportError: vi.fn() }));
-vi.mock("@/lib/audit", () => ({ auditAgentEvent: vi.fn(async () => {}), emailDomain: () => null }));
+const audited: { action: string; metadata?: Record<string, unknown> }[] = [];
+vi.mock("@/lib/audit", () => ({
+  auditAgentEvent: vi.fn(async (_request: Request, input: { action: string }) => {
+    audited.push(input);
+  }),
+  emailDomain: () => null,
+}));
+// The bind notice; the email itself is built and checked in its own suite.
+const notices: Record<string, unknown>[] = [];
+vi.mock("./org-connect-notice", () => ({
+  notifyConnectBound: vi.fn(async (input: Record<string, unknown>) => {
+    notices.push(input);
+  }),
+}));
+// The token issued once linked.
+vi.mock("./registrations", async (importOriginal) => {
+  const original = await importOriginal<typeof import("./registrations")>();
+  return {
+    ...original,
+    issueClaimedAccessToken: async (registrationId: string) => ({
+      accessToken: "whcc_test",
+      expiresIn: 3600,
+      scope: "endpoints:read",
+      registration: { id: registrationId, user_id: "user-1", client_name: "client.example.com" },
+    }),
+  };
+});
 // The token endpoint's budgets: every key asked for, and which are spent.
 const rateKeys: { key: string; max: number }[] = [];
 const exhausted = new Set<string>();
 vi.mock("@/lib/rate-limit", () => ({
+  getClientIp: (request: Request) => request.headers.get("x-forwarded-for") ?? "unknown",
+  rateLimitIpBucket: (ip: string) => ip,
   checkRateLimitByKeyWithInfo: async (key: string, max: number) => {
     rateKeys.push({ key, max });
     return exhausted.has(key)
@@ -107,7 +151,9 @@ const { orgIdJagGrant, identityRateKey, UNVERIFIED_DESCRIPTION } =
 const { issuerRateKey } = await import("./token-rate-limit");
 const { signAssertion } = await import("./assertion");
 const { clearOrgJwksCache, discoveryUrl } = await import("./org-jwks");
-const { checkOrgIssuer, checkAllowedClientIds } = await import("./org-issuers");
+const { checkOrgIssuer, checkAllowedClientIds, clearTrustedIssuerCache, issuerTrustedByAnyTeam } =
+  await import("./org-issuers");
+const { clearRefusalAuditGate } = await import("./refusal-audit");
 
 let key: CryptoKey;
 let publicKey: CryptoKey;
@@ -194,6 +240,11 @@ beforeEach(async () => {
   documents.clear();
   fetched.length = 0;
   clearOrgJwksCache();
+  clearTrustedIssuerCache();
+  clearRefusalAuditGate();
+  trustLookups = 0;
+  audited.length = 0;
+  notices.length = 0;
   serveIssuer(ISS, { keys: [await publicJwk(publicKey, KID)] });
   linkAnswer = { status: "not_member" };
   rateKeys.length = 0;
@@ -391,7 +442,7 @@ describe("verifyOrgIdJag", () => {
     const jwk = await publicJwk(publicKey, KID);
     serveIssuer(ISS, { keys: Array.from({ length: 8 }, (_, i) => ({ ...jwk, kid: `k${i}` })) });
     expect(await verifyOrgIdJag(await mint(), CLIENT)).toMatchObject({
-      error: "keys_unavailable",
+      error: "keys_too_large",
     });
   });
 
@@ -473,6 +524,20 @@ describe("the issuer's key cache", () => {
     expect((await verifyOrgIdJag(await mint(), CLIENT)).ok).toBe(true);
   });
 
+  test("refuses a key set over the outbound fetch's 1 KB with its own code", async () => {
+    const jwksUri = `${new URL(ISS).origin}/jwks/${encodeURIComponent(ISS)}`;
+    documents.set(jwksUri, JSON.stringify({ keys: [], padding: "x".repeat(2000) }));
+    expect(await verifyOrgIdJag(await mint(), CLIENT)).toEqual({
+      ok: false,
+      error: "keys_too_large",
+    });
+    // Cached with its code, so the next one within the minute says the same.
+    expect(await verifyOrgIdJag(await mint(), CLIENT)).toEqual({
+      ok: false,
+      error: "keys_too_large",
+    });
+  });
+
   test("shares one fetch between concurrent requests", async () => {
     const results = await Promise.all(
       Array.from({ length: 5 }, async () => verifyOrgIdJag(await mint(), CLIENT))
@@ -480,6 +545,35 @@ describe("the issuer's key cache", () => {
     expect(results.every((result) => result.ok)).toBe(true);
     expect(fetched.filter((url) => url === discoveryUrl(ISS))).toHaveLength(1);
     expect(fetched).toHaveLength(2);
+  });
+});
+
+describe("issuerTrustedByAnyTeam", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  test("keeps the answer, a no too, for 30 seconds", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    const unknown = `${PREFIX}made-up`;
+    for (let i = 0; i < 5; i++) {
+      expect(await issuerTrustedByAnyTeam(unknown)).toBe(false);
+      expect(await issuerTrustedByAnyTeam(ISS)).toBe(true);
+    }
+    expect(trustLookups).toBe(2);
+    // A team adds it meanwhile: other processes see it once the entry ages out.
+    trusted.add(unknown);
+    expect(await issuerTrustedByAnyTeam(unknown)).toBe(false);
+    vi.setSystemTime(Date.now() + 30_001);
+    expect(await issuerTrustedByAnyTeam(unknown)).toBe(true);
+    expect(trustLookups).toBe(3);
+  });
+
+  test("made-up issuers under the prefix cost one lookup each, then none", async () => {
+    for (let i = 0; i < 20; i++) {
+      await verifyOrgIdJag(await mint({ iss: `${PREFIX}flood` }), CLIENT);
+    }
+    expect(trustLookups).toBe(1);
   });
 });
 
@@ -596,6 +690,103 @@ describe("orgIdJagGrant", () => {
     );
     expect(res.status).toBe(400);
     expect(await res.json()).toMatchObject({ error: "invalid_grant" });
+  });
+
+  test("audits an unsigned refusal once a minute per address and code, counting the rest", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      const from = (ip: string) =>
+        new Request(`${APP}/api/oauth2/token`, {
+          method: "POST",
+          headers: { "x-forwarded-for": ip },
+        });
+      for (let i = 0; i < 5; i++) {
+        await orgIdJagGrant(
+          from("192.0.2.1"),
+          { client_id: CLIENT },
+          await mint({ iss: `${PREFIX}not-trusted` })
+        );
+      }
+      // Another address, and another code from the first one, each get a row.
+      await orgIdJagGrant(
+        from("192.0.2.2"),
+        { client_id: CLIENT },
+        await mint({ iss: `${PREFIX}not-trusted` })
+      );
+      await orgIdJagGrant(from("192.0.2.1"), { client_id: CLIENT }, await mint({ typ: "JWT" }));
+      const refused = () => audited.filter((row) => row.action === "agent.registration.refused");
+      expect(refused().map((row) => row.metadata?.code)).toEqual([
+        "invalid_issuer",
+        "invalid_issuer",
+        "invalid_token",
+      ]);
+      // A minute on, the next row carries the four that went unwritten.
+      vi.setSystemTime(Date.now() + 60_001);
+      await orgIdJagGrant(
+        from("192.0.2.1"),
+        { client_id: CLIENT },
+        await mint({ iss: `${PREFIX}not-trusted` })
+      );
+      expect(refused().at(-1)?.metadata).toMatchObject({ code: "invalid_issuer", suppressed: 4 });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test("audits every refusal once the signature holds", async () => {
+    for (let i = 0; i < 3; i++) {
+      await orgIdJagGrant(
+        tokenRequest(),
+        { client_id: CLIENT },
+        await mint({ aud: "https://elsewhere.example" })
+      );
+    }
+    expect(audited.filter((row) => row.action === "agent.registration.refused")).toHaveLength(3);
+  });
+
+  test("emails the member when their window binds, and not on a later link", async () => {
+    linkAnswer = {
+      status: "linked",
+      registration_id: "reg-1",
+      team_id: "team-1",
+      trust_id: "trust-1",
+      bound: true,
+      windows_closed: [],
+    };
+    const res = await orgIdJagGrant(tokenRequest(), { client_id: CLIENT }, await mint());
+    expect(res.status).toBe(200);
+    expect(notices).toEqual([
+      { userId: "user-1", teamId: "team-1", clientName: "client.example.com", issuer: ISS },
+    ]);
+    expect(audited.map((row) => row.action)).toEqual([
+      "team.idjag_connect_bound",
+      "agent.token.issued",
+    ]);
+
+    linkAnswer = { ...linkAnswer, bound: false };
+    await orgIdJagGrant(tokenRequest(), { client_id: CLIENT }, await mint());
+    expect(notices).toHaveLength(1);
+  });
+
+  test("records the windows a connected identity's link closed", async () => {
+    linkAnswer = {
+      status: "linked",
+      registration_id: "reg-1",
+      team_id: "team-1",
+      bound: false,
+      windows_closed: [{ trust_id: "trust-2", team_id: "team-2" }],
+    };
+    const res = await orgIdJagGrant(tokenRequest(), { client_id: CLIENT }, await mint());
+    expect(res.status).toBe(200);
+    expect(audited).toContainEqual(
+      expect.objectContaining({
+        action: "team.idjag_connect_closed",
+        targetId: "trust-2",
+        teamId: "team-2",
+        metadata: expect.objectContaining({ reason: "already_connected" }),
+      })
+    );
+    expect(notices).toEqual([]);
   });
 
   test("needs a client_id", async () => {

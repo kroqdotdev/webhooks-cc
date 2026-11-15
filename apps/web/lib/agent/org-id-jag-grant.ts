@@ -7,6 +7,8 @@ import { NO_STORE_HEADERS, oauthError, oauthJson } from "./errors";
 import { issuer } from "./http";
 import { maxAuthAgeSeconds } from "./id-jag";
 import { linkOrgIdJag, MAX_LIFETIME_WITHOUT_AUTH_TIME_SECS, verifyOrgIdJag } from "./org-id-jag";
+import { notifyConnectBound } from "./org-connect-notice";
+import { refusalAuditGate } from "./refusal-audit";
 import { claimEndpointUrl } from "./registrations";
 import { issuerRateKey, ORG_ISSUER_LIMIT } from "./token-rate-limit";
 
@@ -32,7 +34,13 @@ import { issuerRateKey, ORG_ISSUER_LIMIT } from "./token-rate-limit";
  *
  * Until the signature holds, every refusal is the same invalid_grant
  * answer: whether the issuer is under a prefix, trusted by some team, or
- * publishes keys stays out of it. The audit row keeps the reason.
+ * publishes keys stays out of the body. Not out of the timing: an issuer no
+ * team trusts is refused after a cached lookup, a trusted one only after
+ * its keys were read (fetched, when not cached), so response times can tell
+ * the two apart. The issuer URLs are an organisation's own, not secrets,
+ * and knowing that some team trusts one gives nothing without its signing
+ * key. The audit row keeps the reason, at most one a minute per address and
+ * code (lib/agent/refusal-audit.ts).
  */
 
 const KIND = "identity_assertion";
@@ -69,14 +77,31 @@ export async function orgIdJagGrant(
 
   const verified = await verifyOrgIdJag(assertion, clientId);
   if (!verified.ok) {
+    if (!verified.signed) {
+      // Anyone can send these: at most one row a minute per address and
+      // code, carrying the count of the ones in between.
+      const gate = refusalAuditGate(request, verified.error);
+      if (gate.record) {
+        await auditAgentEvent(request, {
+          action: "agent.registration.refused",
+          status: 400,
+          metadata: {
+            kind: KIND,
+            source: SOURCE,
+            code: verified.error,
+            ...(gate.suppressed > 0 ? { suppressed: gate.suppressed } : {}),
+          },
+        });
+      }
+      return oauthError(400, "invalid_grant", UNVERIFIED_DESCRIPTION);
+    }
+    // Signed refusals are the issuer's own and paced by its budgets below
+    // and the jti: each is recorded.
     await auditAgentEvent(request, {
       action: "agent.registration.refused",
       status: 400,
       metadata: { kind: KIND, source: SOURCE, code: verified.error },
     });
-    if (!verified.signed) {
-      return oauthError(400, "invalid_grant", UNVERIFIED_DESCRIPTION);
-    }
     if (verified.error === "auth_time_too_old") {
       return oauthError(
         400,
@@ -222,6 +247,32 @@ export async function orgIdJagGrant(
             issuer: verified.iss,
             trust_id: link.trustId,
             client: token.registration.client_name,
+          },
+        });
+        // No code was compared, so the member hears what connected.
+        if (token.registration.user_id) {
+          await notifyConnectBound({
+            userId: token.registration.user_id,
+            teamId,
+            clientName: token.registration.client_name,
+            issuer: verified.iss,
+          });
+        }
+      }
+      // A window the member opened while this identity was connected
+      // already: closed by the link, so no other identity binds in it.
+      for (const closed of link.windowsClosed) {
+        await auditAgentEvent(request, {
+          action: "team.idjag_connect_closed",
+          status: 200,
+          targetId: closed.trustId,
+          targetUserId: token.registration.user_id,
+          teamId: closed.teamId,
+          metadata: {
+            source: SOURCE,
+            issuer: verified.iss,
+            reason: "already_connected",
+            registration_id: token.registration.id,
           },
         });
       }

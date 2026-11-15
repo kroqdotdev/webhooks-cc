@@ -7,8 +7,11 @@ import { closeRunsWithoutAccess } from "@/lib/tunnels/access";
 /**
  * Stop trusting an organisation ID-JAG issuer (the owner only, session
  * only). Every agent connection made through it is revoked with its tokens
- * in the same transaction (remove_team_idjag_issuer(), migration 00105).
- * 404 while the feature is off.
+ * in the same transaction (remove_team_idjag_issuer(), migration 00105),
+ * even one whose member is in another team trusting the same issuer: the
+ * owner was told every agent it connected is disconnected. The answer
+ * counts them and names each one (its client and member), so the owner
+ * sees what went. 404 while the feature is off.
  */
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -48,7 +51,16 @@ export async function DELETE(
     });
     // Tunnels opened with their tokens end with them.
     if (result.revoked.length > 0) await closeRunsWithoutAccess();
-    return Response.json({ success: true, revoked_connections: result.revoked.length });
+    return Response.json({
+      success: true,
+      revoked_connections: result.revoked.length,
+      disconnected: result.disconnected.map((agent) => ({
+        id: agent.id,
+        client_name: agent.clientName,
+        pending: agent.pending,
+        member_email: agent.memberEmail,
+      })),
+    });
   } catch (error) {
     reportError("Failed to remove a team ID-JAG issuer", error);
     await auditUserAction(request, auth.userId, {

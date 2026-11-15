@@ -13,6 +13,7 @@ import {
   orgIssuerPrefixes,
   orgIssuersEnabled,
   teamRole,
+  trustRowConnectionCounts,
   type TeamIdJagIssuer,
 } from "@/lib/agent/org-issuers";
 import { reportError } from "@/lib/observability";
@@ -40,12 +41,14 @@ function notFound(): Response {
   return Response.json({ error: "Not found" }, { status: 404 });
 }
 
-function issuerJson(row: TeamIdJagIssuer, connect?: MemberConnectState) {
+function issuerJson(row: TeamIdJagIssuer, connect?: MemberConnectState, connected?: number) {
   return {
     id: row.id,
     issuer: row.issuer,
     allowed_client_ids: row.allowedClientIds,
     created_at: row.createdAt,
+    // The owner's: how many agents removing the row would disconnect.
+    ...(connected === undefined ? {} : { connected_agents: connected }),
     ...(connect
       ? {
           connect: {
@@ -73,12 +76,15 @@ export async function GET(request: Request, { params }: { params: Promise<{ team
     const role = await teamRole(teamId, auth.userId);
     if (!role) return notFound();
     const issuers = await listTeamIssuers(teamId);
-    const states = await memberConnectStates(
-      auth.userId,
-      issuers.map((row) => row.id)
-    );
+    const trustIds = issuers.map((row) => row.id);
+    const [states, counts] = await Promise.all([
+      memberConnectStates(auth.userId, trustIds),
+      role === "owner" ? trustRowConnectionCounts(trustIds) : Promise.resolve(null),
+    ]);
     return Response.json({
-      issuers: issuers.map((row) => issuerJson(row, states.get(row.id))),
+      issuers: issuers.map((row) =>
+        issuerJson(row, states.get(row.id), counts ? (counts.get(row.id) ?? 0) : undefined)
+      ),
       prefixes: orgIssuerPrefixes(),
       max_issuers: MAX_TEAM_ISSUERS,
       connect_window_seconds: CONNECT_WINDOW_SECONDS,

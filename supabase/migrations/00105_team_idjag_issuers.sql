@@ -32,9 +32,14 @@
 -- 6. Triggers revoke the delegations (and delete their tokens) when a trust
 --    row goes, whatever deleted it (the owner, the team's deletion), and when
 --    a member leaves or is removed (closing their windows too); every
---    revocation is written to audit_events. A member in two teams trusting
---    the same issuer keeps a delegation while another trust row still covers
---    them: it moves to that row instead (audited as moved).
+--    revocation is written to audit_events. A member who leaves one of two
+--    teams trusting the same issuer keeps a delegation the other team's
+--    trust row still covers: it moves to that row instead (audited as
+--    moved). Removing a trust row never moves anything: what it connected
+--    is disconnected, as the owner was told.
+-- 7. insert_agent_access_token(): every agent access token is inserted
+--    through it, only while its registration is live and unrevoked, so a
+--    token minted while a revocation runs is never left behind.
 --
 -- Service role only. Apply in autocommit mode (see AGENTS.md): the index on
 -- agent_registrations is built concurrently, outside the transaction.
@@ -101,7 +106,18 @@ revoke all on table public.team_idjag_connect_windows from public, anon, authent
 -- With p_rehome, a registration whose person is still a member of another
 -- team trusting the same issuer (for its client) is not revoked: it moves to
 -- that team's oldest such trust row, which the person's membership still
--- justifies. A member's own Disconnect does not rehome.
+-- justifies. Only a member leaving (or being removed) rehomes; an owner
+-- removing an issuer, and a member's own Disconnect, revoke outright.
+--
+-- Locks, in this order: the affected registrations (by id), then for each
+-- one the candidate trust rows of its issuer and the person's memberships of
+-- their teams (by trust row id, FOR KEY SHARE). A removal of a candidate
+-- trust row or a leave of its team, running at the same time, then either
+-- waits for this transaction and sees the move, or has already gone and is
+-- never chosen; two revocations over the same rows wait for each other
+-- instead of deadlocking. The tokens are deleted in a statement of their
+-- own, so it sees a token minted by a transaction that held the
+-- registration (insert_agent_access_token(), FOR SHARE) while this waited.
 create or replace function public.revoke_team_idjag_delegations(
   p_trust_ids uuid[],
   p_user_id   uuid,
@@ -114,16 +130,32 @@ language plpgsql
 security definer set search_path = ''
 as $$
 declare
-  v_email text;
-  v_ids   uuid[];
+  v_email      text;
+  v_ids        uuid[];
+  v_reg        record;
+  v_locked     uuid[];
+  v_target     uuid;
+  v_target_team uuid;
 begin
   if p_user_id is not null then
     select lower(email) into v_email from public.users where id = p_user_id;
   end if;
 
+  perform 1
+    from public.agent_registrations r
+   where r.idjag_team_issuer_id = any(p_trust_ids)
+     and r.revoked_at is null
+     and (
+       p_user_id is null
+       or r.user_id = p_user_id
+       or (r.claimed_at is null and v_email is not null and r.attempt_login_hint = v_email)
+     )
+   order by r.id
+     for update of r;
+
   if p_rehome then
-    with affected as (
-      select r.id, r.idjag_iss, r.idjag_client_id,
+    for v_reg in
+      select r.id, r.kind, r.user_id, r.idjag_iss, r.idjag_client_id,
              coalesce(
                r.user_id,
                (select u.id from public.users u where u.email = r.attempt_login_hint)
@@ -136,43 +168,51 @@ begin
            or r.user_id = p_user_id
            or (r.claimed_at is null and v_email is not null and r.attempt_login_hint = v_email)
          )
-         for update of r
-    ),
-    targets as (
-      select a.id,
-             (select t.id
-                from public.team_idjag_issuers t
-                join public.team_members m on m.team_id = t.team_id and m.user_id = a.person
-               where t.issuer = a.idjag_iss
-                 and t.id <> all(p_trust_ids)
-                 and (
-                   cardinality(t.allowed_client_ids) = 0
-                   or a.idjag_client_id = any(t.allowed_client_ids)
-                 )
-               order by t.created_at, t.id
-               limit 1) as trust_id
-        from affected a
-       where a.person is not null
-    ),
-    moved as (
-      update public.agent_registrations r
-         set idjag_team_issuer_id = g.trust_id
-        from targets g
-       where r.id = g.id
-         and g.trust_id is not null
-      returning r.id, r.kind, r.user_id, r.idjag_iss, g.trust_id
-    )
-    insert into public.audit_events (
-      actor_type, action, outcome, team_id, target_id, target_user_id, metadata
-    )
-    select 'system', 'agent.registration.moved', 'ok', t.team_id, m.id::text,
-           coalesce(m.user_id, p_user_id),
-           jsonb_build_object(
-             'kind', m.kind, 'source', p_source, 'issuer', left(m.idjag_iss, 200),
-             'from_team_id', p_team_id, 'trust_id', m.trust_id
-           )
-      from moved m
-      join public.team_idjag_issuers t on t.id = m.trust_id;
+       order by r.id
+    loop
+      continue when v_reg.person is null;
+
+      -- Hold every candidate (trust row and the membership that justifies
+      -- it) until this transaction ends; one being deleted is waited for and
+      -- then skipped.
+      select coalesce(array_agg(c.id), '{}') into v_locked
+        from (
+          select t.id
+            from public.team_idjag_issuers t
+            join public.team_members m on m.team_id = t.team_id and m.user_id = v_reg.person
+           where t.issuer = v_reg.idjag_iss
+             and t.id <> all(p_trust_ids)
+             and (
+               cardinality(t.allowed_client_ids) = 0
+               or v_reg.idjag_client_id = any(t.allowed_client_ids)
+             )
+           order by t.id
+             for key share of t, m
+        ) c;
+
+      v_target := null;
+      select t.id, t.team_id into v_target, v_target_team
+        from public.team_idjag_issuers t
+       where t.id = any(v_locked)
+       order by t.created_at, t.id
+       limit 1;
+      continue when v_target is null;
+
+      update public.agent_registrations
+         set idjag_team_issuer_id = v_target
+       where id = v_reg.id;
+
+      insert into public.audit_events (
+        actor_type, action, outcome, team_id, target_id, target_user_id, metadata
+      ) values (
+        'system', 'agent.registration.moved', 'ok', v_target_team, v_reg.id::text,
+        coalesce(v_reg.user_id, p_user_id),
+        jsonb_build_object(
+          'kind', v_reg.kind, 'source', p_source, 'issuer', left(v_reg.idjag_iss, 200),
+          'from_team_id', p_team_id, 'trust_id', v_target
+        )
+      );
+    end loop;
   end if;
 
   with revoked as (
@@ -187,11 +227,6 @@ begin
        )
     returning r.id, r.kind, r.user_id, r.idjag_iss
   ),
-  tokens as (
-    delete from public.api_keys
-     where agent_registration_id in (select id from revoked)
-    returning 1
-  ),
   audited as (
     insert into public.audit_events (
       actor_type, action, outcome, team_id, target_id, target_user_id, metadata
@@ -202,7 +237,9 @@ begin
       from revoked r
     returning 1
   )
-  select coalesce(array_agg(id), '{}') into v_ids from revoked;
+  select coalesce(array_agg(id order by id), '{}') into v_ids from revoked;
+
+  delete from public.api_keys where agent_registration_id = any(v_ids);
 
   return v_ids;
 end;
@@ -212,6 +249,50 @@ revoke all on function public.revoke_team_idjag_delegations(uuid[], uuid, uuid, 
   from public, anon, authenticated;
 grant execute on function public.revoke_team_idjag_delegations(uuid[], uuid, uuid, text, boolean)
   to service_role;
+
+-- 3b. Every agent access token goes in through this, only while its
+-- registration is live: unrevoked, for the account it is claimed by (none
+-- before a claim), so a revocation or a claim since the caller read the row
+-- wins. The registration is held FOR SHARE until the caller's transaction
+-- ends, so a revocation running meanwhile either commits first (and nothing
+-- is inserted) or waits and then deletes this token with the others.
+-- Returns whether a token was inserted.
+create or replace function public.insert_agent_access_token(
+  p_registration_id uuid,
+  p_user_id         uuid,
+  p_key_hash        text,
+  p_key_prefix      text,
+  p_name            text,
+  p_expires_at      timestamptz,
+  p_scopes          text[]
+)
+returns boolean
+language plpgsql
+security definer set search_path = ''
+as $$
+begin
+  insert into public.api_keys (
+    user_id, key_hash, key_prefix, name, expires_at, scopes,
+    is_agent_issued, client_name, claimed_at, agent_registration_id
+  )
+  select p_user_id, p_key_hash, p_key_prefix, p_name, p_expires_at, p_scopes,
+         true, r.client_name, r.claimed_at, r.id
+    from public.agent_registrations r
+   where r.id = p_registration_id
+     and r.revoked_at is null
+     and r.user_id is not distinct from p_user_id
+     and (p_user_id is null) = (r.claimed_at is null)
+     for share of r;
+  return found;
+end;
+$$;
+
+revoke all on function public.insert_agent_access_token(
+  uuid, uuid, text, text, text, timestamptz, text[]
+) from public, anon, authenticated;
+grant execute on function public.insert_agent_access_token(
+  uuid, uuid, text, text, text, timestamptz, text[]
+) to service_role;
 
 -- 4. Resolve an organisation ID-JAG to a team member and link it.
 create or replace function public.link_team_idjag_identity(
@@ -241,6 +322,7 @@ declare
   v_window       public.team_idjag_connect_windows%rowtype;
   v_registration public.agent_registrations%rowtype;
   v_connected    integer;
+  v_closed       jsonb;
   v_result       jsonb;
 begin
   -- Exact match: emails are stored lower-cased.
@@ -252,6 +334,16 @@ begin
   -- The same lock as link_agent_idjag_identity(), taken first so the checks
   -- below and its decision see one state.
   perform pg_advisory_xact_lock(hashtextextended('agent-idjag:' || p_iss || '#' || p_sub, 0));
+
+  -- The person's row next, before any membership: deleting the account
+  -- locks it first and then its memberships (the cascade), so taking them
+  -- the other way round could deadlock with it. Held to the end, it also
+  -- serializes this person's connections, so the cap below holds as it does
+  -- for a claim. An account deleted meanwhile is no member.
+  perform 1 from public.users where id = v_user_id for update;
+  if not found then
+    return jsonb_build_object('status', 'not_member');
+  end if;
 
   -- Hold the person's memberships of teams trusting this issuer, and those
   -- trust rows, until this transaction ends: a member leaving (or a trust
@@ -300,13 +392,30 @@ begin
     end if;
     select team_id into v_team_id
       from public.team_idjag_issuers where id = v_registration.idjag_team_issuer_id;
+    -- The member's agent is connected through this issuer already, so a
+    -- window they opened for it has done its job: closed, so no other
+    -- identity with their email can bind in what is left of it.
+    with closed as (
+      delete from public.team_idjag_connect_windows
+       where user_id = v_user_id
+         and trust_id = any(v_trust_ids)
+      returning trust_id
+    )
+    select coalesce(jsonb_agg(
+             jsonb_build_object('trust_id', c.trust_id, 'team_id', t.team_id)
+             order by c.trust_id
+           ), '[]')
+      into v_closed
+      from closed c
+      join public.team_idjag_issuers t on t.id = c.trust_id;
     return jsonb_build_object(
       'status', 'linked',
       'registration_id', v_registration.id,
       'user_id', v_registration.user_id,
       'team_id', v_team_id,
       'created', false,
-      'bound', false
+      'bound', false,
+      'windows_closed', v_closed
     );
   end if;
 
@@ -326,8 +435,7 @@ begin
   if found and exists (
     select 1 from auth.users where id = v_user_id and email_confirmed_at is not null
   ) then
-    -- Serialize this user's connections so the cap holds, as a claim does.
-    perform 1 from public.users where id = v_user_id for update;
+    -- This user's connections are serialized by the users row lock above.
     select count(*) into v_connected
       from public.agent_registrations
      where user_id = v_user_id
@@ -466,8 +574,9 @@ language plpgsql
 security definer set search_path = ''
 as $$
 declare
-  v_issuer  text;
-  v_revoked uuid[];
+  v_issuer       text;
+  v_revoked      uuid[];
+  v_disconnected jsonb;
 begin
   if not exists (
     select 1 from public.team_members
@@ -485,15 +594,35 @@ begin
   end if;
 
   -- Revoked here to report them; the trigger then finds nothing left.
+  -- Never moved to another team trusting the same issuer: the owner chose
+  -- to stop trusting it, and the dialog said every agent it connected is
+  -- disconnected.
   v_revoked := public.revoke_team_idjag_delegations(
-    array[p_issuer_id], null, p_team_id, 'team_issuer_removed', true
+    array[p_issuer_id], null, p_team_id, 'team_issuer_removed', false
   );
+  -- What was disconnected, for the owner: each agent, whether it was
+  -- connected or still waiting for its member's confirmation, and whose.
+  select coalesce(jsonb_agg(jsonb_build_object(
+           'id', r.id,
+           'client_name', r.client_name,
+           'pending', r.claimed_at is null,
+           'member_email', u.email
+         ) order by r.id), '[]')
+    into v_disconnected
+    from public.agent_registrations r
+    left join public.users u
+      on u.id = coalesce(
+           r.user_id,
+           (select x.id from public.users x where x.email = r.attempt_login_hint)
+         )
+   where r.id = any(v_revoked);
   delete from public.team_idjag_issuers where id = p_issuer_id;
 
   return jsonb_build_object(
     'status', 'ok',
     'issuer', v_issuer,
-    'revoked', to_jsonb(v_revoked)
+    'revoked', to_jsonb(v_revoked),
+    'disconnected', v_disconnected
   );
 end;
 $$;
@@ -634,8 +763,9 @@ begin
   -- Wait for a link_team_idjag_identity() holding this row (for share), so
   -- the revocation below sees what it bound.
   perform 1 from public.team_idjag_issuers where id = old.id for update;
+  -- No rehoming, as when the owner removes it (the team's deletion too).
   perform public.revoke_team_idjag_delegations(
-    array[old.id], null, old.team_id, 'team_issuer_removed', true
+    array[old.id], null, old.team_id, 'team_issuer_removed', false
   );
   return old;
 end;

@@ -29,6 +29,7 @@ import { createClient } from "@supabase/supabase-js";
 import * as jose from "jose";
 import { spawn } from "node:child_process";
 import { randomBytes, randomUUID } from "node:crypto";
+import { getLastMessageForEmail } from "@/lib/email/dev-transport";
 import { hashApiKey } from "@/lib/supabase/api-keys";
 import {
   adminClient,
@@ -451,6 +452,16 @@ describe("team ID-JAG issuers", () => {
       await issuersGet(bearer("GET", `/api/teams/${teamId}/idjag-issuers`, ownerSession), teamCtx())
     ).json();
     const issuerId = listed.issuers[0].id;
+    // The owner's removal dialog counts what it would disconnect; a member
+    // sees no count.
+    expect(listed.issuers[0].connected_agents).toBe(1);
+    const asMember = await (
+      await issuersGet(
+        bearer("GET", `/api/teams/${teamId}/idjag-issuers`, memberSession),
+        teamCtx()
+      )
+    ).json();
+    expect(asMember.issuers[0].connected_agents).toBeUndefined();
     // A member cannot remove it.
     const byMember = await issuerDelete(
       bearer("DELETE", `/api/teams/${teamId}/idjag-issuers/${issuerId}`, memberSession),
@@ -463,7 +474,18 @@ describe("team ID-JAG issuers", () => {
       { params: Promise.resolve({ teamId, issuerId }) }
     );
     expect(removed.status).toBe(200);
-    expect(await removed.json()).toEqual({ success: true, revoked_connections: 1 });
+    expect(await removed.json()).toEqual({
+      success: true,
+      revoked_connections: 1,
+      disconnected: [
+        {
+          id: row!.id,
+          client_name: "client.idjag-test.local",
+          pending: false,
+          member_email: MEMBER_EMAIL,
+        },
+      ],
+    });
 
     expect(await tokenWorks(direct.access_token)).toBe(false);
     const { data: after } = await admin
@@ -638,6 +660,16 @@ describe("team ID-JAG issuers", () => {
           target_user_id: memberId,
         })
       );
+      // No code was compared, so the member is told (the dev transport
+      // records the message and sends nothing).
+      const notice = getLastMessageForEmail(MEMBER_EMAIL);
+      expect(notice).toMatchObject({
+        kind: "team_idjag_connect_bound",
+        subject: "An agent connected to your account",
+      });
+      expect(notice!.text).toContain("client.idjag-test.local connected");
+      expect(notice!.text).toContain(ISS);
+      expect(notice!.text).toContain(`/teams/${teamId}#agent-sign-in`);
     });
 
     it("never binds another person's email inside the member's window", async () => {
@@ -695,6 +727,22 @@ describe("team ID-JAG issuers", () => {
       // Already bound in the earlier test: a direct token.
       const direct = await (await present(await mint(sub, MEMBER_EMAIL))).json();
       expect(await tokenWorks(direct.access_token)).toBe(true);
+      // The member's agent is connected already, so the window it opened
+      // for it closed: no other identity with the email can bind in it.
+      const afterLink = await (await listAs(memberSession)).json();
+      expect(afterLink.issuers[0].connect.window_expires_at).toBeNull();
+      expect(await auditFor("team.idjag_connect_closed")).toContainEqual(
+        expect.objectContaining({
+          target_id: issuerId,
+          target_user_id: memberId,
+          metadata: expect.objectContaining({ reason: "already_connected" }),
+        })
+      );
+      const other = await (await present(await mint(`window-other-${RUN}`, MEMBER_EMAIL))).json();
+      registrations.add(other.registration_id);
+      expect(other.error).toBe("interaction_required");
+      await admin.from("agent_registrations").delete().eq("id", other.registration_id);
+      expect((await openWindow(memberSession)).status).toBe(200);
 
       const res = await disconnect(memberSession);
       expect(res.status).toBe(200);
@@ -775,6 +823,105 @@ describe("team ID-JAG issuers", () => {
       } finally {
         await admin.from("api_keys").delete().eq("name", "ID-JAG list test");
       }
+    });
+
+    it("never leaves a token minted from a row read before a revocation", async () => {
+      expect((await openWindow(memberSession)).status).toBe(200);
+      const sub = `stale-${RUN}`;
+      const bound = await present(await mint(sub, MEMBER_EMAIL));
+      expect(bound.status).toBe(200);
+      const { data: stale } = await admin
+        .from("agent_registrations")
+        .select("*")
+        .eq("idjag_iss", ISS)
+        .eq("idjag_sub", sub)
+        .is("revoked_at", null)
+        .single();
+      registrations.add(stale!.id);
+
+      // Revoked after the row was read, as a disconnect racing a token.
+      expect((await disconnect(memberSession)).status).toBe(200);
+      const { mintAccessToken, InvalidGrantError } = await import("@/lib/agent/registrations");
+      const now = Date.now();
+      await expect(
+        mintAccessToken(stale!, {
+          userId: memberId,
+          scopes: ["endpoints:read"],
+          issuedAtMs: now,
+          expiresAtMs: now + 3600_000,
+        })
+      ).rejects.toBeInstanceOf(InvalidGrantError);
+      const { count } = await admin
+        .from("api_keys")
+        .select("id", { count: "exact", head: true })
+        .eq("agent_registration_id", stale!.id);
+      expect(count).toBe(0);
+
+      // A pre-claim token for a claimed registration is refused too, even
+      // while it is live.
+      await admin.from("agent_registrations").update({ revoked_at: null }).eq("id", stale!.id);
+      try {
+        await expect(
+          mintAccessToken(stale!, {
+            userId: null,
+            scopes: [],
+            issuedAtMs: now,
+            expiresAtMs: now + 1000,
+          })
+        ).rejects.toBeInstanceOf(InvalidGrantError);
+      } finally {
+        await admin
+          .from("agent_registrations")
+          .update({ revoked_at: new Date().toISOString() })
+          .eq("id", stale!.id);
+      }
+    });
+
+    it("links without deadlocking while the member's account is being deleted", async () => {
+      const email = `idjag-leaving-${RUN}@webhooks-test.local`;
+      const leaving = await makeUser(email);
+      const { error } = await admin
+        .from("team_members")
+        .insert({ team_id: teamId, user_id: leaving.id, role: "member" });
+      if (error) throw error;
+      expect((await openWindow(leaving.session)).status).toBe(200);
+
+      // The account's deletion locks its users row first, then its
+      // memberships (the cascade); held open here between the two.
+      const sql = `begin;
+select 1 from public.users where id = '${leaving.id}' for update;
+select 'locked';
+select pg_sleep(1.5);
+delete from auth.users where id = '${leaving.id}';
+commit;`;
+      const psql = spawn("psql", [process.env.SUPABASE_DB_URL!, "-At", "-v", "ON_ERROR_STOP=1"], {
+        stdio: ["pipe", "pipe", "pipe"],
+      });
+      let output = "";
+      let errors = "";
+      psql.stderr.on("data", (chunk: Buffer) => (errors += chunk.toString()));
+      const locked = new Promise<void>((resolve) => {
+        psql.stdout.on("data", (chunk: Buffer) => {
+          output += chunk.toString();
+          if (output.includes("locked")) resolve();
+        });
+      });
+      const done = new Promise<number>((resolve) => psql.on("close", resolve));
+      psql.stdin.end(sql);
+      await locked;
+
+      // The window's bind path: waits for the deletion, then finds no member.
+      const res = await present(await mint(`leaving-${RUN}`, email));
+      expect(await done).toBe(0);
+      expect(errors).not.toContain("deadlock");
+      expect(res.status).toBe(400);
+      expect((await res.json()).error).toBe("access_denied");
+      const { data: rows } = await admin
+        .from("agent_registrations")
+        .select("id")
+        .eq("idjag_iss", ISS)
+        .eq("idjag_sub", `leaving-${RUN}`);
+      expect(rows).toEqual([]);
     });
   });
 
@@ -863,10 +1010,11 @@ describe("team ID-JAG issuers", () => {
       for (const id of [teamA, teamB]) if (id) await admin.from("teams").delete().eq("id", id);
     });
 
-    it("keeps a connection the other team still covers when one team removes the issuer", async () => {
+    it("disconnects on removal even when another team trusts the same issuer", async () => {
       const sub = `shared-${RUN}`;
       const token = await bind(teamA, trustA, sub);
-      expect(await registrationOf(sub)).toMatchObject({
+      const bound = await registrationOf(sub);
+      expect(bound).toMatchObject({
         revoked_at: null,
         idjag_team_issuer_id: trustA,
         idjag_client_id: CLIENT,
@@ -877,7 +1025,39 @@ describe("team ID-JAG issuers", () => {
         { params: Promise.resolve({ teamId: teamA, issuerId: trustA }) }
       );
       expect(removed.status).toBe(200);
-      expect(await removed.json()).toEqual({ success: true, revoked_connections: 0 });
+      expect(await removed.json()).toEqual({
+        success: true,
+        revoked_connections: 1,
+        disconnected: [
+          {
+            id: bound.id,
+            client_name: "client.idjag-test.local",
+            pending: false,
+            member_email: MEMBER2_EMAIL,
+          },
+        ],
+      });
+      // Team B still trusts the issuer, but nothing moved there.
+      expect((await registrationOf(sub)).revoked_at).not.toBeNull();
+      expect(await tokenWorks(token)).toBe(false);
+      const { data: moved } = await admin
+        .from("audit_events")
+        .select("id")
+        .eq("action", "agent.registration.moved")
+        .eq("target_id", bound.id);
+      expect(moved).toEqual([]);
+
+      // Team A trusts it again, for what follows.
+      await addTo(teamA);
+      trustA = await listTrust(teamA);
+    });
+
+    it("keeps a connection the other team still covers when the member leaves one team", async () => {
+      const sub = `shared-leave-${RUN}`;
+      const token = await bind(teamA, trustA, sub);
+      expect((await registrationOf(sub)).idjag_team_issuer_id).toBe(trustA);
+
+      await admin.from("team_members").delete().eq("team_id", teamA).eq("user_id", member2Id);
 
       // Team B still trusts the issuer for this member: the delegation moved.
       const row = await registrationOf(sub);
@@ -893,7 +1073,7 @@ describe("team ID-JAG issuers", () => {
         {
           team_id: teamB,
           metadata: expect.objectContaining({
-            source: "team_issuer_removed",
+            source: "team_member_left",
             from_team_id: teamA,
             trust_id: trustB,
           }),
@@ -963,6 +1143,110 @@ commit;`;
 
       const row = await registrationOf(sub);
       expect(row.revoked_at).not.toBeNull();
+    });
+
+    /**
+     * Runs SQL in psql inside a transaction it holds open. Resolves once
+     * `marker` prints, with `done` for psql's exit (wrapped, since an async
+     * function returning a promise would wait for it).
+     */
+    async function holdOpen(sql: string, marker: string): Promise<{ done: Promise<number> }> {
+      const psql = spawn("psql", [process.env.SUPABASE_DB_URL!, "-At", "-v", "ON_ERROR_STOP=1"], {
+        stdio: ["pipe", "pipe", "pipe"],
+      });
+      let output = "";
+      const reached = new Promise<void>((resolve) => {
+        psql.stdout.on("data", (chunk: Buffer) => {
+          output += chunk.toString();
+          if (output.includes(marker)) resolve();
+        });
+      });
+      const done = new Promise<number>((resolve) => psql.on("close", resolve));
+      psql.stdin.end(sql);
+      await reached;
+      return { done };
+    }
+
+    async function joinBoth() {
+      for (const team of [teamA, teamB]) {
+        const { error } = await admin
+          .from("team_members")
+          .upsert(
+            { team_id: team, user_id: member2Id, role: "member" },
+            { onConflict: "team_id,user_id", ignoreDuplicates: true }
+          );
+        if (error) throw error;
+      }
+    }
+
+    it("revokes, never fails, when a leave would move to a trust row being removed", async () => {
+      await joinBoth();
+      const sub = `move-removed-${RUN}`;
+      const token = await bind(teamA, trustA, sub);
+
+      // The owner removes team B's trust row in a transaction held open.
+      const { done } = await holdOpen(
+        `begin;
+select public.remove_team_idjag_issuer('${teamB}', '${ownerId}', '${trustB}')->>'status';
+select pg_sleep(2);
+commit;`,
+        "ok"
+      );
+      // The member leaves team A meanwhile. Its move to team B waits for the
+      // removal and then finds the row gone: revoked, where it used to fail
+      // with a foreign key violation.
+      const started = Date.now();
+      const { error } = await admin
+        .from("team_members")
+        .delete()
+        .eq("team_id", teamA)
+        .eq("user_id", member2Id);
+      expect(error).toBeNull();
+      expect(Date.now() - started).toBeGreaterThan(1000);
+      expect(await done).toBe(0);
+
+      expect((await registrationOf(sub)).revoked_at).not.toBeNull();
+      expect(await tokenWorks(token)).toBe(false);
+
+      // Team B trusts it again, for what follows.
+      await addTo(teamB);
+      trustB = await listTrust(teamB);
+    });
+
+    it("revokes, never moves, to a team the member is leaving at the same time", async () => {
+      await joinBoth();
+      const sub = `move-leaving-${RUN}`;
+      const token = await bind(teamA, trustA, sub);
+
+      // The member leaves team B in a transaction held open.
+      const { done } = await holdOpen(
+        `begin;
+delete from public.team_members where team_id = '${teamB}' and user_id = '${member2Id}';
+select 'left';
+select pg_sleep(2);
+commit;`,
+        "left"
+      );
+      // And team A now: its trigger waits for team B's leave instead of
+      // moving the delegation onto a membership that is going away.
+      const started = Date.now();
+      const { error } = await admin
+        .from("team_members")
+        .delete()
+        .eq("team_id", teamA)
+        .eq("user_id", member2Id);
+      expect(error).toBeNull();
+      expect(Date.now() - started).toBeGreaterThan(1000);
+      expect(await done).toBe(0);
+
+      const row = await registrationOf(sub);
+      expect(row.revoked_at).not.toBeNull();
+      expect(await tokenWorks(token)).toBe(false);
+      const { count } = await admin
+        .from("api_keys")
+        .select("id", { count: "exact", head: true })
+        .eq("agent_registration_id", row.id);
+      expect(count).toBe(0);
     });
   });
 
