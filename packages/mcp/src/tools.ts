@@ -1182,14 +1182,52 @@ export function toolHint(error: WebhooksCCError, remote: boolean): string | null
   }
   if (error.statusCode !== 404) return null;
   const path = error.path ?? "";
-  if (/^\/endpoints\/[^/?]+\/requests/.test(path) || /^\/requests(?:[/?]|$)/.test(path)) {
-    return "list_requests lists the endpoint's requests and their ids; list_endpoints checks the slug.";
+  for (const [route, hint] of NOT_FOUND_HINTS) {
+    if (route.test(path)) return hint;
   }
-  if (/^\/shares(?:[/?]|$)/.test(path)) return "list_shares lists your previews and live tunnels.";
-  if (path.startsWith("/tunnel-names")) return "list_names lists the names you can share under.";
-  if (path.startsWith("/teams")) return "list_teams lists your teams and their ids.";
-  return "list_endpoints lists your endpoints and their slugs.";
+  return null;
 }
+
+/** A route and everything below it (a path or a query after it). */
+const under = (prefix: string) => new RegExp(`^${prefix}(?:[/?]|$)`);
+
+/**
+ * What a 404 from each route means to try, most specific first. A route not
+ * listed (or an error made without one) gets no hint rather than a wrong one.
+ */
+const NOT_FOUND_HINTS: ReadonlyArray<readonly [RegExp, string]> = [
+  [
+    /^\/endpoints\/[^/?]+\/requests(?:[/?]|$)/,
+    "list_requests lists the endpoint's requests and their ids; list_endpoints checks the slug.",
+  ],
+  [
+    under("/requests"),
+    "list_requests lists the endpoint's requests and their ids; list_endpoints checks the slug.",
+  ],
+  [
+    /^\/endpoints\/[^/?]+\/destinations(?:[/?]|$)/,
+    "list_destinations lists the endpoint's destinations and their ids; list_endpoints checks the slug.",
+  ],
+  [under("/endpoints"), "list_endpoints lists your endpoints and their slugs."],
+  [under("/stream"), "list_endpoints lists your endpoints and their slugs."],
+  [under("/shares"), "list_shares lists your previews and live tunnels."],
+  [under("/tunnel-names"), "list_names lists the names you can share under."],
+  [under("/teams"), "list_teams lists your teams and their ids."],
+  [under("/domains"), "list_domains lists your inbound domains."],
+  [under("/request-shares"), "list_share_links lists your share links and their ids."],
+  [under("/invites"), "list_invites lists the invites waiting for you and their ids."],
+  [under("/api-keys"), "list_api_keys lists your API keys and their ids."],
+  [
+    under("/agent/registrations"),
+    "list_connected_agents lists your connected agents and their ids.",
+  ],
+  [
+    under("/integrations/google"),
+    "list_google_connections lists your connected Google accounts and their ids.",
+  ],
+  [under("/approvals"), "Pass the id exactly as the asking tool returned it."],
+  [under("/billing/checkouts"), "Pass the id exactly as the asking tool returned it."],
+];
 
 function errorPayload(error: unknown, remote: boolean): ToolErrorPayload {
   const rawMessage = error instanceof Error ? error.message : String(error);
@@ -2015,29 +2053,31 @@ export function registerTools(
             );
           } catch (err) {
             // An endpoint that verifies nothing is not what was asked for:
-            // take it back, and say why signing failed.
+            // take it back, and say so in the error itself, which keeps
+            // its class, code and retryAfter.
+            let removed = true;
             try {
               await client.endpoints.delete(endpoint.slug);
             } catch {
-              const reason =
-                err instanceof WebhooksCCError
-                  ? (err.apiMessage ?? err.message)
-                  : err instanceof Error
-                    ? err.message
-                    : String(err);
-              throw new Error(
-                `Signing could not be set (${reason}), and the endpoint "${endpoint.slug}" could not be deleted: it exists without signing. Fix it with update_endpoint, or delete it with delete_endpoint.`
-              );
+              removed = false;
             }
-            // Said in the error itself, keeping its class and code.
-            const deleted =
-              "The endpoint was deleted, so nothing was created: fix the signing options and call create_endpoint again.";
+            // A 4xx other than 429 is the options' fault; anything else may pass on a retry.
+            const optionsAtFault =
+              err instanceof WebhooksCCError &&
+              err.statusCode >= 400 &&
+              err.statusCode < 500 &&
+              err.statusCode !== 429;
+            const outcome = !removed
+              ? `The endpoint "${endpoint.slug}" could not be deleted: it exists without signing. Fix it with update_endpoint, or delete it with delete_endpoint.`
+              : optionsAtFault
+                ? "The endpoint was deleted, so nothing was created: fix the signing options and call create_endpoint again."
+                : "The endpoint was deleted, so nothing was created: call create_endpoint again.";
             if (err instanceof WebhooksCCError) {
-              err.apiMessage = `${err.apiMessage ?? err.message} ${deleted}`;
+              err.apiMessage = `${err.apiMessage ?? err.message} ${outcome}`;
             } else if (err instanceof Error) {
-              err.message = `${err.message} ${deleted}`;
+              throw Object.assign(new Error(`${err.message} ${outcome}`), { cause: err });
             } else {
-              throw new Error(`${String(err)} ${deleted}`);
+              throw new Error(`${String(err)} ${outcome}`);
             }
             throw err;
           }

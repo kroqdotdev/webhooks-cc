@@ -234,7 +234,9 @@ function sanitiseUnknown(names: string[]): string[] {
     .map((name) =>
       name
         .toLowerCase()
-        .replace(/[^a-z0-9_-]/g, "")
+        // A "?" for each other character, never dropped, so junk such as
+        // "te<a>ms" cannot read as a real group ("teams") in the note.
+        .replace(/[^a-z0-9_-]/gu, "?")
         .slice(0, MAX_UNKNOWN_GROUP_LENGTH)
     )
     .filter(Boolean);
@@ -271,15 +273,23 @@ export function unknownGroupsNote(unknown: readonly string[] | undefined): strin
 export function toolSelection(
   url: URL,
   clientNames: (string | null | undefined)[]
-): { groups: Set<ToolGroup>; readOnly: boolean; unknown: string[] } {
+): ToolSelectionResult {
+  return selectTools(url, parseToolGroups(url.searchParams.get("tools")), clientNames);
+}
+
+type ToolSelectionResult = { groups: Set<ToolGroup>; readOnly: boolean; unknown: string[] };
+
+function selectTools(
+  url: URL,
+  chosen: ReturnType<typeof parseToolGroups>,
+  clientNames: (string | null | undefined)[]
+): ToolSelectionResult {
   const readOnly = /^(1|true|yes)$/i.test(url.searchParams.get("readonly") ?? "");
-  const setting = url.searchParams.get("tools");
-  const chosen = parseToolGroups(setting);
   const unknown = sanitiseUnknown(chosen?.unknown ?? []);
   warnUnknown(unknown);
   // Only names that are no group (a typo, a group from a later release):
   // the client's default, as if ?tools= were not there, rather than core.
-  if (chosen && hasKnownName(setting)) return { groups: chosen.groups, readOnly, unknown };
+  if (chosen?.named) return { groups: chosen.groups, readOnly, unknown };
   const name = clientNames.find((value): value is string => Boolean(value));
   return { groups: defaultToolGroups(name), readOnly, unknown };
 }
@@ -295,17 +305,13 @@ export async function listingToolSelection(
   url: URL,
   requestName: string | null,
   registrationName: () => Promise<string | null>
-): Promise<{ groups: Set<ToolGroup>; readOnly: boolean; unknown: string[] }> {
-  const needsRegistration = !requestName && !hasKnownName(url.searchParams.get("tools"));
-  return toolSelection(url, [requestName, needsRegistration ? await registrationName() : null]);
-}
-
-/** Whether a ?tools= value names any group (core or all included). */
-export function hasKnownName(setting: string | null): boolean {
-  return (setting ?? "").split(/[\s,+]+/).some((raw) => {
-    const name = raw.trim().toLowerCase();
-    return name === "all" || (TOOL_GROUP_NAMES as string[]).includes(name);
-  });
+): Promise<ToolSelectionResult> {
+  const chosen = parseToolGroups(url.searchParams.get("tools"));
+  const needsRegistration = !requestName && !chosen?.named;
+  return selectTools(url, chosen, [
+    requestName,
+    needsRegistration ? await registrationName() : null,
+  ]);
 }
 
 /** The client name a request names itself by, if any. */

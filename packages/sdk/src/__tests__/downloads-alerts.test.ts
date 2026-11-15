@@ -60,6 +60,17 @@ describe("download errors", () => {
   });
 });
 
+describe("download errors by code point", () => {
+  it("never splits an emoji when it cuts a body that is not JSON", async () => {
+    const body = "c".repeat(199) + "\u{1F600}".repeat(50);
+    const gone = vi.fn(async () => new Response(body, { status: 410 }));
+    const error = (await client(gone as unknown as typeof fetch)
+      .requests.raw("req-1")
+      .catch((caught: unknown) => caught)) as WebhooksCCError;
+    expect(error.message).toBe("c".repeat(199) + "\u{1F600}...");
+  });
+});
+
 describe("redelivery and alerts", () => {
   it("posts redeliveries and reads and writes alert settings", async () => {
     const calls: { url: string; method: string; body: unknown }[] = [];

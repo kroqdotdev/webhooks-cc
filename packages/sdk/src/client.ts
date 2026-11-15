@@ -314,10 +314,20 @@ function errorTextOf(body: string): string | undefined {
       : typeof error === "string" && error.trim() !== ""
         ? error
         : undefined;
-  if (text === undefined) return undefined;
-  // By code point, so a surrogate pair is never split.
+  return text === undefined ? undefined : cutText(text, MAX_ERROR_TEXT);
+}
+
+/** How much of an error body that is not JSON goes into the error's message. */
+const ERROR_BODY_CUT = 200;
+
+/**
+ * `text` cut to `max` code points with "..." after it, or whole when it
+ * fits: by code point, so a surrogate pair (an emoji) is never split.
+ */
+function cutText(text: string, max: number): string {
+  if (text.length <= max) return text;
   const points = Array.from(text);
-  return points.length > MAX_ERROR_TEXT ? points.slice(0, MAX_ERROR_TEXT).join("") + "..." : text;
+  return points.length > max ? points.slice(0, max).join("") + "..." : text;
 }
 
 /**
@@ -1112,7 +1122,7 @@ export class WebhooksCC {
         const text = await response.text();
         throw mapStatusToError(
           response.status,
-          text.length > 200 ? text.slice(0, 200) + "..." : text,
+          cutText(text, ERROR_BODY_CUT),
           response,
           path,
           text
@@ -1258,8 +1268,7 @@ export class WebhooksCC {
 
         if (!response.ok) {
           const errorText = await readBody(response.text());
-          const sanitizedError =
-            errorText.length > 200 ? errorText.slice(0, 200) + "..." : errorText;
+          const sanitizedError = cutText(errorText, ERROR_BODY_CUT);
           const error = mapStatusToError(
             response.status,
             sanitizedError,
@@ -4756,7 +4765,7 @@ export class WebhooksCC {
               const text = await response.text();
               throw mapStatusToError(
                 response.status,
-                text.length > 200 ? text.slice(0, 200) + "..." : text,
+                cutText(text, ERROR_BODY_CUT),
                 response,
                 // The API path as the other calls name it, after /api.
                 streamPath.replace(/^\/api/, ""),

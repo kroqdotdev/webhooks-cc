@@ -513,7 +513,8 @@ func errorText(body []byte) (string, bool) {
 		return "", false
 	}
 	for _, key := range []string{"message", "error"} {
-		if text, ok := fields[key].(string); ok && strings.TrimSpace(text) != "" {
+		// Blank as JavaScript's trim() sees it (U+FEFF too), as the TypeScript SDK reads it.
+		if text, ok := fields[key].(string); ok && webtext.JSTrim(text) != "" {
 			if utf8.RuneCountInString(text) > maxErrorText {
 				text = string([]rune(text)[:maxErrorText]) + "..."
 			}
@@ -526,7 +527,7 @@ func errorText(body []byte) (string, bool) {
 // withHint adds a recovery hint to a short message as the TypeScript and
 // Python SDKs do: "Not found: Use Endpoints.List ...".
 func withHint(message, separator, hint string) string {
-	message = strings.TrimSpace(message)
+	message = webtext.JSTrim(message)
 	if message == "" {
 		return hint
 	}

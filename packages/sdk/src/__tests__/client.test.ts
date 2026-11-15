@@ -2670,6 +2670,11 @@ describe("WebhooksCC", () => {
       expect(error.code).toBe("invalid_cursor");
     });
 
+    it("lets a message only trim() calls blank (U+FEFF) give way to the error", async () => {
+      const error = await failWith(400, '{"message":"\\ufeff ","error":"name is too long"}');
+      expect(error.apiMessage).toBe("name is too long");
+    });
+
     it("keeps a body that is not JSON as it came", async () => {
       const error = await failWith(502, "Bad gateway");
       expect(error.apiMessage).toBe("Bad gateway");
@@ -2703,6 +2708,13 @@ describe("WebhooksCC", () => {
       expect(error).toBeInstanceOf(NotFoundError);
       expect(error.path).toBe("/stream/acme");
       expect(error.apiMessage).toBe("Endpoint not found");
+    });
+
+    it("cuts a long body that is not JSON by code point, never splitting an emoji", async () => {
+      // 199 plain characters, then emoji: the cut at 200 falls on the first emoji.
+      const error = await failWith(502, "b".repeat(199) + "\u{1F600}".repeat(50));
+      expect(error.apiMessage).toBe("b".repeat(199) + "\u{1F600}...");
+      expect(error.message).toBe("b".repeat(199) + "\u{1F600}...");
     });
 
     it("cuts a long body that is not JSON short", async () => {

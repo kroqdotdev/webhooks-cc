@@ -867,6 +867,8 @@ def test_errors_are_typed(status: int, error_type: type[Exception]) -> None:
         (502, "Bad gateway", "Bad gateway"),
         (400, json.dumps({"error": "invalid_input", "message": "y" * 250}), "y" * 250),
         (500, "z" * 400, "z" * 200 + "..."),
+        # A message only JavaScript's trim() calls blank (U+FEFF) gives way to the error.
+        (400, '{"message":"\\ufeff ","error":"name is too long"}', "name is too long"),
     ],
 )
 def test_error_messages_are_the_plain_text_of_the_body(

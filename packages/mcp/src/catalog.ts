@@ -249,26 +249,31 @@ const TITLE_WORDS: Record<string, string> = {
 /**
  * Which groups a server loads, from a setting such as "all", "core,teams" or
  * "core+teams". Unknown names are reported so the caller can say so; an
- * empty setting is the default. "core" is always loaded.
+ * empty setting is the default. "core" is always loaded. `named` says
+ * whether any name was "all" or a group, so a caller can tell a setting of
+ * only unknown names (a typo) from one that chose the core.
  */
 export function parseToolGroups(
   setting: string | null | undefined
-): { groups: Set<ToolGroup>; unknown: string[] } | null {
+): { groups: Set<ToolGroup>; unknown: string[]; named: boolean } | null {
   if (setting === null || setting === undefined || setting.trim() === "") return null;
   const groups = new Set<ToolGroup>(["core"]);
   const unknown: string[] = [];
+  let named = false;
   for (const raw of setting.split(/[\s,+]+/)) {
     const name = raw.trim().toLowerCase();
     if (!name) continue;
     if (name === "all") {
+      named = true;
       for (const g of TOOL_GROUP_NAMES) groups.add(g);
     } else if ((TOOL_GROUP_NAMES as string[]).includes(name)) {
+      named = true;
       groups.add(name as ToolGroup);
     } else {
       unknown.push(raw.trim());
     }
   }
-  return { groups, unknown };
+  return { groups, unknown, named };
 }
 
 /**

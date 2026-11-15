@@ -72,8 +72,16 @@ describe("unknown groups in ?tools=", () => {
     const long = "x".repeat(80);
     const setting = encodeURIComponent(`<script>,${long},a1,b2,c3,d4,e5,f6`);
     const { unknown } = toolSelection(url(`?tools=${setting}`), []);
-    expect(unknown).toEqual(["script", "x".repeat(32), "a1", "b2", "c3"]);
-    for (const name of unknown) expect(name).toMatch(/^[a-z0-9_-]{1,32}$/);
+    expect(unknown).toEqual(["?script?", "x".repeat(32), "a1", "b2", "c3"]);
+    for (const name of unknown) expect(name).toMatch(/^[a-z0-9_?-]{1,32}$/);
+  });
+
+  it("never lets junk read as a real group name in the note", () => {
+    const setting = encodeURIComponent("te<a>ms,co\u{1F600}re");
+    const { groups, unknown } = toolSelection(url(`?tools=${setting}`), []);
+    expect([...groups]).toEqual(["core"]);
+    // One "?" per character, an emoji included.
+    expect(unknown).toEqual(["te?a?ms", "co?re"]);
   });
 });
 

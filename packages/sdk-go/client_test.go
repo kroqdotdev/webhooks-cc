@@ -1264,6 +1264,10 @@ func TestErrorMessagesAreThePlainTextOfTheBody(t *testing.T) {
 		{401, `{"error":"Unauthorized"}`, "Unauthorized. Get an API key at https://webhooks.cc/account/api-keys"},
 		{400, `{"error":"invalid_input","message":"` + strings.Repeat("y", 250) + `"}`, strings.Repeat("y", 250)},
 		{500, strings.Repeat("z", 400), strings.Repeat("z", 200) + "..."},
+		// A message only JavaScript's trim() calls blank (U+FEFF) gives way to the error.
+		{400, `{"message":"\ufeff ","error":"name is too long"}`, "name is too long"},
+		// A short message is trimmed as JavaScript trims it before its hint.
+		{404, "\ufeffNot found\ufeff", "Not found: Use Endpoints.List to see your endpoints"},
 	}
 	for _, c := range cases {
 		api := newFakeAPI(t)

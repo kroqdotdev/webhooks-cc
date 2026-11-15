@@ -1519,16 +1519,44 @@ describe("registerTools", () => {
       await tools.create_endpoint.handler({ signingProvider: "stripe", signingSecret: "abc" })
     );
     expect(error.code).toBe("validation_error");
-    expect(error.message).toMatch(
-      /^socket hang up The endpoint was deleted, so nothing was created/
+    // Not the options' fault: just try again.
+    expect(error.message).toBe(
+      "socket hang up The endpoint was deleted, so nothing was created: call create_endpoint again."
     );
-    // A server error keeps its own code.
+    // A server error keeps its own code, and is not blamed on the options either.
     update.mockRejectedValue(new WebhooksCCError(503, "Service unavailable"));
     const server = parseJsonResult(
       await tools.create_endpoint.handler({ signingProvider: "stripe", signingSecret: "abc" })
     );
     expect(server.code).toBe("server_error");
-    expect(server.message).toContain("Service unavailable The endpoint was deleted");
+    expect(server.message).toBe(
+      "Service unavailable The endpoint was deleted, so nothing was created: call create_endpoint again."
+    );
+    // A rate limit keeps its code and retryAfter.
+    update.mockRejectedValue(new RateLimitError(7));
+    const limited = parseJsonResult(
+      await tools.create_endpoint.handler({ signingProvider: "stripe", signingSecret: "abc" })
+    );
+    expect(limited).toMatchObject({ code: "rate_limited", retryAfter: 7 });
+    expect(limited.message).toContain("call create_endpoint again.");
+    expect(limited.message).not.toContain("fix the signing options");
+  });
+
+  it("keeps a plain error as the cause of the one it answers", async () => {
+    const create = vi
+      .fn()
+      .mockResolvedValue({ slug: "acme-5", url: "https://go.webhooks.cc/w/acme-5" });
+    const original = new Error("socket hang up");
+    const update = vi.fn().mockRejectedValue(original);
+    const remove = vi.fn().mockResolvedValue(undefined);
+    const tools = getRegisteredTools(
+      createMockClient({
+        endpoints: { create, update, delete: remove } as unknown as WebhooksCC["endpoints"],
+      })
+    );
+    await tools.create_endpoint.handler({ signingProvider: "stripe", signingSecret: "abc" });
+    // The thrown error is a new one; the original keeps its own message.
+    expect(original.message).toBe("socket hang up");
   });
 
   it("names the endpoint left without signing when it cannot be deleted either", async () => {
@@ -1548,10 +1576,30 @@ describe("registerTools", () => {
     });
     expect(result.isError).toBe(true);
     const error = parseJsonResult(result);
-    expect(error.message).toContain('"acme-3"');
-    expect(error.message).toContain("exists without signing");
-    expect(error.message).toContain("update_endpoint");
+    // The signing error itself, its code kept, with what became of the endpoint.
+    expect(error.code).toBe("validation_error");
+    expect(error.message).toBe(
+      'Invalid signing secret The endpoint "acme-3" could not be deleted: it exists without signing. Fix it with update_endpoint, or delete it with delete_endpoint.'
+    );
     expect(error).not.toHaveProperty("warning");
+  });
+
+  it("keeps a rate limit's retryAfter when the endpoint cannot be deleted either", async () => {
+    const create = vi
+      .fn()
+      .mockResolvedValue({ slug: "acme-6", url: "https://go.webhooks.cc/w/acme-6" });
+    const update = vi.fn().mockRejectedValue(new RateLimitError(9));
+    const remove = vi.fn().mockRejectedValue(new WebhooksCCError(503, "Service unavailable"));
+    const tools = getRegisteredTools(
+      createMockClient({
+        endpoints: { create, update, delete: remove } as unknown as WebhooksCC["endpoints"],
+      })
+    );
+    const error = parseJsonResult(
+      await tools.create_endpoint.handler({ signingProvider: "stripe", signingSecret: "abc" })
+    );
+    expect(error).toMatchObject({ code: "rate_limited", retryAfter: 9 });
+    expect(error.message).toContain('"acme-6" could not be deleted');
   });
 
   it("refuses a signing provider it does not know before creating anything", () => {
@@ -4212,15 +4260,26 @@ describe("errors from the API", () => {
   it("hints only at tools the server has", async () => {
     const { TOOL_CATALOG } = await import("../catalog");
     const remoteTools = getRegisteredTools(createMockClient(), { remote: true });
-    const paths = [
-      "/endpoints/acme",
-      "/endpoints/acme/requests?limit=5",
-      "/requests/req_1",
-      "/shares/s_1/stop",
-      "/tunnel-names/acme",
-      "/teams/t_1/members",
-      undefined,
+    // Each route a 404 can come from, and the tool its hint must name.
+    const routes: Array<[string, string | null]> = [
+      ["/endpoints/acme", "list_endpoints"],
+      ["/endpoints/acme/requests?limit=5", "list_requests"],
+      ["/requests/req_1", "list_requests"],
+      ["/endpoints/acme/destinations/d_1", "list_destinations"],
+      ["/stream/acme", "list_endpoints"],
+      ["/shares/s_1/stop", "list_shares"],
+      ["/tunnel-names/acme", "list_names"],
+      ["/teams/t_1/members", "list_teams"],
+      ["/domains/acme.test", "list_domains"],
+      ["/request-shares/rs_1", "list_share_links"],
+      ["/invites/i_1/accept", "list_invites"],
+      ["/api-keys?id=k_1", "list_api_keys"],
+      ["/agent/registrations/a_1", "list_connected_agents"],
+      ["/integrations/google/connections/g_1", "list_google_connections"],
+      ["/approvals/ap_1", null],
+      ["/billing/checkouts/c_1", null],
     ];
+    const paths = routes.map(([path]) => path);
     const { toolHint } = await import("../tools");
     for (const remote of [false, true]) {
       const errors: WebhooksCCError[] = [new WebhooksCCError(401, "Unauthorized")];
@@ -4232,6 +4291,10 @@ describe("errors from the API", () => {
       for (const error of errors) {
         const hint = toolHint(error, remote);
         expect(hint, error.path).toBeTruthy();
+        const expected = routes.find(([path]) => path === error.path)?.[1];
+        if (expected) expect(hint, error.path).toContain(expected);
+        if (expected === null)
+          expect(hint).toBe("Pass the id exactly as the asking tool returned it.");
         const named = (hint ?? "").match(/\b[a-z]+(?:_[a-z]+)+\b/g) ?? [];
         for (const tool of named) {
           if (remote) expect(remoteTools[tool], tool).toBeDefined();
@@ -4240,7 +4303,15 @@ describe("errors from the API", () => {
         }
       }
     }
-    expect(toolHint(new NotFoundError("x"), false)).toContain("list_endpoints");
+    // No route, or one without a list to try: no hint rather than a wrong one.
+    expect(toolHint(new NotFoundError("x"), false)).toBeNull();
+    const elsewhere = new NotFoundError("x");
+    elsewhere.path = "/usage";
+    expect(toolHint(elsewhere, false)).toBeNull();
+    // A prefix only matches whole segments.
+    const lookalike = new NotFoundError("x");
+    lookalike.path = "/endpointsx";
+    expect(toolHint(lookalike, true)).toBeNull();
     expect(toolHint(new WebhooksCCError(401, "x"), true)).toContain("reconnect");
     expect(toolHint(new WebhooksCCError(401, "x"), false)).toBe(
       "The API key or agent connection was refused: if WHK_API_KEY is set, use a working key (https://webhooks.cc/account/api-keys); otherwise restart the server and connect again with connect_account."

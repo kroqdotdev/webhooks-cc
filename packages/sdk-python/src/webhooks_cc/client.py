@@ -302,7 +302,8 @@ def _error_text(body: str) -> str | None:
         return None
     for key in ("message", "error"):
         text = parsed.get(key)
-        if isinstance(text, str) and text.strip():
+        # Blank as JavaScript's trim() sees it (U+FEFF too), as the TypeScript SDK reads it.
+        if isinstance(text, str) and js_trim(text):
             return text[:_MAX_ERROR_TEXT] + "..." if len(text) > _MAX_ERROR_TEXT else text
     return None
 
