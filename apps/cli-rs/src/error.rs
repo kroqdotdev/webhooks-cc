@@ -13,7 +13,7 @@
 //! | 5      | `forbidden`             | Not allowed: the plan, a limit, or a permission  |
 //! | 6      | `rate_limited`          | Too many requests; wait and retry                |
 //! | 7      | `server_error`, `network_error`, `request_timeout` | Our side or the network failed; retry |
-//! | 8      | `timeout`, `approval_expired`, `quote_changed`, `checkout_expired`, `checkout_superseded` | `whk wait` (or another wait) ran out of time, an approval or checkout link expired, an approved billing change was not made because its quote changed, or a checkout's purchase was undone as a duplicate |
+//! | 8      | `timeout`, `approval_expired`, `quote_changed`, `checkout_expired`, `checkout_superseded` | `whk wait` (or another wait) ran out of time, an approval or checkout link expired, a billing change (approved, or made on the agent budget) was not made because its quote changed, or a checkout's purchase was undone as a duplicate |
 //! | 9      | `confirmation_required`, `cancelled`, `approval_denied` | A destructive command was not confirmed, or an approval was refused |
 
 use serde_json::{Value, json};
@@ -283,13 +283,15 @@ pub fn classify(error: &anyhow::Error) -> Classified {
                 c.status = Some(e.status);
                 return c;
             }
-            // A billing change not made because its price or the
-            // subscription moved: the same code as an approved change's.
+            // The bank wants the cardholder to confirm a charge (a session's
+            // change): it may still be made, so not a refusal.
             if e.code.as_deref() == Some("payment_action_required")
                 && (400..500).contains(&e.status)
             {
                 return payment_action_required(Some(e.status));
             }
+            // A billing change not made because its price or the
+            // subscription moved: the same code as an approved change's.
             if e.code.as_deref() == Some("quote_changed") && (400..500).contains(&e.status) {
                 let mut c = Classified::new("quote_changed", 8).hint(QUOTE_CHANGED_HINT);
                 c.status = Some(e.status);
