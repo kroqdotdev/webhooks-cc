@@ -7,3 +7,6 @@ pub mod share;
 pub mod tunnel;
 pub mod types;
 pub mod util;
+
+#[cfg(test)]
+pub(crate) mod test_support;

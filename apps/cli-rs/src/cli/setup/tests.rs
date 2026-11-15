@@ -1740,6 +1740,53 @@ fn ctrl_c_during_a_shown_program_ends_the_program_and_not_whk() {
     // The program sends SIGINT to whk (this test process), as a Ctrl-C at
     // the terminal reaches both, and then to itself. whk lives on; the
     // program, which gets the default action back, ends at once.
+    let _signals = crate::test_support::signal_test_lock();
+
+    /// The SIGINT action now.
+    fn current() -> libc::sighandler_t {
+        // SAFETY: reads the current action into a zeroed struct.
+        unsafe {
+            let mut now: libc::sigaction = std::mem::zeroed();
+            libc::sigaction(libc::SIGINT, std::ptr::null(), &mut now);
+            now.sa_sigaction
+        }
+    }
+
+    /// Whether a SIGINT sent to this process is still waiting to be handled.
+    /// Linux reports only the pending signals the calling thread blocks, so
+    /// this thread blocks SIGINT while it asks (see below).
+    fn sigint_pending() -> bool {
+        // SAFETY: sigpending fills a set emptied first.
+        unsafe {
+            let mut set: libc::sigset_t = std::mem::zeroed();
+            libc::sigemptyset(&mut set);
+            libc::sigpending(&mut set) == 0 && libc::sigismember(&set, libc::SIGINT) == 1
+        }
+    }
+
+    extern "C" fn outer(_: libc::c_int) {}
+
+    // A handler of the test's own around the run: the SIGINT to this process
+    // may still be on its way when the run puts back what it found, and
+    // must not meet the default action then, which ends the test binary.
+    // The run restores this handler, which shows it restores whatever was
+    // there; once the signal has been handled, the default comes back.
+    let before = current();
+    assert_eq!(before, libc::SIG_DFL);
+    // SAFETY: sigaction with zeroed, then filled structs; the handler does
+    // nothing, so it is async-signal-safe.
+    unsafe {
+        let mut quiet: libc::sigaction = std::mem::zeroed();
+        quiet.sa_sigaction = outer as extern "C" fn(libc::c_int) as usize;
+        quiet.sa_flags = libc::SA_RESTART;
+        libc::sigemptyset(&mut quiet.sa_mask);
+        assert_eq!(
+            libc::sigaction(libc::SIGINT, &quiet, std::ptr::null_mut()),
+            0
+        );
+    }
+    let ours = current();
+
     let mut runner = ProcessRunner { json: true };
     let started = std::time::Instant::now();
     let output = runner
@@ -1752,19 +1799,45 @@ fn ctrl_c_during_a_shown_program_ends_the_program_and_not_whk() {
             true,
         )
         .unwrap();
+    // whk's own Ctrl-C is as it was before the run.
+    let after = current();
+
+    // The SIGINT sent to this process was queued before the program ended,
+    // but another thread may not have taken it yet. With SIGINT blocked here
+    // it stays visible to sigpending until a thread has, under the test's
+    // own handler; only then does the default come back.
+    // SAFETY: a signal set emptied, then filled, for this thread's mask.
+    let mut only_sigint: libc::sigset_t = unsafe { std::mem::zeroed() };
+    unsafe {
+        libc::sigemptyset(&mut only_sigint);
+        libc::sigaddset(&mut only_sigint, libc::SIGINT);
+        libc::pthread_sigmask(libc::SIG_BLOCK, &only_sigint, std::ptr::null_mut());
+    }
+    let waited = std::time::Instant::now();
+    while sigint_pending() && waited.elapsed() < std::time::Duration::from_secs(10) {
+        std::thread::sleep(std::time::Duration::from_millis(1));
+    }
+    let left_pending = sigint_pending();
+    if !left_pending {
+        // SAFETY: puts back the default action, then this thread's mask.
+        unsafe {
+            let mut default: libc::sigaction = std::mem::zeroed();
+            default.sa_sigaction = libc::SIG_DFL;
+            libc::sigemptyset(&mut default.sa_mask);
+            libc::sigaction(libc::SIGINT, &default, std::ptr::null_mut());
+            libc::pthread_sigmask(libc::SIG_UNBLOCK, &only_sigint, std::ptr::null_mut());
+        }
+    }
+    // Left pending, the handler and this thread's mask stay as they are,
+    // so the signal still does no harm once a thread takes it.
+    assert!(!left_pending, "no thread took the SIGINT sent to whk");
+
     assert!(!output.success);
     assert!(
         started.elapsed() < std::time::Duration::from_secs(4),
         "the program ignored Ctrl-C"
     );
-    // And whk's own Ctrl-C is as it was before.
-    // SAFETY: reads the current action into a zeroed struct.
-    let now = unsafe {
-        let mut now: libc::sigaction = std::mem::zeroed();
-        libc::sigaction(libc::SIGINT, std::ptr::null(), &mut now);
-        now.sa_sigaction
-    };
-    assert_eq!(now, libc::SIG_DFL);
+    assert_eq!(after, ours, "the run did not restore the action it found");
 }
 
 #[test]
