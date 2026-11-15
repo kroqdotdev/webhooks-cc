@@ -1325,6 +1325,8 @@ describe("a revoked plan hands over to a plan the customer still has live", () =
           // The row after the clear.
           { data: { polar_subscription_id: null } },
           storedUser({ polar_subscription_id: null, plan: "free", period_start: null }),
+          // The row after the adoption.
+          { data: { polar_subscription_id: "sub_annual" } },
         ],
       })
     );
@@ -1397,6 +1399,7 @@ describe("a revoked plan hands over to a plan the customer still has live", () =
           { data: { id: "user_1" } },
           { data: { polar_subscription_id: null } },
           storedUser({ polar_subscription_id: null, plan: "free", period_start: null }),
+          { data: { polar_subscription_id: "sub_kept" } },
         ],
         // The newest is a second plan whose revoke failed after its refund was recorded.
         "polar_refunds:select": [{ data: [{ target: "subscription:sub_newest" }] }],
@@ -1462,7 +1465,12 @@ describe("a revoked plan hands over to a plan the customer still has live", () =
       expect(mockFns.recordRefund).not.toHaveBeenCalled();
       expect(mockFns.reportError).toHaveBeenCalledTimes(1);
       // The report says how a person keeps it.
-      expect(mockFns.reportError.mock.calls[0][0]).toContain("dismiss its held refund");
+      expect(mockFns.reportError.mock.calls[0][0]).toContain(
+        "to end it, revoke it in Polar and approve the held refund"
+      );
+      expect(mockFns.reportError.mock.calls[0][0]).toContain(
+        "to keep it, dismiss the held refund, then redeliver its subscription.created or subscription.updated event"
+      );
       expect(mockFns.reportError.mock.calls[0][2]).toEqual({
         userId: "user_1",
         storedSubscriptionId: null,
@@ -1550,6 +1558,61 @@ describe("a revoked plan hands over to a plan the customer still has live", () =
     expect(mockFns.reportError).not.toHaveBeenCalled();
   });
 
+  test("an adoption the refund guard refuses is not audited or logged as adopted", async () => {
+    mockFns.createAdminClient.mockReturnValue(
+      createFakeAdmin({
+        "users:select": [
+          { data: { id: "user_1" } },
+          { data: { polar_subscription_id: null } },
+          storedUser({ polar_subscription_id: null, plan: "free", period_start: null }),
+          // The row after the refused write: still free.
+          { data: { polar_subscription_id: null } },
+        ],
+        // None when adoption looked; one recorded by the time the write did.
+        "polar_refunds:select": [{ data: [] }, { data: [{ target: "subscription:sub_raced" }] }],
+        "audit_events:select": [{ data: [] }],
+      })
+    );
+    polarList.mockResolvedValue({
+      items: [
+        subscriptionEvent({
+          id: "sub_raced",
+          product_id: "prod_pro",
+          started_at: "2026-06-01T10:00:00Z",
+        }),
+      ],
+    });
+    const info = vi.spyOn(console, "info").mockImplementation(() => {});
+
+    try {
+      await applyPolarWebhookEvent("subscription.revoked", revoked);
+
+      // Only the clear: the guard wrote nothing.
+      expect(userUpdates()).toHaveLength(1);
+      expect(userUpdates()[0]).toMatchObject({ plan: "free", polar_subscription_id: null });
+      expect(mockFns.auditSystemEvent).toHaveBeenCalledTimes(1);
+      expect(mockFns.auditSystemEvent).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: "billing.duplicate_plan_reported",
+          targetId: "sub_raced",
+          metadata: { stored_subscription_id: null, reason: "refund_recorded" },
+        })
+      );
+      expect(mockFns.auditSystemEvent).not.toHaveBeenCalledWith(
+        expect.objectContaining({ action: "billing.plan_adopted" })
+      );
+      const messages = info.mock.calls.map((call) => String(call[0]));
+      expect(messages).toContain(
+        "[billing] a live plan subscription was not adopted after the held one was revoked"
+      );
+      expect(messages).not.toContain(
+        "[billing] adopted a live plan subscription after the held one was revoked"
+      );
+    } finally {
+      info.mockRestore();
+    }
+  });
+
   test("a live plan whose refund a person dismissed is adopted", async () => {
     mockFns.createAdminClient.mockReturnValue(
       createFakeAdmin({
@@ -1557,6 +1620,7 @@ describe("a revoked plan hands over to a plan the customer still has live", () =
           { data: { id: "user_1" } },
           { data: { polar_subscription_id: null } },
           storedUser({ polar_subscription_id: null, plan: "free", period_start: null }),
+          { data: { polar_subscription_id: "sub_dismissed" } },
         ],
         // The database leaves the dismissed row out of the answer.
         "polar_refunds:select": [{ data: [] }],

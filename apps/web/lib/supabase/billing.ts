@@ -641,6 +641,28 @@ async function adoptLivePlanSubscription(
   if (!applied) {
     throw new Error("The account kept changing while a live plan was adopted; retry it");
   }
+  // True also when the write was refused (a refund recorded for it since
+  // the check above, which the guard in applyPlanSubscription() reports
+  // itself, or another subscription written meanwhile): adopted only when
+  // the row now holds it.
+  const { data: after, error: afterError } = await createAdminClient()
+    .from("users")
+    .select("polar_subscription_id")
+    .eq("id", userId)
+    .maybeSingle<{ polar_subscription_id: string | null }>();
+  if (afterError) throw afterError;
+  if (after?.polar_subscription_id !== String(newest.id)) {
+    console.info(
+      "[billing] a live plan subscription was not adopted after the held one was revoked",
+      {
+        userId,
+        endedSubscriptionId: endedId,
+        candidateSubscriptionId: newest.id,
+        heldSubscriptionId: after?.polar_subscription_id ?? null,
+      }
+    );
+    return;
+  }
   console.info("[billing] adopted a live plan subscription after the held one was revoked", {
     userId,
     endedSubscriptionId: endedId,
@@ -934,12 +956,16 @@ async function applyPlanSubscription(
     // settles it, as adoptLivePlanSubscription() leaves it. One whose
     // refund a person dismissed was kept on purpose, and is applied: to
     // keep such a subscription, a person dismisses the held refund and then
-    // redelivers any event of that subscription from Polar's dashboard
-    // (every event re-reads Polar's current state), which applies it.
+    // redelivers its subscription.created or subscription.updated event
+    // from Polar's dashboard (or changes anything on the subscription in
+    // Polar, which sends subscription.updated); every event re-reads
+    // Polar's current state, so that applies it. Only those two events
+    // reach this function. To end it instead, a person revokes it in Polar
+    // and approves the held refund.
     if (subscriptionId !== null && (await subscriptionsWithRefunds([subscriptionId])).size > 0) {
       const reason = "refund_recorded";
       reportError(
-        "[billing] a live plan subscription recorded for a refund was not applied; to keep it, dismiss its held refund, then redeliver any of its events from Polar's dashboard",
+        "[billing] a live plan subscription recorded for a refund was not applied; to end it, revoke it in Polar and approve the held refund; to keep it, dismiss the held refund, then redeliver its subscription.created or subscription.updated event from Polar's dashboard (or change anything on the subscription in Polar, which sends subscription.updated)",
         undefined,
         {
           userId,

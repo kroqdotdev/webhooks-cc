@@ -428,6 +428,19 @@ describe("webhooks that record a refund", () => {
         metadata: { stored_subscription_id: null, reason: "refund_recorded" },
       },
     ]);
+
+    // A person keeps it: dismissing the refund and redelivering its
+    // subscription.created applies it.
+    const held = await refundRow(`subscription:${second.id}`);
+    const { data: dismissed } = await admin.rpc("dismiss_polar_refund", { p_id: held!.id });
+    expect(dismissed).toBe(true);
+    await deliver("subscription.created", second);
+    const { data: kept } = await admin
+      .from("users")
+      .select("polar_subscription_id, plan")
+      .eq("id", userId)
+      .single();
+    expect(kept).toEqual({ polar_subscription_id: second.id, plan: "pro" });
   });
 
   it("a live plan whose refund a person dismissed is adopted when the account's plan ends", async () => {
