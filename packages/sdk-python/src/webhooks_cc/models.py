@@ -1951,9 +1951,12 @@ class CheckoutLink:
     holds and ``matches`` whether that is what the link asked for (``None`` while
     it is not known yet, say a team plan's seats before its subscription's event;
     only ``False`` is a mismatch). Rarely, ``"expired"`` turns ``"paid"`` when a
-    payment Polar confirmed late arrives. ``status`` ``"superseded"``: it was paid,
-    but the purchase was undone as a duplicate: its subscription was ended and a
-    refund is under review.
+    payment Polar confirmed late arrives, which only a link the person opened
+    (``opened``) can. ``status`` ``"superseded"``: it was paid, but the purchase
+    was undone as a duplicate: its subscription was ended and a refund is under
+    review. Rarely too, ``"paid"`` turns ``"superseded"``, when a read marked it
+    paid from Polar before the webhook's duplicate checks undid the purchase.
+    ``opened`` is ``None`` from a server released before it.
     """
 
     id: str
@@ -1968,6 +1971,7 @@ class CheckoutLink:
     paid_at: str | None
     bought: CheckoutBought | None = None
     matches: bool | None = None
+    opened: bool | None = None
     raw: dict[str, Any] = field(default_factory=dict, repr=False, compare=False)
 
     @classmethod
@@ -1976,6 +1980,7 @@ class CheckoutLink:
         item = data.get("item")
         bought = data.get("bought")
         matches = data.get("matches")
+        opened = data.get("opened")
         return cls(
             id=str(data.get("id") or ""),
             status=cast(CheckoutStatus, status if status in _CHECKOUT_STATUSES else "open"),
@@ -1989,5 +1994,6 @@ class CheckoutLink:
             paid_at=_str_or_none(data.get("paidAt")),
             bought=CheckoutBought.from_dict(bought) if isinstance(bought, Mapping) else None,
             matches=matches if isinstance(matches, bool) else None,
+            opened=opened if isinstance(opened, bool) else None,
             raw=dict(data),
         )

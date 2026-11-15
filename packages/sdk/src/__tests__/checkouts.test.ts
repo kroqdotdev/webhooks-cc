@@ -19,7 +19,10 @@ function answer(body: unknown, status = 200) {
   };
 }
 
-function link(status: "open" | "paid" | "expired" | "superseded") {
+function link(
+  status: "open" | "paid" | "expired" | "superseded",
+  overrides: Record<string, unknown> = {}
+) {
   return {
     checkout: {
       id: ID,
@@ -29,14 +32,17 @@ function link(status: "open" | "paid" | "expired" | "superseded") {
       item: { kind: "plan", plan: "pro", interval: "month" },
       teamId: null,
       url: status === "open" ? `https://webhooks.cc/checkout/${ID}` : null,
+      opened: status !== "open",
       createdAt: "2026-11-14T12:00:00.000Z",
-      expiresAt: "2026-11-14T13:00:00.000Z",
+      // Expired a minute ago: a late payment may still land.
+      expiresAt: new Date(Date.now() - 60_000).toISOString(),
       paidAt: status === "paid" ? "2026-11-14T12:05:00.000Z" : null,
       bought:
         status === "paid"
           ? { product: "prod_pro", seats: null, units: null, amount: 900, currency: "usd" }
           : null,
       matches: status === "paid" ? true : null,
+      ...overrides,
     },
   };
 }
@@ -90,6 +96,71 @@ describe("billing checkout links", () => {
     const paid = await client().billing.waitForCheckout(ID, { pollInterval: 1_000 });
     expect(paid.status).toBe("paid");
     expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("throws at once for an expired link no late payment can turn paid", async () => {
+    for (const overrides of [
+      // Never opened: there is no Polar checkout to pay.
+      { opened: false },
+      // Expired an hour ago: past any late payment.
+      { expiresAt: new Date(Date.now() - 60 * 60_000).toISOString() },
+    ]) {
+      const fetchMock = vi.fn().mockResolvedValue(answer(link("expired", overrides)));
+      globalThis.fetch = fetchMock;
+      await expect(
+        client().billing.waitForCheckout(ID, { pollInterval: 1_000 })
+      ).rejects.toBeInstanceOf(CheckoutExpiredError);
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    }
+  });
+
+  it("stops at once when aborted, during a poll or between polls", async () => {
+    // Between polls: the wait never sits out its interval.
+    globalThis.fetch = vi.fn().mockResolvedValue(answer(link("open")));
+    const between = new AbortController();
+    const started = Date.now();
+    const waiting = client().billing.waitForCheckout(ID, {
+      pollInterval: 30_000,
+      signal: between.signal,
+    });
+    setTimeout(() => between.abort(new Error("stop")), 50);
+    await expect(waiting).rejects.toThrow("stop");
+    expect(Date.now() - started).toBeLessThan(5_000);
+
+    // During a poll that would answer paid: the abort wins.
+    const during = new AbortController();
+    globalThis.fetch = vi.fn().mockImplementation(
+      (_url: string, init: { signal: AbortSignal }) =>
+        new Promise((resolve, reject) => {
+          init.signal.addEventListener("abort", () =>
+            reject(Object.assign(new Error("aborted"), { name: "AbortError" }))
+          );
+          setTimeout(() => resolve(answer(link("paid"))), 10_000);
+        })
+    );
+    const polling = client().billing.waitForCheckout(ID, { signal: during.signal });
+    setTimeout(() => during.abort(new Error("stop")), 50);
+    await expect(polling).rejects.toThrow("stop");
+  });
+
+  it("never retries a timed poll that ran out after a backoff", async () => {
+    globalThis.fetch = vi.fn().mockImplementation(
+      (_url: string, init: { signal: AbortSignal }) =>
+        new Promise((_resolve, reject) => {
+          init.signal.addEventListener("abort", () =>
+            reject(Object.assign(new Error("aborted"), { name: "AbortError" }))
+          );
+        })
+    );
+    const slow = new WebhooksCC({
+      apiKey: "whcc_testkey123",
+      baseUrl: BASE_URL,
+      retry: { maxAttempts: 3, backoffMs: 5_000 },
+    });
+    const started = Date.now();
+    await expect(slow.billing.getCheckout(ID, { timeout: 200 })).rejects.toThrow();
+    expect(Date.now() - started).toBeLessThan(2_000);
+    expect(globalThis.fetch).toHaveBeenCalledTimes(1);
   });
 
   it("throws when the purchase was undone as a duplicate plan", async () => {

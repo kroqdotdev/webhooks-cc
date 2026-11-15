@@ -24,8 +24,10 @@ func checkoutAnswer(status string) map[string]any {
 		"item":      map[string]any{"kind": "plan", "plan": "pro", "interval": "month"},
 		"teamId":    nil,
 		"url":       nil,
+		"opened":    status != "open",
 		"createdAt": "2026-11-14T12:00:00.000Z",
-		"expiresAt": "2026-11-14T13:00:00.000Z",
+		// Expired a minute ago: a late payment may still land.
+		"expiresAt": time.Now().Add(-time.Minute).UTC().Format(time.RFC3339Nano),
 		"paidAt":    nil,
 		"bought":    nil,
 		"matches":   nil,
@@ -104,6 +106,57 @@ func TestWaitForCheckoutKeepsPollingAnExpiredLink(t *testing.T) {
 	}
 	if link.Status != "paid" || polls.Load() != 2 {
 		t.Fatalf("link = %+v after %d polls", link, polls.Load())
+	}
+}
+
+// An expired link no late payment can turn paid ends the wait at once.
+func TestWaitForCheckoutEndsAtOnceWhenNoLatePaymentCanLand(t *testing.T) {
+	for name, change := range map[string]func(map[string]any){
+		"never opened": func(link map[string]any) { link["opened"] = false },
+		"expired an hour ago": func(link map[string]any) {
+			link["expiresAt"] = time.Now().Add(-time.Hour).UTC().Format(time.RFC3339Nano)
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			api := newFakeAPI(t)
+			var polls atomic.Int32
+			api.handle("GET /api/billing/checkouts/"+checkoutID, func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				answer := checkoutAnswer("expired")
+				if polls.Add(1) > 1 {
+					answer = checkoutAnswer("paid")
+				}
+				change(answer["checkout"].(map[string]any))
+				_ = json.NewEncoder(w).Encode(answer)
+			})
+			_, err := api.client().Billing.WaitForCheckout(context.Background(), checkoutID, webhookscc.WaitForCheckoutOptions{PollInterval: time.Second})
+			if !errors.Is(err, webhookscc.ErrCheckoutExpired) || polls.Load() != 1 {
+				t.Fatalf("err = %v after %d polls, want ErrCheckoutExpired after 1", err, polls.Load())
+			}
+		})
+	}
+}
+
+// A poll answering paid after the wait's deadline never makes the wait succeed.
+func TestWaitForCheckoutBoundsEachPollByItsDeadline(t *testing.T) {
+	api := newFakeAPI(t)
+	api.handle("GET /api/billing/checkouts/"+checkoutID, func(w http.ResponseWriter, r *http.Request) {
+		select {
+		case <-time.After(5 * time.Second):
+		case <-r.Context().Done():
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(checkoutAnswer("paid"))
+	})
+	started := time.Now()
+	link, err := api.client().Billing.WaitForCheckout(context.Background(), checkoutID, webhookscc.WaitForCheckoutOptions{Timeout: 300 * time.Millisecond})
+	var timeout *webhookscc.TimeoutError
+	if !errors.As(err, &timeout) || link != nil {
+		t.Fatalf("link = %+v, err = %v, want a *TimeoutError", link, err)
+	}
+	if elapsed := time.Since(started); elapsed > 2*time.Second {
+		t.Fatalf("the wait took %v past its 300ms timeout", elapsed)
 	}
 }
 

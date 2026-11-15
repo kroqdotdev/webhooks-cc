@@ -27,6 +27,7 @@ from collections import OrderedDict
 from collections.abc import Callable, Iterator, Mapping, Sequence
 from contextlib import suppress
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
 from typing import TYPE_CHECKING, Any, Literal
 from urllib.parse import unquote, urlsplit
@@ -187,6 +188,28 @@ def _now_ms() -> float:
 def _sleep_ms(ms: float) -> None:
     if ms > 0:
         time.sleep(ms / 1000)
+
+
+#: A late payment is only possible for a link the person opened, and only this
+#: long after it expired (a read holds a link whose Polar checkout is still
+#: open for 15 minutes past its expiry).
+_CHECKOUT_LATE_PAYMENT_MS = 20 * 60_000
+
+
+def _may_still_be_paid(checkout: CheckoutLink) -> bool:
+    """Whether an expired checkout link may still turn paid: one the person
+    opened, expired under 20 minutes ago. A server from before ``opened`` is
+    given the benefit of the doubt."""
+    if checkout.opened is False:
+        return False
+    try:
+        expired = datetime.fromisoformat(checkout.expires_at.replace("Z", "+00:00"))
+    except ValueError:
+        return True
+    if expired.tzinfo is None:
+        expired = expired.replace(tzinfo=timezone.utc)
+    age_ms = (datetime.now(timezone.utc) - expired).total_seconds() * 1000
+    return age_ms < _CHECKOUT_LATE_PAYMENT_MS
 
 
 def _validate_segment(value: str, name: str) -> None:
@@ -2090,9 +2113,10 @@ class Billing:
         expired_grace: Duration = 60_000,
     ) -> CheckoutLink:
         """Wait until the person pays and return the paid link. Raises
-        :class:`CheckoutExpiredError` when it expires first (after polling for
+        :class:`CheckoutExpiredError` when it expires first (for a link the
+        person opened that expired under 20 minutes ago, after polling for
         ``expired_grace`` more, a minute by default, since a payment Polar
-        confirms late can still turn an expired link paid),
+        confirms late can still turn it paid; at once otherwise),
         :class:`CheckoutSupersededError` when its purchase was undone as a duplicate,
         and :class:`TimeoutError` when ``timeout`` passes first (default:
         until it expires). Polls at least a second apart. ``matches`` ``None``
@@ -2125,6 +2149,8 @@ class Billing:
             if checkout.status == "superseded":
                 raise CheckoutSupersededError(checkout_id)
             if checkout.status == "expired":
+                if not _may_still_be_paid(checkout):
+                    raise CheckoutExpiredError(checkout_id)
                 now = time.monotonic() * 1000
                 if expired_at is None:
                     expired_at = now

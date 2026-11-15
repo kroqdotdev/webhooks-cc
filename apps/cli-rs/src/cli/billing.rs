@@ -267,7 +267,12 @@ pub async fn checkout(
     let answer = client.create_checkout(&body).await?;
     let link = &answer.raw["checkout"];
     let id = link["id"].as_str().unwrap_or_default().to_string();
-    if json {
+    if json && deadline.is_some() {
+        // With --wait the link and its payment are two answers: NDJSON, one
+        // compact line each (the open link first, so the person can be handed
+        // its URL, and the paid link last), as `keys create` prints approvals.
+        println!("{}", serde_json::to_string(&answer.raw)?);
+    } else if json {
         println!("{}", serde_json::to_string_pretty(&answer.raw)?);
     } else {
         println!("\n  {}", sanitize(link["summary"].as_str().unwrap_or("")));
@@ -288,7 +293,7 @@ pub async fn checkout(
             if !json {
                 println!("\n  Waiting for the payment...");
             }
-            wait_until_paid(client, &id, deadline, json).await
+            wait_until_paid(client, &id, deadline, json.then_some(Json::Line)).await
         }
         None => Ok(()),
     }
@@ -305,6 +310,7 @@ pub async fn checkout_status(
     json: bool,
 ) -> Result<()> {
     if let Some(timeout) = wait {
+        let json = json.then_some(Json::Pretty);
         return wait_until_paid(client, id, deadline(timeout)?, json).await;
     }
     let answer = client.get_checkout(id).await?;
@@ -339,30 +345,61 @@ fn deadline(timeout: &str) -> Result<Instant> {
     Ok(Instant::now() + Duration::from_millis(ms.max(0) as u64))
 }
 
+/// How the paid link is printed with --json: pretty on its own, a compact
+/// line when it follows the open link's line (NDJSON).
+#[derive(Clone, Copy)]
+enum Json {
+    Pretty,
+    Line,
+}
+
 async fn wait_until_paid(
     client: &ApiClient,
     id: &str,
     deadline: Instant,
-    json: bool,
+    json: Option<Json>,
 ) -> Result<()> {
     use anyhow::Context;
     // When the link first read expired, while it may still turn paid.
     let mut expired_at: Option<Instant> = None;
+    let out_of_time = |expired: bool| -> anyhow::Error {
+        if expired {
+            return CliError::CheckoutExpired.into();
+        }
+        CliError::Timeout(format!(
+            "Not paid yet. Run `whk billing checkout-status {id} --wait` to keep waiting."
+        ))
+        .into()
+    };
     loop {
-        let answer = client.get_checkout(id).await.with_context(|| {
-            format!("could not check checkout link {id}; run `whk billing checkout-status {id} --wait` to try again")
-        })?;
+        // Each poll gets only what is left of the wait, so a slow answer
+        // never holds the command past its timeout.
+        let left = deadline.saturating_duration_since(Instant::now());
+        if left.is_zero() {
+            return Err(out_of_time(expired_at.is_some()));
+        }
+        let answer = match tokio::time::timeout(left, client.get_checkout(id)).await {
+            Ok(answer) => answer.with_context(|| {
+                format!("could not check checkout link {id}; run `whk billing checkout-status {id} --wait` to try again")
+            })?,
+            Err(_) => return Err(out_of_time(expired_at.is_some())),
+        };
         let link = &answer.raw["checkout"];
         match link["status"].as_str() {
             Some("paid") => {
-                if json {
-                    println!("{}", serde_json::to_string_pretty(&answer.raw)?);
-                } else {
-                    print_status(link);
+                match json {
+                    Some(Json::Line) => println!("{}", serde_json::to_string(&answer.raw)?),
+                    Some(Json::Pretty) => {
+                        println!("{}", serde_json::to_string_pretty(&answer.raw)?)
+                    }
+                    None => print_status(link),
                 }
                 return Ok(());
             }
             Some("expired") => {
+                if !may_still_be_paid(link) {
+                    return Err(CliError::CheckoutExpired.into());
+                }
                 let since = *expired_at.get_or_insert_with(Instant::now);
                 if since.elapsed() >= EXPIRED_GRACE {
                     return Err(CliError::CheckoutExpired.into());
@@ -373,15 +410,29 @@ async fn wait_until_paid(
         }
         let left = deadline.saturating_duration_since(Instant::now());
         if left.is_zero() {
-            if expired_at.is_some() {
-                return Err(CliError::CheckoutExpired.into());
-            }
-            return Err(CliError::Timeout(format!(
-                "Not paid yet. Run `whk billing checkout-status {id} --wait` to keep waiting."
-            ))
-            .into());
+            return Err(out_of_time(expired_at.is_some()));
         }
         tokio::time::sleep(POLL_EVERY.min(left)).await;
+    }
+}
+
+/// How long after a link expired a late payment can still land (a read holds
+/// a link whose Polar checkout is still open for 15 minutes past its expiry).
+const LATE_PAYMENT: chrono::TimeDelta = chrono::TimeDelta::minutes(20);
+
+/// Whether an expired link may still turn paid: one the person opened,
+/// expired under 20 minutes ago. A server from before `opened` is given the
+/// benefit of the doubt; any other expired link is final at once.
+fn may_still_be_paid(link: &Value) -> bool {
+    if link["opened"] == Value::Bool(false) {
+        return false;
+    }
+    match link["expiresAt"]
+        .as_str()
+        .and_then(|at| chrono::DateTime::parse_from_rfc3339(at).ok())
+    {
+        Some(expired) => chrono::Utc::now().signed_duration_since(expired) < LATE_PAYMENT,
+        None => true,
     }
 }
 
@@ -671,7 +722,10 @@ mod tests {
             "item": { "kind": "plan", "plan": "pro", "interval": "month" },
             "teamId": null,
             "url": if status == "open" { json!(format!("https://webhooks.cc/checkout/{ID}")) } else { Value::Null },
-            "createdAt": "2026-11-14T12:00:00.000Z", "expiresAt": "2026-11-14T13:00:00.000Z",
+            "opened": status != "open",
+            "createdAt": "2026-11-14T12:00:00.000Z",
+            // Expired a minute ago: a late payment may still land.
+            "expiresAt": (chrono::Utc::now() - chrono::TimeDelta::minutes(1)).to_rfc3339(),
             "paidAt": null
         }})
     }
@@ -768,6 +822,21 @@ mod tests {
         checkout_status(&client(&base), ID, Some("1m"), true)
             .await
             .unwrap();
+    }
+
+    #[test]
+    fn only_an_opened_link_that_expired_lately_may_still_be_paid() {
+        let mut fresh = link("expired")["checkout"].clone();
+        assert!(may_still_be_paid(&fresh));
+        fresh["opened"] = json!(false);
+        assert!(!may_still_be_paid(&fresh), "never opened");
+        let mut old = link("expired")["checkout"].clone();
+        old["expiresAt"] = json!((chrono::Utc::now() - chrono::TimeDelta::hours(1)).to_rfc3339());
+        assert!(!may_still_be_paid(&old), "expired an hour ago");
+        // A server from before `opened`: the benefit of the doubt.
+        let mut before = link("expired")["checkout"].clone();
+        before.as_object_mut().unwrap().remove("opened");
+        assert!(may_still_be_paid(&before));
     }
 
     #[tokio::test]

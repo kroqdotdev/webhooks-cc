@@ -479,6 +479,12 @@ async function switchOpenCheckout(
     });
     throw stillOpen;
   }
+  // Links that followed the session no longer buy what it does now. Let go
+  // of before the cache says what the session sells: a failure here then
+  // leaves the cache on the old purchase, so a retry moves the session
+  // again and detaches again, rather than finding it matching and never
+  // detaching them.
+  await detachCheckoutLinks(open.id, link?.id);
   try {
     await writePendingCheckoutIfLeaseHeld(teamId, open.createdAt, {
       id: open.id,
@@ -491,45 +497,7 @@ async function switchOpenCheckout(
   } catch (cacheError) {
     reportError("[team-billing] failed to cache pending checkout", cacheError, { teamId });
   }
-  // Links that followed the session no longer buy what it does now.
-  await detachCheckoutLinks(open.id, link?.id);
   return open.url;
-}
-
-/**
- * Replaces the team's open session, which cannot be moved (a checkout link's
- * fixed one), with a new one for what is asked. The slot is taken from the
- * old session with a lease fenced on its created_at, so concurrent requests
- * mint at most one replacement. The old session stays payable (Polar cannot
- * expire one) and keeps buying what its link says; if both are paid, the
- * foreign-subscription guard in applyTeamSubscriptionState ends the second
- * subscription and queues its refund.
- */
-async function replaceOpenCheckout(
-  team: BillingTeam,
-  open: OpenCheckout,
-  seats: number,
-  productId: string,
-  link: CheckoutLinkContext | undefined
-): Promise<CheckoutSession> {
-  const leaseToken = new Date().toISOString();
-  const { data: claimed, error } = await createAdminClient()
-    .from("teams")
-    .update({
-      pending_checkout: { status: "creating", seats, product: productId, created_at: leaseToken },
-    })
-    .eq("id", team.id)
-    .eq("pending_checkout->>created_at", open.createdAt)
-    .select("id")
-    .maybeSingle();
-  if (error) throw error;
-  if (claimed === null) {
-    throw new TeamBillingError(
-      "checkout_in_progress",
-      "A checkout session is already being prepared for this team. Try again in a moment."
-    );
-  }
-  return mintUnderLease(team, leaseToken, seats, productId, link);
 }
 
 /**
@@ -630,9 +598,12 @@ function openSession(open: OpenCheckout, url: string): CheckoutSession {
 
 /**
  * The team's open session for this plan and seat count: reused when it
- * already buys them, else moved to them, or replaced when it cannot be
- * moved (a checkout link's fixed one). A checkout link reusing or moving a
- * session is named in its metadata, so its payment finds the link.
+ * already buys them, else moved to them. A checkout link's fixed one (one
+ * plan, exactly its seats) cannot be moved, since Polar cannot change its
+ * seat bounds, and is never replaced by a second payable session either:
+ * checkout_in_progress until it is paid or expires. A checkout link reusing
+ * or moving a session is named in its metadata, so its payment finds the
+ * link.
  */
 async function takeOpenCheckout(
   team: BillingTeam,
@@ -654,7 +625,12 @@ async function takeOpenCheckout(
     }
     return openSession(open, open.url);
   }
-  if (open.fixed) return replaceOpenCheckout(team, open, seats, productId, link);
+  if (open.fixed) {
+    throw new TeamBillingError(
+      "checkout_in_progress",
+      "A checkout link's checkout for this team is open, for another plan or seat count. Pay it, or try again once it expires (within an hour)."
+    );
+  }
   return openSession(open, await switchOpenCheckout(team.id, open, seats, productId, link));
 }
 
@@ -686,7 +662,7 @@ async function nameLinkOnSession(
  * one). The same request gets the same session; another plan or seat count
  * moves it (takeOpenCheckout()). Minting is serialized: exactly one
  * concurrent request wins the lease and creates the Polar session. A session
- * minted across a lease expiry, or one replaced, can still be paid twice;
+ * minted across a lease expiry can still be paid twice;
  * the foreign-subscription guard in applyTeamSubscriptionState then ends and
  * refunds the second.
  */

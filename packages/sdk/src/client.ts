@@ -202,6 +202,13 @@ const WAIT_FOR_LOOKBACK_MS = 5 * 60 * 1000;
  * payment Polar confirms late still marks it paid.
  */
 const CHECKOUT_EXPIRED_GRACE_MS = 60_000;
+/**
+ * A late payment is only possible for a link the person opened, and only
+ * shortly after it expired (a read holds a link whose Polar checkout is
+ * still open for 15 minutes past its expiry): past this, or for a link
+ * never opened, expired is final at once.
+ */
+const CHECKOUT_LATE_PAYMENT_MS = 20 * 60_000;
 // How far before the newest request a wait's next poll starts. The receiver
 // stamps receivedAt before the capture commits, and a capture can wait its
 // turn behind others for the same account.
@@ -1093,6 +1100,7 @@ export class WebhooksCC {
       attemptTimeoutMs,
       onHeaders,
       stopAt,
+      signal,
     }: {
       repeatable?: boolean;
       timeoutMs?: number;
@@ -1111,6 +1119,8 @@ export class WebhooksCC {
       stopAt?: number;
       /** Given the headers of the successful response, before its body is read. */
       onHeaders?: (headers: Headers) => void;
+      /** The caller's cancellation: aborts the attempt in flight, never retried. */
+      signal?: AbortSignal;
     } = {}
   ): Promise<T> {
     const url = `${this.baseUrl}/api${path}`;
@@ -1129,7 +1139,10 @@ export class WebhooksCC {
 
     while (true) {
       attempt++;
+      signal?.throwIfAborted();
       const controller = new AbortController();
+      const cancel = () => controller.abort();
+      signal?.addEventListener("abort", cancel, { once: true });
       if (stopAt !== undefined && Date.now() >= stopAt) {
         throw deadlineTimeout(new TimeoutError(0, "The search's time ran out"));
       }
@@ -1241,6 +1254,8 @@ export class WebhooksCC {
         }
 
         if (error instanceof Error && error.name === "AbortError") {
+          // The caller cancelled: their reason, at once.
+          signal?.throwIfAborted();
           const timeoutError = new TimeoutError(attemptTimeout);
           if (stopAt !== undefined && attemptTimeout < this.timeout) deadlineTimeout(timeoutError);
           try {
@@ -1257,6 +1272,9 @@ export class WebhooksCC {
           if (
             attempt < this.retry.maxAttempts &&
             repeatable &&
+            // A call with its own time budget is not retried: a backoff would
+            // run past it.
+            timeoutMs === undefined &&
             fits(this.retry.backoffMs * 2 ** (attempt - 1))
           ) {
             await sleep(this.retry.backoffMs * 2 ** (attempt - 1));
@@ -1293,6 +1311,7 @@ export class WebhooksCC {
         throw error;
       } finally {
         clearTimeout(timeoutId);
+        signal?.removeEventListener("abort", cancel);
       }
     }
   }
@@ -2769,24 +2788,30 @@ export class WebhooksCC {
      * what it buys. A paid link carries what was bought (`bought`) and
      * whether that is what it asked for (`matches`).
      */
-    getCheckout: async (id: string, options: { timeout?: number } = {}): Promise<CheckoutLink> => {
+    getCheckout: async (
+      id: string,
+      options: { timeout?: number; signal?: AbortSignal } = {}
+    ): Promise<CheckoutLink> => {
       validatePathSegment(id, "id");
       const answer = await this.request<{ checkout: CheckoutLink }>(
         "GET",
         `/billing/checkouts/${id}`,
         undefined,
-        { timeoutMs: options.timeout }
+        { timeoutMs: options.timeout, signal: options.signal }
       );
       return answer.checkout;
     },
 
     /**
      * Wait until the person pays. Resolves with the paid link; throws
-     * CheckoutExpiredError when it expires first (after polling for
+     * CheckoutExpiredError when it expires first (for a link the person
+     * opened that expired under 20 minutes ago, after polling for
      * `expiredGrace`, a minute by default, since a late payment can still
-     * turn an expired link paid), CheckoutSupersededError when its purchase
-     * was undone as a duplicate, TimeoutError when `timeout` passes first.
-     * `matches` null on the paid link is not known yet, never a mismatch.
+     * turn it paid; at once otherwise), CheckoutSupersededError when its
+     * purchase was undone as a duplicate, TimeoutError when `timeout`
+     * passes first, and the signal's reason when it is aborted (the poll in
+     * flight and the wait between polls included). `matches` null on the
+     * paid link is not known yet, never a mismatch.
      */
     waitForCheckout: async (
       id: string,
@@ -2808,16 +2833,20 @@ export class WebhooksCC {
         if (left <= 0) throw timedOut();
         const checkout = await this.billing.getCheckout(id, {
           timeout: Number.isFinite(left) ? left : undefined,
+          signal: options.signal,
         });
+        // Aborted while the poll ran: never an answer after cancelling.
+        options.signal?.throwIfAborted();
         if (checkout.status === "paid") return checkout;
         if (checkout.status === "superseded") throw new CheckoutSupersededError(id);
         if (checkout.status === "expired") {
+          if (!mayStillBePaid(checkout)) throw new CheckoutExpiredError(id);
           expiredAt ??= Date.now();
           if (Date.now() - expiredAt >= grace) throw new CheckoutExpiredError(id);
         } else expiredAt = null;
         const remaining = deadline - Date.now();
         if (remaining <= 0) throw timedOut();
-        await sleep(Math.min(interval, remaining));
+        await sleepUnlessAborted(Math.min(interval, remaining), options.signal);
       }
     },
 
@@ -4746,6 +4775,34 @@ function beforeSearchStop<T>(promise: Promise<T>, stopAt: number): Promise<T> {
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/** A sleep the signal cuts short, rejecting with its reason. */
+function sleepUnlessAborted(ms: number, signal: AbortSignal | undefined): Promise<void> {
+  if (!signal) return sleep(ms);
+  signal.throwIfAborted();
+  return new Promise((resolve, reject) => {
+    const done = () => {
+      clearTimeout(timer);
+      reject(signal.reason);
+    };
+    const timer = setTimeout(() => {
+      signal.removeEventListener("abort", done);
+      resolve();
+    }, ms);
+    signal.addEventListener("abort", done, { once: true });
+  });
+}
+
+/**
+ * Whether an expired checkout link may still turn paid: one the person
+ * opened, expired under CHECKOUT_LATE_PAYMENT_MS ago. A server from before
+ * `opened` is given the benefit of the doubt.
+ */
+function mayStillBePaid(checkout: CheckoutLink): boolean {
+  if (checkout.opened === false) return false;
+  const expiredAt = Date.parse(checkout.expiresAt);
+  return !Number.isFinite(expiredAt) || Date.now() - expiredAt < CHECKOUT_LATE_PAYMENT_MS;
 }
 
 function stripTrailingSlashes(url: string): string {

@@ -2126,7 +2126,10 @@ export type CheckoutItem =
  * of what it charged is under review. A link cancelled before it was
  * opened reads `expired`. Rarely, `expired` turns `paid` afterwards: a
  * payment Polar confirmed late still marks the link paid, so
- * `waitForCheckout()` keeps polling for a minute after `expired`.
+ * `waitForCheckout()` keeps polling for a minute after `expired` (for a
+ * link that was opened and expired under 20 minutes ago). Rarely too,
+ * `paid` turns `superseded`: a read may mark a link paid from Polar before
+ * the webhook's duplicate checks undo the purchase.
  */
 export type CheckoutStatus = "open" | "paid" | "expired" | "superseded";
 
@@ -2156,6 +2159,12 @@ export interface CheckoutLink {
   item: CheckoutItem & { max?: number };
   teamId: string | null;
   url: string | null;
+  /**
+   * Whether the person opened it (a Polar checkout was made for it): only
+   * then can a payment still land after it expires. Absent from servers
+   * released before it.
+   */
+  opened?: boolean;
   createdAt: string;
   expiresAt: string;
   paidAt: string | null;
@@ -2177,7 +2186,8 @@ export interface WaitForCheckoutOptions {
   /**
    * How long to keep polling once the link reads `expired` before throwing
    * CheckoutExpiredError (default 60000): a payment Polar confirms late can
-   * still turn it `paid`.
+   * still turn it `paid`. Only for a link the person opened that expired
+   * under 20 minutes ago; any other expired link throws at once.
    */
   expiredGrace?: number;
   signal?: AbortSignal;

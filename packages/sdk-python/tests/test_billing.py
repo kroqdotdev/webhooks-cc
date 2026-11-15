@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 import httpx
@@ -20,7 +21,11 @@ from webhooks_cc.client import WebhooksCC
 ID = "11111111-2222-4333-8444-555555555555"
 
 
-def link(status: str) -> dict[str, Any]:
+def ago(minutes: float) -> str:
+    return (datetime.now(timezone.utc) - timedelta(minutes=minutes)).isoformat()
+
+
+def link(status: str, **overrides: Any) -> dict[str, Any]:
     return {
         "checkout": {
             "id": ID,
@@ -30,8 +35,10 @@ def link(status: str) -> dict[str, Any]:
             "item": {"kind": "plan", "plan": "pro", "interval": "month"},
             "teamId": None,
             "url": f"https://webhooks.cc/checkout/{ID}" if status == "open" else None,
+            "opened": status != "open",
             "createdAt": "2026-11-14T12:00:00.000Z",
-            "expiresAt": "2026-11-14T13:00:00.000Z",
+            # Expired a minute ago: a late payment may still land.
+            "expiresAt": ago(1),
             "paidAt": "2026-11-14T12:05:00.000Z" if status == "paid" else None,
             "bought": (
                 {
@@ -45,6 +52,7 @@ def link(status: str) -> dict[str, Any]:
                 else None
             ),
             "matches": True if status == "paid" else None,
+            **overrides,
         }
     }
 
@@ -117,6 +125,20 @@ def test_wait_for_checkout_keeps_polling_a_link_that_reads_expired(
     paid = client_for(api).billing.wait_for_checkout(ID, poll_interval=1000)
     assert paid.status == "paid"
     assert len(api.calls) == 2
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [{"opened": False}, {"expiresAt": ago(60)}],
+    ids=["never opened", "expired an hour ago"],
+)
+def test_wait_for_checkout_raises_at_once_when_no_late_payment_can_land(
+    overrides: dict[str, Any],
+) -> None:
+    api = Api([(200, link("expired", **overrides)), (200, link("paid"))])
+    with pytest.raises(CheckoutExpiredError):
+        client_for(api).billing.wait_for_checkout(ID, poll_interval=1000)
+    assert len(api.calls) == 1
 
 
 def test_wait_for_checkout_says_expired_when_the_wait_ends_on_an_expired_link(

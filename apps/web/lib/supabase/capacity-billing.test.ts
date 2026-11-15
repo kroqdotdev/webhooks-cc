@@ -39,20 +39,29 @@ vi.mock("@/lib/billing/checkout-link-rows", () => ({
 const tables: {
   users: Record<string, unknown> | null;
   capacity_subscriptions: Record<string, unknown>[];
+  capacity_purchases?: Record<string, unknown> | null;
 } = { users: null, capacity_subscriptions: [] };
 const updates: Array<{ table: string; patch: Record<string, unknown> }> = [];
+/** The eq filters of each update, by its index in `updates`. */
+const updateFilters: Array<Array<[string, unknown]>> = [];
 
 function query(table: string) {
   let patch: Record<string, unknown> | null = null;
+  let filters: Array<[string, unknown]> | null = null;
   const builder = {
     select: () => builder,
-    eq: () => builder,
+    eq: (column: string, value: unknown) => {
+      filters?.push([column, value]);
+      return builder;
+    },
     not: () => builder,
     is: () => builder,
     limit: () => builder,
     update: (value: Record<string, unknown>) => {
       patch = value;
       updates.push({ table, patch: value });
+      filters = [];
+      updateFilters[updates.length - 1] = filters;
       return builder;
     },
     maybeSingle: async () => ({
@@ -61,7 +70,9 @@ function query(table: string) {
           ? tables.users
           : table === "capacity_subscriptions"
             ? (tables.capacity_subscriptions[0] ?? null)
-            : null,
+            : table === "capacity_purchases"
+              ? (tables.capacity_purchases ?? null)
+              : null,
       error: null,
     }),
     then: (resolve: (value: unknown) => void) =>
@@ -166,6 +177,8 @@ function blocksRow(overrides: Record<string, unknown> = {}) {
 beforeEach(() => {
   vi.clearAllMocks();
   updates.length = 0;
+  updateFilters.length = 0;
+  tables.capacity_purchases = null;
   tables.users = proAccount();
   tables.capacity_subscriptions = [];
   mockFns.checkoutsCreate.mockResolvedValue({ url: "https://polar.test/checkout" });
@@ -849,6 +862,47 @@ describe("applyCapacityWebhookEvent: subscriptions nobody should keep paying for
     expect(mockFns.subscriptionsRevoke).not.toHaveBeenCalled();
   });
 
+  it("supersedes the link of domains whose subscription ended before they could ride on it", async () => {
+    tables.capacity_subscriptions = [];
+    tables.capacity_purchases = { kind: "domain_increase", units: 1, polar_subscription_id: null };
+    mockFns.rpc.mockResolvedValueOnce({
+      data: {
+        status: "ok",
+        kind: "domain_increase",
+        subscription_id: "sub_domains",
+        synced: false,
+      },
+      error: null,
+    });
+    await applyCapacityWebhookEvent(
+      "order.paid",
+      USER,
+      { resource: "domains", kind: "monthly_add" },
+      {
+        id: "order_domains",
+        units: 1,
+        total_amount: 300,
+        checkout_id: "co_domains",
+        metadata: { checkout_link: "link_1" },
+      }
+    );
+    expect(mockFns.recordRefund).toHaveBeenCalledWith({
+      target: { order: "order_domains" },
+      reason: "addon_ended",
+      userId: "user_1",
+      teamId: null,
+    });
+    expect(mockFns.supersedeCheckoutLinks).toHaveBeenCalledWith(
+      "co_domains",
+      { checkout_link: "link_1" },
+      CUSTOMER_OF_EVENT
+    );
+    expect(mockFns.recordRefund.mock.invocationCallOrder[0]).toBeLessThan(
+      mockFns.supersedeCheckoutLinks.mock.invocationCallOrder[0]
+    );
+    tables.capacity_purchases = null;
+  });
+
   it("records a refund for paid domains with no subscription left to add them to", async () => {
     mockFns.rpc.mockResolvedValueOnce({
       data: { status: "ok", kind: "domain_increase", unapplied: true, synced: true },
@@ -1285,6 +1339,27 @@ describe("checkout link purchases", () => {
     );
     expect(mockFns.checkoutLinkOverageMax).toHaveBeenCalledWith("co_link");
     expect(updates).toContainEqual({ table: "users", patch: { overage_max: 250_000 } });
+  });
+
+  it("stores it only over the maximum it read, so an owner's change meanwhile stays", async () => {
+    mockFns.checkoutLinkOverageMax.mockResolvedValue(250_000);
+    tables.users = proAccount({ overage_max: 40_000 });
+    mockFns.subscriptionsGet.mockResolvedValue({
+      id: "sub_overage",
+      status: "active",
+      checkout_id: "co_link",
+      current_period_start: "2026-10-27T00:00:00Z",
+      current_period_end: "2026-11-27T00:00:00Z",
+    });
+    await applyCapacityWebhookEvent(
+      "subscription.created",
+      USER,
+      { resource: "requests", kind: "overage" },
+      { id: "sub_overage" }
+    );
+    const at = updates.findIndex((u) => u.patch.overage_max === 250_000);
+    expect(at).toBeGreaterThanOrEqual(0);
+    expect(updateFilters[at]).toContainEqual(["overage_max", 40_000]);
   });
 
   it("does not store it again once the subscription is known", async () => {

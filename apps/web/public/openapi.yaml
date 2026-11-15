@@ -5861,6 +5861,7 @@ components:
           url,
           createdAt,
           expiresAt,
+          opened,
           paidAt,
           bought,
           matches,
@@ -5872,6 +5873,11 @@ components:
         status:
           type: string
           enum: [open, paid, expired, superseded]
+          description: >-
+            superseded: paid, but undone as a duplicate (its subscription ended, a refund under
+            review). Rarely, expired turns paid (a payment Polar confirmed late, for a link that
+            was opened), and paid turns superseded (a read marked it paid from Polar before the
+            webhook's duplicate checks undid the purchase).
         kind:
           type: string
           enum: [plan, team_plan, blocks, monthly_blocks, overage]
@@ -5885,16 +5891,19 @@ components:
             its monthly maximum (`max`), which is stored once its subscription starts.
           additionalProperties: true
         teamId:
-          type: string
+          type: [string, "null"]
           format: uuid
-          nullable: true
         url:
-          type: string
+          type: [string, "null"]
           format: uri
-          nullable: true
           description: >-
             The link's page on webhooks.cc or mailhooks.cc, while it is open. The person opens it
             signed in as the account's owner; it goes on to Polar's checkout.
+        opened:
+          type: boolean
+          description: >-
+            Whether the person opened it (a Polar checkout was made for it): only then can a
+            payment still land after it expires.
         createdAt:
           type: string
           format: date-time
@@ -5902,27 +5911,23 @@ components:
           type: string
           format: date-time
         paidAt:
-          type: string
+          type: [string, "null"]
           format: date-time
-          nullable: true
         bought:
-          type: object
-          nullable: true
+          type: [object, "null"]
           description: Once paid, what the order or subscription holds, as Polar reported it.
           properties:
-            product: { type: string, nullable: true }
-            seats: { type: integer, nullable: true }
-            units: { type: integer, nullable: true }
+            product: { type: [string, "null"] }
+            seats: { type: [integer, "null"] }
+            units: { type: [integer, "null"] }
             amount:
               {
-                type: integer,
-                nullable: true,
+                type: [integer, "null"],
                 description: "In cents, before tax; null for an API key or agent token: only a browser session reads what was paid.",
               }
-            currency: { type: string, nullable: true }
+            currency: { type: [string, "null"] }
         matches:
-          type: boolean
-          nullable: true
+          type: [boolean, "null"]
           description: >-
             Once paid, whether what was bought is what the link asked for (the product, and its
             seats or blocks); null while that is not known yet (a team plan's seats arrive with

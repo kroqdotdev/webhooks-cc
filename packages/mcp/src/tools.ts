@@ -841,8 +841,9 @@ async function waitForApprovalText(client: WebhooksCC, id: string, ms: number): 
 
 /**
  * Waits for a checkout link to be paid and says how it went. The SDK keeps
- * polling for a minute once the link reads expired (a late payment can
- * still turn it paid); `matches` null is not known yet, never a mismatch.
+ * polling for a minute once a link the person opened reads expired, under
+ * 20 minutes after it expired (a late payment can still turn it paid);
+ * `matches` null is not known yet, never a mismatch.
  */
 async function waitForCheckoutText(client: WebhooksCC, id: string, ms: number): Promise<string> {
   try {

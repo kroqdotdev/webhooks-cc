@@ -49,11 +49,14 @@ export async function linkCustomerMatches(
   if (accountError) throw accountError;
   const stored = account?.polar_customer_id ?? null;
   if (customerId !== null && stored !== null && customerId === stored) return true;
-  reportError(
-    "[checkout-links] a Polar session's metadata names a checkout link of another customer",
-    undefined,
-    { linkId }
-  );
+  // Each case its own words: only the last is someone else's payment.
+  const what =
+    customerId === null
+      ? "a Polar event that names a checkout link carries no customer"
+      : stored === null
+        ? "a Polar event names a checkout link whose account has no Polar customer yet"
+        : "a Polar session's metadata names a checkout link of another customer";
+  reportError(`[checkout-links] ${what}`, undefined, { linkId });
   return false;
 }
 
@@ -76,9 +79,12 @@ export async function linkCustomerMatches(
  * go of a moved session (detached_at) or its asker cancelled it, the same
  * rules that keep such a link from being paid through the metadata, and
  * only when the event's `customerId` is the link account's
- * (linkCustomerMatches()). A link already paid through another of its
- * sessions is never superseded here: that purchase stands, and this one is
- * a duplicate of it.
+ * (linkCustomerMatches(), asked only once that link is found to be one).
+ * A link already paid through another of its sessions is never superseded
+ * here: that purchase stands, and this one is a duplicate of it. Every link
+ * superseded records the session that did it in paid_checkout_id, so a
+ * session it had replaced whose purchase stands can still pay it
+ * (settlePaid() in checkout-links.ts).
  */
 export async function supersedeCheckoutLinks(
   checkoutId: string | null,
@@ -95,7 +101,7 @@ export async function supersedeCheckoutLinks(
     const ours = `and(polar_checkout_id.eq."${checkoutId}",paid_checkout_id.is.null),paid_checkout_id.eq."${checkoutId}"`;
     const { error } = await admin
       .from("billing_checkouts")
-      .update({ status: "superseded" })
+      .update({ status: "superseded", paid_checkout_id: checkoutId })
       .or(ours)
       .neq("status", "superseded");
     if (error) throw error;
@@ -109,29 +115,44 @@ export async function supersedeCheckoutLinks(
     // Only while the link is not paid by its own later session.
     const { error: replacedError } = await admin
       .from("billing_checkouts")
-      .update({ status: "superseded", paid_at: paidAt })
+      .update({ status: "superseded", paid_at: paidAt, paid_checkout_id: checkoutId })
       .contains("previous_checkout_ids", [checkoutId])
       .in("status", ["open", "expired"])
       .is("cancelled_at", null);
     if (replacedError) throw replacedError;
   }
   if (named && (!checkoutId || safeId)) {
-    if (!(await linkCustomerMatches(named, customerId))) return;
-    let query = admin
+    // The link first, then whether the payment is its account's: a link
+    // that is no candidate (settled, detached, cancelled, on another
+    // session) is never reported as another customer's.
+    const onSession = checkoutId
+      ? `polar_checkout_id.is.null,polar_checkout_id.eq."${checkoutId}"`
+      : "polar_checkout_id.is.null";
+    const { data: found, error: findError } = await admin
+      .from("billing_checkouts")
+      .select("id")
+      .eq("id", named)
+      .neq("status", "superseded")
+      .is("detached_at", null)
+      .is("cancelled_at", null)
+      .is("paid_checkout_id", null)
+      .or(onSession)
+      .maybeSingle();
+    if (findError) throw findError;
+    if (!found || !(await linkCustomerMatches(named, customerId))) return;
+    const { data, error } = await admin
       .from("billing_checkouts")
       .update({
         status: "superseded",
-        ...(checkoutId ? { polar_checkout_id: checkoutId } : {}),
+        ...(checkoutId ? { polar_checkout_id: checkoutId, paid_checkout_id: checkoutId } : {}),
       })
       .eq("id", named)
       .neq("status", "superseded")
       .is("detached_at", null)
       .is("cancelled_at", null)
-      .is("paid_checkout_id", null);
-    query = checkoutId
-      ? query.or(`polar_checkout_id.is.null,polar_checkout_id.eq."${checkoutId}"`)
-      : query.is("polar_checkout_id", null);
-    const { data, error } = await query.select("id, paid_at");
+      .is("paid_checkout_id", null)
+      .or(onSession)
+      .select("id, paid_at");
     if (error) throw error;
     if ((data ?? []).some((row) => row.paid_at === null)) {
       const { error: stampError } = await admin

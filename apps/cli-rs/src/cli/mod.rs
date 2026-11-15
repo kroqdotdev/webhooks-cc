@@ -1420,7 +1420,8 @@ needs the team's owner.")]
         #[arg(long)]
         team: Option<String>,
 
-        /// Wait until the person pays
+        /// Wait until the person pays (with --json, NDJSON: the open link's
+        /// line, then the paid link's)
         #[arg(long)]
         wait: bool,
 

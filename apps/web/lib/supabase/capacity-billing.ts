@@ -1225,17 +1225,25 @@ function isValidOverageMax(spec: ResourceSpec, max: unknown): max is number {
   );
 }
 
+/**
+ * Stores the overage maximum; with `expected`, only while the stored one is
+ * still that (a compare and set: nothing is written when it moved).
+ */
 async function writeOverageMax(
   account: CapacityAccount,
   max: number,
-  resource: CapacityResource = "requests"
+  resource: CapacityResource = "requests",
+  expected?: number
 ): Promise<void> {
   const admin = createAdminClient();
+  const column = resource === "pages" ? "page_overage_max" : "overage_max";
   const patch = resource === "pages" ? { page_overage_max: max } : { overage_max: max };
-  const { error } =
+  let query =
     account.kind === "team"
-      ? await admin.from("teams").update(patch).eq("id", account.teamId)
-      : await admin.from("users").update(patch).eq("id", account.userId);
+      ? admin.from("teams").update(patch).eq("id", account.teamId)
+      : admin.from("users").update(patch).eq("id", account.userId);
+  if (expected !== undefined) query = query.eq(column, expected);
+  const { error } = await query;
   if (error) throw error;
 }
 
@@ -1432,14 +1440,18 @@ async function applySubscriptionEvent(
   // written before the subscription is first stored (so a failure is
   // retried with the event) and never again, so a maximum changed later in
   // the dashboard stays; not when the account already has overage, since
-  // this one is then a duplicate that ends.
+  // this one is then a duplicate that ends. The write is conditional on the
+  // maximum read before those checks, so a redelivery that raced the first
+  // one never overwrites a maximum the owner changed meanwhile.
   const linkMax = ended ? null : await linkOverageMaxFor(kind, subscription);
+  const seenMax = linkMax === null ? null : await readOverageMax(account, linkMax.resource);
   if (
     linkMax !== null &&
+    seenMax !== null &&
     !(await isKnownSubscription(subscriptionId)) &&
     !liveOfKind(await liveSubscriptions(account), kind)
   ) {
-    await writeOverageMax(account, linkMax.max, linkMax.resource);
+    await writeOverageMax(account, linkMax.max, linkMax.resource, seenMax);
   }
 
   const status = await applySubscriptionState(account, kind, subscription, ended);
@@ -1668,7 +1680,7 @@ async function applyPaidOrder(
     }
     return;
   }
-  await syncIncreaseToPolar(account, orderId, subscriptionId);
+  await syncIncreaseToPolar(account, orderId, subscriptionId, data);
   // The plan may have been set to end since the checkout was opened.
   await reconcileAddonsWithPlan(account);
 }
@@ -1716,7 +1728,8 @@ async function checkTopUpBase(
 async function syncIncreaseToPolar(
   account: CapacityAccount,
   orderId: string,
-  subscriptionId: string
+  subscriptionId: string,
+  order: Record<string, unknown>
 ): Promise<void> {
   const admin = createAdminClient();
   const { data: row, error } = await admin
@@ -1749,7 +1762,7 @@ async function syncIncreaseToPolar(
         // Ended meanwhile (the order landed before the end's own event):
         // what the order added goes with it, and so does the row, whose
         // raised units would otherwise count until the end's own event.
-        await settleEndedIncrease(account, orderId);
+        await settleEndedIncrease(account, orderId, order);
         await markEnded(account, row);
       } else if (!row.cancel_at_period_end) {
         // Only set to end in Polar (Polar refuses changes to one with the
@@ -1761,7 +1774,7 @@ async function syncIncreaseToPolar(
     // Ended before this increase could ride on it (a redelivery after the
     // end's own event, or no row at all): what the order added is settled
     // as above, once.
-    await settleEndedIncrease(account, orderId);
+    await settleEndedIncrease(account, orderId, order);
   }
 
   const { error: syncError } = await admin
@@ -1775,9 +1788,14 @@ async function syncIncreaseToPolar(
  * A paid mid-period increase whose subscription ended before the increase
  * could ride on it. Blocks are kept as one-time blocks (recorded once, under
  * the order); domains have no one-time form, so the order is reported for a
- * refund.
+ * refund, and the checkout link it came from is superseded like the other
+ * domain refunds' links, so it never reads paid for a purchase undone.
  */
-async function settleEndedIncrease(account: CapacityAccount, orderId: string): Promise<void> {
+async function settleEndedIncrease(
+  account: CapacityAccount,
+  orderId: string,
+  order: Record<string, unknown>
+): Promise<void> {
   const admin = createAdminClient();
   const { data: purchase, error } = await admin
     .from("capacity_purchases")
@@ -1806,6 +1824,11 @@ async function settleEndedIncrease(account: CapacityAccount, orderId: string): P
   if (!credits) {
     // Domains have no one-time form to keep what was paid: it goes back.
     await refundFor(account, { order: orderId }, "addon_ended");
+    await supersedeCheckoutLinks(
+      asNonEmptyString(order.checkout_id),
+      order.metadata,
+      asNonEmptyString(order.customer_id)
+    );
     return;
   }
   const { data: granted, error: grantError } = await admin.rpc("grant_capacity_purchase", {

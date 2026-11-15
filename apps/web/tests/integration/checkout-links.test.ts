@@ -511,20 +511,20 @@ describe("checkout links", () => {
     });
     expect((await stored(same.body.checkout.id)).polar_checkout_id).toBe(firstSession);
 
-    // Another seat count cannot move a fixed session: it gets its own,
-    // which becomes the team's open one.
+    // Another seat count cannot move a fixed session, and no second payable
+    // session is made beside it: the checkout is in progress until it is
+    // paid or expires.
     const more = await create(ownerKey.raw, { ...body, seats: 5 });
     expect(more.status).toBe(201);
     const moreOpened = await open(ownerToken, more.body.checkout.id);
-    expect(polar.create).toHaveBeenCalledTimes(2);
-    expect(polar.create.mock.calls[1][0]).toMatchObject({ seats: 5, min_seats: 5, max_seats: 5 });
-    expect(moreOpened.body.url).not.toBe(opened.body.url);
-    const moreSession = String((await stored(more.body.checkout.id)).polar_checkout_id);
-    expect(await teamOpen()).toMatchObject({ id: moreSession, seats: 5, fixed: true });
+    expect(moreOpened.status).toBe(409);
+    expect(moreOpened.body.code).toBe("checkout_in_progress");
+    expect(polar.create).toHaveBeenCalledTimes(1);
+    expect(await teamOpen()).toMatchObject({ id: firstSession, seats: 3, fixed: true });
 
     // The first link still goes to its own session, which still sells 3 seats.
     expect((await open(ownerToken, first)).body.url).toBe(opened.body.url);
-    expect(polar.create).toHaveBeenCalledTimes(2);
+    expect(polar.create).toHaveBeenCalledTimes(1);
 
     // A member's add-on purchase for the team is refused too.
     const blocks = await create(memberKey.raw, { kind: "blocks", blocks: 1, teamId });
@@ -537,12 +537,15 @@ describe("checkout links", () => {
     const ownerKey = await makeKey(owner);
     const ownerToken = await sessionToken(owner);
 
-    // Two links for different seat counts, both opened: two sessions.
+    // Two links for different seat counts, both opened: two sessions (the
+    // team's cached one was let go of in between, as when its cache lapses
+    // while Polar keeps the session payable).
     const three = (await create(ownerKey.raw, { kind: "team_plan", teamId, seats: 3 })).body
       .checkout.id;
     const five = (await create(ownerKey.raw, { kind: "team_plan", teamId, seats: 5 })).body.checkout
       .id;
     expect((await open(ownerToken, three)).body.status).toBe("redirect");
+    await admin.from("teams").update({ pending_checkout: null }).eq("id", teamId);
     expect((await open(ownerToken, five)).body.status).toBe("redirect");
     expect(polar.create).toHaveBeenCalledTimes(2);
     const customerId = String(polar.create.mock.calls[0][0].customer_id);
@@ -814,6 +817,37 @@ describe("checkout links", () => {
       status: "paid",
       matches: true,
     });
+  });
+
+  it("expires on checkout.expired only a link past its expiry that never replaced a session", async () => {
+    const userId = await makeUser("expired-event");
+    const key = await makeKey(userId);
+    const past = new Date(Date.now() - 60_000).toISOString();
+    const session = `polar_expired_${ts}`;
+    const ids: string[] = [];
+    for (let i = 0; i < 3; i++)
+      ids.push((await create(key.raw, { kind: "plan", plan: "pro" })).body.checkout.id);
+    const [plain, replaced, early] = ids;
+    await admin
+      .from("billing_checkouts")
+      .update({ polar_checkout_id: session, expires_at: past })
+      .eq("id", plain);
+    // One that replaced another session: left to a read, which asks Polar about both.
+    await admin
+      .from("billing_checkouts")
+      .update({
+        polar_checkout_id: session,
+        expires_at: past,
+        previous_checkout_ids: [`polar_older_${ts}`],
+      })
+      .eq("id", replaced);
+    // One whose own expiry is still ahead: it can be opened again.
+    await admin.from("billing_checkouts").update({ polar_checkout_id: session }).eq("id", early);
+
+    await deliver("checkout.expired", { id: session, status: "expired" });
+    expect((await stored(plain)).status).toBe("expired");
+    expect((await stored(replaced)).status).toBe("open");
+    expect((await stored(early)).status).toBe("open");
   });
 
   it("links to the site the asker uses, and returns the payer there", async () => {

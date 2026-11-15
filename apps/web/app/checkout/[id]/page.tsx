@@ -10,6 +10,12 @@ import { SupabaseAuthProvider, useAuth } from "@/components/providers/supabase-a
 import { MfaGate } from "@/components/auth/mfa-challenge";
 import { CheckoutReview, type CheckoutReviewData } from "@/components/billing/checkout-review";
 import { supersededExplanation } from "@/lib/billing/superseded-copy";
+import {
+  refusalPhase,
+  runOpen,
+  type ApiAnswer,
+  type OpenAnswer,
+} from "@/lib/billing/checkout-page-flow";
 import { createClient } from "@/lib/supabase/client";
 
 // A checkout link's page (lib/billing/checkout-links.ts): an agent or tool
@@ -46,20 +52,14 @@ type Phase =
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-type ApiAnswer = { error?: string; code?: string };
-
-/** The phase for a refusal from either route. */
+/** The phase for a refusal from either route (refusalPhase()). */
 function refusal(
   response: Response,
   result: ApiAnswer,
   fallback: string,
   retry: "review" | "open"
 ): Phase {
-  const message = result.error ?? fallback;
-  if (result.code === "wrong_account") return { kind: "wrong_account", message };
-  if (response.status === 404) return { kind: "gone", message };
-  if (response.status >= 500) return { kind: "failed", message, retry };
-  return { kind: "refused", message };
+  return refusalPhase(response.status, result, fallback, retry);
 }
 
 function CheckoutLinkContent() {
@@ -69,6 +69,15 @@ function CheckoutLinkContent() {
   const id = typeof params.id === "string" && UUID.test(params.id) ? params.id : null;
   const [phase, setPhase] = useState<Phase>({ kind: "loading" });
   const loaded = useRef(false);
+  // False once the person has left the page (a client navigation from the
+  // header): a pending open then neither redirects nor asks again.
+  const active = useRef(true);
+  useEffect(() => {
+    active.current = true;
+    return () => {
+      active.current = false;
+    };
+  }, []);
 
   useEffect(() => {
     if (!isLoading && !isAuthenticated) {
@@ -113,54 +122,53 @@ function CheckoutLinkContent() {
     else setPhase({ kind: "loading" });
     const failed = "This checkout could not be opened. Try again.";
     try {
-      // Twice at most: another tab may be making the checkout, ready in a moment.
-      for (let attempt = 0; attempt < 2; attempt++) {
-        const response = await fetch(`/api/billing/checkouts/${linkId}/open`, {
-          method: "POST",
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        const result = (await response.json()) as ApiAnswer & {
-          status?: string;
-          url?: string;
-          summary?: string;
-          /** What the link buys, for the wording of a superseded link. */
-          kind?: string | null;
-          resource?: string | null;
-        };
-        const summary = result.summary ?? "";
-        if (response.ok && result.status === "redirect" && result.url) {
-          setPhase({ kind: "redirect", summary });
-          window.location.assign(result.url);
-          return;
-        }
-        if (response.ok) {
-          const kind = result.status;
-          if (kind === "superseded") {
-            setPhase({
-              kind,
-              summary,
-              // The answer's own kind and resource: a retried open has no review.
-              explanation: supersededExplanation(
-                result.kind ?? review?.kind,
-                result.kind ? result.resource : review?.resource
-              ),
-            });
-          } else if (kind === "paid" || kind === "processing" || kind === "expired") {
-            setPhase({ kind, summary });
-          } else {
-            setPhase({ kind: "failed", message: failed, retry: "open" });
-          }
-          return;
-        }
-        if (result.code === "opening" && attempt === 0) {
-          await new Promise((resolve) => setTimeout(resolve, 2_000));
-          continue;
-        }
-        setPhase(refusal(response, result, failed, "open"));
+      const outcome = await runOpen({
+        request: async () => {
+          const response = await fetch(`/api/billing/checkouts/${linkId}/open`, {
+            method: "POST",
+            headers: { Authorization: `Bearer ${token}` },
+          });
+          const answer = (await response.json()) as OpenAnswer;
+          return { ok: response.ok, status: response.status, answer };
+        },
+        sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+        active: () => active.current,
+        failed,
+      });
+      if (outcome === null) return;
+      if (outcome.kind === "redirect") {
+        setPhase({ kind: "redirect", summary: outcome.summary });
+        window.location.assign(outcome.url);
         return;
       }
+      if (outcome.kind === "refusal") {
+        setPhase(outcome.phase);
+        return;
+      }
+      if (outcome.kind === "failed") {
+        setPhase({ kind: "failed", message: failed, retry: "open" });
+        return;
+      }
+      const result = outcome.answer;
+      const summary = result.summary ?? "";
+      const kind = result.status;
+      if (kind === "superseded") {
+        setPhase({
+          kind,
+          summary,
+          // The answer's own kind and resource: a retried open has no review.
+          explanation: supersededExplanation(
+            result.kind ?? review?.kind,
+            result.kind ? result.resource : review?.resource
+          ),
+        });
+      } else if (kind === "paid" || kind === "processing" || kind === "expired") {
+        setPhase({ kind, summary });
+      } else {
+        setPhase({ kind: "failed", message: failed, retry: "open" });
+      }
     } catch {
-      setPhase({ kind: "failed", message: failed, retry: "open" });
+      if (active.current) setPhase({ kind: "failed", message: failed, retry: "open" });
     }
   }, []);
 

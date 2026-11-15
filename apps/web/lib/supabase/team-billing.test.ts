@@ -611,65 +611,47 @@ describe("createTeamCheckout", () => {
       expect(mockFns.detachCheckoutLinks).toHaveBeenCalledWith("co_1", "link_1");
     });
 
-    test("the dashboard replaces a link's fixed session rather than move it", async () => {
-      const at = createdAt();
+    test("never opens a second payable session beside a link's fixed one", async () => {
       mockFns.createAdminClient.mockReturnValue(
         createFakeAdmin({
           "team_members:select": [OWNER_MEMBERSHIP],
-          "teams:select": [openTeam(at, { fixed: true })],
-          // The slot taken from the old session, then the new session cached.
-          "teams:update": [{ data: { id: "team_1" } }, {}],
+          "teams:select": [openTeam(createdAt(), { fixed: true })],
         })
       );
-      const checkoutCreate = vi.fn().mockResolvedValue({
-        id: "co_2",
-        url: "https://sandbox.polar.sh/checkout/new",
-        expires_at: "2026-10-05T13:30:00Z",
-      });
+      const checkoutCreate = vi.fn();
       const checkoutUpdate = vi.fn();
       mockFns.createPolarClient.mockReturnValue({
         checkouts: { create: checkoutCreate, update: checkoutUpdate },
       });
 
-      await expect(createTeamCheckout("user_1", "team_1", 5)).resolves.toBe(
-        "https://sandbox.polar.sh/checkout/new"
-      );
-      // The link's session keeps buying what the link says.
-      expect(checkoutUpdate).not.toHaveBeenCalled();
-      expect(mockFns.detachCheckoutLinks).not.toHaveBeenCalled();
-      expect(checkoutCreate).toHaveBeenCalledWith(
-        expect.objectContaining({
-          seats: 5,
-          customer_id: "cus_team_1",
-          products: ["prod_teams_123", "prod_team_business_123", "prod_team_business_year_123"],
-        })
-      );
-      const teamWrites = recorded
-        .map((call, i) => ({ call, filters: recordedFilters[i].filters }))
-        .filter(({ call }) => call.table === "teams" && call.op === "update");
-      expect(teamWrites).toHaveLength(2);
-      // Taken from the old session only while it is still the cached one.
-      expect(teamWrites[0].filters).toContainEqual(["eq", "pending_checkout->>created_at", at]);
-      expect(teamWrites[1].call.payload).toMatchObject({
-        pending_checkout: { id: "co_2", seats: 5, fixed: false },
-      });
-    });
-
-    test("reports a checkout in progress when the fixed session was replaced meanwhile", async () => {
-      mockFns.createAdminClient.mockReturnValue(
-        createFakeAdmin({
-          "team_members:select": [OWNER_MEMBERSHIP],
-          "teams:select": [openTeam(createdAt(), { fixed: true })],
-          "teams:update": [{ data: null }],
-        })
-      );
-      const checkoutCreate = vi.fn();
-      mockFns.createPolarClient.mockReturnValue({ checkouts: { create: checkoutCreate } });
-
       await expect(createTeamCheckout("user_1", "team_1", 5)).rejects.toMatchObject({
         code: "checkout_in_progress",
       });
+      // The link's session keeps buying what the link says, and no other is made.
       expect(checkoutCreate).not.toHaveBeenCalled();
+      expect(checkoutUpdate).not.toHaveBeenCalled();
+      expect(mockFns.detachCheckoutLinks).not.toHaveBeenCalled();
+      expect(recorded.some((call) => call.table === "teams" && call.op === "update")).toBe(false);
+    });
+
+    test("lets go of the moved session's links before caching what it sells now", async () => {
+      const at = createdAt();
+      mockFns.createAdminClient.mockReturnValue(
+        createFakeAdmin({
+          "team_members:select": [OWNER_MEMBERSHIP],
+          "teams:select": [openTeam(at)],
+        })
+      );
+      const checkoutUpdate = vi.fn().mockResolvedValue({});
+      mockFns.createPolarClient.mockReturnValue({
+        checkouts: { create: vi.fn(), update: checkoutUpdate },
+      });
+      mockFns.detachCheckoutLinks.mockRejectedValueOnce(new Error("connection reset"));
+
+      const purchase = await teamPlanPurchase("user_1", "team_1", 5, "team", "month");
+      await expect(purchase.mint(LINK)).rejects.toThrow("connection reset");
+      // The cache still holds the old purchase, so a retry moves and detaches again.
+      expect(recorded.some((call) => call.table === "teams" && call.op === "update")).toBe(false);
     });
   });
 
