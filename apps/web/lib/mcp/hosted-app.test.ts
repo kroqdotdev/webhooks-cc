@@ -194,24 +194,67 @@ describe("the hosted server", () => {
   });
 
   it("adds the note to test_webhook_flow too, and posts nothing to targetUrl", async () => {
+    // The flow runs to the end: create, send to the capture URL, see the
+    // request, clean up. A replay to targetUrl would come after the capture.
     const fetched: string[] = [];
     vi.stubGlobal(
       "fetch",
-      vi.fn(async (input: string | URL | Request) => {
-        fetched.push(
-          typeof input === "string" ? input : input instanceof URL ? input.href : input.url
-        );
-        // The flow stops at its first step, creating the endpoint.
-        return Response.json({ error: "Not in this test" }, { status: 400 });
+      vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+        const target =
+          typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+        const method = (init?.method ?? "GET").toUpperCase();
+        fetched.push(`${method} ${target}`);
+        const path = new URL(target).pathname;
+        if (method === "POST" && path === "/api/endpoints") {
+          return Response.json({
+            id: "ep_1",
+            slug: "flow-1",
+            name: "flow-1",
+            url: "https://go.webhooks.cc/w/flow-1",
+            createdAt: Date.now(),
+          });
+        }
+        if (method === "POST" && target.startsWith("https://go.webhooks.cc/w/flow-1")) {
+          return new Response("OK");
+        }
+        if (method === "GET" && path === "/api/endpoints/flow-1/requests") {
+          return Response.json([
+            {
+              id: "req_9",
+              endpointId: "ep_1",
+              method: "POST",
+              path: "/",
+              headers: { "content-type": "application/json" },
+              body: "{}",
+              queryParams: {},
+              contentType: "application/json",
+              ip: "203.0.113.1",
+              size: 2,
+              receivedAt: Date.now() + 60_000,
+            },
+          ]);
+        }
+        if (method === "DELETE" && path === "/api/endpoints/flow-1") {
+          return new Response(null, { status: 204 });
+        }
+        return Response.json({ error: "Not in this test" }, { status: 404 });
       })
     );
     const result = (await ask("tools/call", {
       name: "test_webhook_flow",
       arguments: { targetUrl: "http://localhost:3000/hook" },
     })) as { isError?: boolean; content: Array<{ text: string }> };
+    expect(result.isError, result.content[0]?.text).toBeFalsy();
+    const flow = JSON.parse(result.content[0].text) as {
+      request: { id: string } | null;
+      replayResponse: unknown;
+      cleanedUp: boolean;
+    };
+    expect(flow.request?.id).toBe("req_9");
+    expect(flow.replayResponse).toBeNull();
+    expect(flow.cleanedUp).toBe(true);
+    expect(fetched.some((call) => call.includes("http://localhost:3000/hook"))).toBe(false);
     expect(result.content.map((item) => item.text)).toContain(TARGET_URL_NOTE);
-    expect(fetched.length).toBeGreaterThan(0);
-    expect(fetched.some((target) => target.startsWith("http://localhost:3000/hook"))).toBe(false);
   });
 
   it("adds no note to a call the schema refuses", async () => {

@@ -44,7 +44,7 @@ import {
   emitDashboardEndpointsChanged,
   type DashboardEndpoint,
 } from "@/lib/dashboard-api";
-import { isValidSigningHeaderName } from "@/lib/signing-config";
+import { isValidSigningHeaderName, normalizeSigningCredential } from "@/lib/signing-config";
 import { trackEndpointDeleted } from "@/lib/analytics";
 import { WEBHOOK_BASE_URL } from "@/lib/constants";
 import {
@@ -454,9 +454,11 @@ function VerificationSection({ endpoint }: { endpoint: EndpointSettingsPanelProp
   }, [initialProvider, initialHeader, initialHasSecret]);
   useEffect(reset, [reset]);
 
+  // The credential as it will be sent: a Discord key trimmed, a secret as typed.
+  const credential = normalizeSigningCredential(provider, secret);
   const dirty =
     provider !== initialProvider ||
-    secret !== "" ||
+    credential !== "" ||
     header !== initialHeader ||
     hasSecret !== initialHasSecret;
 
@@ -464,8 +466,8 @@ function VerificationSection({ endpoint }: { endpoint: EndpointSettingsPanelProp
     const updates: Record<string, unknown> = {};
     const validate = () => {
       const providerChanged = provider !== initialProvider;
-      const hasConfiguredSecret = !providerChanged && hasSecret && !secret;
-      if (provider && !secret && !hasConfiguredSecret) {
+      const hasConfiguredSecret = !providerChanged && hasSecret && !credential;
+      if (provider && !credential && !hasConfiguredSecret) {
         throw new Error(
           `Enter a ${getWebProviderCredentialLabel(provider).toLowerCase()} before turning on verification.`
         );
@@ -485,9 +487,9 @@ function VerificationSection({ endpoint }: { endpoint: EndpointSettingsPanelProp
         updates.signingProvider = provider || null;
         if (provider !== "generic-hmac") updates.signingHeader = null;
       }
-      // A key pasted with a stray space or newline: the route takes the
-      // credential exactly as sent (a Discord key must be 64 hex characters).
-      if (secret.trim()) updates.signingSecret = secret.trim();
+      // The route takes the credential exactly as sent, so a Discord key
+      // pasted with a stray space is trimmed first.
+      if (credential) updates.signingSecret = credential;
       if (provider === "generic-hmac" && header !== initialHeader)
         updates.signingHeader = header || null;
     };

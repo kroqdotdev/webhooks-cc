@@ -4,6 +4,7 @@ import { signingCredentialProblem as mcpSigningCredentialProblem } from "@webhoo
 import {
   isValidSigningHeaderName,
   isValidSigningProvider,
+  normalizeSigningCredential,
   signingCredentialProblem,
 } from "./signing-config";
 
@@ -56,6 +57,13 @@ describe("signing-config", () => {
   test("leaves other providers' credentials to the provider", () => {
     expect(signingCredentialProblem("stripe", "abc")).toBeNull();
     expect(signingCredentialProblem("generic-hmac", "secret")).toBeNull();
+  });
+
+  test("trims only a Discord public key", () => {
+    expect(normalizeSigningCredential("discord", ` ${DISCORD_KEY} `)).toBe(DISCORD_KEY);
+    expect(normalizeSigningCredential("discord", "   ")).toBe("");
+    expect(normalizeSigningCredential("generic-hmac", " s3cret ")).toBe(" s3cret ");
+    expect(normalizeSigningCredential("stripe", " whsec_test ")).toBe(" whsec_test ");
   });
 
   test("says the same as the MCP server's check", () => {

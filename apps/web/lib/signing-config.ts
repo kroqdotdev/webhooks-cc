@@ -31,3 +31,13 @@ export function signingCredentialProblem(provider: string, secret: string): stri
   }
   return null;
 }
+
+/**
+ * The signing credential as the dashboard sends it: a Discord public key is
+ * trimmed (the receiver trims it too, and a pasted key often carries a
+ * space), while every other credential is a secret used byte for byte, so
+ * it is sent exactly as typed.
+ */
+export function normalizeSigningCredential(provider: string, secret: string): string {
+  return provider === "discord" ? secret.trim() : secret;
+}
