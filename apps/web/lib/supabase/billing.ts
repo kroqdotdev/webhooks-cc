@@ -7,9 +7,9 @@ import {
   type BillingInterval,
   type PaidPlan,
 } from "@/lib/polar";
-import { errors } from "@polar-sh/sdk/2026-10";
+import { errors, type Polar } from "@polar-sh/sdk/2026-10";
 import { planEntitlements } from "@/lib/entitlements";
-import { recordRefund } from "@/lib/billing/refunds";
+import { recordRefund, refundTargetKey } from "@/lib/billing/refunds";
 import {
   creditBalanceFromOrders,
   pastApprovedPeriod,
@@ -40,6 +40,11 @@ import type { Database } from "./database";
 const FREE_REQUEST_LIMIT = 50;
 
 type UserRow = Database["public"]["Tables"]["users"]["Row"];
+/** One status Polar's subscription list filters on. */
+type SubscriptionListStatus = Exclude<
+  NonNullable<NonNullable<Parameters<Polar["subscriptions"]["list"]>[0]>["status"]>,
+  readonly unknown[]
+>;
 
 class BillingActionError extends Error {
   code: string;
@@ -547,7 +552,10 @@ export async function livePlanSubscriptions(
   const page = await createPolarClient().subscriptions.list({
     customer_id: customerId,
     product_id: products,
-    active: true,
+    // Every live status, past_due included: Polar's `active` filter means
+    // active or trialing only, and a plan whose card is being retried is
+    // still the account's.
+    status: [...LIVE_SUBSCRIPTION_STATUSES] as SubscriptionListStatus[],
     limit: 100,
   });
   return (page.items as unknown[])
@@ -562,6 +570,22 @@ export async function livePlanSubscriptions(
         isLiveSubscriptionState(subscription)
     )
     .sort((a, b) => (subscriptionStartMs(b) ?? 0) - (subscriptionStartMs(a) ?? 0));
+}
+
+/** Which of these subscriptions already have a refund recorded (polar_refunds). */
+async function subscriptionsWithRefunds(ids: string[]): Promise<Set<string>> {
+  const { data, error } = await createAdminClient()
+    .from("polar_refunds")
+    .select("target")
+    .in(
+      "target",
+      ids.map((id) => refundTargetKey({ subscription: id }))
+    );
+  if (error) throw error;
+  const prefix = refundTargetKey({ subscription: "" });
+  return new Set(
+    ((data ?? []) as Array<{ target: string }>).map((row) => row.target.slice(prefix.length))
+  );
 }
 
 /**
@@ -589,7 +613,21 @@ async function adoptLivePlanSubscription(
   // Gone, or still holding another subscription (the event was not its own).
   if (!row || row.polar_subscription_id) return;
 
-  const [newest, ...others] = await livePlanSubscriptions(customerId, endedId);
+  const live = await livePlanSubscriptions(customerId, endedId);
+  if (live.length === 0) return;
+  // One already recorded for a refund (a second plan whose revoke failed,
+  // say) is on its way out and is never adopted: a person settles it.
+  const refunded = await subscriptionsWithRefunds(
+    live.map((subscription) => String(subscription.id))
+  );
+  if (refunded.size > 0) {
+    reportError(
+      "[billing] a live plan subscription recorded for a refund was not adopted",
+      undefined,
+      { userId, endedSubscriptionId: endedId, subscriptionIds: [...refunded] }
+    );
+  }
+  const [newest, ...others] = live.filter((subscription) => !refunded.has(String(subscription.id)));
   if (!newest) return;
   let applied = false;
   for (let attempt = 0; attempt < 3 && !applied; attempt++) {
@@ -603,6 +641,13 @@ async function adoptLivePlanSubscription(
     endedSubscriptionId: endedId,
     adoptedSubscriptionId: newest.id,
   });
+  await auditSystemEvent({
+    action: "billing.plan_adopted",
+    outcome: "ok",
+    userId,
+    targetId: String(newest.id),
+    metadata: { ended_subscription_id: endedId },
+  });
   if (others.length > 0) {
     reportError(
       "[billing] an account still has more than one live plan subscription after one was revoked",
@@ -614,6 +659,27 @@ async function adoptLivePlanSubscription(
       }
     );
   }
+}
+
+/** Whether the audit log already holds this report for the subscription. */
+async function duplicatePlanReported(
+  userId: string,
+  subscriptionId: string | null,
+  reason: string
+): Promise<boolean> {
+  if (!subscriptionId) return false;
+  // By account first, which audit_events_target_user indexes.
+  const { data, error } = await createAdminClient()
+    .from("audit_events")
+    .select("id")
+    .eq("target_user_id", userId)
+    .eq("action", "billing.duplicate_plan_reported")
+    .eq("target_id", subscriptionId)
+    .eq("metadata->>reason", reason)
+    .limit(1);
+  // Unknown: a second row is better than none.
+  if (error) return false;
+  return (data ?? []).length > 0;
 }
 
 /**
@@ -823,14 +889,18 @@ async function applyPlanSubscription(
           details
         );
         // Kept in the audit log too, so the report outlives a dropped
-        // StatOSS event. Ids and our own code only.
-        await auditSystemEvent({
-          action: "billing.duplicate_plan_reported",
-          outcome: "refused",
-          userId,
-          targetId: subscriptionId,
-          metadata: { stored_subscription_id: stored.polar_subscription_id, reason },
-        });
+        // StatOSS event, once per subscription and reason: every event for
+        // it (each renewal, a redelivery) comes back here. Ids and our own
+        // code only.
+        if (!(await duplicatePlanReported(userId, subscriptionId, reason))) {
+          await auditSystemEvent({
+            action: "billing.duplicate_plan_reported",
+            outcome: "refused",
+            userId,
+            targetId: subscriptionId,
+            metadata: { stored_subscription_id: stored.polar_subscription_id, reason },
+          });
+        }
         return true;
       }
       // Recorded first: once revoked, a redelivery reads it as ended and

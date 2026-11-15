@@ -56,8 +56,8 @@ describe("deleteAccountForUser revokes every live plan subscription", () => {
 
     expect(mockFns.livePlanSubscriptions).toHaveBeenCalledWith("cus_1", "sub_held");
     expect(mockFns.recordRefund.mock.calls).toEqual([
-      [{ target: { subscription: "sub_extra" }, reason: "deleted_account", userId: "user_1" }],
-      [{ target: { subscription: "sub_lost" }, reason: "deleted_account", userId: "user_1" }],
+      [{ target: { subscription: "sub_extra" }, reason: "duplicate_plan", userId: "user_1" }],
+      [{ target: { subscription: "sub_lost" }, reason: "duplicate_plan", userId: "user_1" }],
     ]);
     expect(mockFns.revoke.mock.calls).toEqual([["sub_extra"], ["sub_lost"], ["sub_held"]]);
     // Each refund is recorded before its revoke.

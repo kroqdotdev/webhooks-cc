@@ -331,6 +331,28 @@ describe("webhooks that record a refund", () => {
       .eq("id", userId)
       .single();
     expect(account?.polar_subscription_id).toBe(first.id);
+
+    // Should its revoke have failed, the second plan is still live when the
+    // first is revoked, but a subscription recorded for a refund is never
+    // adopted: the account goes free and a person settles it.
+    polarMocks.list.mockResolvedValueOnce({ items: [second] });
+    await deliver("subscription.revoked", {
+      ...first,
+      status: "canceled",
+      ended_at: new Date().toISOString(),
+    });
+    const { data: after } = await admin
+      .from("users")
+      .select("polar_subscription_id, plan")
+      .eq("id", userId)
+      .single();
+    expect(after).toEqual({ polar_subscription_id: null, plan: "free" });
+    const { count: adoptions } = await admin
+      .from("audit_events")
+      .select("id", { count: "exact", head: true })
+      .eq("action", "billing.plan_adopted")
+      .eq("target_user_id", userId);
+    expect(adoptions).toBe(0);
   });
 
   it("a second plan subscription that did not start beside the account's is left alone", async () => {
@@ -373,6 +395,14 @@ describe("webhooks that record a refund", () => {
         metadata: { stored_subscription_id: recent.id, reason: "not_a_twin" },
       },
     ]);
+    // Its renewal comes back to the guard: reported again, audited once.
+    await deliver("subscription.updated", old);
+    const { count: audited } = await admin
+      .from("audit_events")
+      .select("id", { count: "exact", head: true })
+      .eq("action", "billing.duplicate_plan_reported")
+      .eq("target_user_id", userId);
+    expect(audited).toBe(1);
 
     // When the plan the account holds is revoked, the one left live becomes
     // its plan rather than leaving a paying customer on Free.
@@ -383,7 +413,10 @@ describe("webhooks that record a refund", () => {
       ended_at: new Date().toISOString(),
     });
     expect(polarMocks.list).toHaveBeenCalledWith(
-      expect.objectContaining({ customer_id: recent.customer_id, active: true })
+      expect.objectContaining({
+        customer_id: recent.customer_id,
+        status: ["active", "trialing", "past_due"],
+      })
     );
     const { data: adopted } = await admin
       .from("users")
@@ -392,6 +425,19 @@ describe("webhooks that record a refund", () => {
       .single();
     expect(adopted).toEqual({ polar_subscription_id: old.id, plan: "pro" });
     expect(polarMocks.revoke).not.toHaveBeenCalled();
+    const { data: adoption } = await admin
+      .from("audit_events")
+      .select("actor_type, outcome, target_id, metadata")
+      .eq("action", "billing.plan_adopted")
+      .eq("target_user_id", userId);
+    expect(adoption).toEqual([
+      {
+        actor_type: "system",
+        outcome: "ok",
+        target_id: old.id,
+        metadata: { ended_subscription_id: recent.id },
+      },
+    ]);
   });
 
   it("a plan subscription for a deleted account is revoked and held for review", async () => {

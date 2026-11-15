@@ -131,8 +131,12 @@ export async function deleteAccountForUser(userId: string): Promise<void> {
   // row lost) would go on charging after the row is gone. They follow the
   // rule for a subscription that outlives its account: only one Polar says
   // is live, its refund recorded before the revoke, since a redelivery after
-  // the revoke reads it as ended. Done before the stored one, whose revoked
-  // event would otherwise adopt one of these.
+  // the revoke reads it as ended. The refund is a second plan's
+  // (duplicate_plan, "a second plan subscription, revoked"), not a charge
+  // made after the deletion, which is what deleted_account tells Polar. The
+  // refund worker pays it only once Polar has it ended, so a revoke that
+  // fails here, which keeps the account, refunds nothing. Done before the
+  // stored one, whose revoked event would otherwise adopt one of these.
   if (user?.polar_customer_id) {
     try {
       const others = await livePlanSubscriptions(
@@ -141,7 +145,7 @@ export async function deleteAccountForUser(userId: string): Promise<void> {
       );
       for (const subscription of others) {
         const id = String(subscription.id);
-        await recordRefund({ target: { subscription: id }, reason: "deleted_account", userId });
+        await recordRefund({ target: { subscription: id }, reason: "duplicate_plan", userId });
         await revokePersonalSubscription(id);
       }
     } catch (error) {
