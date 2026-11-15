@@ -2311,6 +2311,7 @@ fn cursor_and_vs_code_lose_whks_own_copy_once_a_shared_one_is_there() {
 #[test]
 fn a_skill_copy_left_by_a_crash_is_cleared_and_nothing_else() {
     let mut h = home("skill-crash-leftovers");
+    CLOCK_AHEAD.with(|c| c.set(LEFTOVER_AGE));
     let skills = h.dir.join(".cursor/skills");
     let stage = skills.join(".webhooks-cc.0123456789abcdef.whk-tmp");
     let old = skills.join(".webhooks-cc.fedcba9876543210.whk-old");
@@ -2365,4 +2366,76 @@ fn a_skill_copy_left_by_a_crash_is_cleared_and_nothing_else() {
         assert!(fs::symlink_metadata(&linked).is_ok());
         assert!(outside.join("keep.txt").exists());
     }
+}
+
+#[test]
+fn a_skill_copy_another_run_may_still_be_writing_is_left() {
+    let mut h = home("skill-fresh-leftovers");
+    let skills = h.dir.join(".cursor/skills");
+    let stage = skills.join(".webhooks-cc.0123456789abcdef.whk-tmp");
+    let old = skills.join(".webhooks-cc.fedcba9876543210.whk-old");
+    write_file(&stage.join("SKILL.md"), "half\n");
+    write_file(&old.join("references/a.md"), "old\n");
+
+    // Changed within the last ten minutes: another run may be writing it.
+    let report = run(&mut h, &yes(opts(Agent::Cursor))).unwrap();
+    assert!(!report.failed());
+    assert!(stage.exists() && old.exists());
+    let report = run(&mut h, &yes(opts(Agent::Cursor))).unwrap();
+    assert_eq!(steps(&report)[1], Step::Unchanged);
+    assert!(stage.exists() && old.exists());
+
+    // Nine minutes on, still left; ten minutes on, cleared.
+    CLOCK_AHEAD.with(|c| c.set(LEFTOVER_AGE - Duration::from_secs(60)));
+    run(&mut h, &yes(opts(Agent::Cursor))).unwrap();
+    assert!(stage.exists() && old.exists());
+    CLOCK_AHEAD.with(|c| c.set(LEFTOVER_AGE));
+    run(&mut h, &yes(opts(Agent::Cursor))).unwrap();
+    assert!(!stage.exists() && !old.exists());
+}
+
+#[test]
+fn a_shared_copy_written_without_cursor_or_vs_code_says_a_full_run_tidies_theirs() {
+    let mut h = home("shared-skill-note");
+    let report = run(&mut h, &yes(opts(Agent::Cursor))).unwrap();
+    assert_eq!(steps(&report)[1], Step::Install);
+    assert!(report.notes.is_empty());
+    let cursor_copy = skill_path(&h, Agent::Cursor).unwrap();
+
+    // Codex alone writes ~/.agents/skills, which Cursor reads too.
+    let dry = run(
+        &mut h,
+        &Options {
+            dry_run: true,
+            ..opts(Agent::Codex)
+        },
+    )
+    .unwrap();
+    assert_eq!(dry.notes.len(), 1, "{:?}", dry.notes);
+    assert!(dry.notes[0].contains("would then read"), "{}", dry.notes[0]);
+    let report = run(&mut h, &yes(opts(Agent::Codex))).unwrap();
+    assert!(!report.failed());
+    assert_eq!(report.notes.len(), 1, "{:?}", report.notes);
+    let note = slashes(&report.notes[0]);
+    assert!(note.starts_with("Cursor now reads"), "{note}");
+    assert!(note.contains("~/.agents/skills/webhooks-cc"), "{note}");
+    assert!(note.contains("~/.cursor/skills/webhooks-cc"), "{note}");
+    assert!(note.contains("`whk setup agent` without --agent"), "{note}");
+    assert_eq!(report.to_json()["notes"][0], json!(report.notes[0]));
+    let mut text = Vec::new();
+    report.write_text(&h.env, &mut text).unwrap();
+    assert!(
+        String::from_utf8(text)
+            .unwrap()
+            .contains("\nNote: Cursor now reads")
+    );
+    assert!(cursor_copy.exists());
+
+    // The note comes with the run that writes the shared copy; a full run
+    // takes Cursor's copy out.
+    let report = run(&mut h, &yes(opts(Agent::Codex))).unwrap();
+    assert!(report.notes.is_empty(), "{:?}", report.notes);
+    let report = run(&mut h, &yes(Options::default())).unwrap();
+    assert!(report.notes.is_empty(), "{:?}", report.notes);
+    assert!(!cursor_copy.exists());
 }

@@ -37,6 +37,7 @@ use std::fs;
 use std::io::{self, IsTerminal, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command as Process, Stdio};
+use std::time::{Duration, SystemTime};
 
 use anyhow::{Context, Result, anyhow};
 use serde::{Deserialize, Serialize};
@@ -2359,6 +2360,8 @@ pub struct Report {
     /// preview shown before asking).
     pub applied: bool,
     pub agents: Vec<AgentReport>,
+    /// What this run leaves for another one to tidy.
+    pub notes: Vec<String>,
 }
 
 impl Report {
@@ -2443,12 +2446,16 @@ impl Report {
                 agent
             })
             .collect();
-        json!({
+        let mut report = json!({
             "server": server_json(self.server),
             "dryRun": self.dry_run,
             "remove": self.remove,
             "agents": agents,
-        })
+        });
+        if !self.notes.is_empty() {
+            report["notes"] = json!(self.notes);
+        }
+        report
     }
 
     /// What the person does next, once the server is in place.
@@ -2571,6 +2578,9 @@ impl Report {
             if let Some(next) = self.next_step(a) {
                 writeln!(out, "  Next: {next}")?;
             }
+        }
+        for note in &self.notes {
+            writeln!(out, "\nNote: {note}")?;
         }
         Ok(())
     }
@@ -2729,6 +2739,66 @@ fn plan_skills_read_elsewhere(plans: &mut [Plan], cx: &mut Cx) -> Deferred {
     deferred
 }
 
+/// Notes for Cursor and VS Code when they are not in this run but have a
+/// copy whk added, and this run writes the skill to a shared directory
+/// they read too: they would load it twice until a run that includes them
+/// takes their copy out.
+fn left_for_a_full_run(
+    plans: &[Plan],
+    manifest: &Manifest,
+    env: &Env,
+    applied: bool,
+) -> Vec<String> {
+    let shared = shared_skill_dirs(env);
+    let Some(written) =
+        plans
+            .iter()
+            .flat_map(|p| &p.3)
+            .find_map(|(target, step)| match &target.kind {
+                Kind::Skill { dir, .. }
+                    if matches!(step, Step::Install | Step::Update) && shared.contains(dir) =>
+                {
+                    Some(dir.join(skill::NAME))
+                }
+                _ => None,
+            })
+    else {
+        return Vec::new();
+    };
+    let mut notes = Vec::new();
+    for agent in [Agent::Cursor, Agent::Vscode] {
+        if plans.iter().any(|p| p.0 == agent) {
+            continue;
+        }
+        for target in targets(agent, Server::Remote, env) {
+            let Kind::Skill { dir, .. } = &target.kind else {
+                continue;
+            };
+            let own = dir.join(skill::NAME);
+            if !target.recorded(manifest) || fs::symlink_metadata(&own).is_err() {
+                continue;
+            }
+            let label = agent.label();
+            let tidy = if env.detect(agent) {
+                "a full run, `whk setup agent` without --agent, takes it out".to_string()
+            } else {
+                format!("`whk setup agent --agent {}` takes it out", agent.id())
+            };
+            let reads = if applied {
+                "now reads"
+            } else {
+                "would then read"
+            };
+            notes.push(format!(
+                "{label} {reads} the skill from {} as well as from the copy whk added at {}, so it loads the skill twice until that copy goes: {tidy}.",
+                env.show(&written),
+                env.show(&own),
+            ));
+        }
+    }
+    notes
+}
+
 /// Decides Cursor's and VS Code's skill again from the shared directories
 /// as they are once the rest is applied: their own copy is skipped, or
 /// whk's earlier one taken out, only when a shared copy is there to read;
@@ -2805,21 +2875,63 @@ fn crash_leftover_name(name: &str) -> bool {
     hex.len() == 16 && hex.bytes().all(|b| b.is_ascii_hexdigit())
 }
 
+/// How long a copy named as whk names its leftovers is left alone after it
+/// last changed: it may be another run's, still writing.
+const LEFTOVER_AGE: Duration = Duration::from_secs(10 * 60);
+
+#[cfg(test)]
+thread_local! {
+    /// Moves the clock [`clear_crash_leftovers`] reads ahead, in tests.
+    static CLOCK_AHEAD: std::cell::Cell<Duration> =
+        const { std::cell::Cell::new(Duration::ZERO) };
+}
+
+#[cfg(test)]
+fn leftover_clock() -> SystemTime {
+    SystemTime::now() + CLOCK_AHEAD.with(std::cell::Cell::get)
+}
+
+#[cfg(not(test))]
+fn leftover_clock() -> SystemTime {
+    SystemTime::now()
+}
+
+/// Whether `path` last changed at least [`LEFTOVER_AGE`] before `now`. A
+/// time that cannot be read, or one ahead of `now`, counts as recent.
+fn old_enough(path: &Path, now: SystemTime) -> bool {
+    fs::symlink_metadata(path)
+        .and_then(|m| m.modified())
+        .ok()
+        .and_then(|modified| now.duration_since(modified).ok())
+        .is_some_and(|age| age >= LEFTOVER_AGE)
+}
+
 /// Removes what a run that was ended while writing the skill left beside it
 /// in `parent`: directories named as whk names them that hold only regular
-/// files. A link, or a directory holding one or anything stranger, is left
-/// as it is, and no link is followed.
+/// files and have not changed for [`LEFTOVER_AGE`], so two runs at once
+/// never delete each other's copy. A link, or a directory holding one or
+/// anything stranger, is left as it is, and no link is followed.
 fn clear_crash_leftovers(parent: &Path) {
     let Ok(entries) = fs::read_dir(parent) else {
         return;
     };
+    let now = leftover_clock();
     for entry in entries.flatten() {
         let name = entry.file_name().to_string_lossy().into_owned();
         if !crash_leftover_name(&name) || !entry.file_type().is_ok_and(|t| t.is_dir()) {
             continue;
         }
         let path = entry.path();
-        if read_tree(&path).is_ok_and(|tree| tree.odd.is_none()) {
+        if !old_enough(&path, now) {
+            continue;
+        }
+        if read_tree(&path).is_ok_and(|tree| {
+            tree.odd.is_none()
+                && tree
+                    .files
+                    .iter()
+                    .all(|(file, _)| old_enough(&path.join(file), now))
+        }) {
             let _ = fs::remove_dir_all(&path);
         }
     }
@@ -2920,11 +3032,16 @@ pub fn execute(
     }
 
     let npx_missing = env.which(LOCAL_COMMAND).is_none();
-    let report_of = |plans: &[Plan], applied: bool| Report {
+    let report_of = |plans: &[Plan], applied: bool, manifest: &Manifest| Report {
         server,
         remove: opts.remove,
         dry_run: opts.dry_run,
         applied,
+        notes: if opts.remove {
+            Vec::new()
+        } else {
+            left_for_a_full_run(plans, manifest, env, applied)
+        },
         agents: plans
             .iter()
             .map(|(agent, detected, _, items)| {
@@ -2953,7 +3070,7 @@ pub fn execute(
         .flat_map(|(_, _, _, items)| items)
         .any(|(_, step)| step.is_change());
     if opts.dry_run {
-        return Ok(report_of(&plans, false));
+        return Ok(report_of(&plans, false, &manifest));
     }
     if !changes {
         clear_skill_leftovers(&plans);
@@ -2962,7 +3079,7 @@ pub fn execute(
         if manifest != before {
             manifest.save(&manifest_path)?;
         }
-        return Ok(report_of(&plans, true));
+        return Ok(report_of(&plans, true, &manifest));
     }
     if !opts.yes {
         let names: Vec<&str> = plans
@@ -2976,7 +3093,7 @@ pub fn execute(
             "Change the config of"
         };
         let question = format!("{verb} {}?", names.join(", "));
-        gate(&report_of(&plans, false), &question)?;
+        gate(&report_of(&plans, false, &manifest), &question)?;
     }
     // A change whk could not record could not be removed later either.
     preflight(&manifest_path).map_err(|e| {
@@ -3020,7 +3137,7 @@ pub fn execute(
         }
         decide_skills_read_elsewhere(&mut plans, &deferred, &mut cx, &stopped, &mut unrecorded);
     }
-    Ok(report_of(&plans, true))
+    Ok(report_of(&plans, true, &manifest))
 }
 
 /// `whk setup agent`.

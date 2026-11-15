@@ -573,8 +573,9 @@ claude-desktop, cursor, vscode and devin (Devin Desktop, formerly Windsurf;
 `windsurf` works too). Claude Desktop gets the local server, the only kind
 its config file runs, and so does Windsurf from before the rename; Devin
 signs in with `devin mcp login webhooks-cc`. With the webhooks.cc Claude
-Code plugin installed, Claude Code is left out: the plugin brings both.
-Claude Code or Codex found without its program on PATH is skipped, with the
+Code plugin installed, Claude Code gets neither the server nor the skill:
+the plugin brings both, so a server entry and a skill copy whk added before
+the plugin are taken out when they are unchanged. Claude Code or Codex found without its program on PATH is skipped, with the
 command to run once it is; named with --agent, it fails.
 
 A re-run changes nothing that is already in place. A config file is backed
@@ -583,8 +584,10 @@ endings and key order, and is left alone when it is read-only, is not valid
 JSON, or holds a number too large to write back exactly (VS Code's mcp.json
 with comments is skipped unless --agent vscode is given, then it fails).
 Cursor and VS Code get no copy of the skill when ~/.agents/skills or
-~/.claude/skills has one, since they read those too, and a copy the skills
-CLI (`npx skills`) manages is never updated or removed. --remove takes out
+~/.claude/skills has one, since they read those too, and the copy whk gave
+them before is taken out once a shared copy is there (a run that leaves
+them out says so instead). A copy the skills CLI (`npx skills`) manages is
+never updated or removed. --remove takes out
 what this command installed and nothing else, for agents uninstalled since
 too. Without a terminal it changes nothing unless --yes is given.
 
