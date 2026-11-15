@@ -131,6 +131,7 @@ function subscription(id: string, customer: Record<string, unknown>, product: st
     customer,
     product_id: product,
     status: "active",
+    started_at: new Date().toISOString(),
     current_period_start: new Date().toISOString(),
     current_period_end: new Date(Date.now() + 30 * 86_400_000).toISOString(),
     cancel_at_period_end: false,
@@ -295,7 +296,11 @@ describe("webhooks that record a refund", () => {
     polarMocks.get.mockResolvedValue(first);
     await deliver("subscription.created", first);
 
-    const second = subscription(`sub_second_${ts}`, { metadata: { userId } }, "prod_pro_test");
+    // Twin checkouts: paid a few minutes apart.
+    const second = {
+      ...subscription(`sub_second_${ts}`, { metadata: { userId } }, "prod_pro_test"),
+      started_at: new Date(Date.parse(first.started_at) + 5 * 60_000).toISOString(),
+    };
     targets.push(`subscription:${second.id}`);
     polarMocks.get.mockImplementation(async (id: string) => (id === first.id ? first : second));
     await deliver("subscription.created", second);
@@ -319,6 +324,33 @@ describe("webhooks that record a refund", () => {
       .eq("id", userId)
       .single();
     expect(account?.polar_subscription_id).toBe(first.id);
+  });
+
+  it("a second plan subscription that did not start beside the account's is left alone", async () => {
+    // The account's row holds a plan bought an hour ago; Polar still has a
+    // year-old one live whose id the row lost. Neither is ended or refunded.
+    const userId = await createUser();
+    const recent = subscription(`sub_recent_${ts}`, { metadata: { userId } }, "prod_pro_test");
+    polarMocks.get.mockResolvedValue(recent);
+    await deliver("subscription.created", recent);
+
+    const old = {
+      ...subscription(`sub_old_${ts}`, { metadata: { userId } }, "prod_pro_test"),
+      started_at: new Date(Date.now() - 300 * 86_400_000).toISOString(),
+    };
+    targets.push(`subscription:${old.id}`);
+    polarMocks.get.mockImplementation(async (id: string) => (id === recent.id ? recent : old));
+    polarMocks.revoke.mockClear();
+    await deliver("subscription.updated", old);
+
+    expect(polarMocks.revoke).not.toHaveBeenCalled();
+    expect(await refundRow(`subscription:${old.id}`)).toBeNull();
+    const { data: account } = await admin
+      .from("users")
+      .select("polar_subscription_id")
+      .eq("id", userId)
+      .single();
+    expect(account?.polar_subscription_id).toBe(recent.id);
   });
 
   it("a plan subscription for a deleted account is revoked and held for review", async () => {

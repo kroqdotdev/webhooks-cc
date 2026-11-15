@@ -17,13 +17,14 @@ import {
   type ProductSwitchPrice,
 } from "@/lib/team-pricing";
 import { supersedeCheckoutLinks } from "@/lib/billing/checkout-link-rows";
+import { reportError } from "@/lib/observability";
 import { returnOrigin } from "@/lib/site-server";
 import { createAdminClient } from "./admin";
 import {
   asNonEmptyString,
   asRecord,
   checkoutSession,
-  isLiveSubscription,
+  duplicateVerdict,
   isLiveSubscriptionState,
   LIVE_SUBSCRIPTION_STATUSES,
   normalizeStoredSubscriptionStatus,
@@ -685,10 +686,31 @@ async function applyPlanSubscription(
     // An ended subscription that is not the account's (an old one's late
     // event) changes nothing.
     if (!LIVE_SUBSCRIPTION_STATUSES.has(String(data.status))) return true;
-    // A second live plan subscription (two checkouts completed in two
-    // tabs): the account keeps the one it has, and the new one ends
-    // before it charges again. What it charged goes back.
-    if (stored.polar_subscription_id && (await isLiveSubscription(stored.polar_subscription_id))) {
+    // A second live plan subscription beside the one the account holds.
+    // Twin checkouts (two tabs, a checkout link and the dashboard) started
+    // within two hours of each other, either way: the account keeps the one
+    // it has, and the new one ends before it charges again. What it charged
+    // goes back. One that started further apart, or without a start time,
+    // is reported for a person and changes nothing: one well before may be
+    // the plan used all along (its id lost from the row while Polar kept it
+    // live, then bought again), one well after a replacement made by hand
+    // in Polar, and a revoke cannot be undone (duplicateVerdict()).
+    const held = stored.polar_subscription_id
+      ? asRecord(await createPolarClient().subscriptions.get(stored.polar_subscription_id))
+      : null;
+    if (stored.polar_subscription_id && held !== null && isLiveSubscriptionState(held)) {
+      if (duplicateVerdict(data, held) === "report") {
+        reportError(
+          "[billing] an account has a second live plan subscription that did not start within two hours of the one it holds",
+          undefined,
+          {
+            userId,
+            storedSubscriptionId: stored.polar_subscription_id,
+            eventSubscriptionId: subscriptionId,
+          }
+        );
+        return true;
+      }
       // Recorded first: once revoked, a redelivery reads it as ended and
       // would never record it.
       await recordRefund({

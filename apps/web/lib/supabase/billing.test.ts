@@ -747,11 +747,18 @@ describe("plan events apply Polar's current state", () => {
     mockFns.createAdminClient.mockReturnValue(
       createFakeAdmin({ "users:select": [storedUser({ polar_subscription_id: "sub_first" })] })
     );
-    polarSubscriptions.sub_first = subscriptionEvent({ id: "sub_first" });
+    polarSubscriptions.sub_first = subscriptionEvent({
+      id: "sub_first",
+      started_at: "2026-08-01T10:00:00Z",
+    });
 
     await apply(
       "subscription.created",
-      subscriptionEvent({ id: "sub_second", checkout_id: "co_link" })
+      subscriptionEvent({
+        id: "sub_second",
+        checkout_id: "co_link",
+        started_at: "2026-08-01T10:05:00Z",
+      })
     );
 
     expect(polarRevoke).toHaveBeenCalledWith("sub_second");
@@ -781,13 +788,97 @@ describe("plan events apply Polar's current state", () => {
     mockFns.createAdminClient.mockReturnValue(
       createFakeAdmin({ "users:select": [storedUser({ polar_subscription_id: "sub_first" })] })
     );
-    polarSubscriptions.sub_first = subscriptionEvent({ id: "sub_first" });
+    polarSubscriptions.sub_first = subscriptionEvent({
+      id: "sub_first",
+      started_at: "2026-08-01T10:00:00Z",
+    });
     mockFns.supersedeCheckoutLinks.mockRejectedValueOnce(new Error("connection reset"));
 
     await expect(
-      apply("subscription.created", subscriptionEvent({ id: "sub_second", checkout_id: "co_link" }))
+      apply(
+        "subscription.created",
+        subscriptionEvent({
+          id: "sub_second",
+          checkout_id: "co_link",
+          started_at: "2026-08-01T10:05:00Z",
+        })
+      )
     ).rejects.toThrow("connection reset");
     expect(polarRevoke).not.toHaveBeenCalled();
+  });
+
+  describe("a second live plan subscription is ended only beside a twin checkout", () => {
+    async function second(storedStart: string | null, eventStart: string | null) {
+      polarSubscriptions = {};
+      mockFns.createAdminClient.mockReturnValue(
+        createFakeAdmin({ "users:select": [storedUser({ polar_subscription_id: "sub_first" })] })
+      );
+      polarSubscriptions.sub_first = subscriptionEvent({
+        id: "sub_first",
+        started_at: storedStart,
+      });
+      await apply(
+        "subscription.created",
+        subscriptionEvent({ id: "sub_second", checkout_id: "co_link", started_at: eventStart })
+      );
+    }
+
+    function expectEnded() {
+      expect(mockFns.recordRefund).toHaveBeenCalledWith({
+        target: { subscription: "sub_second" },
+        reason: "duplicate_plan",
+        userId: "user_1",
+      });
+      expect(mockFns.supersedeCheckoutLinks).toHaveBeenCalled();
+      expect(polarRevoke).toHaveBeenCalledWith("sub_second");
+      expect(mockFns.reportError).not.toHaveBeenCalled();
+      expect(userUpdatePayload()).toBeUndefined();
+    }
+
+    function expectReported() {
+      expect(mockFns.recordRefund).not.toHaveBeenCalled();
+      expect(mockFns.supersedeCheckoutLinks).not.toHaveBeenCalled();
+      expect(polarRevoke).not.toHaveBeenCalled();
+      expect(mockFns.reportError).toHaveBeenCalledTimes(1);
+      expect(mockFns.reportError.mock.calls[0][2]).toEqual({
+        userId: "user_1",
+        storedSubscriptionId: "sub_first",
+        eventSubscriptionId: "sub_second",
+      });
+      // The account keeps the one it holds.
+      expect(userUpdatePayload()).toBeUndefined();
+    }
+
+    test("one that started just after the account's is ended", async () => {
+      await second("2026-08-01T10:00:00Z", "2026-08-01T11:59:00Z");
+      expectEnded();
+    });
+
+    test("one that started just before the account's (its event arrived late) is ended", async () => {
+      await second("2026-08-01T10:00:00Z", "2026-08-01T08:01:00Z");
+      expectEnded();
+    });
+
+    test("one that started long before the account's is reported, never revoked", async () => {
+      // An annual plan whose id the row lost while Polar kept it live,
+      // beside a plan bought again an hour ago.
+      await second("2026-11-01T10:00:00Z", "2026-02-01T10:00:00Z");
+      expectReported();
+    });
+
+    test("one that started long after the account's is reported, never revoked", async () => {
+      await second("2026-08-01T10:00:00Z", "2026-08-01T12:00:01Z");
+      expectReported();
+    });
+
+    test("a missing start time on either side is reported", async () => {
+      await second(null, "2026-08-01T10:00:00Z");
+      expectReported();
+      vi.clearAllMocks();
+      recorded = [];
+      await second("2026-08-01T10:00:00Z", null);
+      expectReported();
+    });
   });
 
   test("a new subscription replaces one Polar no longer has live", async () => {
