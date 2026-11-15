@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { requestClientName, toolSelection } from "./hosted";
+import { TOOL_GROUP_NAMES } from "@webhooks-cc/mcp/tools";
+import { INSTRUCTIONS, requestClientName, toolSelection } from "./hosted";
 
 const META = "io.modelcontextprotocol/clientInfo";
 const url = (query = "") => new URL(`https://webhooks.cc/mcp${query}`);
@@ -18,6 +19,24 @@ describe("toolSelection", () => {
     expect(chosen.readOnly).toBe(true);
     expect(toolSelection(url("?tools=all"), ["cursor-vscode"]).groups.has("sheets")).toBe(true);
     expect(toolSelection(url(), []).readOnly).toBe(false);
+  });
+});
+
+describe("the instructions", () => {
+  it("say how to get the groups past the core", () => {
+    expect(INSTRUCTIONS).toContain("?tools=");
+  });
+
+  it("name every group ?tools= takes", () => {
+    for (const group of TOOL_GROUP_NAMES) {
+      expect(INSTRUCTIONS, group).toMatch(new RegExp(`\\b${group}\\b`));
+    }
+  });
+
+  it("name only groups ?tools= takes", () => {
+    for (const group of TOOL_GROUP_NAMES) {
+      expect([...toolSelection(url(`?tools=${group}`), []).groups], group).toContain(group);
+    }
   });
 });
 

@@ -61,6 +61,31 @@ pub(crate) fn is_proxy_header(name: &str) -> bool {
     PROXY_HEADERS.contains(&name)
 }
 
+/// Headers Cloudflare adds to a Worker's subrequest. They are the sender's
+/// when someone else's Worker sends, so they are dropped only when the Worker
+/// is our own ([`from_own_worker`]).
+const WORKER_HEADERS: &[&str] = &["cf-worker", "cf-ew-via"];
+
+/// Whether the request came from one of our own Workers: its `CF-Worker`
+/// names a zone in `zones` (OWN_WORKER_ZONES, lowercase). An empty list
+/// matches nothing.
+pub(crate) fn from_own_worker(headers: &HeaderMap, zones: &[String]) -> bool {
+    if zones.is_empty() {
+        return false;
+    }
+    headers
+        .get("cf-worker")
+        .and_then(|value| value.to_str().ok())
+        .map(|zone| zone.trim().trim_end_matches('.').to_ascii_lowercase())
+        .is_some_and(|zone| zones.contains(&zone))
+}
+
+/// Whether `name` (lowercase) is ours rather than the sender's: a header our
+/// proxies add, or, on a request from our own Worker, the Worker's marks.
+pub(crate) fn is_added_header(name: &str, own_worker: bool) -> bool {
+    is_proxy_header(name) || (own_worker && WORKER_HEADERS.contains(&name))
+}
+
 /// Blocked response headers that must not be forwarded from mock responses.
 const BLOCKED_HEADERS: &[&str] = &[
     "set-cookie",
@@ -148,11 +173,11 @@ fn header_value_to_string(value: &HeaderValue) -> String {
 ///
 /// Duplicate header names are joined with ", " in wire order (RFC 7230 list
 /// semantics) instead of keeping only the last occurrence.
-fn filter_headers(headers: &HeaderMap) -> HashMap<String, String> {
+fn filter_headers(headers: &HeaderMap, own_worker: bool) -> HashMap<String, String> {
     let mut map: HashMap<String, String> = HashMap::new();
     for (key, value) in headers.iter() {
         let name = key.as_str();
-        if PROXY_HEADERS.contains(&name) {
+        if is_added_header(name, own_worker) {
             continue;
         }
         let v = header_value_to_string(value);
@@ -640,7 +665,8 @@ async fn handle_webhook_inner(
 
     // 3. Extract request data
     let ip = real_ip(&headers);
-    let filtered_headers = filter_headers(&headers);
+    let own_worker = from_own_worker(&headers, &state.config.own_worker_zones);
+    let filtered_headers = filter_headers(&headers, own_worker);
     // Text copy for `requests.body`; raw bytes only when the text copy is lossy
     // (invalid UTF-8 or NUL bytes, which Postgres text columns reject).
     let (body_str, body_raw) = classify_body(&body);
@@ -1015,6 +1041,7 @@ async fn handle_webhook_inner(
                                 headers: headers.clone(),
                                 body: body.clone(),
                                 request_id: request_id.clone(),
+                                own_worker,
                             },
                             move |record| {
                                 if let Some(request_id) = request_id {
@@ -1323,11 +1350,41 @@ mod tests {
         headers.insert("cf-ray", HeaderValue::from_static("abc123"));
         headers.insert("x-forwarded-for", HeaderValue::from_static("1.2.3.4"));
 
-        let filtered = filter_headers(&headers);
+        let filtered = filter_headers(&headers, false);
         assert_eq!(filtered.get("content-type").unwrap(), "application/json");
         assert_eq!(filtered.get("x-custom").unwrap(), "hello");
         assert!(!filtered.contains_key("cf-ray"));
         assert!(!filtered.contains_key("x-forwarded-for"));
+    }
+
+    #[test]
+    fn worker_marks_are_stripped_only_for_our_own_zones() {
+        let mut headers = HeaderMap::new();
+        headers.insert("cf-worker", HeaderValue::from_static("Proxy.Example.com"));
+        headers.insert("cf-ew-via", HeaderValue::from_static("15"));
+        headers.insert("x-custom", HeaderValue::from_static("hello"));
+        let ours = vec!["proxy.example.com".to_string()];
+
+        // The zone matches: the marks are ours.
+        let own = from_own_worker(&headers, &ours);
+        assert!(own);
+        let filtered = filter_headers(&headers, own);
+        assert!(!filtered.contains_key("cf-worker"));
+        assert!(!filtered.contains_key("cf-ew-via"));
+        assert_eq!(filtered.get("x-custom").unwrap(), "hello");
+
+        // Another zone's Worker: the sender's own headers, kept.
+        let other = vec!["acme.example".to_string()];
+        let own = from_own_worker(&headers, &other);
+        assert!(!own);
+        let filtered = filter_headers(&headers, own);
+        assert_eq!(filtered.get("cf-worker").unwrap(), "Proxy.Example.com");
+        assert_eq!(filtered.get("cf-ew-via").unwrap(), "15");
+
+        // No zones configured: nothing matches.
+        assert!(!from_own_worker(&headers, &[]));
+        // No CF-Worker at all: not ours either.
+        assert!(!from_own_worker(&HeaderMap::new(), &ours));
     }
 
     #[test]
@@ -1343,7 +1400,7 @@ mod tests {
         // Proxy headers are still filtered even with odd bytes.
         headers.insert("cf-ray", HeaderValue::from_bytes(b"\xff").unwrap());
 
-        let filtered = filter_headers(&headers);
+        let filtered = filter_headers(&headers, false);
         assert_eq!(filtered.get("x-utf8").unwrap(), "caf\u{e9}");
         assert_eq!(filtered.get("x-latin1").unwrap(), "caf\u{FFFD}");
         assert!(!filtered.contains_key("cf-ray"));
@@ -1363,7 +1420,7 @@ mod tests {
         headers.append("x-forwarded-for", HeaderValue::from_static("1.1.1.1"));
         headers.append("x-forwarded-for", HeaderValue::from_static("2.2.2.2"));
 
-        let filtered = filter_headers(&headers);
+        let filtered = filter_headers(&headers, false);
         assert_eq!(filtered.get("x-dup").unwrap(), "first, second, third");
         assert_eq!(filtered.get("x-single").unwrap(), "only");
         assert_eq!(filtered.get("cookie").unwrap(), "a=1; b=2");

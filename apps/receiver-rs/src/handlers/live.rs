@@ -361,6 +361,9 @@ pub struct LiveRequest<'a> {
     /// The captured request's id, sent to the edge in [`REQUEST_ID_HEADER`]
     /// so the CLI knows the relay carried it.
     pub request_id: Option<&'a str>,
+    /// Sent by one of our own Workers (OWN_WORKER_ZONES): its marks are
+    /// dropped like the other headers our proxies add.
+    pub own_worker: bool,
 }
 
 /// A [`LiveRequest`] that owns its parts, to relay in a task of its own.
@@ -374,6 +377,7 @@ pub struct OwnedLiveRequest {
     pub headers: HeaderMap,
     pub body: Bytes,
     pub request_id: Option<String>,
+    pub own_worker: bool,
 }
 
 impl OwnedLiveRequest {
@@ -388,6 +392,7 @@ impl OwnedLiveRequest {
             headers: &self.headers,
             body: self.body.clone(),
             request_id: self.request_id.as_deref(),
+            own_worker: self.own_worker,
         }
     }
 }
@@ -522,7 +527,7 @@ impl LiveRelay {
                 Reach::NotTried,
             );
         };
-        let mut headers = relay_headers(request.headers);
+        let mut headers = relay_headers(request.headers, request.own_worker);
         forwarded_headers(
             &mut headers,
             Forwarded {
@@ -886,12 +891,13 @@ pub fn path_after_slug(path: &str) -> &str {
 }
 
 /// The sender's headers as the app should see them: in wire order, without
-/// what our proxies add, hop-by-hop headers or a relay secret of its own.
-pub fn relay_headers(headers: &HeaderMap) -> HeaderMap {
+/// what our proxies add (our own Worker's marks too, when `own_worker`),
+/// hop-by-hop headers or a relay secret of its own.
+pub fn relay_headers(headers: &HeaderMap, own_worker: bool) -> HeaderMap {
     let mut out = HeaderMap::with_capacity(headers.len());
     for (name, value) in headers.iter() {
         let lower = name.as_str();
-        if super::webhook::is_proxy_header(lower)
+        if super::webhook::is_added_header(lower, own_worker)
             || HOP_BY_HOP.contains(&lower)
             || lower == RELAY_AUTH_HEADER
             || lower == REQUEST_ID_HEADER
@@ -1151,7 +1157,7 @@ mod tests {
         headers.append("host", HeaderValue::from_static("go.webhooks.cc"));
         headers.append(RELAY_AUTH_HEADER, HeaderValue::from_static("forged"));
         headers.append(REQUEST_ID_HEADER, HeaderValue::from_static("forged-id"));
-        let out = relay_headers(&headers);
+        let out = relay_headers(&headers, false);
         assert_eq!(out.get("content-type").unwrap(), "application/json");
         assert_eq!(out.get("x-signature").unwrap(), "abc");
         assert_eq!(out.get_all("x-multi").iter().count(), 2);
@@ -1164,6 +1170,21 @@ mod tests {
         ] {
             assert!(out.get(gone).is_none(), "{gone} should be dropped");
         }
+    }
+
+    #[test]
+    fn relayed_headers_drop_our_own_workers_marks_only() {
+        let mut headers = HeaderMap::new();
+        headers.append("cf-worker", HeaderValue::from_static("proxy.example.com"));
+        headers.append("cf-ew-via", HeaderValue::from_static("15"));
+        headers.append("x-signature", HeaderValue::from_static("abc"));
+        let ours = relay_headers(&headers, true);
+        assert!(ours.get("cf-worker").is_none());
+        assert!(ours.get("cf-ew-via").is_none());
+        assert_eq!(ours.get("x-signature").unwrap(), "abc");
+        let theirs = relay_headers(&headers, false);
+        assert_eq!(theirs.get("cf-worker").unwrap(), "proxy.example.com");
+        assert_eq!(theirs.get("cf-ew-via").unwrap(), "15");
     }
 
     #[test]
@@ -1429,6 +1450,7 @@ mod tests {
             headers,
             body: Bytes::from_static(br#"{"id":1}"#),
             request_id: Some("3f2a8c1e-0000-4000-8000-000000000001"),
+            own_worker: false,
         }
     }
 
@@ -1463,6 +1485,7 @@ mod tests {
                 headers: HeaderMap::new(),
                 body: Bytes::from_static(b"{}"),
                 request_id: None,
+                own_worker: false,
             },
             move |recorded| {
                 let _ = tx.send(recorded);

@@ -8,6 +8,7 @@ import {
 } from "@modelcontextprotocol/server";
 import { serveStdio } from "@modelcontextprotocol/server/stdio";
 import { APP_MIME_TYPE, INSPECTOR_URI } from "@webhooks-cc/mcp/tools";
+import { MCP_VERSION } from "@/lib/changelog";
 
 // The hosted server's registration of the request inspector (an MCP App):
 // the resource on every per-request server, and the tools' _meta through
@@ -26,6 +27,7 @@ const { buildServer } = await import("./hosted");
 const open: Array<{ close(): Promise<void> }> = [];
 afterEach(async () => {
   await Promise.all(open.splice(0).map((handle) => handle.close()));
+  vi.unstubAllGlobals();
 });
 
 /** Sends one 2026-07-28 request to a fresh hosted server and returns its result. */
@@ -115,5 +117,66 @@ describe("the request inspector on the hosted server", () => {
     expect(contents).toHaveLength(1);
     expect(contents[0]).toMatchObject({ uri: old, mimeType: APP_MIME_TYPE });
     expect(contents[0].text).toBe(current.contents[0].text);
+  });
+});
+
+describe("the hosted server", () => {
+  it("reports the MCP package's version", async () => {
+    // 2026-07-28 carries the server's identity in _meta.
+    const result = (await ask("server/discover")) as {
+      instructions?: string;
+      _meta?: Record<string, { version?: string }>;
+    };
+    expect(result._meta?.["io.modelcontextprotocol/serverInfo"]?.version).toBe(MCP_VERSION);
+    expect(result.instructions).toContain("?tools=");
+  });
+
+  it("never offers targetUrl, which would post from webhooks.cc's network", async () => {
+    const { tools } = (await ask("tools/list")) as {
+      tools: Array<{
+        name: string;
+        description: string;
+        inputSchema: { properties?: Record<string, unknown> };
+      }>;
+    };
+    const byName = Object.fromEntries(tools.map((tool) => [tool.name, tool]));
+    for (const name of ["render_email", "test_webhook_flow"]) {
+      expect(byName[name], name).toBeDefined();
+      expect(Object.keys(byName[name].inputSchema.properties ?? {}), name).not.toContain(
+        "targetUrl"
+      );
+      expect(byName[name].description, name).not.toContain("targetUrl");
+    }
+  });
+
+  it("drops a targetUrl sent anyway, so nothing is posted there", async () => {
+    const fetched: string[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: string | URL | Request) => {
+        const target =
+          typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+        fetched.push(target);
+        return Response.json({
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: "{}",
+        });
+      })
+    );
+    const result = (await ask("tools/call", {
+      name: "render_email",
+      arguments: {
+        requestId: "req_1",
+        format: "postmark",
+        targetUrl: "http://localhost:3000/inbound",
+      },
+    })) as { isError?: boolean; content: Array<{ text: string }> };
+    expect(fetched.length).toBeGreaterThan(0);
+    expect(fetched.every((target) => target.includes("/api/requests/req_1/render"))).toBe(true);
+    expect(fetched.some((target) => target.startsWith("http://localhost:3000/inbound"))).toBe(
+      false
+    );
+    expect(result.isError, result.content[0]?.text).toBeFalsy();
   });
 });

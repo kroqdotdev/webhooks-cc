@@ -184,6 +184,8 @@ describe("tool groups on the local server", () => {
     const { client, call } = await legacyClient("some-2025-client");
     expect(client.getServerVersion()).toMatchObject({ name: "webhooks-cc" });
     expect(client.getInstructions()).toContain("enable_tools");
+    // A client that loads every group never sees enable_tools: say so.
+    expect(client.getInstructions()).toContain("when enable_tools is not listed");
     const providers = await call("list_provider_templates");
     expect(providers.isError).toBe(false);
     expect(JSON.stringify(providers.body)).toContain("stripe");

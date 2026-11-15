@@ -40,6 +40,12 @@ pub struct Config {
     /// Live captures (`whk tunnel --live`): the edge's relay port and secret.
     /// Unset, live endpoints are answered like any other.
     pub live: Option<crate::handlers::live::LiveConfig>,
+    /// The Cloudflare zones our own Workers run on (OWN_WORKER_ZONES, comma
+    /// separated, lowercase; empty by default). Cloudflare marks a Worker's
+    /// subrequests with `CF-Worker: <zone>` and `CF-EW-Via`; when the zone is
+    /// one of these (the notify proxy relaying a send from webhooks.cc), the
+    /// marks are ours, not the sender's, and are not stored or relayed.
+    pub own_worker_zones: Vec<String>,
 }
 
 impl std::fmt::Debug for Config {
@@ -72,6 +78,7 @@ impl std::fmt::Debug for Config {
             )
             .field("object_store", &self.object_store)
             .field("live", &self.live)
+            .field("own_worker_zones", &self.own_worker_zones)
             .finish()
     }
 }
@@ -146,6 +153,8 @@ impl Config {
 
         let object_store = object_store_from_env();
         let live = live_from_env(webhook_base_url.as_deref());
+        let own_worker_zones =
+            parse_mail_domains(&env::var("OWN_WORKER_ZONES").unwrap_or_default());
 
         Self {
             database_url,
@@ -166,6 +175,7 @@ impl Config {
             inbound_domains_refresh_secs,
             object_store,
             live,
+            own_worker_zones,
         }
     }
 }
@@ -284,11 +294,13 @@ impl Config {
             mail_domains: vec!["mailhooks.cc".into()],
             object_store: None,
             live: None,
+            own_worker_zones: Vec::new(),
         }
     }
 }
 
-/// Comma-separated domain list, trimmed, lowercased, without trailing dots.
+/// Comma-separated domain list, trimmed, lowercased, without trailing dots
+/// (MAIL_DOMAINS, OWN_WORKER_ZONES).
 fn parse_mail_domains(raw: &str) -> Vec<String> {
     raw.split(',')
         .map(|d| d.trim().trim_end_matches('.').to_ascii_lowercase())

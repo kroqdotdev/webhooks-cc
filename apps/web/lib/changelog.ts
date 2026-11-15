@@ -34,7 +34,7 @@ export const CLI_VERSION = "1.20.1";
 export const SDK_VERSION = "1.30.0";
 export const PYTHON_SDK_VERSION = "0.10.0";
 export const GO_SDK_VERSION = "0.10.0";
-export const MCP_VERSION = "2.4.0";
+export const MCP_VERSION = "2.4.1";
 
 export const CHANGELOG: ChangelogEntry[] = [
   ...RELEASE.entries,
@@ -3284,6 +3284,19 @@ export const CHANGELOG: ChangelogEntry[] = [
   },
 
   // ─── MCP ────────────────────────────────────────────────────────────
+  {
+    version: "2.4.1",
+    date: "2026-11-15",
+    title: "Billing Annotations And Signing On Create",
+    track: "mcp",
+    items: [
+      "`change_plan`, `set_seats`, `change_addons`, `cancel_subscription`, `resume_subscription`, `set_agent_budget` and `delete_team` are annotated as destructive and reaching past webhooks.cc, since each can charge the card or end a subscription through Polar, some without asking once an agent budget is set",
+      "`create_endpoint` with `signingProvider` needs `signingSecret` for every provider, Discord's application public key included, and returns the endpoint as saved with its signing settings",
+      "Responses the tools report (`send_webhook`, `replay_request`, `send_to`, `render_email`, `test_webhook_flow`) leave `statusText` out when the answer carried none",
+      "The server's instructions say that a client without `enable_tools` already has every group",
+      "The hosted server reports the MCP package's version, says how to load more tool groups with `?tools=`, no longer lists `targetUrl` on `render_email` and `test_webhook_flow`, and says that `send_webhook` sends from webhooks.cc's network",
+    ],
+  },
   {
     version: "2.4.0",
     date: "2026-11-15",

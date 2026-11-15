@@ -12,7 +12,7 @@ import {
 } from "../catalog";
 import { asToolServer } from "../local-tools";
 import { registerSandboxTools } from "../sandbox-tools";
-import { registerTools, type ToolServer } from "../tools";
+import { BILLING_APPROVAL, registerTools, type ToolServer } from "../tools";
 
 function registered(options: Parameters<typeof registerTools>[2] = {}) {
   const names: string[] = [];
@@ -85,6 +85,44 @@ describe("the tool catalog", () => {
       title: "Revoke API key",
       annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true },
     });
+  });
+});
+
+describe("billing tools", () => {
+  // Each can charge the card, or end what was paid for, through Polar; with an
+  // agent budget set some of them do it without asking anyone.
+  const BILLING = [
+    "change_plan",
+    "set_seats",
+    "change_addons",
+    "resume_subscription",
+    "cancel_subscription",
+    "set_agent_budget",
+    "delete_team",
+  ];
+
+  it("are destructive and reach past webhooks.cc", () => {
+    for (const name of BILLING) {
+      expect(toolAnnotations(name), name).toMatchObject({
+        readOnlyHint: false,
+        destructiveHint: true,
+        openWorldHint: true,
+      });
+    }
+    expect(toolAnnotations("set_agent_budget").idempotentHint).toBe(true);
+  });
+
+  it("include every tool that asks for a billing approval", () => {
+    const described: string[] = [];
+    const server: ToolServer = {
+      tool(name, description) {
+        if (description.includes(BILLING_APPROVAL)) described.push(name);
+        return { remove() {} };
+      },
+    };
+    registerTools(server, {} as WebhooksCC);
+    expect(described.length).toBeGreaterThan(0);
+    for (const name of described) expect(BILLING, name).toContain(name);
   });
 });
 

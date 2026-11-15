@@ -17,7 +17,7 @@ import { publicEnv, serverEnv } from "@/lib/env";
 import { mailhooksOrigin, webhooksOrigin } from "@/lib/site";
 import { sendOptions } from "@/lib/forwarding/config";
 import { sendForward } from "@/lib/forwarding/send";
-import { APP_VERSION } from "@/lib/changelog";
+import { APP_VERSION, MCP_VERSION } from "@/lib/changelog";
 
 /**
  * The remote MCP server at /mcp: the tools of @webhooks-cc/mcp, served
@@ -33,8 +33,8 @@ import { APP_VERSION } from "@/lib/changelog";
  * they would run from this server's network.
  */
 
-const INSTRUCTIONS =
-  "webhooks.cc captures webhooks and inbound email for testing. Start with create_endpoint, send to its URL (or point a provider at it), then wait_for_request and get_request to inspect what arrived. send_webhook sends a signed test webhook to an endpoint; verify_signature checks a captured request. Hosted servers cannot reach the user's machine: to forward to localhost, the user runs `whk tunnel` or the local MCP server (npx -y @webhooks-cc/mcp).";
+export const INSTRUCTIONS =
+  "webhooks.cc captures webhooks and inbound email for testing. Start with create_endpoint, send to its URL (or point a provider at it), then wait_for_request and get_request to inspect what arrived. send_webhook sends a signed test webhook to an endpoint; verify_signature checks a captured request. Hosted servers cannot reach the user's machine: to forward to localhost, the user runs `whk tunnel` or the local MCP server (npx -y @webhooks-cc/mcp). Clients that take long tool lists get every tool; others get the core. For the rest, add ?tools=all to the server's address, or name groups beside core: forwarding, layouts, extras (bulk changes, counts, schemas), teams, account (billing, keys, agents, share links), domains, sheets (Google Sheets) and names (preview names), as in ?tools=core,teams.";
 
 /** Where the API is reached from inside this process. */
 export function internalApiUrl(): string {
@@ -214,7 +214,9 @@ export async function registrationClientName(id: string | null): Promise<string 
 /** A fresh server for one request: the caller's tools, the skill and the request inspector. */
 export function buildServer(caller: CallerAuth | undefined): McpServer {
   const server = new McpServer(
-    { name: "webhooks-cc", title: "webhooks.cc", version: APP_VERSION },
+    // The tools are @webhooks-cc/mcp's, so the server reports its version;
+    // the web app's own version rides in the SDK's User-Agent below.
+    { name: "webhooks-cc", title: "webhooks.cc", version: MCP_VERSION },
     {
       // The tool list never changes within a request: no listChanged, so a
       // subscriptions/listen stream completes at once instead of holding a slot.
