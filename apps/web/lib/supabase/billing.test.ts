@@ -1613,6 +1613,43 @@ describe("a revoked plan hands over to a plan the customer still has live", () =
     }
   });
 
+  test("an adoption whose confirming read fails is reported, not thrown", async () => {
+    mockFns.createAdminClient.mockReturnValue(
+      createFakeAdmin({
+        "users:select": [
+          { data: { id: "user_1" } },
+          { data: { polar_subscription_id: null } },
+          storedUser({ polar_subscription_id: null, plan: "free", period_start: null }),
+          // The read after the write fails.
+          { data: null, error: { message: "connection reset" } },
+        ],
+        "polar_refunds:select": [{ data: [] }, { data: [] }],
+      })
+    );
+    polarList.mockResolvedValue({
+      items: [
+        subscriptionEvent({
+          id: "sub_adopted",
+          product_id: "prod_pro",
+          started_at: "2026-06-01T10:00:00Z",
+        }),
+      ],
+    });
+
+    // A throw would bring a redelivery that finds the row set and never audits.
+    await applyPolarWebhookEvent("subscription.revoked", revoked);
+
+    expect(userUpdates().at(-1)).toMatchObject({ polar_subscription_id: "sub_adopted" });
+    expect(mockFns.reportError).toHaveBeenCalledWith(
+      "[billing] could not confirm a plan adoption after the held subscription was revoked",
+      expect.anything(),
+      expect.objectContaining({ userId: "user_1", candidateSubscriptionId: "sub_adopted" })
+    );
+    expect(mockFns.auditSystemEvent).not.toHaveBeenCalledWith(
+      expect.objectContaining({ action: "billing.plan_adopted" })
+    );
+  });
+
   test("a live plan whose refund a person dismissed is adopted", async () => {
     mockFns.createAdminClient.mockReturnValue(
       createFakeAdmin({
