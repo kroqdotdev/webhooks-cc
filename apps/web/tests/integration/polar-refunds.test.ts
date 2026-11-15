@@ -415,6 +415,19 @@ describe("webhooks that record a refund", () => {
       .eq("id", userId)
       .single();
     expect(still).toEqual({ polar_subscription_id: null, plan: "free" });
+    // Audited once for both events, with ids only.
+    const { data: reports } = await admin
+      .from("audit_events")
+      .select("target_id, metadata")
+      .eq("action", "billing.duplicate_plan_reported")
+      .eq("target_user_id", userId)
+      .eq("metadata->>reason", "refund_recorded");
+    expect(reports).toEqual([
+      {
+        target_id: second.id,
+        metadata: { stored_subscription_id: null, reason: "refund_recorded" },
+      },
+    ]);
   });
 
   it("a live plan whose refund a person dismissed is adopted when the account's plan ends", async () => {

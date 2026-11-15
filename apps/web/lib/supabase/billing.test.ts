@@ -1438,10 +1438,13 @@ describe("a revoked plan hands over to a plan the customer still has live", () =
     for (const event of ["subscription.updated", "subscription.created"] as const) {
       recorded = [];
       mockFns.reportError.mockClear();
+      mockFns.auditSystemEvent.mockClear();
       mockFns.createAdminClient.mockReturnValue(
         createFakeAdmin({
           "users:select": [storedUser({ polar_subscription_id: null, plan: "free" })],
           "polar_refunds:select": [{ data: [{ target: "subscription:sub_newest" }] }],
+          // The audit log holds no report of it yet.
+          "audit_events:select": [{ data: [] }],
         })
       );
 
@@ -1458,12 +1461,75 @@ describe("a revoked plan hands over to a plan the customer still has live", () =
       expect(polarRevoke).not.toHaveBeenCalled();
       expect(mockFns.recordRefund).not.toHaveBeenCalled();
       expect(mockFns.reportError).toHaveBeenCalledTimes(1);
+      // The report says how a person keeps it.
+      expect(mockFns.reportError.mock.calls[0][0]).toContain("dismiss its held refund");
       expect(mockFns.reportError.mock.calls[0][2]).toEqual({
         userId: "user_1",
         storedSubscriptionId: null,
         eventSubscriptionId: "sub_newest",
+        reason: "refund_recorded",
+      });
+      // Audited with ids only, looked up by subscription and reason first.
+      const auditRead = recorded.find(
+        (call) => call.table === "audit_events" && call.op === "select"
+      );
+      expect(auditRead?.filters).toContainEqual(["eq", "target_id", "sub_newest"]);
+      expect(auditRead?.filters).toContainEqual(["eq", "metadata->>reason", "refund_recorded"]);
+      expect(mockFns.auditSystemEvent).toHaveBeenCalledTimes(1);
+      expect(mockFns.auditSystemEvent).toHaveBeenCalledWith({
+        action: "billing.duplicate_plan_reported",
+        outcome: "refused",
+        userId: "user_1",
+        targetId: "sub_newest",
+        metadata: { stored_subscription_id: null, reason: "refund_recorded" },
       });
     }
+  });
+
+  test("a refunded plan's later event already audited is reported without a second audit row", async () => {
+    mockFns.createAdminClient.mockReturnValue(
+      createFakeAdmin({
+        "users:select": [storedUser({ polar_subscription_id: null, plan: "free" })],
+        "polar_refunds:select": [{ data: [{ target: "subscription:sub_newest" }] }],
+        "audit_events:select": [{ data: [{ id: "audit_1" }] }],
+      })
+    );
+
+    await applyPolarWebhookEvent(
+      "subscription.updated",
+      subscriptionEvent({ id: "sub_newest", product_id: "prod_pro" })
+    );
+
+    expect(userUpdates()).toHaveLength(0);
+    expect(mockFns.reportError).toHaveBeenCalledTimes(1);
+    expect(mockFns.auditSystemEvent).not.toHaveBeenCalled();
+  });
+
+  test("the held subscription's own renewal is written without a refund check", async () => {
+    mockFns.createAdminClient.mockReturnValue(
+      createFakeAdmin({
+        "users:select": [storedUser({ polar_subscription_id: "sub_1" })],
+        // Would refuse it, were it read: the guard is for new subscriptions only.
+        "polar_refunds:select": [{ data: [{ target: "subscription:sub_1" }] }],
+      })
+    );
+
+    await applyPolarWebhookEvent(
+      "subscription.updated",
+      subscriptionEvent({ id: "sub_1", product_id: "prod_pro" })
+    );
+
+    expect(
+      recorded.filter((call) => call.table === "polar_refunds" && call.op === "select")
+    ).toHaveLength(0);
+    expect(userUpdates()).toHaveLength(1);
+    expect(userUpdates()[0]).toMatchObject({
+      polar_subscription_id: "sub_1",
+      plan: "pro",
+      requests_used: 0,
+      period_start: "2026-08-01T00:00:00.000Z",
+    });
+    expect(mockFns.reportError).not.toHaveBeenCalled();
   });
 
   test("a new plan subscription with no refund recorded is applied after the refund check", async () => {

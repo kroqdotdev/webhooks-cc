@@ -932,17 +932,33 @@ async function applyPlanSubscription(
     // and never becomes the account's on a later event of its own (a
     // renewal, the redelivery of the event whose revoke failed): a person
     // settles it, as adoptLivePlanSubscription() leaves it. One whose
-    // refund a person dismissed was kept on purpose, and is applied.
+    // refund a person dismissed was kept on purpose, and is applied: to
+    // keep such a subscription, a person dismisses the held refund and then
+    // redelivers any event of that subscription from Polar's dashboard
+    // (every event re-reads Polar's current state), which applies it.
     if (subscriptionId !== null && (await subscriptionsWithRefunds([subscriptionId])).size > 0) {
+      const reason = "refund_recorded";
       reportError(
-        "[billing] a live plan subscription recorded for a refund was not applied",
+        "[billing] a live plan subscription recorded for a refund was not applied; to keep it, dismiss its held refund, then redeliver any of its events from Polar's dashboard",
         undefined,
         {
           userId,
           storedSubscriptionId: stored.polar_subscription_id,
           eventSubscriptionId: subscriptionId,
+          reason,
         }
       );
+      // In the audit log too, once per subscription and reason, so the case
+      // outlives a dropped StatOSS event. Ids and our own code only.
+      if (!(await duplicatePlanReported(userId, subscriptionId, reason))) {
+        await auditSystemEvent({
+          action: "billing.duplicate_plan_reported",
+          outcome: "refused",
+          userId,
+          targetId: subscriptionId,
+          metadata: { stored_subscription_id: stored.polar_subscription_id, reason },
+        });
+      }
       return true;
     }
   }
