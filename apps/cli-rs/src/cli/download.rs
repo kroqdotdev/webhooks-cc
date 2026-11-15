@@ -340,6 +340,17 @@ fn write_in_place(
             "the file changed while it was opened",
         ));
     }
+    // A file with other names (hard links) in a directory someone else owns
+    // may be a planted link to one of yours: write elsewhere instead.
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        if opened.nlink() > 1 {
+            return Err(std::io::Error::other(
+                "the file has other names (hard links), so it is not written in place; give -o a path in a directory you can write to",
+            ));
+        }
+    }
     file.set_len(0)?;
     file.write_all(bytes)?;
     file.sync_all()
@@ -707,8 +718,6 @@ mod tests {
         let target = dir.join("m.eml");
         std::fs::write(&target, b"the old, longer content").unwrap();
         std::fs::set_permissions(&target, std::fs::Permissions::from_mode(0o640)).unwrap();
-        let other = dir.join("other-name.eml");
-        std::fs::hard_link(&target, &other).unwrap();
         let victim =
             std::env::temp_dir().join(format!("whk-in-place-victim-{}", std::process::id()));
         std::fs::write(&victim, b"keep").unwrap();
@@ -723,17 +732,24 @@ mod tests {
         assert_eq!(wrote.unwrap(), Wrote::File);
         assert_eq!(std::fs::read(&target).unwrap(), b"new");
         let after = std::fs::metadata(&target).unwrap();
-        // The same file: inode, group, mode and the other link kept.
+        // The same file: inode, group and mode kept.
         assert_eq!((after.dev(), after.ino()), (before.dev(), before.ino()));
         assert_eq!(after.gid(), before.gid());
         assert_eq!(after.permissions().mode() & 0o7777, 0o640);
-        assert_eq!(after.nlink(), 2);
-        assert_eq!(std::fs::read(&other).unwrap(), b"new");
         // A link is never written through, and no new file appears.
         assert!(through_link.is_err());
         assert_eq!(std::fs::read(&victim).unwrap(), b"keep");
         assert!(missing.is_err());
-        assert_eq!(std::fs::read_dir(&dir).unwrap().count(), 3);
+        assert_eq!(std::fs::read_dir(&dir).unwrap().count(), 2);
+        // A file with another name (a hard link someone may have planted) is
+        // not written in place.
+        let other = dir.join("other-name.eml");
+        std::fs::hard_link(&target, &other).unwrap();
+        std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o500)).unwrap();
+        let linked = write_whole(target.to_str().unwrap(), b"newer");
+        std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700)).unwrap();
+        assert!(linked.is_err());
+        assert_eq!(std::fs::read(&target).unwrap(), b"new");
         std::fs::remove_dir_all(&dir).unwrap();
         std::fs::remove_file(&victim).unwrap();
     }

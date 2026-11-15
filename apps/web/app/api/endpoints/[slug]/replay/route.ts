@@ -29,7 +29,8 @@ export async function POST(request: Request, { params }: { params: Promise<{ slu
   const millis = (value: unknown) =>
     value === undefined || value === null
       ? null
-      : typeof value === "number" && Number.isFinite(value) && value >= 0
+      : // The largest time a Date holds; past it toISOString throws.
+        typeof value === "number" && Number.isFinite(value) && value >= 0 && value <= 8.64e15
         ? value
         : undefined;
   const since = millis(body.since);
