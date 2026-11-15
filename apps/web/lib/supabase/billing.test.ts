@@ -109,7 +109,7 @@ function createFakeAdmin(responses: Record<string, QueryResult[]>) {
         builder[method] = chain;
       }
 
-      for (const method of ["eq", "is"] as const) {
+      for (const method of ["eq", "is", "neq"] as const) {
         builder[method] = (field: string, value: unknown) => {
           filters.push([method, field, value]);
           return builder;
@@ -1429,6 +1429,41 @@ describe("a revoked plan hands over to a plan the customer still has live", () =
       endedSubscriptionId: "sub_held",
       subscriptionIds: ["sub_newest"],
     });
+  });
+
+  test("a live plan whose refund a person dismissed is adopted", async () => {
+    mockFns.createAdminClient.mockReturnValue(
+      createFakeAdmin({
+        "users:select": [
+          { data: { id: "user_1" } },
+          { data: { polar_subscription_id: null } },
+          storedUser({ polar_subscription_id: null, plan: "free", period_start: null }),
+        ],
+        // The database leaves the dismissed row out of the answer.
+        "polar_refunds:select": [{ data: [] }],
+      })
+    );
+    polarList.mockResolvedValue({
+      items: [
+        subscriptionEvent({
+          id: "sub_dismissed",
+          product_id: "prod_pro",
+          started_at: "2026-06-01T10:00:00Z",
+          current_period_start: "2026-06-01T10:00:00Z",
+          current_period_end: "2026-07-01T10:00:00Z",
+        }),
+      ],
+    });
+
+    await applyPolarWebhookEvent("subscription.revoked", revoked);
+
+    const refundRead = recorded.find(
+      (call) => call.table === "polar_refunds" && call.op === "select"
+    );
+    expect(refundRead?.filters).toContainEqual(["neq", "status", "dismissed"]);
+    const [, adopted] = userUpdates();
+    expect(adopted).toMatchObject({ plan: "pro", polar_subscription_id: "sub_dismissed" });
+    expect(mockFns.reportError).not.toHaveBeenCalled();
   });
 
   test("with only a refunded live plan left the account stays free", async () => {

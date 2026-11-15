@@ -39,6 +39,7 @@ vi.mock("@polar-sh/sdk/2026-10", async (importOriginal) => {
 
 import { POST as polarWebhookRoute } from "@/app/api/polar-webhook/route";
 import { applyCapacityWebhookEvent } from "@/lib/supabase/capacity-billing";
+import { claimLiveRechecks } from "@/lib/billing/refunds";
 
 if (!process.env.SUPABASE_URL) throw new Error("SUPABASE_URL env var required");
 const SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -286,6 +287,52 @@ describe("the refund queue", () => {
     expect(refused).toBe(false);
   });
 
+  it("leases held rows flagged subscription_live for the slow check, once, when due", async () => {
+    const flagged = {
+      reason: "duplicate_plan",
+      status: "held",
+      last_error: "subscription_live",
+      orders: [{ order_id: "o1", net: 2900 }],
+      planned_cents: 2900,
+      next_attempt_at: new Date(Date.now() - 60_000).toISOString(),
+    };
+    const due = await insertRow({ ...flagged, target: `subscription:recheck_due_${ts}` });
+    const later = await insertRow({
+      ...flagged,
+      target: `subscription:recheck_later_${ts}`,
+      next_attempt_at: new Date(Date.now() + 3_600_000).toISOString(),
+    });
+    const leased = await insertRow({
+      ...flagged,
+      target: `subscription:recheck_leased_${ts}`,
+      lease_until: new Date(Date.now() + 60_000).toISOString(),
+    });
+    const unflagged = await insertRow({
+      ...flagged,
+      target: `subscription:recheck_unflagged_${ts}`,
+      last_error: null,
+    });
+    const dismissed = await insertRow({
+      ...flagged,
+      target: `subscription:recheck_dismissed_${ts}`,
+      status: "dismissed",
+    });
+
+    // Other suites may leave rows of their own: only ours are checked.
+    const claimed = new Set((await claimLiveRechecks(100)).map((row) => row.id));
+    expect(claimed.has(String(due.id))).toBe(true);
+    for (const row of [later, leased, unflagged, dismissed]) {
+      expect(claimed.has(String(row.id))).toBe(false);
+    }
+    const after = await refundRow(String(due.target));
+    expect(Date.parse(String(after?.lease_until))).toBeGreaterThan(Date.now());
+    expect(after).toMatchObject({ status: "held", last_error: "subscription_live" });
+
+    // Leased: a second worker does not get it.
+    const again = new Set((await claimLiveRechecks(100)).map((row) => row.id));
+    expect(again.has(String(due.id))).toBe(false);
+  });
+
   it("keeps one row per target", async () => {
     await insertRow({ target: `order:unique_${ts}`, reason: "deleted_account", status: "held" });
     const { error } = await admin
@@ -353,6 +400,40 @@ describe("webhooks that record a refund", () => {
       .eq("action", "billing.plan_adopted")
       .eq("target_user_id", userId);
     expect(adoptions).toBe(0);
+  });
+
+  it("a live plan whose refund a person dismissed is adopted when the account's plan ends", async () => {
+    const userId = await createUser();
+    const first = subscription(`sub_kept_first_${ts}`, { metadata: { userId } }, "prod_pro_test");
+    polarMocks.get.mockResolvedValue(first);
+    await deliver("subscription.created", first);
+
+    // A second plan recorded for a refund that a person looked at and kept.
+    const second = {
+      ...subscription(`sub_kept_second_${ts}`, { metadata: { userId } }, "prod_pro_test"),
+      customer_id: first.customer_id,
+    };
+    await insertRow({
+      target: `subscription:${second.id}`,
+      reason: "duplicate_plan",
+      status: "dismissed",
+      user_id: userId,
+      finished_at: new Date().toISOString(),
+    });
+    polarMocks.get.mockImplementation(async (id: string) => (id === first.id ? first : second));
+    polarMocks.list.mockResolvedValueOnce({ items: [second] });
+    await deliver("subscription.revoked", {
+      ...first,
+      status: "canceled",
+      ended_at: new Date().toISOString(),
+    });
+
+    const { data: account } = await admin
+      .from("users")
+      .select("polar_subscription_id, plan")
+      .eq("id", userId)
+      .single();
+    expect(account).toEqual({ polar_subscription_id: second.id, plan: "pro" });
   });
 
   it("a second plan subscription that did not start beside the account's is left alone", async () => {

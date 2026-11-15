@@ -5,7 +5,7 @@ import { serverEnv } from "@/lib/env";
 import { reportError } from "@/lib/observability";
 import { createPolarClient, loggablePolarError, polarErrorCode } from "@/lib/polar";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { asRecord, isLiveSubscriptionState } from "@/lib/supabase/billing-shared";
+import { asNonEmptyString, asRecord } from "@/lib/supabase/billing-shared";
 import type { Database, Json, PolarRefundReason, PolarRefundStatus } from "@/lib/supabase/database";
 
 /**
@@ -25,13 +25,18 @@ import type { Database, Json, PolarRefundReason, PolarRefundStatus } from "@/lib
  * for a refund it already made for the row (the row id rides in the
  * refund's metadata), so a retry never pays twice.
  *
- * A subscription is refunded only once Polar has it ended. Every call site
- * records the refund and then revokes, so the revoke has normally landed by
- * the time the worker looks; one still live (the revoke failed, and the
- * webhook or the account deletion that asked gave up or will try again)
- * would go on charging after its money came back, so it waits a little for
- * the revoke and is then held for a person with `last_error`
- * `subscription_live`. Approving it checks Polar again.
+ * A subscription is refunded only once Polar has it ended (ended_at set,
+ * or canceled or incomplete_expired; any other status counts as live).
+ * Every call site records the refund and then revokes, so the revoke has
+ * normally landed by the time the worker looks; one still live (the revoke
+ * failed, and the webhook or the account deletion that asked gave up or
+ * will try again) would go on charging after its money came back, so it
+ * stays queued for the revoke for LIVE_SUBSCRIPTION_GRACE_MS, is then held
+ * for a person with `last_error` `subscription_live` and reported once, and
+ * is checked again on a slow cadence (claimLiveRechecks). Once Polar has it
+ * ended, a row that was only waiting for that goes back to the queue while
+ * automatic refunds are on, and any other loses the flag and waits for its
+ * person as before. Approving one still flagged checks Polar again.
  */
 
 type RefundRow = Database["public"]["Tables"]["polar_refunds"]["Row"];
@@ -71,11 +76,15 @@ const POLAR_COMMENT: Record<PolarRefundReason, string> = {
 export const REFUND_METADATA_KEY = "webhooks_cc_refund";
 
 /**
- * How long a row whose subscription Polar still has live waits for the
- * revoke its call site makes right after recording it, before a person is
- * asked.
+ * How long a row whose subscription Polar still has live stays queued for
+ * the revoke its call site makes right after recording it (or for the
+ * revoke the person who approved it made), before a person is asked. The
+ * backoff is cut short at its end, so the last check falls on it.
  */
 export const LIVE_SUBSCRIPTION_GRACE_MS = 15 * 60_000;
+
+/** The longest wait between checks of a row held because its subscription was live. */
+export const LIVE_RECHECK_MAX_MS = 60 * 60_000;
 
 /** A subscription's orders older than this before the row was recorded need a person. */
 export const SUBSCRIPTION_WINDOW_MS = 2 * 86_400_000;
@@ -167,6 +176,22 @@ function backoffMs(attempts: number): number {
   return Math.min(2 ** Math.max(attempts, 1) * 60_000, 6 * 3_600_000);
 }
 
+/** When a row held because its subscription was live is checked again. */
+function liveRecheckAt(attempts: number): string {
+  return new Date(Date.now() + Math.min(backoffMs(attempts), LIVE_RECHECK_MAX_MS)).toISOString();
+}
+
+/**
+ * Whether Polar has the subscription positively ended. Paused, unpaid and
+ * any status we do not know count as live: refunding one that goes on
+ * charging is the mistake that cannot be taken back.
+ */
+export function hasSubscriptionEnded(subscription: Record<string, unknown> | null): boolean {
+  if (subscription === null) return false;
+  if (asNonEmptyString(subscription.ended_at) !== null) return true;
+  return subscription.status === "canceled" || subscription.status === "incomplete_expired";
+}
+
 async function targetOrders(polar: Polar, target: RefundTarget): Promise<PolarOrder[]> {
   if ("order" in target) return [await polar.orders.get(target.order)];
   const page = await polar.orders.list({ subscription_id: target.subscription, limit: 100 });
@@ -211,8 +236,7 @@ async function hold(
   row: RefundRow,
   holdReason: "manual" | "over_cap" | "old_orders",
   lines: RefundOrderLine[],
-  plannedCents: number,
-  code: string | null = null
+  plannedCents: number
 ): Promise<void> {
   await updateRow(row, {
     status: "held",
@@ -220,19 +244,102 @@ async function hold(
     approved_at: null,
     orders: lines as unknown as Json,
     planned_cents: plannedCents,
-    ...(code ? { last_error: code } : {}),
+    // A wait noted on the way (a subscription live for a while) is over.
+    last_error: null,
   });
   reportError("[refunds] refund held for review", undefined, {
     refundId: row.id,
     reason: row.reason,
     holdReason,
     plannedCents,
-    ...(code ? { code } : {}),
   });
 }
 
 /** Why a held row needs a person beyond its hold reason, for the review. */
-const SUBSCRIPTION_LIVE = "subscription_live";
+export const SUBSCRIPTION_LIVE = "subscription_live";
+
+/**
+ * Holds a row whose subscription Polar still has live once its wait is over,
+ * reported once. Its hold reason stays as it was (none for a row automatic
+ * refunds queued), so a later check that finds it ended knows whether it was
+ * only waiting for that.
+ */
+async function holdLive(row: RefundRow, lines: RefundOrderLine[], plannedCents: number) {
+  await updateRow(row, {
+    status: "held",
+    approved_at: null,
+    orders: lines as unknown as Json,
+    planned_cents: plannedCents,
+    last_error: SUBSCRIPTION_LIVE,
+    next_attempt_at: liveRecheckAt(row.attempts),
+  });
+  reportError("[refunds] refund held for review", undefined, {
+    refundId: row.id,
+    reason: row.reason,
+    holdReason: row.hold_reason ?? "none",
+    plannedCents,
+    code: SUBSCRIPTION_LIVE,
+  });
+}
+
+/**
+ * Checks a row held because its subscription was live again (claimed by
+ * claimLiveRechecks, the flag still set). Still live: the orders are read
+ * afresh for the review and the next check is set, with nothing reported
+ * again. Ended: a row automatic refunds queued goes back to the queue while
+ * they are on; any other loses the flag and waits for its person.
+ */
+async function recheckLiveHold(
+  row: RefundRow,
+  live: boolean,
+  lines: RefundOrderLine[],
+  plannedCents: number,
+  awaitingPayment: boolean
+): Promise<RefundOutcome> {
+  if (live || (lines.length === 0 && awaitingPayment)) {
+    await updateRow(row, {
+      ...(lines.length > 0
+        ? { orders: lines as unknown as Json, planned_cents: plannedCents }
+        : {}),
+      attempts: row.attempts + 1,
+      next_attempt_at: liveRecheckAt(row.attempts + 1),
+    });
+    return "waiting";
+  }
+  if (lines.length === 0) {
+    await updateRow(row, {
+      status: "nothing",
+      orders: [] as unknown as Json,
+      planned_cents: 0,
+      last_error: null,
+      finished_at: new Date().toISOString(),
+    });
+    console.info(`[refunds] nothing to refund for ${row.reason}`);
+    return "nothing";
+  }
+  if (refundSettings().auto && row.hold_reason === null) {
+    // Written only while still held, so a dismissal meanwhile stands; the
+    // queue checks Polar, the cap and the window again before refunding.
+    await updateRow(row, {
+      status: "pending",
+      orders: null,
+      planned_cents: null,
+      last_error: null,
+      attempts: 0,
+      next_attempt_at: new Date().toISOString(),
+    });
+    console.info(`[refunds] subscription ended, ${row.reason} queued again`);
+    return "queued";
+  }
+  await updateRow(row, {
+    hold_reason: row.hold_reason ?? "manual",
+    orders: lines as unknown as Json,
+    planned_cents: plannedCents,
+    last_error: null,
+  });
+  console.info(`[refunds] subscription ended, ${row.reason} waits for review`);
+  return "prepared";
+}
 
 async function fail(
   row: RefundRow,
@@ -279,7 +386,7 @@ async function retryLater(
 }
 
 export type RefundOutcome =
-  "prepared" | "held" | "refunded" | "nothing" | "waiting" | "failed" | "retry";
+  "prepared" | "held" | "refunded" | "nothing" | "waiting" | "queued" | "failed" | "retry";
 
 /**
  * Works one claimed row. A held row is prepared for the review (which orders,
@@ -305,7 +412,7 @@ export async function processRefund(row: RefundRow): Promise<RefundOutcome> {
   let subscriptionLive = false;
   if ("subscription" in target) {
     try {
-      subscriptionLive = isLiveSubscriptionState(
+      subscriptionLive = !hasSubscriptionEnded(
         asRecord(await polar.subscriptions.get(target.subscription))
       );
     } catch (error) {
@@ -331,6 +438,16 @@ export async function processRefund(row: RefundRow): Promise<RefundOutcome> {
   const lines = refundable.map(orderLine);
   const plannedCents = lines.reduce((sum, line) => sum + line.net, 0);
 
+  if (row.status === "held" && row.last_error === SUBSCRIPTION_LIVE && Array.isArray(row.orders)) {
+    return recheckLiveHold(
+      row,
+      subscriptionLive,
+      lines,
+      plannedCents,
+      orders.some(isAwaitingPayment)
+    );
+  }
+
   if (refundable.length === 0 && orders.some(isAwaitingPayment)) {
     return retryLater(row, "not_paid_yet", "waiting");
   }
@@ -343,11 +460,20 @@ export async function processRefund(row: RefundRow): Promise<RefundOutcome> {
   }
 
   if (subscriptionLive && lines.length > 0 && (row.status !== "held" || row.approved_at)) {
-    // Its call site revokes right after recording it: give that a moment.
-    if (Date.now() - Date.parse(row.created_at) < LIVE_SUBSCRIPTION_GRACE_MS) {
-      return retryLater(row, SUBSCRIPTION_LIVE, "waiting");
+    // Its call site revokes right after recording it (a person approving it
+    // was told to revoke it first): it stays queued with the usual backoff,
+    // the last wait cut short so the final check falls when the grace ends.
+    const graceEnd = Date.parse(row.approved_at ?? row.created_at) + LIVE_SUBSCRIPTION_GRACE_MS;
+    if (Date.now() < graceEnd && row.attempts < MAX_ATTEMPTS) {
+      await updateRow(row, {
+        last_error: SUBSCRIPTION_LIVE,
+        next_attempt_at: new Date(
+          Math.min(Date.now() + backoffMs(row.attempts), graceEnd)
+        ).toISOString(),
+      });
+      return "waiting";
     }
-    await hold(row, "manual", lines, plannedCents, SUBSCRIPTION_LIVE);
+    await holdLive(row, lines, plannedCents);
     return "held";
   }
 
@@ -365,8 +491,11 @@ export async function processRefund(row: RefundRow): Promise<RefundOutcome> {
     await updateRow(row, {
       orders: lines as unknown as Json,
       planned_cents: plannedCents,
-      // Approving checks Polar again; until then the review sees it.
-      last_error: subscriptionLive ? SUBSCRIPTION_LIVE : null,
+      // The review sees it, and a slow check clears it once Polar has the
+      // subscription ended; approving checks Polar again.
+      ...(subscriptionLive
+        ? { last_error: SUBSCRIPTION_LIVE, next_attempt_at: liveRecheckAt(row.attempts) }
+        : { last_error: null }),
     });
     reportError("[refunds] refund held for review", undefined, {
       refundId: row.id,
@@ -503,6 +632,45 @@ export async function processRefund(row: RefundRow): Promise<RefundOutcome> {
   return status;
 }
 
+/**
+ * Leases held rows flagged `subscription_live` whose next check is due, for
+ * the slow re-check: claim_polar_refunds takes only pending and unprepared
+ * held rows. The lease is written only while the row is still held, flagged
+ * and free, so two workers never take the same row and a decision made
+ * between the read and the lease stands.
+ */
+export async function claimLiveRechecks(limit: number = BATCH_SIZE): Promise<RefundRow[]> {
+  const admin = createAdminClient();
+  const now = new Date().toISOString();
+  const free = `lease_until.is.null,lease_until.lt."${now}"`;
+  const { data: due, error } = await admin
+    .from("polar_refunds")
+    .select("id")
+    .eq("status", "held")
+    .eq("last_error", SUBSCRIPTION_LIVE)
+    .not("orders", "is", null)
+    .lte("next_attempt_at", now)
+    .or(free)
+    .order("next_attempt_at", { ascending: true })
+    .limit(limit);
+  if (error) throw error;
+  const ids = ((due ?? []) as Array<{ id: string }>).map((row) => row.id);
+  if (ids.length === 0) return [];
+  const { data, error: leaseError } = await admin
+    .from("polar_refunds")
+    .update({
+      lease_until: new Date(Date.now() + LEASE_SECONDS * 1000).toISOString(),
+      updated_at: now,
+    })
+    .in("id", ids)
+    .eq("status", "held")
+    .eq("last_error", SUBSCRIPTION_LIVE)
+    .or(free)
+    .select("*");
+  if (leaseError) throw leaseError;
+  return (data ?? []) as RefundRow[];
+}
+
 /** Claims due rows and works them; one failure never holds up the rest. */
 export async function runRefunds(): Promise<Partial<Record<RefundOutcome, number>>> {
   const { data, error } = await createAdminClient().rpc("claim_polar_refunds", {
@@ -510,9 +678,16 @@ export async function runRefunds(): Promise<Partial<Record<RefundOutcome, number
     p_lease_seconds: LEASE_SECONDS,
   });
   if (error) throw new Error(`claim_polar_refunds failed: ${error.message}`);
+  // A failed slow check must not strand the rows just leased above.
+  let rechecks: RefundRow[] = [];
+  try {
+    rechecks = await claimLiveRechecks();
+  } catch (recheckError) {
+    reportError("[refunds] live subscription recheck claim failed", recheckError);
+  }
 
   const counts: Partial<Record<RefundOutcome, number>> = {};
-  for (const row of data ?? []) {
+  for (const row of [...(data ?? []), ...rechecks]) {
     try {
       const outcome = await processRefund(row);
       counts[outcome] = (counts[outcome] ?? 0) + 1;

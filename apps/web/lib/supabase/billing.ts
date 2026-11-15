@@ -572,7 +572,10 @@ export async function livePlanSubscriptions(
     .sort((a, b) => (subscriptionStartMs(b) ?? 0) - (subscriptionStartMs(a) ?? 0));
 }
 
-/** Which of these subscriptions already have a refund recorded (polar_refunds). */
+/**
+ * Which of these subscriptions already have a refund recorded (polar_refunds)
+ * that a person has not dismissed: a dismissed one was judged to be kept.
+ */
 async function subscriptionsWithRefunds(ids: string[]): Promise<Set<string>> {
   const { data, error } = await createAdminClient()
     .from("polar_refunds")
@@ -580,7 +583,8 @@ async function subscriptionsWithRefunds(ids: string[]): Promise<Set<string>> {
     .in(
       "target",
       ids.map((id) => refundTargetKey({ subscription: id }))
-    );
+    )
+    .neq("status", "dismissed");
   if (error) throw error;
   const prefix = refundTargetKey({ subscription: "" });
   return new Set(
@@ -616,7 +620,8 @@ async function adoptLivePlanSubscription(
   const live = await livePlanSubscriptions(customerId, endedId);
   if (live.length === 0) return;
   // One already recorded for a refund (a second plan whose revoke failed,
-  // say) is on its way out and is never adopted: a person settles it.
+  // say) is on its way out and is never adopted: a person settles it. One
+  // whose refund a person dismissed was kept on purpose, and is adopted.
   const refunded = await subscriptionsWithRefunds(
     live.map((subscription) => String(subscription.id))
   );
