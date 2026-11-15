@@ -2150,8 +2150,8 @@ export const CHANGELOG: ChangelogEntry[] = [
     title: "Ctrl-C During Setup And Downloads To Stdout On macOS",
     track: "cli",
     items: [
-      "A Ctrl-C at a program `whk setup agent` shows (Codex's sign-in) no longer ends whk once that program has exited: a Ctrl-C still on its way to whk is discarded before its usual action comes back, without waiting for it",
-      "On Windows, when Ctrl-C ended that program, whk waits a moment before removing its own Ctrl-C handler, so the handler answers the event first and whk goes on to record what the program added",
+      "On macOS and Windows, a Ctrl-C at a program `whk setup agent` shows (Codex's sign-in) no longer ends whk once that program has exited (Linux already took the pending Ctrl-C in 1.20.0): on macOS a Ctrl-C still on its way to whk is discarded before its usual action comes back, without waiting for it",
+      "On Windows, when that program did not exit successfully (Ctrl-C ended it, or it handled Ctrl-C itself and exited with a code of its own), whk waits a moment before removing its own Ctrl-C handler, so the handler answers the event first and whk goes on to record what the program added",
       "On macOS, `whk requests download -o /dev/stdout` (or `/dev/fd/1`) is held to the rules for stdout when stdout is a pipe, as it already was on Linux: refused under `--json`, so the bytes never mix with the JSON",
       "`whk --help` wraps the exit status 8 lines evenly",
     ],

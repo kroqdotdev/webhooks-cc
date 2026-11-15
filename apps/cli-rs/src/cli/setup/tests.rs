@@ -1841,6 +1841,112 @@ fn ctrl_c_during_a_shown_program_ends_the_program_and_not_whk() {
     assert_eq!(after, ours, "the run did not restore the action it found");
 }
 
+/// Set for the copy of this test binary that
+/// `a_ctrl_c_still_pending_when_a_shown_program_ends_does_not_end_whk` runs.
+#[cfg(unix)]
+const PENDING_CTRL_C_CHILD: &str = "WHK_TEST_PENDING_CTRL_C_CHILD";
+
+#[cfg(unix)]
+#[test]
+fn a_ctrl_c_still_pending_when_a_shown_program_ends_does_not_end_whk() {
+    // The case runs in a copy of this test binary with SIGINT at the
+    // default action, as whk has it: if the run let the program's SIGINT
+    // through to that default, the copy is ended by it, which the test
+    // binary itself must never be.
+    //
+    // A SIGINT not yet delivered when the program ends is the case
+    // discard_pending_interrupt() is for (macOS often delivers it late).
+    // The copy starts with SIGINT blocked, so every one of its threads
+    // (the harness's and the test's) inherits the mask and the program's
+    // SIGINT stays pending through the run whatever the platform's timing.
+    use std::os::unix::process::CommandExt;
+    let exe = std::env::current_exe().unwrap();
+    let mut command = std::process::Command::new(exe);
+    command
+        .args(["--exact", "cli::setup::tests::pending_ctrl_c_child"])
+        .env(PENDING_CTRL_C_CHILD, "1")
+        .stdin(std::process::Stdio::null());
+    // SAFETY: runs in the forked child before exec, after std has emptied
+    // its signal mask; sigprocmask is async-signal-safe.
+    unsafe {
+        command.pre_exec(|| {
+            let mut only_sigint: libc::sigset_t = std::mem::zeroed();
+            libc::sigemptyset(&mut only_sigint);
+            libc::sigaddset(&mut only_sigint, libc::SIGINT);
+            if libc::sigprocmask(libc::SIG_BLOCK, &only_sigint, std::ptr::null_mut()) != 0 {
+                return Err(io::Error::last_os_error());
+            }
+            Ok(())
+        });
+    }
+    let output = command.output().unwrap();
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    {
+        use std::os::unix::process::ExitStatusExt;
+        assert_eq!(
+            output.status.signal(),
+            None,
+            "the SIGINT left pending ended whk\nstdout:\n{stdout}\nstderr:\n{stderr}"
+        );
+    }
+    assert!(
+        output.status.success(),
+        "stdout:\n{stdout}\nstderr:\n{stderr}"
+    );
+    // The filter matched the case, so it did run.
+    assert!(
+        stdout.contains("1 passed"),
+        "stdout:\n{stdout}\nstderr:\n{stderr}"
+    );
+}
+
+/// The case behind the test above. It does nothing unless that test runs
+/// it: it leaves SIGINT at the default action, and a run that let the
+/// program's SIGINT through would end the test binary.
+#[cfg(unix)]
+#[test]
+fn pending_ctrl_c_child() {
+    if std::env::var_os(PENDING_CTRL_C_CHILD).is_none() {
+        return;
+    }
+    let _signals = crate::test_support::signal_test_lock();
+    // SAFETY: reads the current action and this thread's mask into zeroed
+    // structs, then builds a set holding SIGINT alone.
+    let (before, blocked, only_sigint) = unsafe {
+        let mut now: libc::sigaction = std::mem::zeroed();
+        libc::sigaction(libc::SIGINT, std::ptr::null(), &mut now);
+        let mut mask: libc::sigset_t = std::mem::zeroed();
+        libc::pthread_sigmask(libc::SIG_BLOCK, std::ptr::null(), &mut mask);
+        let mut only_sigint: libc::sigset_t = std::mem::zeroed();
+        libc::sigemptyset(&mut only_sigint);
+        libc::sigaddset(&mut only_sigint, libc::SIGINT);
+        (
+            now.sa_sigaction,
+            libc::sigismember(&mask, libc::SIGINT) == 1,
+            only_sigint,
+        )
+    };
+    assert_eq!(before, libc::SIG_DFL);
+    assert!(blocked, "started without SIGINT blocked");
+
+    let mut runner = ProcessRunner { json: true };
+    let output = runner
+        .run(
+            Path::new("/bin/sh"),
+            &["-c".to_string(), "kill -INT $PPID; exit 0".to_string()],
+            true,
+        )
+        .unwrap();
+    // Unblocked, a SIGINT still pending now meets the default action and
+    // ends this process before the next line.
+    // SAFETY: changes this thread's mask only.
+    unsafe {
+        libc::pthread_sigmask(libc::SIG_UNBLOCK, &only_sigint, std::ptr::null_mut());
+    }
+    assert!(output.success);
+}
+
 #[test]
 fn a_run_ended_during_the_codex_sign_in_keeps_its_records() {
     let mut h = home("ended-in-sign-in");

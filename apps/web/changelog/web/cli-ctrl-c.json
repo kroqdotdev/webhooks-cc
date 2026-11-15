@@ -1,0 +1,6 @@
+{
+  "title": "whk 1.20.1 in the changelog",
+  "items": [
+    "The changelog lists whk 1.20.1: on macOS and Windows, a Ctrl-C at a program `whk setup agent` shows no longer ends whk afterwards, as it already did not on Linux"
+  ]
+}

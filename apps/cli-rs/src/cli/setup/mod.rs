@@ -563,18 +563,17 @@ fn discard_pending_interrupt() {
     }
 }
 
-/// What Windows reports as the exit code of a program that Ctrl-C ended.
-#[cfg(windows)]
-const STATUS_CONTROL_C_EXIT: u32 = 0xC000_013A;
-
 impl IgnoreInterrupt {
     /// Notes how the program ended. On Windows each Ctrl-C handler runs on
-    /// a thread of its own, so when Ctrl-C ended the program, whk's handler
-    /// may not have run yet: a short wait lets it answer the event before
-    /// the handler is removed, or the default would end whk after all.
+    /// a thread of its own, so after a Ctrl-C whk's handler may not have run
+    /// yet: a short wait lets it answer the event before the handler is
+    /// removed, or the default would end whk after all. The wait follows
+    /// any program that did not succeed, not only one Ctrl-C ended
+    /// (`STATUS_CONTROL_C_EXIT`), because a program that handles Ctrl-C
+    /// itself exits with a code of its own.
     fn program_ended(&self, status: &std::process::ExitStatus) {
         #[cfg(windows)]
-        if self.added && status.code().map(|code| code as u32) == Some(STATUS_CONTROL_C_EXIT) {
+        if self.added && !status.success() {
             std::thread::sleep(std::time::Duration::from_millis(50));
         }
         #[cfg(not(windows))]
