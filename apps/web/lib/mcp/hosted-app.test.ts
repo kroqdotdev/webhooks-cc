@@ -22,7 +22,7 @@ vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: () => ({}) }));
 vi.mock("@/lib/forwarding/config", () => ({ sendOptions: () => ({}) }));
 vi.mock("@/lib/forwarding/send", () => ({ sendForward: vi.fn() }));
 
-const { buildServer } = await import("./hosted");
+const { buildServer, TARGET_URL_NOTE } = await import("./hosted");
 
 const open: Array<{ close(): Promise<void> }> = [];
 afterEach(async () => {
@@ -178,5 +178,27 @@ describe("the hosted server", () => {
       false
     );
     expect(result.isError, result.content[0]?.text).toBeFalsy();
+    // A client whose tools/list still offered targetUrl hears that nothing was posted.
+    expect(result.content.map((item) => item.text)).toContain(TARGET_URL_NOTE);
+    expect(TARGET_URL_NOTE).toContain("npx -y @webhooks-cc/mcp");
+  });
+
+  it("adds no note to a call without targetUrl", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        Response.json({
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: "{}",
+        })
+      )
+    );
+    const result = (await ask("tools/call", {
+      name: "render_email",
+      arguments: { requestId: "req_1", format: "postmark" },
+    })) as { isError?: boolean; content: Array<{ text: string }> };
+    expect(result.isError, result.content[0]?.text).toBeFalsy();
+    expect(result.content.map((item) => item.text)).not.toContain(TARGET_URL_NOTE);
   });
 });

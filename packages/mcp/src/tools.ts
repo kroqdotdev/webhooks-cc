@@ -553,7 +553,7 @@ export const createEndpointShape = {
     .string()
     .optional()
     .describe(
-      "Signing secret (encrypted server-side, never returned); for discord, the application's public key. Required when signingProvider is set."
+      "Signing secret (encrypted server-side, never returned); for discord, the application's public key (64 hex characters). Required when signingProvider is set."
     ),
   signingHeader: z
     .string()
@@ -1616,11 +1616,25 @@ export interface RegisterToolsOptions {
  */
 export const LOCAL_ONLY_TOOLS = new Set(["send_to", "replay_request", "share_port"]);
 /** Tools whose optional targetUrl posts somewhere of the caller's choosing. */
-const TARGET_URL_TOOLS = new Set(["render_email", "test_webhook_flow"]);
+export const TARGET_URL_TOOLS: ReadonlySet<string> = new Set(["render_email", "test_webhook_flow"]);
 /** Longest wait on the hosted server; Cloudflare ends a request after 100 seconds. */
 export const REMOTE_MAX_WAIT_MS = 50_000;
 /** Shortest poll interval on the hosted server: each poll is an API request. */
 export const REMOTE_MIN_POLL_MS = 1_000;
+
+/**
+ * Why a signing credential cannot be the provider's, for the providers whose
+ * credential has a fixed form; null when it may be. Checked before
+ * create_endpoint creates anything, so a mistyped key never leaves an
+ * endpoint behind that verifies nothing.
+ */
+export function signingCredentialProblem(provider: string, secret: string): string | null {
+  // Discord's application public key: an Ed25519 key of 32 bytes, in hex.
+  if (provider === "discord" && !/^[0-9a-fA-F]{64}$/.test(secret)) {
+    return "signingSecret for discord is the application's public key: 64 hex characters, from the Discord developer portal's General Information page.";
+  }
+  return null;
+}
 
 /** A duration argument in milliseconds, read as the SDK reads it; null when it is not one. */
 function durationMs(value: unknown): number | null {
@@ -1701,8 +1715,9 @@ function toolTarget(
       if (options.groups && !options.groups.has(entry.group)) return { remove() {} };
       if (options.readOnly && entry.readOnly !== true) return { remove() {} };
       // The hosted server cannot reach the caller's machine, so it never
-      // offers targetUrl; the adapter's z.object(shape) drops one sent anyway
-      // (hosted-app.test.ts checks that nothing is posted there).
+      // offers targetUrl; the adapter's z.object(shape) drops one sent anyway,
+      // and the hosted adapter adds a note that nothing was posted
+      // (hosted-app.test.ts checks both).
       if (remote && TARGET_URL_TOOLS.has(name)) {
         shape = Object.fromEntries(
           Object.entries(shape).filter(([key]) => key !== "targetUrl")
@@ -1909,6 +1924,8 @@ export function registerTools(
           if (signingProvider === "generic-hmac" && !signingHeader) {
             throw new Error("signingHeader is required for generic-hmac provider");
           }
+          const problem = signingCredentialProblem(signingProvider, signingSecret);
+          if (problem) throw new Error(problem);
         }
         if (signingSecret && !signingProvider) {
           throw new Error("signingProvider is required when signingSecret is set");
