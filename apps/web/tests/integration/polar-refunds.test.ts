@@ -400,6 +400,47 @@ describe("webhooks that record a refund", () => {
       .eq("action", "billing.plan_adopted")
       .eq("target_user_id", userId);
     expect(adoptions).toBe(0);
+
+    // Nor does it become the account's on its own next event, with no plan
+    // held to guard on: a renewal, or the redelivery of its first event.
+    await deliver("subscription.updated", {
+      ...second,
+      current_period_start: second.current_period_end,
+      current_period_end: new Date(Date.now() + 60 * 86_400_000).toISOString(),
+    });
+    await deliver("subscription.created", second);
+    const { data: still } = await admin
+      .from("users")
+      .select("polar_subscription_id, plan")
+      .eq("id", userId)
+      .single();
+    expect(still).toEqual({ polar_subscription_id: null, plan: "free" });
+    // Audited once for both events, with ids only.
+    const { data: reports } = await admin
+      .from("audit_events")
+      .select("target_id, metadata")
+      .eq("action", "billing.duplicate_plan_reported")
+      .eq("target_user_id", userId)
+      .eq("metadata->>reason", "refund_recorded");
+    expect(reports).toEqual([
+      {
+        target_id: second.id,
+        metadata: { stored_subscription_id: null, reason: "refund_recorded" },
+      },
+    ]);
+
+    // A person keeps it: dismissing the refund and redelivering its
+    // subscription.created applies it.
+    const held = await refundRow(`subscription:${second.id}`);
+    const { data: dismissed } = await admin.rpc("dismiss_polar_refund", { p_id: held!.id });
+    expect(dismissed).toBe(true);
+    await deliver("subscription.created", second);
+    const { data: kept } = await admin
+      .from("users")
+      .select("polar_subscription_id, plan")
+      .eq("id", userId)
+      .single();
+    expect(kept).toEqual({ polar_subscription_id: second.id, plan: "pro" });
   });
 
   it("a live plan whose refund a person dismissed is adopted when the account's plan ends", async () => {

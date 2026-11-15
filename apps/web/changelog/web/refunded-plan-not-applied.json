@@ -1,0 +1,6 @@
+{
+  "title": "A plan on its way to a refund stays out of the account",
+  "items": [
+    "A second plan subscription already recorded for a refund no longer becomes an account's plan when its own renewal or a redelivered event arrives after the plan the account held has ended; it is reported for a person instead, as adoption already did"
+  ]
+}

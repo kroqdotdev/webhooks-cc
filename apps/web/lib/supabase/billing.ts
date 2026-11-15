@@ -641,6 +641,45 @@ async function adoptLivePlanSubscription(
   if (!applied) {
     throw new Error("The account kept changing while a live plan was adopted; retry it");
   }
+  // True also when the write was refused (a refund recorded for it since
+  // the check above, which the guard in applyPlanSubscription() reports
+  // itself, or another subscription written meanwhile): adopted only when
+  // the row now holds it.
+  const { data: after, error: afterError } = await createAdminClient()
+    .from("users")
+    .select("polar_subscription_id")
+    .eq("id", userId)
+    .maybeSingle<{ polar_subscription_id: string | null }>();
+  if (afterError) {
+    // The write is done (or refused and reported by the guard); only this
+    // read failed. Throwing would bring a redelivery that finds the row
+    // already set and returns before auditing, so say so here instead.
+    reportError(
+      "[billing] could not confirm a plan adoption after the held subscription was revoked",
+      afterError,
+      {
+        userId,
+        endedSubscriptionId: endedId,
+        candidateSubscriptionId: newest.id,
+        // The other live plans are reported here, since the report below is
+        // never reached on this path.
+        otherSubscriptionIds: others.map((s) => s.id),
+      }
+    );
+    return;
+  }
+  if (after?.polar_subscription_id !== String(newest.id)) {
+    console.info(
+      "[billing] a live plan subscription was not adopted after the held one was revoked",
+      {
+        userId,
+        endedSubscriptionId: endedId,
+        candidateSubscriptionId: newest.id,
+        heldSubscriptionId: after?.polar_subscription_id ?? null,
+      }
+    );
+    return;
+  }
   console.info("[billing] adopted a live plan subscription after the held one was revoked", {
     userId,
     endedSubscriptionId: endedId,
@@ -925,6 +964,46 @@ async function applyPlanSubscription(
         asNonEmptyString(data.customer_id)
       );
       await revokeSubscriptionQuietly(subscriptionId);
+      return true;
+    }
+    // With no live plan held, one already recorded for a refund (a second
+    // plan whose revoke failed, which adoption skipped) is on its way out
+    // and never becomes the account's on a later event of its own (a
+    // renewal, the redelivery of the event whose revoke failed): a person
+    // settles it, as adoptLivePlanSubscription() leaves it. One whose
+    // refund a person dismissed was kept on purpose, and is applied: to
+    // keep such a subscription, a person dismisses the held refund and then
+    // redelivers its subscription.created or subscription.updated event
+    // from Polar's dashboard (or changes anything on the subscription in
+    // Polar, which sends subscription.updated); every event re-reads
+    // Polar's current state, so that applies it while the account holds no
+    // other live plan (beside one, it goes to the duplicate guard). Only
+    // those two events apply a subscription of their own here (adoption
+    // reaches it too, and skips refunded ones first). To end it instead, a
+    // person revokes it in Polar and approves the held refund.
+    if (subscriptionId !== null && (await subscriptionsWithRefunds([subscriptionId])).size > 0) {
+      const reason = "refund_recorded";
+      reportError(
+        "[billing] a live plan subscription recorded for a refund was not applied; to end it, revoke it in Polar and approve the held refund; to keep it, dismiss the held refund, then redeliver its subscription.created or subscription.updated event from Polar's dashboard (or change anything on the subscription in Polar, which sends subscription.updated), while the account holds no other live plan",
+        undefined,
+        {
+          userId,
+          storedSubscriptionId: stored.polar_subscription_id,
+          eventSubscriptionId: subscriptionId,
+          reason,
+        }
+      );
+      // In the audit log too, once per subscription and reason, so the case
+      // outlives a dropped StatOSS event. Ids and our own code only.
+      if (!(await duplicatePlanReported(userId, subscriptionId, reason))) {
+        await auditSystemEvent({
+          action: "billing.duplicate_plan_reported",
+          outcome: "refused",
+          userId,
+          targetId: subscriptionId,
+          metadata: { stored_subscription_id: stored.polar_subscription_id, reason },
+        });
+      }
       return true;
     }
   }
