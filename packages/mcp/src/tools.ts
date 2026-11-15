@@ -11,6 +11,7 @@ import {
   MAX_CONDITION_NAME_LEN,
   MAX_CONDITION_PATH_LEN,
   MAX_RULE_NAME_LEN,
+  AgentRegisterError,
   ApprovalDeniedError,
   ApprovalExpiredError,
   CheckoutExpiredError,
@@ -116,6 +117,16 @@ const durationOrTimestampSchema = z.union([z.string(), z.number()]);
 const CONDITION_FIELD_NAMES = Object.keys(CONDITION_FIELDS) as ConditionField[];
 const CONDITION_OP_NAMES = CONDITION_OPS;
 
+/**
+ * How conditions read, said once on each list of them rather than on every
+ * property of every condition: the schema repeats in six tools, and the
+ * list's size is what a client pays for each tool.
+ */
+const CONDITION_OPS_HELP =
+  "op: eq, neq, contains, not_contains, starts_with, ends_with, matches (glob: * one path segment, ** any, ? one character), regex (RE2, searched anywhere; (?i) ignores case), exists, not_exists (no value), gt, gte, lt, lte (numbers).";
+const RESPONSE_CONDITIONS_HELP = `Each condition reads a field and compares it with value. field: method, path, header and query (with name), body, body_path (with path, a dot path such as data.object.status, items.0.sku or a["odd.key"]), content_type, size. ${CONDITION_OPS_HELP}`;
+const FILTER_CONDITIONS_HELP = `Conditions as in response rules, plus field kind (http or email), email (name: subject, from, to, text or tag), spam_score, email_auth (name: spf, dkim or dmarc) and signature (value verified, failed or missing). ${CONDITION_OPS_HELP}`;
+
 function conditionSchema(use: "response" | "filter") {
   const fields =
     use === "response"
@@ -123,39 +134,22 @@ function conditionSchema(use: "response" | "filter") {
       : CONDITION_FIELD_NAMES;
   return z
     .object({
-      field: z
-        .enum(fields as [ConditionField, ...ConditionField[]])
-        .describe(
-          use === "response"
-            ? "What to read: method, path, header (name), query (name), body (text), body_path (path into a JSON or form body), content_type, size"
-            : "What to read: method, path, header (name), query (name), body, body_path (path), content_type, size, kind (http or email), email (name: subject, from, to, text or tag), spam_score, email_auth (name: spf, dkim or dmarc), signature (verified, failed or missing)"
-        ),
-      op: z
-        .enum(CONDITION_OP_NAMES)
-        .describe(
-          "eq, neq, contains, not_contains, starts_with, ends_with, matches (glob: * one path segment, ** any, ? one character), regex (RE2, searched anywhere; (?i) ignores case), exists, not_exists, gt, gte, lt, lte (numbers)"
-        ),
-      value: z
-        .string()
-        .max(MAX_CONDITION_VALUE_LEN)
-        .optional()
-        .describe(`What to compare with (not for exists and not_exists)`),
-      name: z
-        .string()
-        .max(MAX_CONDITION_NAME_LEN)
-        .optional()
-        .describe("Header or query parameter name; the email part; spf, dkim or dmarc"),
-      path: z
-        .string()
-        .max(MAX_CONDITION_PATH_LEN)
-        .optional()
-        .describe('Dot path for body_path, e.g. data.object.status or items.0.sku or a["odd.key"]'),
+      field: z.enum(fields as [ConditionField, ...ConditionField[]]),
+      op: z.enum(CONDITION_OP_NAMES),
+      value: z.string().max(MAX_CONDITION_VALUE_LEN).optional(),
+      name: z.string().max(MAX_CONDITION_NAME_LEN).optional(),
+      path: z.string().max(MAX_CONDITION_PATH_LEN).optional(),
     })
     .superRefine((condition, ctx) => {
       for (const issue of conditionIssues(condition, { use })) {
         ctx.addIssue({ code: "custom", message: issue });
       }
     });
+}
+
+/** A filter's or a layout's conditions: the filter conditions, with their help once. */
+function filterConditionsSchema() {
+  return z.array(conditionSchema("filter")).max(10).describe(FILTER_CONDITIONS_HELP);
 }
 
 const ruleConditionSchema = conditionSchema("response");
@@ -178,7 +172,7 @@ const layoutSchema = z.object({
   match: z
     .object({
       logic: z.enum(["and", "or"]).optional(),
-      conditions: z.array(conditionSchema("filter")).max(10),
+      conditions: filterConditionsSchema(),
     })
     .optional()
     .describe("When it applies, e.g. the sender or subject; no conditions: every email"),
@@ -222,13 +216,11 @@ const destinationFields = {
   filter: z
     .object({
       logic: z.enum(["and", "or"]).optional().describe("and (default): every condition; or: any"),
-      conditions: z.array(conditionSchema("filter")).max(10),
+      conditions: filterConditionsSchema(),
     })
     .nullable()
     .optional()
-    .describe(
-      "Send only captures that match (null: everything it takes). Conditions like response rules plus kind, email (name: subject, from, to, text, tag), spam_score, email_auth (name: spf, dkim, dmarc) and signature (verified, failed, missing)"
-    ),
+    .describe("Send only captures that match (null: everything it takes)"),
   format: z
     .enum([
       "auto",
@@ -474,8 +466,14 @@ const responseRuleSchema = z.object({
     .optional()
     .default("and")
     .describe('How to combine conditions: "and" (all match) or "or" (any match)'),
-  conditions: z.array(ruleConditionSchema).min(1).max(10).describe("Conditions to evaluate (1-10)"),
-  response: z.lazy(() => mockResponseSchema).describe("Response when conditions match"),
+  conditions: z
+    .array(ruleConditionSchema)
+    .min(1)
+    .max(10)
+    .describe(`1 to 10 conditions. ${RESPONSE_CONDITIONS_HELP}`),
+  response: z
+    .lazy(() => ruleResponseSchema)
+    .describe("The answer when the rule matches: status, body, headers, delay, as mockResponse"),
 });
 
 const responseRulesSchema = z
@@ -483,33 +481,45 @@ const responseRulesSchema = z
   .max(50)
   .describe("Ordered conditional response rules (first match wins, max 50)");
 
-const mockResponseSchema = z.object({
-  status: z
-    .number()
-    .int()
-    .min(MOCK_RESPONSE_STATUS_MIN)
-    .max(MOCK_RESPONSE_STATUS_MAX)
-    .describe(`HTTP status code (${MOCK_RESPONSE_STATUS_MIN}-${MOCK_RESPONSE_STATUS_MAX})`),
-  body: z
-    .string()
-    .default("")
-    .describe(
+/**
+ * A mock response. `brief` drops the property descriptions, for a rule's
+ * response: the same shape as the mockResponse beside it, whose
+ * descriptions a client already has, so they are not listed twice.
+ */
+function mockResponseShape(brief: boolean) {
+  const said = <T extends z.ZodType>(schema: T, description: string): T =>
+    brief ? schema : schema.describe(description);
+  return z.object({
+    status: said(
+      z.number().int().min(MOCK_RESPONSE_STATUS_MIN).max(MOCK_RESPONSE_STATUS_MAX),
+      `HTTP status code (${MOCK_RESPONSE_STATUS_MIN}-${MOCK_RESPONSE_STATUS_MAX})`
+    ),
+    body: said(
+      z.string().default(""),
       'Response body (default: empty). {{ placeholders }} are filled in from the request: {{ json.id }} (a JSON or form body field), {{ body }}, {{ headers.user-agent }}, {{ query.page }}, {{ method }}, {{ path }}, {{ id }}, {{ uuid }}, {{ now }}; filters: | default: "x", | json, | lower, | upper, | truncate: 80'
     ),
-  headers: z
-    .record(z.string(), z.string())
-    .default({})
-    .describe("Response headers (default: none); values may use {{ placeholders }} too"),
-  delay: z
-    .number()
-    .int()
-    .min(MOCK_RESPONSE_DELAY_MIN)
-    .max(MOCK_RESPONSE_DELAY_MAX)
-    .optional()
-    .describe(
+    headers: said(
+      z.record(z.string(), z.string()).default({}),
+      "Response headers (default: none); values may use {{ placeholders }} too"
+    ),
+    delay: said(
+      z.number().int().min(MOCK_RESPONSE_DELAY_MIN).max(MOCK_RESPONSE_DELAY_MAX).optional(),
       `Response delay in milliseconds (${MOCK_RESPONSE_DELAY_MIN}-${MOCK_RESPONSE_DELAY_MAX}, default: none)`
     ),
-});
+  });
+}
+
+const mockResponseSchema = mockResponseShape(false);
+const ruleResponseSchema = mockResponseShape(true);
+
+/**
+ * The providers an endpoint can verify signatures for: every verify provider
+ * and generic-hmac. VALID_SIGNING_PROVIDERS in apps/web/lib/signing-config.ts
+ * is the same set (a web test compares them), so a mistyped provider is
+ * refused before create_endpoint creates anything.
+ */
+export const SIGNING_PROVIDERS = [...VERIFY_PROVIDERS, "generic-hmac"] as const;
+const signingProviderSchema = z.enum(SIGNING_PROVIDERS);
 
 // Argument shapes the sandbox tools share with the full ones (sandbox-tools.ts),
 // so a tool keeps its arguments when the server swaps to the full set.
@@ -543,12 +553,9 @@ export const createEndpointShape = {
       "URL to POST a JSON summary to after each captured request (e.g. Slack/Discord webhook)"
     ),
   site: endpointSiteSchema.optional(),
-  signingProvider: z
-    .string()
+  signingProvider: signingProviderSchema
     .optional()
-    .describe(
-      "Signing provider for automatic signature verification (e.g. stripe, github, shopify)"
-    ),
+    .describe("Signing provider for automatic signature verification"),
   signingSecret: z
     .string()
     .optional()
@@ -1149,27 +1156,54 @@ function splitHint(message: string): { message: string; hint: string | null } {
   };
 }
 
-function serializeError(error: unknown): string {
-  const rawMessage = error instanceof Error ? error.message : String(error);
-  const { message, hint } = splitHint(rawMessage);
+/** The codes a tool error carries. */
+export type ToolErrorCode =
+  "unauthorized" | "not_found" | "rate_limited" | "timeout" | "validation_error" | "server_error";
 
-  const payload: {
-    error: true;
-    code:
-      | "unauthorized"
-      | "not_found"
-      | "rate_limited"
-      | "timeout"
-      | "validation_error"
-      | "server_error";
-    message: string;
-    hint: string | null;
-    retryAfter: number | null;
-  } = {
+/** A tool error as every tool answers one. */
+interface ToolErrorPayload {
+  error: true;
+  code: ToolErrorCode;
+  message: string;
+  hint: string | null;
+  retryAfter: number | null;
+}
+
+/**
+ * The next step after an API error, in this server's tool names (the SDK's
+ * own hint names SDK methods, which an agent cannot call here). `remote`
+ * for the hosted server, which has no API key to set.
+ */
+export function toolHint(error: WebhooksCCError, remote: boolean): string | null {
+  if (error.statusCode === 401) {
+    return remote
+      ? "The connection to webhooks.cc was refused: reconnect this MCP server (sign in again) and retry."
+      : "The API key was refused: set WHK_API_KEY to a working key (https://webhooks.cc/account/api-keys), or remove it and restart the server to sign in with connect_account.";
+  }
+  if (error.statusCode !== 404) return null;
+  const path = error.path ?? "";
+  if (/^\/endpoints\/[^/?]+\/requests/.test(path) || /^\/requests(?:[/?]|$)/.test(path)) {
+    return "list_requests lists the endpoint's requests and their ids; list_endpoints checks the slug.";
+  }
+  if (/^\/shares(?:[/?]|$)/.test(path)) return "list_shares lists your previews and live tunnels.";
+  if (path.startsWith("/tunnel-names")) return "list_names lists the names you can share under.";
+  if (path.startsWith("/teams")) return "list_teams lists your teams and their ids.";
+  return "list_endpoints lists your endpoints and their slugs.";
+}
+
+function errorPayload(error: unknown, remote: boolean): ToolErrorPayload {
+  const rawMessage = error instanceof Error ? error.message : String(error);
+  // Only registration errors carry their hint after a dash.
+  const split =
+    error instanceof AgentRegisterError
+      ? splitHint(rawMessage)
+      : { message: rawMessage, hint: null };
+
+  const payload: ToolErrorPayload = {
     error: true,
     code: "validation_error",
-    message,
-    hint,
+    message: split.message,
+    hint: split.hint,
     retryAfter: null,
   };
 
@@ -1186,31 +1220,63 @@ function serializeError(error: unknown): string {
     payload.code = error.statusCode >= 500 ? "server_error" : "validation_error";
   }
 
-  if (error instanceof WebhooksCCError && payload.hint === null) {
+  if (error instanceof WebhooksCCError) {
+    // The API's own words, without the SDK's hint about SDK methods.
+    payload.message = error.apiMessage ?? payload.message;
     if (error.code === "invalid_cursor") {
       payload.hint =
         "The cursor is not one this search returned, or the order changed since. Pass a cursor exactly as a result gave it, or search again without one.";
     } else if (error.code === "search_busy") {
       payload.hint =
         "The account's other searches are still running. Wait retryAfter seconds, then call again with the same inputs.";
+    } else {
+      payload.hint = toolHint(error, remote);
     }
   }
 
-  return JSON.stringify(payload, null, 2);
+  return payload;
+}
+
+function serializeError(error: unknown, remote = false): string {
+  return JSON.stringify(errorPayload(error, remote), null, 2);
+}
+
+/**
+ * A tool error made here rather than from a thrown error: the same JSON
+ * every tool error has, with isError set.
+ */
+export function errorResult(code: ToolErrorCode, message: string, hint?: string): ToolResult {
+  const payload: ToolErrorPayload = {
+    error: true,
+    code,
+    message,
+    hint: hint ?? null,
+    retryAfter: null,
+  };
+  return { ...textContent(JSON.stringify(payload, null, 2)), isError: true };
+}
+
+export interface ErrorHandlingOptions {
+  /** The hosted server: hints name what it offers (no API key to set). */
+  remote?: boolean;
 }
 
 /** Wrap a tool handler with error handling that returns structured MCP errors. */
 export function withErrorHandling<T>(
-  handler: (args: T) => Promise<ToolResult>
+  handler: (args: T) => Promise<ToolResult>,
+  options: ErrorHandlingOptions = {}
 ): (args: T) => Promise<ToolResult> {
   return async (args: T) => {
     try {
       return await handler(args);
     } catch (error) {
-      return { ...textContent(serializeError(error)), isError: true };
+      return { ...textContent(serializeError(error, options.remote === true)), isError: true };
     }
   };
 }
+
+/** withErrorHandling under the name registerTools reaches it by, past its own. */
+const withToolErrors = withErrorHandling;
 
 function filterRequestsByMethod(requests: Request[], method?: string): Request[] {
   if (!method) {
@@ -1231,22 +1297,9 @@ async function waitForMultipleRequests(
     method?: string;
   }
 ): Promise<{ requests: Request[]; complete: boolean; timedOut: boolean; expectedCount: number }> {
-  const timeoutMs =
-    typeof options.timeout === "number"
-      ? options.timeout
-      : options.timeout
-        ? Number.isNaN(Number(options.timeout))
-          ? parseDurationLike(options.timeout)
-          : Number(options.timeout)
-        : 30_000;
+  const timeoutMs = options.timeout === undefined ? 30_000 : parseDuration(options.timeout);
   const pollIntervalMs =
-    typeof options.pollInterval === "number"
-      ? options.pollInterval
-      : options.pollInterval
-        ? Number.isNaN(Number(options.pollInterval))
-          ? parseDurationLike(options.pollInterval)
-          : Number(options.pollInterval)
-        : 500;
+    options.pollInterval === undefined ? 500 : parseDuration(options.pollInterval);
 
   const startedAt = Date.now();
   let since = startedAt;
@@ -1295,37 +1348,6 @@ async function waitForMultipleRequests(
     timedOut: true,
     expectedCount: options.count,
   };
-}
-
-function parseDurationLike(value: string): number {
-  const trimmed = value.trim();
-  if (trimmed.length === 0) {
-    throw new Error("Duration value cannot be empty");
-  }
-
-  const numeric = Number(trimmed);
-  if (!Number.isNaN(numeric)) {
-    return numeric;
-  }
-
-  const match = trimmed.match(/^(\d+)\s*(ms|s|m|h|d)$/i);
-  if (!match) {
-    throw new Error(`Invalid duration: "${value}"`);
-  }
-
-  const amount = Number(match[1]);
-  const unit = match[2].toLowerCase();
-  const multiplier =
-    unit === "ms"
-      ? 1
-      : unit === "s"
-        ? 1_000
-        : unit === "m"
-          ? 60_000
-          : unit === "h"
-            ? 3_600_000
-            : 86_400_000;
-  return amount * multiplier;
 }
 
 function ensureVerifyArgs(args: {
@@ -1639,18 +1661,6 @@ export function signingCredentialProblem(provider: string, secret: string): stri
   return null;
 }
 
-/** A duration argument in milliseconds, read as the SDK reads it; null when it is not one. */
-function durationMs(value: unknown): number | null {
-  if (typeof value === "number") return Number.isFinite(value) && value >= 0 ? value : null;
-  if (typeof value !== "string") return null;
-  try {
-    const ms = parseDuration(value);
-    return Number.isFinite(ms) && ms >= 0 ? ms : null;
-  } catch {
-    return null;
-  }
-}
-
 /**
  * The server registerTools writes to: records every tool for removal and,
  * for the hosted server, applies the remote restrictions.
@@ -1673,35 +1683,37 @@ function toolTarget(
         if (call?.requestState !== undefined && CHECKOUT_TOOLS.has(name)) {
           const id = call.requestState;
           if (!APPROVAL_ID.test(id)) {
-            return {
-              ...textContent("That checkout link is not one this server made."),
-              isError: true,
-            };
+            return errorResult(
+              "validation_error",
+              "That checkout link is not one this server made."
+            );
           }
           if (call.urlAnswer === "decline" || call.urlAnswer === "cancel") {
             return textContent(
               `The person closed the checkout. The link works until it expires: if they still want it, show it to them again and call wait_for_checkout with id ${id}.`
             );
           }
-          return withErrorHandling(async () =>
-            textContent(await waitForCheckoutText(client, id, APPROVAL_RETRY_WAIT_MS))
+          return withErrorHandling(
+            async () => textContent(await waitForCheckoutText(client, id, APPROVAL_RETRY_WAIT_MS)),
+            { remote }
           )(undefined);
         }
         if (call?.requestState !== undefined && APPROVAL_TOOLS.has(name)) {
           const id = call.requestState;
           if (!APPROVAL_ID.test(id)) {
-            return {
-              ...textContent("That approval is not one this server asked for."),
-              isError: true,
-            };
+            return errorResult(
+              "validation_error",
+              "That approval is not one this server asked for."
+            );
           }
           if (call.urlAnswer === "decline" || call.urlAnswer === "cancel") {
             return textContent(
               `The person closed the approval link. It works until it expires: if they still want this, show them the link again and call wait_for_approval with id ${id}.`
             );
           }
-          return withErrorHandling(async () =>
-            textContent(await waitForApprovalText(client, id, APPROVAL_RETRY_WAIT_MS))
+          return withErrorHandling(
+            async () => textContent(await waitForApprovalText(client, id, APPROVAL_RETRY_WAIT_MS)),
+            { remote }
           )(undefined);
         }
         const result = await inner(args, call);
@@ -1743,10 +1755,13 @@ function toolTarget(
               ],
             ] as const) {
               if (bounded[key] === undefined) continue;
-              const ms = durationMs(bounded[key]);
-              if (ms === null) {
+              let ms: number;
+              try {
+                ms = parseDuration(bounded[key] as number | string);
+              } catch (error) {
+                const reason = error instanceof Error ? error.message : String(error);
                 return {
-                  ...textContent(`${key} must be a duration such as "30s" or milliseconds.`),
+                  ...textContent(serializeError(new Error(`${key}: ${reason}`), true)),
                   isError: true,
                 };
               }
@@ -1876,6 +1891,47 @@ export function withShareHints(list: TunnelShareList, remote = false): Record<st
   return hints.length > 0 ? { ...list, hints } : { ...list };
 }
 
+/** One operation in the SDK's description: it has its own description. */
+function isOperation(value: unknown): boolean {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    typeof (value as { description?: unknown }).description === "string"
+  );
+}
+
+/**
+ * describe's answer: without a section, the SDK version and each section's
+ * operation names (a section that is one operation lists none), so the
+ * whole description, tens of kilobytes, never lands in a context at once;
+ * with one, that section as the SDK describes it.
+ */
+export function describeSection(
+  description: ReturnType<WebhooksCC["describe"]>,
+  section: string | undefined
+): unknown {
+  const { version, ...sections } = description as unknown as Record<string, unknown>;
+  if (section === undefined || section.trim() === "") {
+    return {
+      version,
+      sections: Object.fromEntries(
+        Object.entries(sections).map(([name, value]) => [
+          name,
+          isOperation(value) ? [] : Object.keys(value as Record<string, unknown>),
+        ])
+      ),
+      note: "Call describe with section for its operations' parameters and types.",
+    };
+  }
+  const name = section.trim();
+  if (!Object.prototype.hasOwnProperty.call(sections, name)) {
+    throw new Error(
+      `No section "${name}" in the SDK's description. Sections: ${Object.keys(sections).join(", ")}.`
+    );
+  }
+  return { version, section: name, operations: sections[name] };
+}
+
 /**
  * Registers the webhooks.cc tools for an account client. Returns their
  * handles, so a caller can swap the tool set later.
@@ -1888,6 +1944,9 @@ export function registerTools(
   const handles: RegisteredToolHandle[] = [];
   const remote = options.remote === true;
   const server = toolTarget(target, client, options, handles);
+  // Every tool's errors, with hints for this server (the hosted one has no API key to set).
+  const withErrorHandling = <T>(handler: (args: T) => Promise<ToolResult>) =>
+    withToolErrors(handler, { remote });
   // How the tool descriptions say to start a preview: the hosted server has
   // no share_port (it cannot run whk on the person's computer).
   const shareWith = remote ? REMOTE_SHARE : "share_port";
@@ -1955,10 +2014,22 @@ export function registerTools(
               })
             );
           } catch (err) {
-            return jsonContent({
-              ...endpoint,
-              warning: `Endpoint created but signing configuration failed: ${err instanceof Error ? err.message : String(err)}. Update endpoint "${endpoint.slug}" to add signing.`,
-            });
+            // An endpoint that verifies nothing is not what was asked for:
+            // take it back, and say why signing failed.
+            try {
+              await client.endpoints.delete(endpoint.slug);
+            } catch {
+              const reason =
+                err instanceof WebhooksCCError
+                  ? (err.apiMessage ?? err.message)
+                  : err instanceof Error
+                    ? err.message
+                    : String(err);
+              throw new Error(
+                `Signing could not be set (${reason}), and the endpoint "${endpoint.slug}" could not be deleted: it exists without signing. Fix it with update_endpoint, or delete it with delete_endpoint.`
+              );
+            }
+            throw err;
           }
         }
         return jsonContent(endpoint);
@@ -2215,13 +2286,10 @@ export function registerTools(
         .nullable()
         .optional()
         .describe("Notification webhook URL, or null to clear it"),
-      signingProvider: z
-        .string()
+      signingProvider: signingProviderSchema
         .nullable()
         .optional()
-        .describe(
-          "Signing provider for automatic verification (e.g. stripe, github), or null to disable"
-        ),
+        .describe("Signing provider for automatic verification, or null to disable"),
       signingSecret: z
         .string()
         .nullable()
@@ -3871,7 +3939,13 @@ export function registerTools(
         .describe('How long to wait for the person, for example "45s"'),
     },
     withErrorHandling(async ({ id, timeout }) =>
-      textContent(await waitForApprovalText(client, id, durationMs(timeout) ?? 45_000))
+      textContent(
+        await waitForApprovalText(
+          client,
+          id,
+          timeout === undefined ? 45_000 : parseDuration(timeout)
+        )
+      )
     )
   );
 
@@ -3932,7 +4006,13 @@ export function registerTools(
         .describe('How long to wait for the payment, for example "45s"'),
     },
     withErrorHandling(async ({ id, timeout }) =>
-      textContent(await waitForCheckoutText(client, id, durationMs(timeout) ?? 45_000))
+      textContent(
+        await waitForCheckoutText(
+          client,
+          id,
+          timeout === undefined ? 45_000 : parseDuration(timeout)
+        )
+      )
     )
   );
 
@@ -4359,12 +4439,16 @@ export function registerTools(
 
   server.tool(
     "describe",
-    "Describe all available SDK operations, parameters, and types.",
-    {},
-    withErrorHandling(async () => {
-      const description = client.describe();
-      return jsonContent(description);
-    })
+    "Describe the SDK's operations. Without section: the SDK version and each section's operation names; with section: that section's operations, their parameters and types.",
+    {
+      section: z
+        .string()
+        .optional()
+        .describe("A section name from the answer without one, such as endpoints or requests"),
+    },
+    withErrorHandling(async ({ section }) =>
+      jsonContent(describeSection(client.describe(), section))
+    )
   );
 
   return handles;

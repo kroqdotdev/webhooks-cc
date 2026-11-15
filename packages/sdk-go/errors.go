@@ -1,7 +1,6 @@
 package webhookscc
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -41,7 +40,7 @@ type Error struct {
 	RetryAfter time.Duration
 	// RateLimit is set on a 429 that carried all the X-RateLimit headers.
 	RateLimit *RateLimit
-	// code is the "error" of a 429's JSON body ("search_busy").
+	// code is the "error" of a JSON error body ("search_busy", "invalid_cursor").
 	code string
 }
 
@@ -70,11 +69,7 @@ func (e *Error) Is(target error) bool {
 	case ErrRateLimited:
 		return e.StatusCode == http.StatusTooManyRequests
 	case ErrInvalidCursor:
-		var body struct {
-			Error string `json:"error"`
-		}
-		return e.StatusCode == http.StatusBadRequest &&
-			json.Unmarshal([]byte(e.Message), &body) == nil && body.Error == "invalid_cursor"
+		return e.StatusCode == http.StatusBadRequest && e.code == "invalid_cursor"
 	}
 	return false
 }

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { TOOL_GROUP_NAMES } from "@webhooks-cc/mcp/tools";
-import { INSTRUCTIONS, requestClientName, toolSelection } from "./hosted";
+import { INSTRUCTIONS, requestClientName, toolSelection, unknownGroupsNote } from "./hosted";
 
 const META = "io.modelcontextprotocol/clientInfo";
 const url = (query = "") => new URL(`https://webhooks.cc/mcp${query}`);
@@ -19,6 +19,35 @@ describe("toolSelection", () => {
     expect(chosen.readOnly).toBe(true);
     expect(toolSelection(url("?tools=all"), ["cursor-vscode"]).groups.has("sheets")).toBe(true);
     expect(toolSelection(url(), []).readOnly).toBe(false);
+  });
+});
+
+describe("unknown groups in ?tools=", () => {
+  it("keeps the client's default when no name is a group, and reports them", () => {
+    const bogus = toolSelection(url("?tools=bogus"), ["Claude Code"]);
+    expect([...bogus.groups].sort()).toEqual([...TOOL_GROUP_NAMES].sort());
+    expect(bogus.unknown).toEqual(["bogus"]);
+    expect([...toolSelection(url("?tools=bogus"), ["cursor-vscode"]).groups]).toEqual(["core"]);
+  });
+
+  it("loads the groups named beside an unknown one and says which was not known", () => {
+    const chosen = toolSelection(url("?tools=core,teamz"), ["Claude Code"]);
+    expect([...chosen.groups]).toEqual(["core"]);
+    expect(chosen.unknown).toEqual(["teamz"]);
+    const note = unknownGroupsNote(chosen.unknown);
+    expect(note).toBe(
+      `Unknown tool groups in ?tools=: teamz (known: all, ${TOOL_GROUP_NAMES.join(", ")}).`
+    );
+    expect(unknownGroupsNote([])).toBeNull();
+    expect(toolSelection(url("?tools=core,teams"), []).unknown).toEqual([]);
+  });
+
+  it("reports at most five short names of plain characters", () => {
+    const long = "x".repeat(80);
+    const setting = encodeURIComponent(`<script>,${long},a1,b2,c3,d4,e5,f6`);
+    const { unknown } = toolSelection(url(`?tools=${setting}`), []);
+    expect(unknown).toEqual(["script", "x".repeat(32), "a1", "b2", "c3"]);
+    for (const name of unknown) expect(name).toMatch(/^[a-z0-9_-]{1,32}$/);
   });
 });
 

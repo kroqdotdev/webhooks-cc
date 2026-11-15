@@ -1,11 +1,15 @@
 import { describe, expect, test } from "vitest";
-import { signingCredentialProblem as mcpSigningCredentialProblem } from "@webhooks-cc/mcp/tools";
+import {
+  SIGNING_PROVIDERS,
+  signingCredentialProblem as mcpSigningCredentialProblem,
+} from "@webhooks-cc/mcp/tools";
 
 import {
   isValidSigningHeaderName,
   isValidSigningProvider,
   normalizeSigningCredential,
   signingCredentialProblem,
+  VALID_SIGNING_PROVIDERS,
 } from "./signing-config";
 
 /** A well-formed Discord public key, in mixed case. */
@@ -76,5 +80,11 @@ describe("signing-config", () => {
         mcpSigningCredentialProblem(provider, key)
       );
     }
+  });
+});
+
+describe("the MCP server's signing providers", () => {
+  test("are the ones the API accepts", () => {
+    expect([...SIGNING_PROVIDERS].sort()).toEqual([...VALID_SIGNING_PROVIDERS].sort());
   });
 });

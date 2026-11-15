@@ -1,6 +1,6 @@
 {
   "name": "@webhooks-cc/mcp",
-  "version": "2.4.2",
+  "version": "2.5.0",
   "mcpName": "io.github.kroqdotdev/webhooks-cc",
   "description": "MCP server for webhooks.cc: AI agent integration for webhook testing",
   "main": "dist/index.js",

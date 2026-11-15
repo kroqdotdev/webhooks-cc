@@ -282,10 +282,40 @@ function mapStatusToError(
   /** The whole body, when `message` was cut short, to find its code in. */
   body?: string
 ): WebhooksCCError {
-  const error = statusError(status, message, response, path);
+  const plain = errorTextOf(body ?? message) ?? message;
+  const error = statusError(status, plain, response, path);
+  error.apiMessage = plain;
+  if (path !== undefined) error.path = path;
   const code = errorCodeOf(body ?? message);
   if (code !== undefined) error.code = code;
   return error;
+}
+
+/** Longest text taken from a JSON error body, so one answer cannot make a huge message. */
+const MAX_ERROR_TEXT = 1_000;
+
+/**
+ * The plain text of a JSON error body: its string `message`, else its
+ * string `error`; undefined when the body is not a JSON object naming
+ * either, so the caller keeps the (cut-short) body itself.
+ */
+function errorTextOf(body: string): string | undefined {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(body);
+  } catch {
+    return undefined;
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return undefined;
+  const { message, error } = parsed as { message?: unknown; error?: unknown };
+  const text =
+    typeof message === "string" && message.trim() !== ""
+      ? message
+      : typeof error === "string" && error.trim() !== ""
+        ? error
+        : undefined;
+  if (text === undefined) return undefined;
+  return text.length > MAX_ERROR_TEXT ? text.slice(0, MAX_ERROR_TEXT) + "..." : text;
 }
 
 /**
@@ -404,7 +434,11 @@ function resolveTeam(teams: Team[], team: string): Team {
   const byName = teams.filter((t) => t.name.toLowerCase() === lowered);
   if (byName.length === 1) return byName[0]!;
   if (byName.length === 0) {
-    throw new NotFoundError(`No team named or with id "${needle}": see client.teams.list()`);
+    const plain = `No team named or with id "${needle}"`;
+    const error = new NotFoundError(`${plain}: see client.teams.list()`);
+    error.apiMessage = plain;
+    error.path = "/teams";
+    throw error;
   }
   throw new Error(
     `${byName.length} teams are named "${needle}"; pass the team id instead (${byName

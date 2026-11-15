@@ -23,6 +23,7 @@ vi.mock("@/lib/forwarding/config", () => ({ sendOptions: () => ({}) }));
 vi.mock("@/lib/forwarding/send", () => ({ sendForward: vi.fn() }));
 
 const { buildServer, TARGET_URL_NOTE } = await import("./hosted");
+type CallerAuth = import("./hosted").CallerAuth;
 
 const open: Array<{ close(): Promise<void> }> = [];
 afterEach(async () => {
@@ -31,7 +32,11 @@ afterEach(async () => {
 });
 
 /** Sends one 2026-07-28 request to a fresh hosted server and returns its result. */
-async function ask(method: string, params: Record<string, unknown> = {}) {
+async function ask(
+  method: string,
+  params: Record<string, unknown> = {},
+  caller: Partial<CallerAuth> = {}
+) {
   const [clientSide, serverSide] = InMemoryTransport.createLinkedPair();
   open.push(
     serveStdio(
@@ -42,6 +47,7 @@ async function ask(method: string, params: Record<string, unknown> = {}) {
           userId: "user-1",
           groups: new Set(["core"]),
           readOnly: false,
+          ...caller,
         }),
       { transport: serverSide }
     )
@@ -293,5 +299,44 @@ describe("the hosted server", () => {
     })) as { isError?: boolean; content: Array<{ text: string }> };
     expect(result.isError, result.content[0]?.text).toBeFalsy();
     expect(result.content.map((item) => item.text)).not.toContain(TARGET_URL_NOTE);
+  });
+});
+
+describe("hosted errors", () => {
+  it("answers a timeout that is not a duration as a validation error", async () => {
+    const fetch = vi.fn(async () => Response.json([]));
+    vi.stubGlobal("fetch", fetch);
+    const messages = new Set<string>();
+    for (const timeout of ["banana", -5]) {
+      const result = (await ask("tools/call", {
+        name: "wait_for_request",
+        arguments: { endpointSlug: "acme", timeout },
+      })) as { isError?: boolean; content: Array<{ text: string }> };
+      expect(result.isError).toBe(true);
+      const error = JSON.parse(result.content[0].text);
+      expect(error).toMatchObject({ error: true, code: "validation_error" });
+      expect(error.message).toMatch(/^timeout: /);
+      messages.add(error.message);
+    }
+    expect(messages.size).toBe(2);
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it("notes unknown groups on describe and in the instructions", async () => {
+    const caller = { unknownGroups: ["teamz"] };
+    const { tools } = (await ask("tools/list", {}, caller)) as {
+      tools: Array<{ name: string; description: string }>;
+    };
+    const describe = tools.find((tool) => tool.name === "describe");
+    expect(describe?.description).toContain("Unknown tool groups in ?tools=: teamz (known: all,");
+    const others = tools.filter((tool) => tool.name !== "describe");
+    expect(others.some((tool) => tool.description.includes("Unknown tool groups"))).toBe(false);
+    const discover = (await ask("server/discover", {}, caller)) as { instructions?: string };
+    expect(discover.instructions).toContain("Unknown tool groups in ?tools=: teamz");
+    // describe is listed on a read-only server too.
+    const readOnly = (await ask("tools/list", {}, { ...caller, readOnly: true })) as {
+      tools: Array<{ name: string }>;
+    };
+    expect(readOnly.tools.map((tool) => tool.name)).toContain("describe");
   });
 });

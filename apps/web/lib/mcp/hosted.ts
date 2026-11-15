@@ -9,10 +9,12 @@ import { z } from "zod";
 import { WebhooksCC } from "@webhooks-cc/sdk";
 import {
   defaultToolGroups,
+  errorResult,
   parseToolGroups,
   registerTools,
   sdkToolResult,
   TARGET_URL_TOOLS,
+  TOOL_GROUP_NAMES,
   toolCallFrom,
   attachSkill,
   attachInspector,
@@ -149,8 +151,11 @@ function noticingTargetUrl(schema: z.ZodObject): StandardSchemaWithJSON {
   };
 }
 
+/** The tool whose description carries the note on unknown groups: in core, and read-only. */
+const NOTED_TOOL = "describe";
+
 /** registerTools' view of the v2 server, with the per-account cap. */
-function toolServer(server: McpServer, account: string): ToolServer {
+function toolServer(server: McpServer, account: string, note: string | null): ToolServer {
   return {
     tool(name, description, shape, handler, annotations, meta) {
       const schema = z.object(shape);
@@ -158,7 +163,7 @@ function toolServer(server: McpServer, account: string): ToolServer {
         name,
         {
           title: annotations?.title,
-          description,
+          description: note && name === NOTED_TOOL ? `${description} ${note}` : description,
           inputSchema:
             TARGET_URL_TOOLS.has(name) && !("targetUrl" in shape)
               ? noticingTargetUrl(schema)
@@ -177,15 +182,13 @@ function toolServer(server: McpServer, account: string): ToolServer {
           }
           const busy = running.get(account) ?? 0;
           if (busy >= MAX_RUNNING_TOOLS_PER_ACCOUNT) {
-            return {
-              content: [
-                {
-                  type: "text" as const,
-                  text: `At most ${MAX_RUNNING_TOOLS_PER_ACCOUNT} tool calls run at once per account. Retry when one finishes.`,
-                },
-              ],
-              isError: true,
-            };
+            return sdkToolResult(
+              errorResult(
+                "rate_limited",
+                `At most ${MAX_RUNNING_TOOLS_PER_ACCOUNT} tool calls run at once per account.`,
+                "Retry when one finishes."
+              )
+            );
           }
           running.set(account, busy + 1);
           try {
@@ -216,6 +219,43 @@ export interface CallerAuth {
   /** The tool groups this caller gets (toolSelection). */
   groups: ReadonlySet<ToolGroup>;
   readOnly: boolean;
+  /** Names in ?tools= that are no group, sanitised (toolSelection). */
+  unknownGroups?: readonly string[];
+}
+
+/** At most this many unknown names are reported, each at most this long. */
+const MAX_UNKNOWN_GROUPS = 5;
+const MAX_UNKNOWN_GROUP_LENGTH = 32;
+
+/** Unknown group names as they may be shown and logged: a few, short, plain characters only. */
+function sanitiseUnknown(names: string[]): string[] {
+  const clean = names
+    .map((name) =>
+      name
+        .toLowerCase()
+        .replace(/[^a-z0-9_-]/g, "")
+        .slice(0, MAX_UNKNOWN_GROUP_LENGTH)
+    )
+    .filter(Boolean);
+  return [...new Set(clean)].slice(0, MAX_UNKNOWN_GROUPS);
+}
+
+/** Unknown names already logged, so a client that repeats one logs it once. */
+const warnedUnknown = new Set<string>();
+
+function warnUnknown(names: string[]): void {
+  for (const name of names) {
+    if (warnedUnknown.has(name)) continue;
+    if (warnedUnknown.size >= 1_000) warnedUnknown.clear();
+    warnedUnknown.add(name);
+    console.warn(`[mcp] unknown tool group in ?tools=: ${name}`);
+  }
+}
+
+/** What the server says about unknown names in ?tools=, or null when there are none. */
+export function unknownGroupsNote(unknown: readonly string[] | undefined): string | null {
+  if (!unknown || unknown.length === 0) return null;
+  return `Unknown tool groups in ?tools=: ${unknown.join(", ")} (known: all, ${TOOL_GROUP_NAMES.join(", ")}).`;
 }
 
 /**
@@ -229,12 +269,25 @@ export interface CallerAuth {
 export function toolSelection(
   url: URL,
   clientNames: (string | null | undefined)[]
-): { groups: Set<ToolGroup>; readOnly: boolean } {
+): { groups: Set<ToolGroup>; readOnly: boolean; unknown: string[] } {
   const readOnly = /^(1|true|yes)$/i.test(url.searchParams.get("readonly") ?? "");
-  const chosen = parseToolGroups(url.searchParams.get("tools"));
-  if (chosen) return { groups: chosen.groups, readOnly };
+  const setting = url.searchParams.get("tools");
+  const chosen = parseToolGroups(setting);
+  const unknown = sanitiseUnknown(chosen?.unknown ?? []);
+  warnUnknown(unknown);
+  // Only names that are no group (a typo, a group from a later release):
+  // the client's default, as if ?tools= were not there, rather than core.
+  if (chosen && hasKnownName(setting)) return { groups: chosen.groups, readOnly, unknown };
   const name = clientNames.find((value): value is string => Boolean(value));
-  return { groups: defaultToolGroups(name), readOnly };
+  return { groups: defaultToolGroups(name), readOnly, unknown };
+}
+
+/** Whether a ?tools= value names any group (core or all included). */
+function hasKnownName(setting: string | null): boolean {
+  return (setting ?? "").split(/[\s,+]+/).some((raw) => {
+    const name = raw.trim().toLowerCase();
+    return name === "all" || (TOOL_GROUP_NAMES as string[]).includes(name);
+  });
 }
 
 /** The client name a request names itself by, if any. */
@@ -280,7 +333,9 @@ export function buildServer(caller: CallerAuth | undefined): McpServer {
       // The tool list never changes within a request: no listChanged, so a
       // subscriptions/listen stream completes at once instead of holding a slot.
       capabilities: { tools: { listChanged: false }, resources: { listChanged: false } },
-      instructions: INSTRUCTIONS,
+      instructions: [INSTRUCTIONS, unknownGroupsNote(caller?.unknownGroups)]
+        .filter(Boolean)
+        .join(" "),
       // The list depends on the caller (its client, ?tools=, ?readonly=):
       // cached per caller, and it changes otherwise only with a deploy.
       cacheHints: { "tools/list": { ttlMs: 3_600_000, cacheScope: "private" } },
@@ -299,7 +354,8 @@ export function buildServer(caller: CallerAuth | undefined): McpServer {
   attachSkill(server);
   // The request inspector (an MCP App) that get_request and get_email name.
   attachInspector(server);
-  registerTools(toolServer(server, caller?.userId ?? "anonymous"), client, {
+  const note = unknownGroupsNote(caller?.unknownGroups);
+  registerTools(toolServer(server, caller?.userId ?? "anonymous", note), client, {
     remote: true,
     groups: caller?.groups ?? new Set<ToolGroup>(["core"]),
     readOnly: caller?.readOnly ?? false,
@@ -319,6 +375,7 @@ export const mcpHandler = createMcpHandler(
             userId: (authInfo.extra?.userId as string | undefined) ?? authInfo.token,
             groups: (authInfo.extra?.groups as Set<ToolGroup> | undefined) ?? new Set(["core"]),
             readOnly: authInfo.extra?.readOnly === true,
+            unknownGroups: (authInfo.extra?.unknownGroups as string[] | undefined) ?? [],
           }
         : undefined
     ),

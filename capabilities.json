@@ -1173,7 +1173,7 @@
       "sandbox forget": "removes the saved agent connection"
     },
     "mcp": {
-      "describe": "describes the server and its tools",
+      "describe": "describes the SDK's operations, a section at a time",
       "list_provider_templates": "the provider catalog ships in the SDK",
       "sandbox/connect_account": "connects the agent to an account (/auth.md)",
       "sandbox/wait_for_connection": "connects the agent to an account (/auth.md)",

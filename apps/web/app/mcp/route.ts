@@ -146,7 +146,7 @@ async function handle(request: Request): Promise<Response> {
           ? null
           : await registrationClientName(validation.agentRegistrationId ?? null),
       ])
-    : { groups: new Set(TOOL_GROUP_NAMES), readOnly: toolSelection(url, []).readOnly };
+    : { ...toolSelection(url, []), groups: new Set(TOOL_GROUP_NAMES) };
   const response = await mcpHandler.fetch(request, {
     parsedBody,
     authInfo: {
@@ -159,6 +159,7 @@ async function handle(request: Request): Promise<Response> {
         userId: validation.userId,
         groups: tools.groups,
         readOnly: tools.readOnly,
+        unknownGroups: tools.unknown,
       },
     },
   });

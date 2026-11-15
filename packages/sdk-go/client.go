@@ -500,13 +500,45 @@ func notFoundHint(path string) string {
 	}
 }
 
+// maxErrorText caps the text taken from a JSON error body, so one answer
+// cannot make a huge message.
+const maxErrorText = 1000
+
+// errorText is the plain text of a JSON error body: its string "message",
+// else its string "error"; false when the body is not a JSON object naming
+// either.
+func errorText(body []byte) (string, bool) {
+	var fields map[string]any
+	if json.Unmarshal(body, &fields) != nil || fields == nil {
+		return "", false
+	}
+	for _, key := range []string{"message", "error"} {
+		if text, ok := fields[key].(string); ok && strings.TrimSpace(text) != "" {
+			if utf8.RuneCountInString(text) > maxErrorText {
+				text = string([]rune(text)[:maxErrorText]) + "..."
+			}
+			return text, true
+		}
+	}
+	return "", false
+}
+
 func errorFromResponse(response *apiResponse, path string) *Error {
-	message := string(response.body)
-	if utf8.RuneCountInString(message) > 200 {
-		message = string([]rune(message)[:200]) + "..."
+	message, ok := errorText(response.body)
+	if !ok {
+		message = string(response.body)
+		if utf8.RuneCountInString(message) > 200 {
+			message = string([]rune(message)[:200]) + "..."
+		}
 	}
 	generic := len(message) < 30
 	apiErr := &Error{StatusCode: response.status, Message: message}
+	var coded struct {
+		Error string `json:"error"`
+	}
+	if json.Unmarshal(response.body, &coded) == nil {
+		apiErr.code = coded.Error
+	}
 	switch response.status {
 	case http.StatusUnauthorized:
 		if generic {
@@ -517,12 +549,6 @@ func errorFromResponse(response *apiResponse, path string) *Error {
 			apiErr.Message = strings.TrimSpace(message + " " + notFoundHint(path))
 		}
 	case http.StatusTooManyRequests:
-		var body struct {
-			Error string `json:"error"`
-		}
-		if json.Unmarshal(response.body, &body) == nil {
-			apiErr.code = body.Error
-		}
 		if seconds, ok := headerInt(response.header, "Retry-After"); ok {
 			apiErr.RetryAfter = time.Duration(seconds) * time.Second
 		}

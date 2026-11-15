@@ -1251,3 +1251,32 @@ func TestUsageReadsTheOtherAllowances(t *testing.T) {
 		t.Errorf("round trip = %s", written)
 	}
 }
+
+func TestErrorMessagesAreThePlainTextOfTheBody(t *testing.T) {
+	cases := []struct {
+		status  int
+		body    string
+		message string
+	}{
+		{404, `{"error":"Endpoint not found"}`, "Endpoint not found Use Endpoints.List to see your endpoints"},
+		{400, `{"error":"invalid_input","message":"name is too long"}`, "name is too long"},
+		{502, "Bad gateway", "Bad gateway"},
+		{400, `{"error":"invalid_input","message":"` + strings.Repeat("y", 250) + `"}`, strings.Repeat("y", 250)},
+		{500, strings.Repeat("z", 400), strings.Repeat("z", 200) + "..."},
+	}
+	for _, c := range cases {
+		api := newFakeAPI(t)
+		api.handle("GET /api/endpoints/{slug}", func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(c.status)
+			_, _ = w.Write([]byte(c.body))
+		})
+		_, err := api.client().Endpoints.Get(context.Background(), "acme")
+		var apiErr *webhookscc.Error
+		if !errors.As(err, &apiErr) {
+			t.Fatalf("%d %s: %v", c.status, c.body, err)
+		}
+		if apiErr.Message != c.message || strings.HasPrefix(apiErr.Message, "{") {
+			t.Errorf("%d %s: message %q, want %q", c.status, c.body, apiErr.Message, c.message)
+		}
+	}
+}

@@ -1,0 +1,9 @@
+{
+  "title": "Clearer MCP errors and smaller tool lists",
+  "items": [
+    "The hosted MCP server's errors say what the API said, with hints naming its own tools, and a timeout that is not a duration is a validation error",
+    "Names in ?tools= that are no tool group are reported on describe and in the server's instructions; when none is a group, the client's own default list applies",
+    "The hosted tool lists are smaller, and describe answers its sections first",
+    "The changelog lists SDK 1.31.0, MCP 2.5.0 and the Python and Go SDKs 0.10.1"
+  ]
+}

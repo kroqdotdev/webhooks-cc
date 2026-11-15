@@ -10,6 +10,17 @@ export class WebhooksCCError extends Error {
    */
   public code?: string;
 
+  /**
+   * What the API said, as plain text: the `message` (else the `error`) of a
+   * JSON error body, or the body itself, without the recovery hint the SDK
+   * adds to `message`. Set on errors made from an API answer (and on a
+   * few the SDK makes itself, such as an unknown team name).
+   */
+  public apiMessage?: string;
+
+  /** The API path that answered (after `/api`, such as `/endpoints/acme`), when known. */
+  public path?: string;
+
   constructor(
     public readonly statusCode: number,
     message: string
