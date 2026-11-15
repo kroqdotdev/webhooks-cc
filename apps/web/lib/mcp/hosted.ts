@@ -34,7 +34,7 @@ import { APP_VERSION, MCP_VERSION } from "@/lib/changelog";
  */
 
 export const INSTRUCTIONS =
-  "webhooks.cc captures webhooks and inbound email for testing. Start with create_endpoint, send to its URL (or point a provider at it), then wait_for_request and get_request to inspect what arrived. send_webhook sends a signed test webhook to an endpoint; verify_signature checks a captured request. Hosted servers cannot reach the user's machine: to forward to localhost, the user runs `whk tunnel` or the local MCP server (npx -y @webhooks-cc/mcp). Clients that take long tool lists get every tool; others get the core. For the rest (teams, account and billing, domains, Google Sheets, names, layouts), add ?tools=all or groups such as ?tools=core,teams to the server's address.";
+  "webhooks.cc captures webhooks and inbound email for testing. Start with create_endpoint, send to its URL (or point a provider at it), then wait_for_request and get_request to inspect what arrived. send_webhook sends a signed test webhook to an endpoint; verify_signature checks a captured request. Hosted servers cannot reach the user's machine: to forward to localhost, the user runs `whk tunnel` or the local MCP server (npx -y @webhooks-cc/mcp). Clients that take long tool lists get every tool; others get the core. For the rest, add ?tools=all to the server's address, or name groups beside core: forwarding, layouts, extras (bulk changes, counts, schemas), teams, account (billing, keys, agents, share links), domains, sheets (Google Sheets) and names (preview names), as in ?tools=core,teams.";
 
 /** Where the API is reached from inside this process. */
 export function internalApiUrl(): string {

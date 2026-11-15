@@ -27,6 +27,12 @@ describe("the instructions", () => {
     expect(INSTRUCTIONS).toContain("?tools=");
   });
 
+  it("name every group ?tools= takes", () => {
+    for (const group of TOOL_GROUP_NAMES) {
+      expect(INSTRUCTIONS, group).toMatch(new RegExp(`\\b${group}\\b`));
+    }
+  });
+
   it("name only groups ?tools= takes", () => {
     for (const group of TOOL_GROUP_NAMES) {
       expect([...toolSelection(url(`?tools=${group}`), []).groups], group).toContain(group);
