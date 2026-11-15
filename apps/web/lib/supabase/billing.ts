@@ -657,7 +657,14 @@ async function adoptLivePlanSubscription(
     reportError(
       "[billing] could not confirm a plan adoption after the held subscription was revoked",
       afterError,
-      { userId, endedSubscriptionId: endedId, candidateSubscriptionId: newest.id }
+      {
+        userId,
+        endedSubscriptionId: endedId,
+        candidateSubscriptionId: newest.id,
+        // The other live plans are reported here, since the report below is
+        // never reached on this path.
+        otherSubscriptionIds: others.map((s) => s.id),
+      }
     );
     return;
   }
