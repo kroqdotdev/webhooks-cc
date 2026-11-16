@@ -38,6 +38,7 @@ vi.mock("@/lib/billing/checkout-link-rows", () => ({
 // Rows the fake database answers with, per table.
 const tables: {
   users: Record<string, unknown> | null;
+  teams?: Record<string, unknown> | null;
   capacity_subscriptions: Record<string, unknown>[];
   capacity_purchases?: Record<string, unknown> | null;
 } = { users: null, capacity_subscriptions: [] };
@@ -68,11 +69,13 @@ function query(table: string) {
       data:
         table === "users"
           ? tables.users
-          : table === "capacity_subscriptions"
-            ? (tables.capacity_subscriptions[0] ?? null)
-            : table === "capacity_purchases"
-              ? (tables.capacity_purchases ?? null)
-              : null,
+          : table === "teams"
+            ? (tables.teams ?? null)
+            : table === "capacity_subscriptions"
+              ? (tables.capacity_subscriptions[0] ?? null)
+              : table === "capacity_purchases"
+                ? (tables.capacity_purchases ?? null)
+                : null,
       error: null,
     }),
     then: (resolve: (value: unknown) => void) =>
@@ -129,6 +132,7 @@ import {
   applyCapacityWebhookEvent,
   changeMonthlyBlocks,
   createOneTimeBlocksCheckout,
+  getCapacityState,
   monthlyBlocksPurchase,
   oneTimeBlocksPurchase,
   overagePurchase,
@@ -179,6 +183,7 @@ beforeEach(() => {
   updates.length = 0;
   updateFilters.length = 0;
   tables.capacity_purchases = null;
+  tables.teams = null;
   tables.users = proAccount();
   tables.capacity_subscriptions = [];
   mockFns.checkoutsCreate.mockResolvedValue({ url: "https://polar.test/checkout" });
@@ -394,6 +399,46 @@ describe("changeMonthlyBlocks", () => {
     await expect(changeMonthlyBlocks(USER, "user_1", 1)).rejects.toMatchObject({
       code: "plan_required",
     });
+  });
+});
+
+describe("complimentary (staff) teams", () => {
+  const TEAM = { kind: "team" as const, teamId: "team_1" };
+  const message = "This team is complimentary (staff) and has no subscription to add to";
+
+  beforeEach(() => {
+    tables.teams = {
+      ...proAccount({ polar_customer_id: null }),
+      subscription_status: "active",
+      polar_subscription_id: null,
+      business: true,
+      seats: 10,
+      pending_plan: null,
+      billing_interval: "month",
+      billing_period_end: null,
+      credit_pages: 0,
+      page_block_pages: 0,
+      page_overage_active: false,
+      page_overage_max: 0,
+      extra_domains: 0,
+    };
+  });
+
+  it("refuses add-ons before Polar is asked", async () => {
+    await expect(changeMonthlyBlocks(TEAM, "user_1", 1)).rejects.toMatchObject({
+      code: "plan_required",
+      message,
+    });
+    await expect(createOneTimeBlocksCheckout(TEAM, "user_1", 1)).rejects.toMatchObject({
+      code: "plan_required",
+      message,
+    });
+    expect(mockFns.checkoutsCreate).not.toHaveBeenCalled();
+    expect(mockFns.subscriptionsUpdate).not.toHaveBeenCalled();
+  });
+
+  it("does not offer them", async () => {
+    await expect(getCapacityState(TEAM)).resolves.toMatchObject({ eligible: false });
   });
 });
 

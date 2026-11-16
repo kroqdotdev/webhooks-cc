@@ -1,0 +1,7 @@
+{
+  "title": "Complimentary teams for staff",
+  "items": [
+    "Teams owned by staff are live on Team Business with 10 seats and no subscription, from the moment they are created through the dashboard, the API, the CLI or the MCP server",
+    "Their billing panel says the team is complimentary, and seat, plan, add-on, checkout and invoice requests for them are refused with that reason instead of reaching Polar"
+  ]
+}

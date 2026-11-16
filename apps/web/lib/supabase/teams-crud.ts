@@ -1,6 +1,6 @@
 import { createAdminClient } from "./admin";
 import { revokeAllAddons } from "./capacity-billing";
-import { revokeTeamSubscription } from "./team-billing";
+import { isComplimentaryTeam, revokeTeamSubscription } from "./team-billing";
 import type { Team, TeamRow } from "./teams-types";
 import { closeRunsWithoutAccess } from "@/lib/tunnels/access";
 import { stopSharesUnderTeamNames } from "@/lib/tunnels/names";
@@ -15,13 +15,50 @@ function parseMillis(timestamp: string | null): number {
   return Number.isFinite(value) ? value : Date.now();
 }
 
+const TEAM_COLUMNS =
+  "id, name, created_by, created_at, subscription_status, polar_subscription_id, seats, requests_used, request_limit, block_requests, period_end, cancel_at_period_end, pending_seats, business, billing_interval, billing_period_end, pending_plan, pending_interval";
+
+function toTeam(team: TeamRow, role: "owner" | "member", memberCount: number): Team {
+  return {
+    id: team.id,
+    name: team.name,
+    createdBy: team.created_by,
+    createdAt: parseMillis(team.created_at),
+    memberCount,
+    role,
+    // A team is usable exactly while it has a subscription.
+    suspended: team.subscription_status === null,
+    subscriptionStatus: team.subscription_status,
+    seats: team.seats,
+    requestsUsed: team.requests_used,
+    // The pool's allowance this period, monthly blocks included, so API
+    // clients that compute requestLimit - requestsUsed count them.
+    requestLimit: team.request_limit + team.block_requests,
+    blockRequests: team.block_requests,
+    business: team.business === true,
+    billingInterval: team.billing_interval,
+    pendingPlan: team.pending_plan,
+    pendingInterval: team.pending_interval,
+    periodEnd: team.period_end ? parseMillis(team.period_end) : null,
+    billingPeriodEnd: team.billing_period_end
+      ? parseMillis(team.billing_period_end)
+      : team.period_end
+        ? parseMillis(team.period_end)
+        : null,
+    cancelAtPeriodEnd: team.cancel_at_period_end,
+    pendingSeats: team.pending_seats,
+    complimentary: isComplimentaryTeam(team),
+  };
+}
+
 // ---------------------------------------------------------------------------
 // createTeam
 // ---------------------------------------------------------------------------
 
 /**
  * Anyone can create a team, regardless of personal plan. The team starts
- * unsubscribed (suspended) until its owner buys seats.
+ * unsubscribed (suspended) until its owner buys seats, unless its owner is
+ * staff: then it is live on Team Business at once (migration 00108).
  */
 export async function createTeam(userId: string, name: string): Promise<Team | { error: string }> {
   const admin = createAdminClient();
@@ -50,28 +87,18 @@ export async function createTeam(userId: string, name: string): Promise<Team | {
     return { error: "Unexpected response from create_team_with_owner" };
   }
 
-  return {
-    id: result.id,
-    name: result.name,
-    createdBy: result.created_by,
-    createdAt: parseMillis(result.created_at ?? null),
-    memberCount: 1,
-    role: "owner",
-    suspended: true,
-    subscriptionStatus: null,
-    seats: 0,
-    requestsUsed: 0,
-    requestLimit: 0,
-    blockRequests: 0,
-    business: false,
-    billingInterval: null,
-    pendingPlan: null,
-    pendingInterval: null,
-    periodEnd: null,
-    billingPeriodEnd: null,
-    cancelAtPeriodEnd: false,
-    pendingSeats: null,
-  };
+  // Read back the state the database gave it (a staff team is live at once).
+  const { data: row, error: rowError } = await admin
+    .from("teams")
+    .select(TEAM_COLUMNS)
+    .eq("id", result.id)
+    .maybeSingle();
+  if (rowError) throw rowError;
+  if (!row) {
+    return { error: "Unexpected response from create_team_with_owner" };
+  }
+
+  return toTeam(row as TeamRow, "owner", 1);
 }
 
 // ---------------------------------------------------------------------------
@@ -98,9 +125,7 @@ export async function listTeamsForUser(userId: string): Promise<Team[]> {
   // Fetch team rows, including their billing state
   const { data: teamsData, error: teamsError } = await admin
     .from("teams")
-    .select(
-      "id, name, created_by, created_at, subscription_status, seats, requests_used, request_limit, block_requests, period_end, cancel_at_period_end, pending_seats, business, billing_interval, billing_period_end, pending_plan, pending_interval"
-    )
+    .select(TEAM_COLUMNS)
     .in("id", teamIds);
 
   if (teamsError) throw teamsError;
@@ -120,35 +145,9 @@ export async function listTeamsForUser(userId: string): Promise<Team[]> {
     countMap.set(row.team_id, (countMap.get(row.team_id) ?? 0) + 1);
   }
 
-  return teams.map((team) => ({
-    id: team.id,
-    name: team.name,
-    createdBy: team.created_by,
-    createdAt: parseMillis(team.created_at),
-    memberCount: countMap.get(team.id) ?? 0,
-    role: membershipMap.get(team.id) ?? ("member" as const),
-    // A team is usable exactly while it has a subscription.
-    suspended: team.subscription_status === null,
-    subscriptionStatus: team.subscription_status,
-    seats: team.seats,
-    requestsUsed: team.requests_used,
-    // The pool's allowance this period, monthly blocks included, so API
-    // clients that compute requestLimit - requestsUsed count them.
-    requestLimit: team.request_limit + team.block_requests,
-    blockRequests: team.block_requests,
-    business: team.business === true,
-    billingInterval: team.billing_interval,
-    pendingPlan: team.pending_plan,
-    pendingInterval: team.pending_interval,
-    periodEnd: team.period_end ? parseMillis(team.period_end) : null,
-    billingPeriodEnd: team.billing_period_end
-      ? parseMillis(team.billing_period_end)
-      : team.period_end
-        ? parseMillis(team.period_end)
-        : null,
-    cancelAtPeriodEnd: team.cancel_at_period_end,
-    pendingSeats: team.pending_seats,
-  }));
+  return teams.map((team) =>
+    toTeam(team, membershipMap.get(team.id) ?? "member", countMap.get(team.id) ?? 0)
+  );
 }
 
 // ---------------------------------------------------------------------------

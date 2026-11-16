@@ -105,6 +105,30 @@ class TeamBillingError extends Error {
   }
 }
 
+/**
+ * Why a change that needs Polar is refused for a complimentary team: a team
+ * staff own is live on Team Business without a subscription (migration
+ * 00108), so there is nothing to change, cancel or check out.
+ */
+export const COMPLIMENTARY_TEAM_MESSAGE =
+  "This team is complimentary (staff) and has no subscription to change";
+
+/** A team live without a Polar subscription: one staff own (migration 00108). */
+export function isComplimentaryTeam(
+  team: Pick<TeamRow, "polar_subscription_id" | "subscription_status">
+): boolean {
+  return team.polar_subscription_id === null && team.subscription_status !== null;
+}
+
+/** Refuses a complimentary team before anything asks Polar (`no_subscription`, 409). */
+export function refuseComplimentaryTeam(
+  team: Pick<TeamRow, "polar_subscription_id" | "subscription_status">
+): void {
+  if (isComplimentaryTeam(team)) {
+    throw new TeamBillingError("no_subscription", COMPLIMENTARY_TEAM_MESSAGE);
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Internal helpers
 // ---------------------------------------------------------------------------
@@ -230,7 +254,12 @@ export async function ensureTeamPolarCustomerId(team: BillingTeam): Promise<stri
 export async function createTeamCustomerPortal(userId: string, teamId: string): Promise<string> {
   const team = await getTeamForOwner(userId, teamId);
   if (!team.polar_customer_id) {
-    throw new TeamBillingError("no_customer", "This team has no invoices yet");
+    throw new TeamBillingError(
+      "no_customer",
+      isComplimentaryTeam(team)
+        ? "This team is complimentary (staff) and has no invoices"
+        : "This team has no invoices yet"
+    );
   }
   const polar = createPolarClient();
   const owners = await polar.customers.members.list(team.polar_customer_id, {
@@ -753,7 +782,12 @@ async function checkTeamPlanPurchase(
   const productId = requireTeamPlanProduct(plan, interval);
   const team = await getTeamForOwner(userId, teamId);
   if (team.subscription_status !== null) {
-    throw new TeamBillingError("already_subscribed", "Team already has an active subscription");
+    throw new TeamBillingError(
+      "already_subscribed",
+      isComplimentaryTeam(team)
+        ? "This team is complimentary (staff) and needs no subscription"
+        : "Team already has an active subscription"
+    );
   }
   return { team, productId };
 }
@@ -794,6 +828,7 @@ export async function teamPlanPurchase(
 
 export async function cancelTeamSubscription(userId: string, teamId: string): Promise<void> {
   const team = await getTeamForOwner(userId, teamId);
+  refuseComplimentaryTeam(team);
   if (!team.polar_subscription_id) {
     throw new TeamBillingError("no_subscription", "No active subscription");
   }
@@ -806,6 +841,7 @@ export async function cancelTeamSubscription(userId: string, teamId: string): Pr
 
 export async function resubscribeTeam(userId: string, teamId: string): Promise<void> {
   const team = await getTeamForOwner(userId, teamId);
+  refuseComplimentaryTeam(team);
   if (!team.polar_subscription_id) {
     throw new TeamBillingError("no_subscription", "No subscription to reactivate");
   }
@@ -866,6 +902,7 @@ export async function updateTeamSeats(
   approved?: ApprovedSeatChange
 ): Promise<void> {
   const team = await getTeamForOwner(userId, teamId);
+  refuseComplimentaryTeam(team);
   assertValidSeatCount(seats, team.seats);
   if (!team.polar_subscription_id) {
     throw new TeamBillingError("no_subscription", "No active subscription");
@@ -1077,6 +1114,7 @@ export async function loadTeamSeatQuote(
   at(nowMs: number): SeatChangeQuote;
 }> {
   const team = await getTeamForOwner(userId, teamId);
+  refuseComplimentaryTeam(team);
   assertValidSeatCount(seats, team.seats);
   if (!team.polar_subscription_id) {
     throw new TeamBillingError("no_subscription", "No active subscription");
@@ -1167,6 +1205,7 @@ async function teamForPlanChange(
     throw new TeamBillingError("not_offered", "Teams is billed monthly only");
   }
   const team = await getTeamForOwner(userId, teamId);
+  refuseComplimentaryTeam(team);
   if (!team.polar_subscription_id || team.subscription_status === null) {
     throw new TeamBillingError("no_subscription", "No active subscription");
   }
@@ -1312,6 +1351,7 @@ export async function changeTeamPlan(
  */
 export async function keepTeamPlan(userId: string, teamId: string): Promise<void> {
   const team = await getTeamForOwner(userId, teamId);
+  refuseComplimentaryTeam(team);
   if (!team.polar_subscription_id || team.subscription_status === null) {
     throw new TeamBillingError("no_subscription", "No active subscription");
   }

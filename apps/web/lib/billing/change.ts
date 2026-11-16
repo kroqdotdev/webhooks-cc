@@ -38,6 +38,7 @@ import {
   cancelTeamSubscription,
   changeTeamPlan,
   getTeamForOwner,
+  refuseComplimentaryTeam,
   keepTeamPlan,
   loadTeamPlanQuote,
   loadTeamSeatQuote,
@@ -752,6 +753,7 @@ async function loadTeamQuote(
   }
 
   const team = await getTeamForOwner(userId, teamId);
+  refuseComplimentaryTeam(team);
   if (!team.polar_subscription_id || team.subscription_status === null) {
     throw new TeamBillingError("no_subscription", "No active subscription");
   }

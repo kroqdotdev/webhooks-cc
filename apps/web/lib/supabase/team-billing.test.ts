@@ -1588,6 +1588,58 @@ describe("revokeTeamSeat", () => {
   });
 });
 
+describe("complimentary (staff) teams", () => {
+  const COMPLIMENTARY = "This team is complimentary (staff) and has no subscription to change";
+  const staffTeam = () =>
+    teamRow({
+      polar_subscription_id: null,
+      subscription_status: "active",
+      business: true,
+      seats: 10,
+      billing_interval: "month",
+    });
+
+  function ownerAdmin() {
+    mockFns.createAdminClient.mockReturnValue(
+      createFakeAdmin({
+        "team_members:select": [OWNER_MEMBERSHIP],
+        "teams:select": [staffTeam()],
+      })
+    );
+  }
+
+  test.each([
+    ["cancelling", () => cancelTeamSubscription("user_1", "team_1")],
+    ["resuming", () => resubscribeTeam("user_1", "team_1")],
+    ["changing seats", () => updateTeamSeats("user_1", "team_1", 12)],
+    ["quoting seats", () => quoteTeamSeatChange("user_1", "team_1", 12)],
+    ["changing the plan", () => changeTeamPlan("user_1", "team_1", "team", "month")],
+    ["keeping the plan", () => keepTeamPlan("user_1", "team_1")],
+  ])("%s is refused before Polar is asked", async (_what, call) => {
+    ownerAdmin();
+    await expect(call()).rejects.toMatchObject({ code: "no_subscription", message: COMPLIMENTARY });
+    expect(mockFns.createPolarClient).not.toHaveBeenCalled();
+  });
+
+  test("a checkout is refused as already live", async () => {
+    ownerAdmin();
+    await expect(createTeamCheckout("user_1", "team_1", 5, "team_business")).rejects.toMatchObject({
+      code: "already_subscribed",
+      message: "This team is complimentary (staff) and needs no subscription",
+    });
+    expect(mockFns.createPolarClient).not.toHaveBeenCalled();
+  });
+
+  test("the billing portal says there are no invoices", async () => {
+    ownerAdmin();
+    await expect(createTeamCustomerPortal("user_1", "team_1")).rejects.toMatchObject({
+      code: "no_customer",
+      message: "This team is complimentary (staff) and has no invoices",
+    });
+    expect(mockFns.createPolarClient).not.toHaveBeenCalled();
+  });
+});
+
 describe("subscription management", () => {
   test("cancelTeamSubscription flags cancel-at-period-end in Polar, then the row", async () => {
     mockFns.createAdminClient.mockReturnValue(

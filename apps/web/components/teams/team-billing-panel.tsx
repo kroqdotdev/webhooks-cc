@@ -303,6 +303,36 @@ export function TeamBillingPanel({
     }
   };
 
+  // ── Complimentary (a staff team, no subscription) ─────────────
+  if (team.complimentary) {
+    return (
+      <Panel
+        id="billing"
+        title="Billing"
+        description="This team is complimentary because staff own it. It has no subscription, so there is nothing to pay, change or cancel."
+      >
+        <PanelRow label="Status">
+          <div className="space-y-2 py-1">
+            <StatusTag tone="success">Complimentary</StatusTag>
+            {team.periodEnd && (
+              <p className="text-muted-foreground">
+                The request pool resets on {formatDate(team.periodEnd)}.
+              </p>
+            )}
+          </div>
+        </PanelRow>
+        <PanelRow label="Plan">
+          <p className="py-1">{teamPlanLabel(team.business ? "team_business" : "team")}</p>
+        </PanelRow>
+        <PanelRow label="Seats" hint={`${team.memberCount} of ${team.seats} in use`}>
+          <p className="py-1">
+            {team.seats} {team.seats === 1 ? "seat" : "seats"}
+          </p>
+        </PanelRow>
+      </Panel>
+    );
+  }
+
   // ── Unsubscribed ───────────────────────────────────────────────
   if (!team.subscriptionStatus) {
     if (!isOwner) {
