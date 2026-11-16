@@ -553,4 +553,58 @@ describe("deliverabilityReport", () => {
     expect(ids.ptr).toBeUndefined();
     expect(ids["message-id"]).toBe("pass");
   });
+
+  it("advises only on keys of the From domain, a provider's own key is information", () => {
+    const capture = email();
+    capture.auth = {
+      ...capture.auth!,
+      dkim: [
+        { result: "pass", domain: "acme.example", selector: "s1" },
+        { result: "pass", domain: "amazonses.com", selector: "ug7nbtf4" },
+      ],
+      setup: setup({
+        dkim: [
+          ...setup().dkim,
+          {
+            domain: "amazonses.com",
+            selector: "ug7nbtf4",
+            algorithm: "rsa-sha256",
+            key: "rsa",
+            bits: 1024,
+            revoked: false,
+            error: null,
+          },
+        ],
+      }),
+    };
+    const findings = report(capture).findings;
+    const ids = byId(findings);
+    expect(ids["dkim-key-0-acme.example-s1"]).toBe("pass");
+    expect(ids["dkim-key-1-amazonses.com-ug7nbtf4"]).toBe("info");
+    const provider = findings.find((f) => f.id === "dkim-key-1-amazonses.com-ug7nbtf4")!;
+    expect(provider.detail).not.toMatch(/rotate/i);
+    expect(findings.some((f) => f.status === "warn" || f.status === "fail")).toBe(false);
+  });
+
+  it("reads a subdomain or a sibling on the same organizational domain as the sender's own", () => {
+    const capture = email();
+    capture.auth = {
+      ...capture.auth!,
+      dkim: [{ result: "pass", domain: "mail.acme.example", selector: "s1" }],
+      setup: setup({ dkim: [{ ...setup().dkim[0], domain: "mail.acme.example", bits: 1024 }] }),
+    };
+    expect(byId(report(capture).findings)["dkim-key-0-mail.acme.example-s1"]).toBe("warn");
+  });
+
+  it("says reverse DNS was not checked when its lookup failed, and counts nothing to fix", () => {
+    const capture = email();
+    capture.auth = { ...capture.auth!, iprev: { result: "temperror", ptr: null } };
+    const findings = report(capture).findings;
+    expect(byId(findings).ptr).toBe("info");
+    expect(findings.find((f) => f.id === "ptr")!.title).toBe("Reverse DNS not checked");
+    // Mail captured before the MX host recorded temperror keeps its fail.
+    const old = email();
+    old.auth = { ...old.auth!, iprev: { result: "fail", ptr: null } };
+    expect(byId(report(old).findings).ptr).toBe("fail");
+  });
 });

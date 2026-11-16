@@ -10,6 +10,13 @@ export function mailhooksUrl(path: string): string {
   return `${mailhooksOrigin() ?? "https://mailhooks.cc"}${path === "/" ? "" : path}`;
 }
 
+/**
+ * The share image every mailhooks.cc page names, on its own origin: the
+ * site's own card (public/mailhooks-og.png, drawn once with ogImageResponse
+ * from lib/og/image.tsx with `site: "mailhooks.cc"`), not webhooks.cc's.
+ */
+export const MAILHOOKS_OG_IMAGE = mailhooksUrl("/mailhooks-og.png");
+
 export function mailhooksMetadata({
   title,
   description,
@@ -36,8 +43,10 @@ export function mailhooksMetadata({
       siteName: SITES.mailhooks.name,
       title,
       description,
+      // A page's openGraph replaces the root layout's whole, images included.
+      images: [MAILHOOKS_OG_IMAGE],
     },
-    twitter: { card: "summary", title, description },
+    twitter: { card: "summary_large_image", title, description, images: [MAILHOOKS_OG_IMAGE] },
     keywords,
   };
 }

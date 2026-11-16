@@ -1,12 +1,19 @@
 import { describe, expect, it, vi } from "vitest";
 import { TOOL_GROUP_NAMES } from "@webhooks-cc/mcp/tools";
 import {
+  callerFetch,
   INSTRUCTIONS,
   listingToolSelection,
   requestClientName,
   toolSelection,
   unknownGroupsNote,
 } from "./hosted";
+
+// No configured internal URL or notify proxy: callerFetch's defaults.
+vi.mock("@/lib/env", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/env")>()),
+  serverEnv: () => ({}),
+}));
 
 const META = "io.modelcontextprotocol/clientInfo";
 const url = (query = "") => new URL(`https://webhooks.cc/mcp${query}`);
@@ -119,5 +126,29 @@ describe("requestClientName", () => {
     );
     expect(requestClientName({ method: "tools/list" }, META)).toBeNull();
     expect(requestClientName(null, META)).toBeNull();
+  });
+});
+
+describe("callerFetch", () => {
+  it("carries the caller's address and country to the internal API", async () => {
+    const seen: Headers[] = [];
+    const spy = vi.spyOn(globalThis, "fetch").mockImplementation(async (_input, init) => {
+      seen.push(new Headers(init?.headers));
+      return new Response("{}");
+    });
+    try {
+      const port = process.env.PORT || 3000;
+      await callerFetch("203.0.113.7", "DK")(`http://127.0.0.1:${port}/api/approvals/x`, {
+        headers: { authorization: "Bearer whcc_x" },
+      });
+      expect(seen[0].get("cf-connecting-ip")).toBe("203.0.113.7");
+      // The approval page's "Asked from" reads it (deviceRequester()).
+      expect(seen[0].get("cf-ipcountry")).toBe("DK");
+      expect(seen[0].get("authorization")).toBe("Bearer whcc_x");
+      await callerFetch(null)(`http://127.0.0.1:${port}/api/endpoints`);
+      expect(seen[1].get("cf-ipcountry")).toBeNull();
+    } finally {
+      spy.mockRestore();
+    }
   });
 });

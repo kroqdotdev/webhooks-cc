@@ -59,15 +59,19 @@ export function unavailablePhase(message: string, code: string | null | undefine
  * paid, so it never says nothing was charged.
  */
 export function expiredNotice(expiredReason: string | null | undefined): string {
-  return expiredReason === "unsettled"
-    ? "Polar had not confirmed a payment by the time it expired. If you paid, it is still applied to the account once Polar confirms it, and we have been alerted. If you did not, ask the agent or tool for a new link."
-    : "Nothing was charged. If you still want it, ask the agent or tool for a new link.";
+  if (expiredReason === "unsettled") {
+    return "Polar had not confirmed a payment by the time it expired. If you paid, it is still applied to the account once Polar confirms it, and we have been alerted. If you did not, ask the agent or tool for a new link.";
+  }
+  if (expiredReason === "cancelled") {
+    return "It was cancelled before anyone opened it, and nothing was charged. If you still want it, ask the agent or tool for a new link.";
+  }
+  return "Nothing was charged. If you still want it, ask the agent or tool for a new link.";
 }
 
 /** The open route's answer. */
 export type OpenAnswer = ApiAnswer & {
   status?: string;
-  /** An expired link's reason: "unsettled" when it may have been paid. */
+  /** An expired link's reason: "unsettled" when it may have been paid, "cancelled" when cancelled. */
   expiredReason?: string | null;
   url?: string;
   summary?: string;

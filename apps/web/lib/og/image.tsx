@@ -55,6 +55,8 @@ export interface OgImageInput {
   subtitle?: string;
   /** The page's path, shown after the wordmark's host: "/compare/ngrok". */
   path?: string;
+  /** The wordmark: webhooks.cc, or mailhooks.cc for that site's pages. */
+  site?: string;
 }
 
 /** Longest subtitle and path that stay on one line at their sizes. */
@@ -145,7 +147,9 @@ export async function ogImageResponse(input: OgImageInput): Promise<ImageRespons
             borderTop: `1px solid ${HAIRLINE}`,
           }}
         >
-          <div style={{ fontSize: 32, fontWeight: 600, letterSpacing: -0.4 }}>webhooks.cc</div>
+          <div style={{ fontSize: 32, fontWeight: 600, letterSpacing: -0.4 }}>
+            {input.site ?? "webhooks.cc"}
+          </div>
           {path ? (
             <div style={{ fontFamily: MONO, fontSize: 24, fontWeight: 500, color: MUTED }}>
               {path}

@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import { usePathname } from "next/navigation";
 import Link from "next/link";
 import { X } from "lucide-react";
-import { ANNOUNCEMENTS, BANNER_HEIGHT } from "@/lib/announcements";
+import { ANNOUNCEMENTS, BANNER_HEIGHT, NO_BANNER_PATH_SOURCE } from "@/lib/announcements";
 import { isMaintenanceBannerEnabled } from "@/components/maintenance-banner";
 import { siteForHost } from "@/lib/site";
 
@@ -24,8 +24,8 @@ function wasDismissed(id: string): boolean {
 /** The signed-in app's pages, where the announcement never shows. */
 export const IN_APP_PATH = /^\/(dashboard|account|teams|support)(\/|$)/;
 
-/** Pages without the banner: the signed-in app, and signing in, where it only distracts. */
-const NO_BANNER_PATH = /^\/(dashboard|account|teams|support|login|auth)(\/|$)/;
+/** Pages without the banner (NO_BANNER_SECTIONS in lib/announcements.ts). */
+const NO_BANNER_PATH = new RegExp(NO_BANNER_PATH_SOURCE);
 
 /** Phones skip it: two pinned lines of promotion cost too much of a small screen. */
 const PHONE_QUERY = "(max-width: 639px)";

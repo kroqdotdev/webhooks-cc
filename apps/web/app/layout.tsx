@@ -14,7 +14,7 @@ import { ThemeProvider } from "@/components/providers/theme-provider";
 import { PostHogProvider } from "@/components/providers/posthog-provider";
 import { MaintenanceBanner } from "@/components/maintenance-banner";
 import { AnnouncementBanner } from "@/components/announcement-banner";
-import { ANNOUNCEMENTS, BANNER_HEIGHT } from "@/lib/announcements";
+import { ANNOUNCEMENTS, BANNER_HEIGHT, NO_BANNER_PATH_SOURCE } from "@/lib/announcements";
 import { buildAuthMdUrl } from "@/lib/agent/metadata";
 
 // Font variables live on <html>; globals.css names them in --font-sans and --font-mono.
@@ -135,7 +135,7 @@ export default function RootLayout({
         {ANNOUNCEMENTS.length > 0 && (
           <script
             dangerouslySetInnerHTML={{
-              __html: `(function(){${MAILHOOKS_HOST ? `if(location.hostname===${scriptLiteral(MAILHOOKS_HOST)})return;` : ""}if(/^\\/(dashboard|account|teams|support|login|auth)(\\/|$)/.test(location.pathname)||matchMedia('(max-width: 639px)').matches)return;var d=null;try{d=localStorage.getItem(${scriptLiteral(ANNOUNCEMENTS[0].id)})}catch(e){}if(!d)document.documentElement.style.setProperty('--ann-h','${BANNER_HEIGHT}')})();`,
+              __html: `(function(){${MAILHOOKS_HOST ? `if(location.hostname===${scriptLiteral(MAILHOOKS_HOST)})return;` : ""}if(new RegExp(${scriptLiteral(NO_BANNER_PATH_SOURCE)}).test(location.pathname)||matchMedia('(max-width: 639px)').matches)return;var d=null;try{d=localStorage.getItem(${scriptLiteral(ANNOUNCEMENTS[0].id)})}catch(e){}if(!d)document.documentElement.style.setProperty('--ann-h','${BANNER_HEIGHT}')})();`,
             }}
           />
         )}

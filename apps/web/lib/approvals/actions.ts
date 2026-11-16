@@ -20,6 +20,7 @@ import { SHARE_EXPIRY_DAYS, type ShareExpiryDays } from "@/lib/request-share";
 import { TeamBillingError } from "@/lib/supabase/team-billing";
 import { createInvite, deleteTeam, listTeamsForUser } from "@/lib/supabase/teams";
 import { isUuid } from "@/lib/uuid";
+import { cleanUntrustedName } from "@/lib/untrusted-name";
 import { loggablePolarError } from "@/lib/polar";
 import { reportError } from "@/lib/observability";
 import {
@@ -248,6 +249,26 @@ interface ShareParams {
   /** For the page: what is being published. */
   method: string;
   path: string;
+  /** The slug of the endpoint it was captured on (absent on older approvals). */
+  endpoint?: string;
+  /**
+   * The endpoint's name, cleaned (cleanUntrustedName): the asker can set it,
+   * so it is shown apart from the page's own sentences, never inside them.
+   */
+  endpointName?: string;
+  /** When it arrived, ISO 8601 (absent on older approvals). */
+  receivedAt?: string;
+}
+
+/** The endpoint's name for the page, cleaned, or none when it adds nothing to the slug. */
+function endpointName(slug: string, name: string | null): string | undefined {
+  const clean = name ? cleanUntrustedName(name, 60) : "";
+  return clean && clean !== slug ? clean : undefined;
+}
+
+/** "POST / on endpoint abc123", or the request alone on older approvals. */
+function shareTarget({ method, path, endpoint }: ShareParams): string {
+  return endpoint ? `${method} ${path} on endpoint ${endpoint}` : `${method} ${path}`;
 }
 
 const SHARE_REFUSALS = {
@@ -282,11 +303,11 @@ const createShareLink: ActionSpec<ShareParams> = {
     // after the owner was asked (createRequestShare checks again).
     const { data: endpoint, error } = await createAdminClient()
       .from("endpoints")
-      .select("user_id")
+      .select("user_id, slug, name")
       .eq("id", request.endpointId)
       .maybeSingle();
     if (error) throw error;
-    if (endpoint?.user_id !== userId) {
+    if (!endpoint || endpoint.user_id !== userId) {
       return { ok: false, error: SHARE_REFUSALS.not_owner.message, status: 403 };
     }
     return {
@@ -297,13 +318,22 @@ const createShareLink: ActionSpec<ShareParams> = {
         hideSensitive: body.hideSensitive !== false,
         method: request.method,
         path: request.path.slice(0, 200),
+        endpoint: endpoint.slug,
+        endpointName: endpointName(endpoint.slug, endpoint.name),
+        receivedAt: new Date(request.receivedAt).toISOString(),
       },
     };
   },
-  summary: ({ method, path, expiresInDays }) =>
-    `Publish a read-only copy of the request ${method} ${path} at a public link for ${days(expiresInDays)}.`,
-  details: ({ method, path, expiresInDays, hideSensitive }) => [
+  summary: (params) =>
+    `Publish a read-only copy of the request ${shareTarget(params)} at a public link for ${days(params.expiresInDays)}.`,
+  details: ({ method, path, endpoint, endpointName, receivedAt, expiresInDays, hideSensitive }) => [
     { label: "Request", value: `${method} ${path}` },
+    ...(endpoint ? [{ label: "Endpoint", value: endpoint }] : []),
+    // In quotes, as the asker's own words: whoever holds the key can rename it.
+    ...(endpointName ? [{ label: "Endpoint name", value: `\u201c${endpointName}\u201d` }] : []),
+    ...(receivedAt
+      ? [{ label: "Received", value: `${receivedAt.slice(0, 16).replace("T", " ")} UTC` }]
+      : []),
     { label: "Link works for", value: days(expiresInDays) },
     {
       label: "Headers left out",

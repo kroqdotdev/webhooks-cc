@@ -1,5 +1,6 @@
 "use client";
 
+import { SkipTarget } from "@/components/nav/skip-target";
 import { useAnnouncedRouter } from "@/lib/announced-router";
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
@@ -389,7 +390,7 @@ export function SiteHeader({
         </header>
       </Popover.Root>
       {/* The "Skip to content" link (app/layout.tsx) lands here, past the header. */}
-      <div id="main-content" tabIndex={-1} className="outline-none" />
+      <SkipTarget />
     </>
   );
 }

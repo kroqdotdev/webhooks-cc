@@ -1,5 +1,6 @@
 "use client";
 
+import { PageLoading } from "@/components/page-loading";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Suspense, useCallback, useEffect, useState } from "react";
@@ -51,11 +52,7 @@ export default function OAuthAuthorizePage() {
 }
 
 function Loading() {
-  return (
-    <div className="min-h-screen flex items-center justify-center">
-      <div className="animate-pulse text-muted-foreground">Loading...</div>
-    </div>
-  );
+  return <PageLoading />;
 }
 
 function AuthorizeContent() {

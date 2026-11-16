@@ -3426,6 +3426,16 @@ export interface Database {
         Args: { p_endpoint_id: string; p_max_pending?: number; p_destination_id?: string | null };
         Returns: number;
       };
+      delivery_summary_for_destination: {
+        Args: { p_endpoint_id: string; p_destination_id: string; p_since: string };
+        Returns: Array<{
+          delivered_recent: number;
+          failed_recent: number;
+          pending: number;
+          failed: number;
+          total: number;
+        }>;
+      };
       delivery_summary: {
         Args: { p_endpoint_id: string; p_since: string };
         Returns: Array<{

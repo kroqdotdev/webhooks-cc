@@ -1,4 +1,5 @@
 import { Suspense } from "react";
+import { SkipTargetAbove } from "@/components/nav/skip-target";
 import type { Metadata } from "next";
 import { RequireAuth } from "@/components/auth/require-auth";
 import { SiteHeader } from "@/components/nav/site-header";
@@ -13,11 +14,13 @@ export default function NewTicketPage() {
   return (
     <div className="min-h-screen">
       <SiteHeader />
-      <RequireAuth>
-        <Suspense>
-          <NewTicketForm />
-        </Suspense>
-      </RequireAuth>
+      <SkipTargetAbove>
+        <RequireAuth>
+          <Suspense>
+            <NewTicketForm />
+          </Suspense>
+        </RequireAuth>
+      </SkipTargetAbove>
     </div>
   );
 }

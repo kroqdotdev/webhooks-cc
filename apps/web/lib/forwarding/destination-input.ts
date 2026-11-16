@@ -405,8 +405,16 @@ export async function sheetsProblem(
 /**
  * A file drop needs a config, the secret its protocol uses, a server that
  * can make drops, and a plan with file drops (Business); checked against the
- * result of a change.
+ * result of a change. A missing plan carries `code: "plan_required"` and
+ * 403, the shape every plan gate answers (custom domains, add-ons); the rest
+ * are the request's own problems (400).
  */
+export interface FileDropProblem {
+  error: string;
+  status: 400 | 403;
+  code?: "plan_required";
+}
+
 export async function fileDropProblem(
   endpointId: string,
   next: {
@@ -414,21 +422,26 @@ export async function fileDropProblem(
     config: Json | null;
     secret: DropSecret | null;
   }
-): Promise<string | null> {
+): Promise<FileDropProblem | null> {
   if (next.format !== "file_drop") return null;
-  if (!dropsOffered()) return "File drops are not set up on this server.";
+  const invalid = (error: string): FileDropProblem => ({ error, status: 400 });
+  if (!dropsOffered()) return invalid("File drops are not set up on this server.");
   const config = storedFileDropConfig(next.config);
-  if (!config) return "Set where the files go and what they hold.";
+  if (!config) return invalid("Set where the files go and what they hold.");
   if (!secretFits(next.secret, config.protocol)) {
-    return config.protocol === "s3"
-      ? "Enter the storage's secret key."
-      : config.protocol === "sftp"
-        ? "Enter the password or a private key for the SFTP server."
-        : "Enter the FTP password.";
+    return invalid(
+      config.protocol === "s3"
+        ? "Enter the storage's secret key."
+        : config.protocol === "sftp"
+          ? "Enter the password or a private key for the SFTP server."
+          : "Enter the FTP password."
+    );
   }
   const { data, error } = await createAdminClient().rpc("file_drops_allowed", {
     p_endpoint_id: endpointId,
   });
   if (error) throw error;
-  return data === true ? null : "File drops are part of Business.";
+  return data === true
+    ? null
+    : { error: "File drops are part of Business.", code: "plan_required", status: 403 };
 }

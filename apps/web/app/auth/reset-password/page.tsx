@@ -1,5 +1,6 @@
 "use client";
 
+import { PageLoading } from "@/components/page-loading";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useEffect, useState, type FormEvent } from "react";
@@ -81,11 +82,7 @@ function ResetPasswordContent() {
   };
 
   if (!hasMounted || isLoading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="animate-pulse text-muted-foreground">Loading...</div>
-      </div>
-    );
+    return <PageLoading />;
   }
 
   if (!isAuthenticated) {

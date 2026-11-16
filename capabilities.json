@@ -1110,6 +1110,7 @@
     "/api/edge/*": "the tunnel edge's own calls, with its secret",
     "/api/polar-webhook": "Polar's webhook",
     "/api/health": "health check",
+    "/api/[...unknown]": "the JSON 404 for any /api path no route answers",
     "/api/stats": "the site's public totals",
     "/api/report": "the report form on preview pages",
     "/api/site-switch": "carries a browser session between webhooks.cc and mailhooks.cc",

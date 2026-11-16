@@ -161,7 +161,9 @@ export async function PATCH(request: Request, { params }: Params) {
             ? await getDestinationDropSecret(endpoint.id, id)
             : null,
     });
-    if (drop) return reply({ error: drop }, 400);
+    if (drop) {
+      return reply({ error: drop.error, ...(drop.code ? { code: drop.code } : {}) }, drop.status);
+    }
 
     const destination = await updateDestination(endpoint.id, id, parsed.changes);
     if (!destination) return reply({ error: "Destination not found" }, 404);

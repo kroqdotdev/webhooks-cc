@@ -98,7 +98,9 @@ export async function POST(request: Request, { params }: { params: Promise<{ slu
       config: parsed.changes.config ?? null,
       secret: parsed.changes.dropSecret ?? null,
     });
-    if (drop) return reply({ error: drop }, 400);
+    if (drop) {
+      return reply({ error: drop.error, ...(drop.code ? { code: drop.code } : {}) }, drop.status);
+    }
     const destination = await createDestination(endpoint.id, {
       ...parsed.changes,
       url: parsed.changes.url!,

@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { SkipTargetAbove } from "@/components/nav/skip-target";
 import { RequireAuth } from "@/components/auth/require-auth";
 import { SiteHeader } from "@/components/nav/site-header";
 import { OpsShell } from "@/components/ops/ops-shell";
@@ -13,9 +14,11 @@ export default function OpsLayout({ children }: { children: React.ReactNode }) {
   return (
     <div className="min-h-screen">
       <SiteHeader compact />
-      <RequireAuth>
-        <OpsShell>{children}</OpsShell>
-      </RequireAuth>
+      <SkipTargetAbove>
+        <RequireAuth>
+          <OpsShell>{children}</OpsShell>
+        </RequireAuth>
+      </SkipTargetAbove>
     </div>
   );
 }

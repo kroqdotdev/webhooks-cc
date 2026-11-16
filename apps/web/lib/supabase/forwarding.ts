@@ -349,20 +349,51 @@ export async function listRecentDeliveries(
 /** Counts for the Forwarding section's health line and the log's filters. */
 export async function getDeliverySummary(
   endpointId: string,
-  now: number = Date.now()
+  now: number = Date.now(),
+  destinationId: string | null = null
 ): Promise<DeliverySummary> {
+  if (destinationId) return destinationSummary(endpointId, destinationId, now);
   const { data, error } = await createAdminClient().rpc("delivery_summary", {
     p_endpoint_id: endpointId,
     p_since: new Date(now - 24 * 60 * 60 * 1000).toISOString(),
   });
   if (error) throw error;
-  const row = data?.[0];
+  return summaryOf(data?.[0]);
+}
+
+type SummaryRow = {
+  delivered_recent: number;
+  failed_recent: number;
+  pending: number;
+  failed: number;
+  total: number;
+};
+
+function summaryOf(row: SummaryRow | undefined): DeliverySummary {
   return {
     last24h: { delivered: row?.delivered_recent ?? 0, failed: row?.failed_recent ?? 0 },
     pending: row?.pending ?? 0,
     failed: row?.failed ?? 0,
     total: row?.total ?? 0,
   };
+}
+
+/**
+ * The same counts for one destination of the endpoint, capped as the
+ * endpoint's are (delivery_summary_for_destination, migration 00110).
+ */
+async function destinationSummary(
+  endpointId: string,
+  destinationId: string,
+  now: number
+): Promise<DeliverySummary> {
+  const { data, error } = await createAdminClient().rpc("delivery_summary_for_destination", {
+    p_endpoint_id: endpointId,
+    p_destination_id: destinationId,
+    p_since: new Date(now - 24 * 60 * 60 * 1000).toISOString(),
+  });
+  if (error) throw error;
+  return summaryOf(data?.[0]);
 }
 
 /**

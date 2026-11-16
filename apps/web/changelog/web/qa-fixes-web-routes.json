@@ -1,0 +1,16 @@
+{
+  "title": "Clearer API answers, approvals and sender checks",
+  "items": [
+    "An API path with an id that is no valid id answers 404 instead of a server error, and an unknown /api path answers JSON 404 instead of the HTML page",
+    "The file drop plan gate answers 403 with code plan_required, like custom domains and add-ons",
+    "Billing reads count the custom domain Business includes, name their counts in each resource's unit (unit, planUnits, blockUnits, creditUnits) beside the old request names, and say why an account whose plan has no subscription cannot buy add-ons",
+    "A cancelled checkout link reads expiredReason cancelled",
+    "The delivery summary follows the log's destination filter",
+    "Forwarding to a host name that does not resolve says so, instead of reporting a 530 answer",
+    "Approvals asked through the hosted MCP server show the country they came from, and a share link's approval names the endpoint and when the request arrived",
+    "The deliverability panel advises only on DKIM keys of the From domain, and reverse DNS that could not be looked up reads as not checked",
+    "The signature checker warns when a signature's timestamp is older than providers accept, and says when a signature header is not in the provider's form",
+    "mailhooks.cc pages carry their share image and /support its own title; other paths redirect to webhooks.cc permanently",
+    "The Teams banner stays off approval, checkout, sign-in and staff pages, the 404 page asks only not to be indexed, and the skip link has its target while a page loads"
+  ]
+}

@@ -289,6 +289,8 @@ export interface ProviderCheckInput {
   headersText: string;
   /** The URL the webhook was sent to, for the presets that sign it. */
   url: string;
+  /** The current time in ms, for tests. */
+  now?: number;
 }
 
 export type ProviderCheckResult =
@@ -297,8 +299,104 @@ export type ProviderCheckResult =
       valid: boolean;
       /** The signature header, when the pasted headers have no signature at all. */
       missing: string | null;
+      /**
+       * When the signature header is there but not in the form the provider
+       * sends (its parts named differently, or a bare value where it names
+       * them): the form, values elided, such as "t=…,v1=…".
+       */
+      unreadable?: string | null;
+      /** How old the request's timestamp is, in seconds, when the headers carry one. */
+      ageSeconds?: number | null;
     }
   | { ok: false; problem: string };
+
+/**
+ * How old a signed timestamp may be before a provider's own libraries
+ * refuse it as a possible replay: five minutes for Stripe, Slack, Svix and
+ * Standard Webhooks and most others. The SDK's check deliberately enforces
+ * none, so captured requests verify after the fact; this tool says so
+ * instead of refusing.
+ */
+export const TIMESTAMP_TOLERANCE_SECONDS = 5 * 60;
+
+/** A Unix time in seconds or milliseconds, as signature headers carry them. */
+const UNIX_TIME = /^\d{10}$|^\d{13}$/;
+
+/**
+ * The timestamp a request's headers carry, in seconds: a header of its own
+ * (x-slack-request-timestamp, webhook-timestamp, svix-timestamp) or a part
+ * of the signature header (t=, ts=). Read generically, from the header
+ * names and the form of the values, so no provider's scheme is copied here.
+ */
+export function signedTimestamp(
+  headers: Record<string, string>,
+  signatureHeader: string
+): number | null {
+  const candidates: string[] = [];
+  for (const [name, value] of Object.entries(headers)) {
+    if (name.includes("timestamp")) candidates.push(value.trim());
+  }
+  const signature = headers[signatureHeader.toLowerCase()];
+  if (signature) {
+    for (const part of signature.split(/[,;\s]+/)) {
+      const match = /^(?:t|ts)=(\d+)$/i.exec(part);
+      if (match) candidates.push(match[1]);
+    }
+  }
+  for (const value of candidates) {
+    if (!UNIX_TIME.test(value)) continue;
+    const number = Number(value);
+    return value.length === 13 ? Math.floor(number / 1000) : number;
+  }
+  return null;
+}
+
+/** The parts of a signature header: the names before "=", and "*" for each bare value. */
+function headerParts(value: string): Set<string> {
+  const parts = new Set<string>();
+  for (const token of value.trim().split(/[,;\s]+/)) {
+    if (!token) continue;
+    const named = /^([a-z][a-z0-9]{0,9})=./i.exec(token);
+    parts.add(named ? named[1].toLowerCase() : "*");
+  }
+  return parts;
+}
+
+/** A header value with its long runs (signatures, times) elided: "t=…,v1=…". */
+function headerForm(value: string): string {
+  return value.replace(
+    /([a-z][a-z0-9]{0,9}=)?[A-Za-z0-9+/_=.-]{8,}/gi,
+    (_, name: string | undefined) => `${name ?? ""}…`
+  );
+}
+
+/**
+ * Whether a pasted signature header has the parts the provider's own header
+ * has, judged against one the SDK signs now (buildTemplateSendOptions): the
+ * form, values elided, when it does not; null when it does or cannot tell.
+ */
+async function unreadableHeader(
+  preset: SignaturePreset,
+  secret: string,
+  payload: string,
+  url: string | undefined,
+  pasted: string
+): Promise<string | null> {
+  if (!preset.header) return null;
+  const sent = await buildTemplateSendOptions(url ?? "https://example.com/webhook", {
+    provider: preset.id,
+    secret,
+    body: payload,
+  });
+  const sample = Object.entries(sent.headers ?? {}).find(
+    ([name]) => name.toLowerCase() === preset.header.toLowerCase()
+  )?.[1];
+  if (!sample) return null;
+  const want = headerParts(sample);
+  const have = headerParts(pasted);
+  for (const part of want) if (!have.has(part)) return headerForm(sample);
+  return null;
+}
 
 /** Checks a request's signature the way the provider's scheme defines it. */
 export async function checkProviderSignature(
@@ -326,7 +424,17 @@ export async function checkProviderSignature(
     const hasSignature = Object.keys(parsed.headers).some(
       (name) => name === header || name.includes("signature")
     );
-    return { ok: true, valid, missing: !valid && !hasSignature ? header : null };
+    const missing = !valid && !hasSignature ? header : null;
+    const pasted = parsed.headers[header.toLowerCase()];
+    const unreadable =
+      !valid && !missing && pasted
+        ? await unreadableHeader(input.preset, input.secret, input.payload, url, pasted).catch(
+            () => null
+          )
+        : null;
+    const at = signedTimestamp(parsed.headers, header);
+    const ageSeconds = at === null ? null : Math.floor((input.now ?? Date.now()) / 1000) - at;
+    return { ok: true, valid, missing, unreadable, ageSeconds };
   } catch (error) {
     return {
       ok: false,
@@ -407,6 +515,30 @@ export interface SignatureVerdict {
   outcome: "ok" | "failed";
   title: string;
   detail: string;
+  /** Something to know besides the verdict (a timestamp too old for the provider's own check). */
+  warning?: string;
+}
+
+/** "62 minutes", "3 hours", "2 days". */
+function age(seconds: number): string {
+  const minutes = Math.round(seconds / 60);
+  if (minutes < 120) return `${minutes} minutes`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 48) return `${hours} hours`;
+  return `${Math.round(hours / 24)} days`;
+}
+
+/** Said when the request's timestamp is past the providers' tolerance, or in the future. */
+function timestampWarning(preset: SignaturePreset, ageSeconds: number | null | undefined) {
+  if (ageSeconds === null || ageSeconds === undefined) return undefined;
+  const limit = TIMESTAMP_TOLERANCE_SECONDS / 60;
+  if (ageSeconds > TIMESTAMP_TOLERANCE_SECONDS) {
+    return `Its timestamp is ${age(ageSeconds)} old. Many providers' libraries refuse a signature older than a few minutes (often ${limit}) as a possible replay, so a server checking it that way would turn this request away, though the signature itself matches.`;
+  }
+  if (ageSeconds < -TIMESTAMP_TOLERANCE_SECONDS) {
+    return `Its timestamp is ${age(-ageSeconds)} in the future. A server that allows ${limit} minutes either way would turn this request away; check the sender's clock.`;
+  }
+  return undefined;
 }
 
 const WHY_DIFFERENT =
@@ -415,13 +547,32 @@ const WHY_DIFFERENT =
 /** What a provider check's result means. */
 export function explainProviderCheck(
   preset: SignaturePreset,
-  result: { valid: boolean; missing: string | null }
+  result: {
+    valid: boolean;
+    missing: string | null;
+    unreadable?: string | null;
+    ageSeconds?: number | null;
+  }
 ): SignatureVerdict {
+  const warning = timestampWarning(preset, result.ageSeconds);
   if (result.valid) {
     return {
       outcome: "ok",
-      title: "Signature valid",
+      title: warning
+        ? (result.ageSeconds ?? 0) < 0
+          ? "Signature valid, timestamp in the future"
+          : "Signature valid, timestamp too old"
+        : "Signature valid",
       detail: `The ${preset.label} signature matches this payload and secret, byte for byte.`,
+      ...(warning ? { warning } : {}),
+    };
+  }
+  if (result.unreadable) {
+    return {
+      outcome: "failed",
+      title: `The ${preset.header} header is not in ${preset.label}'s form`,
+      detail: `${preset.label} sends ${preset.header} as ${result.unreadable}, and the value pasted here does not have those parts, so there is nothing to compare. Paste the header exactly as it arrived, every part of it.`,
+      ...(warning ? { warning } : {}),
     };
   }
   if (result.missing) {
@@ -435,6 +586,7 @@ export function explainProviderCheck(
     outcome: "failed",
     title: "Signature does not match",
     detail: `This signature was not made from this exact payload with this secret${preset.needsUrl ? " and URL" : ""}. ${WHY_DIFFERENT}`,
+    ...(warning ? { warning } : {}),
   };
 }
 
