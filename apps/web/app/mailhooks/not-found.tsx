@@ -5,7 +5,11 @@ import { SiteHeader } from "@/components/nav/site-header";
 import { MailhooksFooter } from "@/components/mailhooks/mailhooks-footer";
 import { Button } from "@/components/ui/button";
 
-export const metadata: Metadata = { title: { absolute: "Page not found | mailhooks.cc" } };
+// robots: null leaves Next's own noindex as the only robots tag (app/not-found.tsx).
+export const metadata: Metadata = {
+  title: { absolute: "Page not found | mailhooks.cc" },
+  robots: null,
+};
 
 export default function MailhooksNotFound() {
   return (

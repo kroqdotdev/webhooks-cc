@@ -169,6 +169,19 @@ function creditsFor(kind: CapacityKind): PurchaseKind | null {
 export const COMPLIMENTARY_TEAM_ADDONS_MESSAGE =
   "This team is complimentary (staff) and has no subscription to add to";
 
+/**
+ * Why a person whose plan was given without a subscription (a staff account)
+ * cannot buy add-ons: they are added to a subscription, and there is none.
+ */
+export const UNSUBSCRIBED_ADDONS_MESSAGE: Record<CapacityResource, string> = {
+  requests:
+    "Extra requests are added to a plan subscription, and this account's plan has none (it was given without one)",
+  pages:
+    "Extra parsed pages are added to a plan subscription, and this account's plan has none (it was given without one)",
+  domains:
+    "Extra domains are added to a plan subscription, and this account's plan has none (it was given without one)",
+};
+
 export class CapacityError extends Error {
   code: string;
   status: number;
@@ -181,7 +194,28 @@ export class CapacityError extends Error {
   }
 }
 
-export interface CapacityState {
+/**
+ * The capacity state in the units it counts. The request names came first
+ * and stay; the unit names say the same for every resource.
+ */
+export interface CapacityState extends CapacityStateCore {
+  /** What the counts below count: requests, parsed pages or custom domains. */
+  unit: CapacityResource;
+  /** planRequests, named for any resource: what the plan itself includes. */
+  planUnits: number;
+  /** blockRequests: what monthly blocks add this period. */
+  blockUnits: number;
+  /** creditRequests: one-time blocks left. */
+  creditUnits: number;
+  overage: CapacityStateCore["overage"] & {
+    /** maxRequests: the overage cap this period. */
+    maxUnits: number;
+    /** usedRequests: overage used this period. */
+    usedUnits: number;
+  };
+}
+
+interface CapacityStateCore {
   /** False until the four Polar products are configured. */
   offered: boolean;
   /** The account has a live plan (Pro, or a subscribed team) and may buy add-ons. */
@@ -193,7 +227,10 @@ export interface CapacityState {
   planEnding: boolean;
   periodStart: string | null;
   periodEnd: string | null;
-  /** The plan's own requests per period. */
+  /**
+   * What the plan itself includes per period (requests; pages or domains for
+   * those resources): see `planUnits`.
+   */
   planRequests: number;
   /** Requests added by recurring blocks this period. */
   blockRequests: number;
@@ -232,6 +269,12 @@ interface AccountRow {
    * 00108): its plan counts, but it has nothing to add add-ons to.
    */
   complimentary: boolean;
+  /**
+   * A person's plan that would allow each add-on, held without a Polar
+   * subscription (a staff account on Business): there is nothing to add
+   * add-ons to, which is the reason to give rather than an upgrade.
+   */
+  unsubscribed: Record<CapacityResource, boolean>;
   /** Page add-ons count: Business, or Team Business, on a live plan. */
   pages_active: boolean;
   /** Extra pages end at the renewal: the plan changes to one without them. */
@@ -242,6 +285,8 @@ interface AccountRow {
   domains_ending: boolean;
   /** The plan's own custom domains (its entitlements), and the extra ones counting now. */
   plan_custom_domains: number;
+  /** The plan's domains the account holds now, as inbound_domains_allowed() counts them. */
+  domains_included: number;
   extra_domains: number;
   /**
    * The quota period is the plan's last before it ends or changes: always
@@ -329,11 +374,13 @@ async function readAccount(account: CapacityAccount): Promise<AccountRow | null>
       ...row,
       plan_active: live,
       complimentary: live && subscriptionId === null,
+      unsubscribed: { requests: false, pages: false, domains: false },
       pages_active: live && entitlements.pageAddons,
       pages_ending: leavingBusiness,
       domains_active: live && entitlements.customDomains > 0,
       domains_ending: leavingBusiness,
       plan_custom_domains: entitlements.customDomains,
+      domains_included: live ? entitlements.customDomains : 0,
       last_period: interval !== "year" || endsBeforeNextWindow(billingEnd, row.period_end),
       annual_end: interval === "year" ? billingEnd : null,
       pages_follow_period: true,
@@ -361,11 +408,17 @@ async function readAccount(account: CapacityAccount): Promise<AccountRow | null>
     ...row,
     plan_active: entitlements.requestAddons && row.subscription_status !== null,
     complimentary: false,
+    unsubscribed: {
+      requests: entitlements.requestAddons && row.subscription_status === null,
+      pages: entitlements.pageAddons && row.subscription_status === null,
+      domains: entitlements.customDomains > 0 && row.subscription_status === null,
+    },
     pages_active: entitlements.pageAddons && row.subscription_status !== null,
     pages_ending: pendingPlan !== null && !planEntitlements(pendingPlan).pageAddons,
     domains_active: entitlements.customDomains > 0 && row.subscription_status !== null,
     domains_ending: pendingPlan !== null && planEntitlements(pendingPlan).customDomains === 0,
     plan_custom_domains: entitlements.customDomains,
+    domains_included: entitlements.customDomains,
     last_period: interval !== "year" || endsBeforeNextWindow(billingEnd, row.period_end),
     annual_end: interval === "year" ? billingEnd : null,
     plan_pages: entitlements.parsedPages,
@@ -455,6 +508,9 @@ async function requireEligible(
   if (row.complimentary) {
     throw new CapacityError("plan_required", COMPLIMENTARY_TEAM_ADDONS_MESSAGE);
   }
+  if (row.unsubscribed[resource]) {
+    throw new CapacityError("plan_required", UNSUBSCRIBED_ADDONS_MESSAGE[resource]);
+  }
   if (resource === "pages" && !row.pages_active) {
     throw new CapacityError(
       "plan_required",
@@ -526,8 +582,32 @@ export async function getCapacityState(
   if (!row) {
     throw new CapacityError("not_found", "Account not found", 404);
   }
-  if (resource === "pages") return pageState(account, row);
-  if (resource === "domains") return domainState(account, row);
+  const core =
+    resource === "pages"
+      ? await pageState(account, row)
+      : resource === "domains"
+        ? await domainState(account, row)
+        : await requestState(account, row);
+  return withUnits(core, resource);
+}
+
+/** The state with its unit and the neutral names beside the request ones. */
+function withUnits(core: CapacityStateCore, unit: CapacityResource): CapacityState {
+  return {
+    ...core,
+    unit,
+    planUnits: core.planRequests,
+    blockUnits: core.blockRequests,
+    creditUnits: core.creditRequests,
+    overage: {
+      ...core.overage,
+      maxUnits: core.overage.maxRequests,
+      usedUnits: core.overage.usedRequests,
+    },
+  };
+}
+
+async function requestState(account: CapacityAccount, row: AccountRow): Promise<CapacityStateCore> {
   const subscriptions = await liveSubscriptions(account);
   const blocks = liveOfKind(subscriptions, "blocks");
   const overage = liveOfKind(subscriptions, "overage");
@@ -568,7 +648,7 @@ export async function getCapacityState(
  * pages here). The window and its usage come from parsed_pages_balance(),
  * the same numbers a parse is charged against.
  */
-async function pageState(account: CapacityAccount, row: AccountRow): Promise<CapacityState> {
+async function pageState(account: CapacityAccount, row: AccountRow): Promise<CapacityStateCore> {
   const [pages, subscriptions] = await Promise.all([
     pageWindow(account, row),
     liveSubscriptions(account),
@@ -671,7 +751,7 @@ export async function getPageWindow(account: CapacityAccount): Promise<PageWindo
  * (planRequests), the extra ones (blockRequests) and the ones added (used).
  * There are no one-time domains and no overage.
  */
-async function domainState(account: CapacityAccount, row: AccountRow): Promise<CapacityState> {
+async function domainState(account: CapacityAccount, row: AccountRow): Promise<CapacityStateCore> {
   const admin = createAdminClient();
   let query = admin.from("inbound_domains").select("id", { count: "exact", head: true });
   query =
@@ -689,8 +769,11 @@ async function domainState(account: CapacityAccount, row: AccountRow): Promise<C
       row.domains_active && row.last_period && (row.cancel_at_period_end || row.domains_ending),
     periodStart: row.period_start,
     periodEnd: row.period_end,
-    planRequests: row.domains_active ? row.plan_custom_domains : 0,
-    blockRequests: row.extra_domains,
+    // What inbound_domains_allowed() grants: a person's plan includes its
+    // domains whether or not a subscription is live (a staff account has
+    // none), a team's only while subscribed.
+    planRequests: row.domains_included,
+    blockRequests: row.domains_included > 0 ? row.extra_domains : 0,
     used: count ?? 0,
     creditRequests: 0,
     blocks: blocks

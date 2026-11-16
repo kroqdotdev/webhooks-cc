@@ -22,8 +22,8 @@ export interface CheckoutReviewData {
   unavailable: string | null;
   /** The refusal's code: checkout_in_progress is for now only (Try again). */
   unavailableCode?: string | null;
-  /** An expired link's reason: "unsettled" when it may have been paid. */
-  expiredReason?: "unsettled" | null;
+  /** An expired link's reason: "unsettled" when it may have been paid, "cancelled" when cancelled. */
+  expiredReason?: "unsettled" | "cancelled" | null;
   country: string | null;
   network: "same" | "different" | "unknown";
   createdAt: string;

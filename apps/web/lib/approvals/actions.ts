@@ -248,6 +248,24 @@ interface ShareParams {
   /** For the page: what is being published. */
   method: string;
   path: string;
+  /**
+   * The endpoint it was captured on: its name and slug ("Acme (abc123)"), or
+   * the slug. Absent on approvals asked before it was recorded.
+   */
+  endpoint?: string;
+  /** When it arrived, ISO 8601 (absent on older approvals). */
+  receivedAt?: string;
+}
+
+/** "Acme (abc123)", or the slug alone when the endpoint has no name. */
+function endpointLabel(slug: string, name: string | null): string {
+  const clean = name?.replace(/\s+/g, " ").trim().slice(0, 80);
+  return clean && clean !== slug ? `${clean} (${slug})` : slug;
+}
+
+/** "POST / on Acme (abc123)", or the request alone on older approvals. */
+function shareTarget({ method, path, endpoint }: ShareParams): string {
+  return endpoint ? `${method} ${path} on ${endpoint}` : `${method} ${path}`;
 }
 
 const SHARE_REFUSALS = {
@@ -282,11 +300,11 @@ const createShareLink: ActionSpec<ShareParams> = {
     // after the owner was asked (createRequestShare checks again).
     const { data: endpoint, error } = await createAdminClient()
       .from("endpoints")
-      .select("user_id")
+      .select("user_id, slug, name")
       .eq("id", request.endpointId)
       .maybeSingle();
     if (error) throw error;
-    if (endpoint?.user_id !== userId) {
+    if (!endpoint || endpoint.user_id !== userId) {
       return { ok: false, error: SHARE_REFUSALS.not_owner.message, status: 403 };
     }
     return {
@@ -297,13 +315,19 @@ const createShareLink: ActionSpec<ShareParams> = {
         hideSensitive: body.hideSensitive !== false,
         method: request.method,
         path: request.path.slice(0, 200),
+        endpoint: endpointLabel(endpoint.slug, endpoint.name),
+        receivedAt: new Date(request.receivedAt).toISOString(),
       },
     };
   },
-  summary: ({ method, path, expiresInDays }) =>
-    `Publish a read-only copy of the request ${method} ${path} at a public link for ${days(expiresInDays)}.`,
-  details: ({ method, path, expiresInDays, hideSensitive }) => [
+  summary: (params) =>
+    `Publish a read-only copy of the request ${shareTarget(params)} at a public link for ${days(params.expiresInDays)}.`,
+  details: ({ method, path, endpoint, receivedAt, expiresInDays, hideSensitive }) => [
     { label: "Request", value: `${method} ${path}` },
+    ...(endpoint ? [{ label: "Endpoint", value: endpoint }] : []),
+    ...(receivedAt
+      ? [{ label: "Received", value: `${receivedAt.slice(0, 16).replace("T", " ")} UTC` }]
+      : []),
     { label: "Link works for", value: days(expiresInDays) },
     {
       label: "Headers left out",

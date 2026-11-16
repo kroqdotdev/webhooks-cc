@@ -213,9 +213,25 @@ describe("proxy: two sites", () => {
     }
   });
 
+  it("answers an API path with a malformed id 404 in JSON, before any route", async () => {
+    for (const method of ["GET", "POST", "DELETE"]) {
+      const res = await proxy(
+        new NextRequest("https://webhooks.cc/api/requests/nope", {
+          method,
+        })
+      );
+      expect(res.status, method).toBe(404);
+      expect(await res.json(), method).toMatchObject({ error: "not_found" });
+    }
+    const ok = await proxy(
+      new NextRequest("https://webhooks.cc/api/requests/0b9f6a52-3f43-4c47-9a83-2f7d8a1c5e10")
+    );
+    expect(ok.status).toBe(200);
+  });
+
   it("sends webhooks.cc's pages from mailhooks.cc to webhooks.cc", async () => {
     const res = await proxy(new NextRequest("https://mailhooks.cc/blog/some-post?x=1"));
-    expect(res.status).toBe(307);
+    expect(res.status).toBe(308);
     expect(res.headers.get("location")).toBe("https://webhooks.cc/blog/some-post?x=1");
   });
 

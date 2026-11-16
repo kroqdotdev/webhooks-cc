@@ -82,6 +82,25 @@ function describeError(error: unknown, timeoutMs: number): string {
   return err.message ? err.message.slice(0, 300) : "The request failed.";
 }
 
+/**
+ * The Worker's fetch never throws for a host it cannot reach: Cloudflare
+ * answers it itself, 530 with a plain "error code: 1016" body when the name
+ * does not resolve (1xxx codes are Cloudflare's own errors, never a
+ * server's). Read as the connection failure it is, as a direct send would
+ * report it, rather than "The URL answered 530".
+ */
+export function cloudflareEdgeError(
+  status: number | undefined,
+  body: string | null | undefined
+): string | null {
+  if (status !== 530 || !body) return null;
+  const match = /^\s*error code: (1\d{3})\s*$/.exec(body);
+  if (!match) return null;
+  const code = match[1];
+  if (code === "1016") return "The host name could not be resolved (Cloudflare error 1016).";
+  return `The host could not be reached (Cloudflare error ${code}).`;
+}
+
 async function viaProxy(
   outgoing: Outgoing,
   options: SendOptions & { proxy: { url: string; secret: string } }
@@ -158,6 +177,8 @@ async function viaProxy(
     };
   }
   if (result.error) return { status: null, excerpt: null, error: result.error.slice(0, 300) };
+  const edgeError = cloudflareEdgeError(result.status, result.body);
+  if (edgeError) return { status: null, excerpt: null, error: edgeError };
   return {
     status: result.status ?? null,
     excerpt: result.body || null,

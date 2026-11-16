@@ -8,6 +8,9 @@ export const metadata: Metadata = {
   // Absolute: this page serves both sites, so no site name is appended.
   title: { absolute: "Page not found" },
   alternates: {},
+  // Next adds its own noindex to every 404; without this the root layout's
+  // "index, follow" would be rendered beside it.
+  robots: null,
 };
 
 export default function NotFound() {

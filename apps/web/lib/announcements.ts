@@ -25,6 +25,33 @@ export const ANNOUNCEMENTS: Announcement[] = [
 ];
 
 /**
+ * Top-level sections without the announcement banner: the signed-in app,
+ * signing in, and the one-purpose pages a person reaches from a link to do
+ * one thing (approve, pay, confirm a login, report a preview, read a shared
+ * request, the staff operations center), where promotion only distracts.
+ * The root layout's inline script and AnnouncementBanner both read this.
+ */
+export const NO_BANNER_SECTIONS: readonly string[] = [
+  "dashboard",
+  "account",
+  "teams",
+  "support",
+  "login",
+  "auth",
+  "ops",
+  "approve",
+  "checkout",
+  "cli",
+  "oauth",
+  "agent",
+  "report",
+  "s",
+];
+
+/** The pattern of NO_BANNER_SECTIONS, as source for a RegExp. */
+export const NO_BANNER_PATH_SOURCE = `^\\/(${NO_BANNER_SECTIONS.join("|")})(\\/|$)`;
+
+/**
  * The fixed banners are sized to exactly this, so everything laid out
  * beneath them can rely on the number rather than measure.
  */

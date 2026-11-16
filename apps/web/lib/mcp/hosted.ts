@@ -90,20 +90,23 @@ async function viaNotifyProxy(url: string, init: RequestInit | undefined): Promi
 
 /**
  * The SDK's fetch: requests to the internal API carry the caller's address,
- * which the API's rate limits read (a loopback request has no Cloudflare
- * header of its own). Anything else (the receiver, for send_webhook and
- * test_webhook_flow) leaves through the notify proxy when there is one.
+ * which the API's rate limits read, and its country, which an approval's
+ * page shows as where the agent asked from (a loopback request has no
+ * Cloudflare headers of its own). Anything else (the receiver, for
+ * send_webhook and test_webhook_flow) leaves through the notify proxy when
+ * there is one.
  */
-export function callerFetch(clientIp: string | null): typeof fetch {
+export function callerFetch(clientIp: string | null, country: string | null = null): typeof fetch {
   const internal = internalApiUrl();
   return (input, init) => {
     const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
     if (!url.startsWith(`${internal}/`)) {
       return serverEnv().NOTIFY_PROXY_URL ? viaNotifyProxy(url, init) : fetch(input, init);
     }
-    if (!clientIp) return fetch(input, init);
+    if (!clientIp && !country) return fetch(input, init);
     const headers = new Headers(init?.headers);
-    headers.set("cf-connecting-ip", clientIp);
+    if (clientIp) headers.set("cf-connecting-ip", clientIp);
+    if (country) headers.set("cf-ipcountry", country);
     return fetch(input, { ...init, headers });
   };
 }
@@ -215,6 +218,8 @@ function toolServer(server: McpServer, account: string, note: string | null): To
 export interface CallerAuth {
   token: string;
   clientIp: string | null;
+  /** Cloudflare's country code for the caller (CF-IPCountry), when it sent one. */
+  country?: string | null;
   /** The account the token acts for; the cap on running tools is per account. */
   userId: string;
   /** The tool groups this caller gets (toolSelection). */
@@ -370,7 +375,7 @@ export function buildServer(caller: CallerAuth | undefined): McpServer {
     apiKey: caller?.token ?? "whcc_unauthenticated",
     baseUrl: internalApiUrl(),
     webhookUrl: publicEnv().NEXT_PUBLIC_WEBHOOK_URL,
-    fetch: callerFetch(caller?.clientIp ?? null),
+    fetch: callerFetch(caller?.clientIp ?? null, caller?.country ?? null),
     // Tells the remote server's calls apart from the stdio server's in analytics.
     userAgent: `webhooks-cc-mcp-remote/${APP_VERSION}`,
   });
@@ -396,6 +401,7 @@ export const mcpHandler = createMcpHandler(
         ? {
             token: authInfo.token,
             clientIp: (authInfo.extra?.clientIp as string | undefined) ?? null,
+            country: (authInfo.extra?.country as string | undefined) ?? null,
             userId: (authInfo.extra?.userId as string | undefined) ?? authInfo.token,
             groups: (authInfo.extra?.groups as Set<ToolGroup> | undefined) ?? new Set(["core"]),
             readOnly: authInfo.extra?.readOnly === true,

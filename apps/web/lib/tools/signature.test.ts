@@ -7,8 +7,10 @@ import {
   getSignaturePreset,
   headerLines,
   parseHeaderText,
+  explainProviderCheck,
   signProviderPayload,
   signaturesMatch,
+  signedTimestamp,
   type HmacInput,
 } from "./signature";
 
@@ -184,19 +186,22 @@ describe("provider presets", () => {
       expect(names.length, preset.id).toBeLessThanOrEqual(3);
 
       const headersText = headerLines(signed.headers);
-      expect(await checkProviderSignature({ ...input, headersText }), preset.id).toEqual({
-        ok: true,
-        valid: true,
-        missing: null,
-      });
+      const fresh = await checkProviderSignature({ ...input, headersText });
+      expect(fresh, preset.id).toMatchObject({ ok: true, valid: true, missing: null });
+      // Signed just now: any timestamp it carries is no warning.
+      const freshAge = fresh.ok ? fresh.ageSeconds : null;
+      if (freshAge !== null && freshAge !== undefined) {
+        expect(Math.abs(freshAge), preset.id).toBeLessThan(60);
+      }
+      // A header in the provider's own form is never called unreadable.
       expect(
         await checkProviderSignature({ ...input, headersText, payload: `${PAYLOAD} ` }),
         preset.id
-      ).toEqual({ ok: true, valid: false, missing: null });
+      ).toMatchObject({ ok: true, valid: false, missing: null, unreadable: null });
       expect(
         await checkProviderSignature({ ...input, headersText, secret: "another secret" }),
         preset.id
-      ).toEqual({ ok: true, valid: false, missing: null });
+      ).toMatchObject({ ok: true, valid: false, missing: null, unreadable: null });
     }
   });
 
@@ -210,7 +215,7 @@ describe("provider presets", () => {
         headersText: "content-type: application/json",
         url: "",
       })
-    ).toEqual({ ok: true, valid: false, missing: "x-hub-signature-256" });
+    ).toMatchObject({ ok: true, valid: false, missing: "x-hub-signature-256" });
   });
 
   it("asks for the URL exactly where the SDK's check needs one", async () => {
@@ -248,7 +253,7 @@ describe("provider presets", () => {
         headersText: header,
         url: "",
       })
-    ).toEqual({ ok: true, valid: true, missing: null });
+    ).toMatchObject({ ok: true, valid: true, missing: null, ageSeconds: null });
     const hmac = await computeHmac({
       secret,
       secretEncoding: "utf8",
@@ -302,5 +307,58 @@ describe("verdicts", () => {
     );
     expect(explainComparison(true).outcome).toBe("ok");
     expect(explainComparison(false).title).toBe("Signatures differ");
+  });
+});
+
+describe("timestamps and unreadable headers", () => {
+  const PAYLOAD = JSON.stringify({ id: "evt_1", type: "payment_intent.succeeded" });
+  const stripe = () => getSignaturePreset("stripe")!;
+
+  it("warns when a valid signature's timestamp is past the providers' tolerance", async () => {
+    const input = { preset: stripe(), secret: "whsec_test", payload: PAYLOAD, url: "" };
+    const signed = await signProviderPayload(input);
+    if (!signed.ok) throw new Error(signed.problem);
+    const headersText = headerLines(signed.headers);
+    const anHourLater = Date.now() + 60 * 60 * 1000;
+    const result = await checkProviderSignature({ ...input, headersText, now: anHourLater });
+    expect(result).toMatchObject({ ok: true, valid: true });
+    if (!result.ok) return;
+    expect(result.ageSeconds).toBeGreaterThanOrEqual(3599);
+    const verdict = explainProviderCheck(stripe(), result);
+    expect(verdict.outcome).toBe("ok");
+    expect(verdict.title).toBe("Signature valid, timestamp too old");
+    expect(verdict.warning).toMatch(/60 minutes old/);
+    // Within the tolerance there is nothing to say.
+    const now = await checkProviderSignature({ ...input, headersText });
+    expect(now.ok && explainProviderCheck(stripe(), now).warning).toBeUndefined();
+  });
+
+  it("reads a timestamp header or a t= part, in seconds or milliseconds", () => {
+    expect(
+      signedTimestamp({ "x-slack-request-timestamp": "1731760000" }, "x-slack-signature")
+    ).toBe(1731760000);
+    expect(signedTimestamp({ "stripe-signature": "t=1731760000,v1=abc" }, "stripe-signature")).toBe(
+      1731760000
+    );
+    expect(signedTimestamp({ "x-sig": "t=1731760000123, v1=abc" }, "x-sig")).toBe(1731760000);
+    expect(
+      signedTimestamp({ "x-hub-signature-256": "sha256=1234567890" }, "x-hub-signature-256")
+    ).toBe(null);
+  });
+
+  it("says when the signature header is not in the provider's form", async () => {
+    const result = await checkProviderSignature({
+      preset: stripe(),
+      secret: "whsec_test",
+      payload: PAYLOAD,
+      headersText:
+        "stripe-signature: 5f3a9c0e1b2d4f6a8c0e1b2d4f6a8c0e1b2d4f6a8c0e1b2d4f6a8c0e1b2d4f6a",
+      url: "",
+    });
+    expect(result).toMatchObject({ ok: true, valid: false, missing: null, unreadable: "t=…,v1=…" });
+    if (!result.ok) return;
+    const verdict = explainProviderCheck(stripe(), result);
+    expect(verdict.title).toBe("The stripe-signature header is not in Stripe's form");
+    expect(verdict.detail).toContain("t=…,v1=…");
   });
 });

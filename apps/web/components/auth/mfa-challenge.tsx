@@ -1,5 +1,6 @@
 "use client";
 
+import { SkipTarget } from "@/components/nav/skip-target";
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ShieldCheck } from "lucide-react";
@@ -142,6 +143,7 @@ export function MfaChallenge({ onVerified }: { onVerified: () => void }) {
   if (recovered) {
     return (
       <div className="flex min-h-[70vh] items-center justify-center px-6">
+        <SkipTarget />
         <Card className="w-full max-w-sm space-y-4">
           <ShieldCheck className="h-6 w-6 text-primary" aria-hidden="true" />
           <h1 className="text-xl font-semibold">You are signed in</h1>
@@ -169,6 +171,7 @@ export function MfaChallenge({ onVerified }: { onVerified: () => void }) {
 
   return (
     <div className="flex min-h-[70vh] items-center justify-center px-6">
+      <SkipTarget />
       <Card className="w-full max-w-sm space-y-4" render={<form onSubmit={verify} />}>
         <ShieldCheck className="h-6 w-6 text-primary" aria-hidden="true" />
         <div className="space-y-1">

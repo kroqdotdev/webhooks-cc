@@ -1,5 +1,6 @@
 "use client";
 
+import { PageLoading } from "@/components/page-loading";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useEffect, useState } from "react";
@@ -56,11 +57,7 @@ export default function AgentClaimPage() {
 }
 
 function Loading() {
-  return (
-    <div className="min-h-screen flex items-center justify-center">
-      <div className="animate-pulse text-muted-foreground">Loading...</div>
-    </div>
-  );
+  return <PageLoading />;
 }
 
 function AgentClaimContent() {

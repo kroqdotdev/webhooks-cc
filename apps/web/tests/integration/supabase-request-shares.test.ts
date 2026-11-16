@@ -179,8 +179,22 @@ describe("request share links", () => {
     const before = await sharesOf();
     const withKey = await share(apiKey, { expiresInDays: 7 });
     expect(withKey.status).toBe(202);
-    const asked = (await withKey.json()) as { approval: { id: string; action: string } };
+    const asked = (await withKey.json()) as {
+      approval: { id: string; action: string; summary: string };
+    };
     expect(asked.approval.action).toBe("request_shares.create");
+    // The person approving sees which endpoint the request came to, not only its path.
+    const { data: endpointRow } = await admin
+      .from("endpoints")
+      .select("slug")
+      .eq(
+        "id",
+        (await admin.from("requests").select("endpoint_id").eq("id", requestId).single()).data!
+          .endpoint_id
+      )
+      .single();
+    expect(asked.approval.summary).toContain(` on `);
+    expect(asked.approval.summary).toContain(endpointRow!.slug);
     // Nothing is published until the owner approves.
     expect(await sharesOf()).toBe(before);
     await admin.from("approvals").delete().eq("id", asked.approval.id);

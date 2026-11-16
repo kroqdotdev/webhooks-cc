@@ -349,8 +349,10 @@ export async function listRecentDeliveries(
 /** Counts for the Forwarding section's health line and the log's filters. */
 export async function getDeliverySummary(
   endpointId: string,
-  now: number = Date.now()
+  now: number = Date.now(),
+  destinationId: string | null = null
 ): Promise<DeliverySummary> {
+  if (destinationId) return destinationSummary(endpointId, destinationId, now);
   const { data, error } = await createAdminClient().rpc("delivery_summary", {
     p_endpoint_id: endpointId,
     p_since: new Date(now - 24 * 60 * 60 * 1000).toISOString(),
@@ -363,6 +365,42 @@ export async function getDeliverySummary(
     failed: row?.failed ?? 0,
     total: row?.total ?? 0,
   };
+}
+
+/**
+ * The same counts for one destination of the endpoint, on the index the
+ * log's destination filter uses (email_deliveries_destination, 00063).
+ */
+async function destinationSummary(
+  endpointId: string,
+  destinationId: string,
+  now: number
+): Promise<DeliverySummary> {
+  const admin = createAdminClient();
+  const since = new Date(now - 24 * 60 * 60 * 1000).toISOString();
+  const count = async (filter: {
+    status?: "succeeded" | "failed" | "pending";
+    recent?: boolean;
+  }): Promise<number> => {
+    let query = admin
+      .from("email_deliveries")
+      .select("id", { count: "exact", head: true })
+      .eq("endpoint_id", endpointId)
+      .eq("destination_id", destinationId);
+    if (filter.recent) query = query.gte("created_at", since);
+    if (filter.status) query = query.eq("status", filter.status);
+    const { count: n, error } = await query;
+    if (error) throw error;
+    return n ?? 0;
+  };
+  const [delivered, failedRecent, pending, failed, total] = await Promise.all([
+    count({ recent: true, status: "succeeded" }),
+    count({ recent: true, status: "failed" }),
+    count({ status: "pending" }),
+    count({ status: "failed" }),
+    count({}),
+  ]);
+  return { last24h: { delivered, failed: failedRecent }, pending, failed, total };
 }
 
 /**

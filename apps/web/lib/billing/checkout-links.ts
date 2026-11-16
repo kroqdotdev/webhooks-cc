@@ -292,9 +292,10 @@ export interface CheckoutLinkView {
    * a payment Polar was still confirming a day past its expiry, or sessions
    * Polar could not be read about 15 minutes past it. Such a link may have
    * been paid: a payment that lands still turns it paid, and we have been
-   * alerted. Null otherwise.
+   * alerted. "cancelled" when the asker cancelled it before it was opened
+   * (DELETE). Null otherwise.
    */
-  expiredReason: BillingCheckoutExpiredReason | null;
+  expiredReason: CheckoutExpiredReason | null;
   createdAt: string;
   expiresAt: string;
   paidAt: string | null;
@@ -402,7 +403,7 @@ function view(row: Row): CheckoutLinkView {
     createdAt: row.created_at,
     expiresAt: row.expires_at,
     paidAt: row.paid_at,
-    expiredReason: row.status === "expired" ? (row.expired_reason ?? null) : null,
+    expiredReason: expiredReasonOf(row),
     bought: paid ? bought : null,
     // A mismatch the webhook recorded (a top-up paid on another base) is
     // one the order itself cannot show.
@@ -745,7 +746,7 @@ export interface CheckoutLinkReview {
    */
   unavailableCode: string | null;
   /** As CheckoutLinkView's: why an expired link expired, when it may have been paid. */
-  expiredReason: BillingCheckoutExpiredReason | null;
+  expiredReason: CheckoutExpiredReason | null;
   country: string | null;
   /** Whether the link was made from this browser's network. */
   network: NetworkMatch;
@@ -800,7 +801,7 @@ export async function reviewCheckoutLink(
     requester: await requesterOf(row),
     unavailable: check.unavailable,
     unavailableCode: check.unavailableCode,
-    expiredReason: status === "expired" ? (row.expired_reason ?? null) : null,
+    expiredReason: status === "expired" ? expiredReasonOf({ ...row, status: "expired" }) : null,
     country: row.country,
     network: compareNetworks(row.network, viewerNetwork),
     createdAt: row.created_at,
@@ -1139,6 +1140,20 @@ async function markPaid(
   return (data as Row[] | null)?.[0] ?? null;
 }
 
+/**
+ * Why an expired link expired, as clients read it: the stored reason
+ * ("unsettled"), else "cancelled" when the asker cancelled it, else null
+ * (it simply went unpaid).
+ */
+export type CheckoutExpiredReason = BillingCheckoutExpiredReason | "cancelled";
+
+function expiredReasonOf(
+  row: Pick<Row, "status" | "expired_reason" | "cancelled_at">
+): CheckoutExpiredReason | null {
+  if (row.status !== "expired") return null;
+  return row.expired_reason ?? (row.cancelled_at ? "cancelled" : null);
+}
+
 async function markExpired(
   id: string,
   reason: BillingCheckoutExpiredReason | null = null
@@ -1164,7 +1179,7 @@ export type OpenCheckoutResult = (
   | {
       kind: "expired";
       /** As CheckoutLinkView's: "unsettled" when it may have been paid. */
-      expiredReason: BillingCheckoutExpiredReason | null;
+      expiredReason: CheckoutExpiredReason | null;
     }
 ) & { summary: string; link: OpenedLink };
 
@@ -1174,7 +1189,7 @@ function settledResult(row: Row, summary: string, link: OpenedLink): OpenCheckou
   if (kind === "expired") {
     return {
       kind,
-      expiredReason: row.status === "expired" ? (row.expired_reason ?? null) : null,
+      expiredReason: expiredReasonOf(row),
       summary,
       link,
     };

@@ -1,5 +1,6 @@
 "use client";
 
+import { PageLoading } from "@/components/page-loading";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useState } from "react";
 import Link from "next/link";
@@ -14,13 +15,7 @@ import { describeLoginError } from "@/lib/auth-errors";
 export default function LoginPage() {
   return (
     <SupabaseAuthProvider>
-      <Suspense
-        fallback={
-          <div className="min-h-screen flex items-center justify-center">
-            <div className="animate-pulse text-muted-foreground">Loading...</div>
-          </div>
-        }
-      >
+      <Suspense fallback={<PageLoading />}>
         <LoginContent />
       </Suspense>
     </SupabaseAuthProvider>
@@ -55,11 +50,7 @@ function LoginContent() {
   }, [isAuthenticated, isLoading, router, redirectTo]);
 
   if (!hasMounted || isLoading || isAuthenticated) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="animate-pulse text-muted-foreground">Loading...</div>
-      </div>
-    );
+    return <PageLoading />;
   }
 
   return (

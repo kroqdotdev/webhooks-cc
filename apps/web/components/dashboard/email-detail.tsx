@@ -44,6 +44,7 @@ import {
   type Finding,
   type FindingGroup,
   type FindingStatus,
+  iprevUnchecked,
 } from "@/lib/deliverability";
 import { JsonTree } from "./json-tree";
 import { NoteBar, type DisplayableRequest } from "./request-detail";
@@ -813,12 +814,18 @@ function AuthenticationPane({
             </CheckRow>
             <CheckRow
               name="Reverse DNS"
-              verdict={verdictOf(iprev?.result)}
-              label={resultLabel(verdictOf(iprev?.result))}
+              verdict={iprevUnchecked(iprev?.result) ? "none" : verdictOf(iprev?.result)}
+              label={
+                iprevUnchecked(iprev?.result)
+                  ? "Not checked"
+                  : resultLabel(verdictOf(iprev?.result))
+              }
             >
               {iprev?.result === "pass" && iprev.ptr
                 ? `${clientIp} resolves to ${iprev.ptr} and back.`
-                : `${clientIp} has no reverse DNS name that resolves back to it.`}
+                : iprevUnchecked(iprev?.result)
+                  ? `The reverse DNS of ${clientIp} could not be looked up when the email arrived (${iprev?.result}), so it says nothing either way.`
+                  : `${clientIp} has no reverse DNS name that resolves back to it.`}
             </CheckRow>
             {arc && (arc.sets > 0 || arc.result === "skipped") && (
               <CheckRow

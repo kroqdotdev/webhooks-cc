@@ -1,7 +1,13 @@
 import { createServer, type IncomingMessage, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { isDelivered, jsonForward, parseRetryAfter, sendForward } from "./send";
+import {
+  cloudflareEdgeError,
+  isDelivered,
+  jsonForward,
+  parseRetryAfter,
+  sendForward,
+} from "./send";
 
 let server: Server;
 let base: string;
@@ -149,6 +155,24 @@ describe("sendForward, through the proxy", () => {
       headers: [["x-api-key", "k"]],
       body: bytes.toString("base64"),
     });
+  });
+});
+
+describe("cloudflareEdgeError", () => {
+  it("reads Cloudflare's own 530 answers as connection failures", () => {
+    expect(cloudflareEdgeError(530, "error code: 1016")).toBe(
+      "The host name could not be resolved (Cloudflare error 1016)."
+    );
+    expect(cloudflareEdgeError(530, "error code: 1033\n")).toBe(
+      "The host could not be reached (Cloudflare error 1033)."
+    );
+  });
+
+  it("leaves a server's own answers alone", () => {
+    expect(cloudflareEdgeError(530, "Site is frozen")).toBeNull();
+    expect(cloudflareEdgeError(502, "error code: 502")).toBeNull();
+    expect(cloudflareEdgeError(200, "error code: 1016")).toBeNull();
+    expect(cloudflareEdgeError(530, null)).toBeNull();
   });
 });
 

@@ -302,7 +302,7 @@ describe("file drop destinations", () => {
         config: parsed.changes.config!,
         secret: parsed.changes.dropSecret!,
       })
-    ).toBe("File drops are part of Business.");
+    ).toEqual({ error: "File drops are part of Business.", code: "plan_required", status: 403 });
     // ... and one kept from Business pauses.
     await createDestination(endpoint.id, {
       url: "sftp://127.0.0.1:2222",

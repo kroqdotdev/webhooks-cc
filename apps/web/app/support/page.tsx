@@ -2,15 +2,27 @@ import { ArrowLeft } from "lucide-react";
 import Link from "next/link";
 import { SiteHeader } from "@/components/nav/site-header";
 import { SupportHome } from "@/components/support/support-home";
+import type { Metadata } from "next";
 import { createPageMetadata } from "@/lib/seo";
+import { SITES } from "@/lib/site";
+import { currentSite } from "@/lib/site-server";
 import { Button } from "@/components/ui/button";
 
-export const metadata = createPageMetadata({
+const metadata = createPageMetadata({
   title: "Support",
   description:
     "Get help with webhooks.cc and mailhooks.cc: open a support ticket from your account, or email support about billing, account access and bugs.",
   path: "/support",
 });
+
+/**
+ * Served on both sites: the title names the one it is shown on (a layout's
+ * template reaches only the pages below it, so this page sets its own).
+ */
+export async function generateMetadata(): Promise<Metadata> {
+  const site = SITES[await currentSite()];
+  return { ...metadata, title: { absolute: `Support | ${site.name}` } };
+}
 
 export default function SupportPage() {
   return (

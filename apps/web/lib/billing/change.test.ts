@@ -2,6 +2,26 @@ import { beforeEach, describe, expect, test, vi } from "vitest";
 import { quoteSeatChange } from "@/lib/team-pricing";
 import type { CapacityState } from "@/lib/supabase/capacity-billing";
 
+/** A capacity state as the route reads it, its unit names filled in from the request ones. */
+type CoreState = Omit<
+  CapacityState,
+  "unit" | "planUnits" | "blockUnits" | "creditUnits" | "overage"
+> & { overage: Omit<CapacityState["overage"], "maxUnits" | "usedUnits"> };
+function withUnits(core: CoreState): CapacityState {
+  return {
+    ...core,
+    unit: "requests",
+    planUnits: core.planRequests,
+    blockUnits: core.blockRequests,
+    creditUnits: core.creditRequests,
+    overage: {
+      ...core.overage,
+      maxUnits: core.overage.maxRequests,
+      usedUnits: core.overage.usedRequests,
+    },
+  };
+}
+
 // A fake Polar subscription the team-billing mocks read and change, so the
 // quote, the drift check and a replay all see the same state.
 const polar = vi.hoisted(() => ({
@@ -312,27 +332,28 @@ describe("quoting", () => {
 });
 
 describe("capacity quotes", () => {
-  const state = (over: Partial<CapacityState> = {}): CapacityState => ({
-    offered: true,
-    eligible: true,
-    planEnding: false,
-    periodStart: "2026-11-01T00:00:00.000Z",
-    periodEnd: "2026-12-01T00:00:00.000Z",
-    planRequests: 100_000,
-    blockRequests: 0,
-    used: 10,
-    creditRequests: 0,
-    blocks: null,
-    overage: {
-      subscribed: false,
-      active: false,
-      cancelAtPeriodEnd: false,
-      pastDue: false,
-      maxRequests: 0,
-      usedRequests: 0,
-    },
-    ...over,
-  });
+  const state = (over: Partial<CoreState> = {}): CapacityState =>
+    withUnits({
+      offered: true,
+      eligible: true,
+      planEnding: false,
+      periodStart: "2026-11-01T00:00:00.000Z",
+      periodEnd: "2026-12-01T00:00:00.000Z",
+      planRequests: 100_000,
+      blockRequests: 0,
+      used: 10,
+      creditRequests: 0,
+      blocks: null,
+      overage: {
+        subscribed: false,
+        active: false,
+        cancelAtPeriodEnd: false,
+        pastDue: false,
+        maxRequests: 0,
+        usedRequests: 0,
+      },
+      ...over,
+    });
   const now = Date.parse("2026-11-16T00:00:00Z");
 
   test("new monthly blocks are paid at a checkout at the full monthly price", () => {
@@ -647,7 +668,7 @@ describe("running an approved change", () => {
   });
 
   test("a capacity quote that now refuses is a changed quote, not an error", async () => {
-    const state = {
+    const state = withUnits({
       offered: true,
       eligible: true,
       planEnding: false,
@@ -666,7 +687,7 @@ describe("running an approved change", () => {
         maxRequests: 0,
         usedRequests: 0,
       },
-    };
+    });
     vi.mocked(capacityBilling.getCapacityState).mockResolvedValue(state);
     const buy = {
       teamId: null,
@@ -688,7 +709,7 @@ describe("running an approved change", () => {
   });
 
   test("a checkout's link is kept apart from the outcome the asker reads", async () => {
-    const state = {
+    const state = withUnits({
       offered: true,
       eligible: true,
       planEnding: false,
@@ -707,7 +728,7 @@ describe("running an approved change", () => {
         maxRequests: 0,
         usedRequests: 0,
       },
-    };
+    });
     vi.mocked(capacityBilling.getCapacityState).mockResolvedValue(state);
     vi.mocked(capacityRoute.applyCapacityAction).mockResolvedValueOnce({
       url: "https://polar.test/checkout/1",
@@ -888,7 +909,7 @@ describe("outcomes Polar leaves open", () => {
   });
 
   test("monthly blocks already renewing at the count are not reported as made", async () => {
-    const state: CapacityState = {
+    const state: CapacityState = withUnits({
       offered: true,
       eligible: true,
       planEnding: false,
@@ -913,7 +934,7 @@ describe("outcomes Polar leaves open", () => {
         maxRequests: 0,
         usedRequests: 0,
       },
-    };
+    });
     vi.mocked(capacityBilling.getCapacityState).mockResolvedValue(state);
     vi.mocked(capacityRoute.applyCapacityAction).mockResolvedValueOnce({
       url: null,

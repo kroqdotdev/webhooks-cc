@@ -851,6 +851,14 @@ describe("openCheckoutLink", () => {
       kind: "expired",
       expiredReason: null,
     });
+    mocks.results.push({
+      data: row({ status: "expired", cancelled_at: "2026-11-16T10:00:00.000Z" }),
+      error: null,
+    });
+    expect(await openCheckoutLink(LINK, "user-1")).toMatchObject({
+      kind: "expired",
+      expiredReason: "cancelled",
+    });
     mocks.results.push({ data: row({ expires_at: PAST }), error: null });
     mocks.results.push({ data: [row({ status: "expired" })], error: null });
     expect((await openCheckoutLink(LINK, "user-1")).kind).toBe("expired");
@@ -1339,10 +1347,15 @@ describe("settleCheckoutLinkFromWebhook", () => {
 describe("expireCheckoutLink", () => {
   it("expires a link nobody opened, fenced on nobody opening it meanwhile", async () => {
     mocks.results.push({ data: row(), error: null });
-    mocks.results.push({ data: [row({ status: "expired" })], error: null });
+    mocks.results.push({
+      data: [row({ status: "expired", cancelled_at: "2026-11-16T10:00:00.000Z" })],
+      error: null,
+    });
     await expect(expireCheckoutLink(LINK, "user-1")).resolves.toMatchObject({
       status: "expired",
       url: null,
+      // Read back as cancelled, not as a link that simply went unpaid.
+      expiredReason: "cancelled",
     });
     expect(mocks.queries[1]).toMatchObject({
       op: "update",

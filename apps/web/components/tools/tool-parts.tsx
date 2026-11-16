@@ -1,7 +1,7 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { CircleAlert, CircleCheck, CircleHelp } from "lucide-react";
+import { CircleAlert, CircleCheck, CircleHelp, TriangleAlert } from "lucide-react";
 import { CopyButton } from "@/components/ui/copy-button";
 import { Label } from "@/components/ui/label";
 import { TabsList, TabsTab } from "@/components/ui/tabs";
@@ -116,6 +116,12 @@ export function Verdict({ explanation }: { explanation: AnswerExplanation }) {
       <div className="min-w-0 space-y-1">
         <p className="font-bold">{explanation.title}</p>
         <p className="text-sm leading-relaxed">{explanation.detail}</p>
+        {explanation.warning && (
+          <p className="flex gap-1.5 text-sm leading-relaxed font-medium">
+            <TriangleAlert aria-hidden className="mt-0.5 h-4 w-4 shrink-0" />
+            <span>{explanation.warning}</span>
+          </p>
+        )}
       </div>
     </div>
   );

@@ -2,6 +2,7 @@ import { createServerClient } from "@supabase/ssr";
 import { NextRequest, NextResponse } from "next/server";
 import { NAV_SECTIONS } from "@/lib/docs-nav";
 import { layoutTemplate } from "@/lib/layout-templates";
+import { malformedApiId, malformedApiIdResponse } from "@/lib/api-path-ids";
 import { imgSrcDirective } from "@/lib/csp-img-src";
 import { toolConnectSources } from "@/lib/tools/csp";
 import {
@@ -172,9 +173,18 @@ export async function proxy(request: NextRequest) {
     });
   }
 
+  // A row's id that is no UUID names no row: 404 before a route hands it to
+  // Postgres, which would fail the query (lib/api-path-ids.ts).
+  if (isApiPath && malformedApiId(pathname)) {
+    const response = malformedApiIdResponse();
+    response.headers.set("X-Robots-Tag", "noindex, nofollow");
+    return response;
+  }
+
   // --- Site ---
-  // Temporary redirects (307) while the paths mailhooks.cc serves may still
-  // change: a permanent one would stay cached in browsers.
+  // Permanent redirects (308, as AGENTS.md describes): the paths mailhooks.cc
+  // serves have settled, and a page it adds later only meets a cached
+  // redirect to webhooks.cc's copy of the same path, which still serves it.
   // The header is ours to set, like the markdown marker below.
   request.headers.delete(SITE_HEADER);
   request.headers.delete(MAILHOOKS_MISSING_HEADER);
@@ -184,7 +194,7 @@ export async function proxy(request: NextRequest) {
   let missingOnMailhooks = false;
   if (site === "mailhooks" && !servedOnMailhooks(pathname)) {
     if (existsOnWebhooks(pathname)) {
-      return NextResponse.redirect(`${webhooksOrigin()}${pathname}${request.nextUrl.search}`, 307);
+      return NextResponse.redirect(`${webhooksOrigin()}${pathname}${request.nextUrl.search}`, 308);
     }
     missingOnMailhooks = true;
   }

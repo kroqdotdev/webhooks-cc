@@ -1,4 +1,5 @@
 import { auditUserAction } from "@/lib/audit";
+import { isUuid } from "@/lib/uuid";
 import { authenticateRequestRequireUser } from "@/lib/api-auth";
 import { requestApproval } from "@/lib/approvals/request";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -104,6 +105,9 @@ export async function DELETE(request: Request) {
   const keyId = url.searchParams.get("id");
   if (!keyId) {
     return Response.json({ error: "Missing key id" }, { status: 400 });
+  }
+  if (!isUuid(keyId)) {
+    return Response.json({ error: "Invalid key id" }, { status: 400 });
   }
 
   const admin = createAdminClient();

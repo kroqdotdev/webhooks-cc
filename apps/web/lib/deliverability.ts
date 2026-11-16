@@ -92,6 +92,34 @@ export function deliverabilityReport(input: DeliverabilityInput): Deliverability
 
 type Add = (id: string, status: FindingStatus, title: string, detail: string) => void;
 
+/**
+ * An iprev result that is no verdict: the lookup failed or timed out
+ * ("temperror", which the MX host records for a lookup it could not finish;
+ * mail captured before then recorded "fail" for those too, and stays so).
+ */
+export function iprevUnchecked(result: string | null | undefined): boolean {
+  return result === "temperror" || result === "timeout" || result === "error";
+}
+
+/** Public suffixes of two labels under a two-letter country code: co.uk, com.au. */
+const SECOND_LEVEL = /^(?:co|com|net|org|gov|edu|ac|or|ne|go)$/;
+
+/**
+ * The organizational domain, approximately (no public suffix list here): the
+ * last two labels, or three under a country's second level (acme.co.uk).
+ */
+function organizational(domain: string): string {
+  const labels = domain.toLowerCase().replace(/\.$/, "").split(".");
+  const take =
+    labels.length >= 3 && labels.at(-1)!.length === 2 && SECOND_LEVEL.test(labels.at(-2)!) ? 3 : 2;
+  return labels.slice(-take).join(".");
+}
+
+/** Whether a signing domain is aligned with the From domain, as DMARC's relaxed mode reads it. */
+export function aligned(domain: string, fromDomain: string): boolean {
+  return organizational(domain) === organizational(fromDomain);
+}
+
 function list(items: string[]): string {
   const shown = items.slice(0, MAX_EXAMPLES);
   const more = items.length - shown.length;
@@ -377,10 +405,24 @@ function authenticationFindings({ email }: DeliverabilityInput, add: Add) {
     );
   }
   const keys = setupOk ? setup.dkim : [];
+  // Only keys on the From domain are the sender's to fix: a provider that
+  // signs for itself beside the sender's own signature (amazonses.com next
+  // to an aligned one) does so with its own key, which DMARC never reads.
+  const fromDomainName = dmarc?.domain || null;
+  const ownKey = (domain: string) => !fromDomainName || aligned(domain, fromDomainName);
   for (const [index, key] of keys.entries()) {
     const name = `${key.selector}._domainkey.${key.domain}`;
     // The position keeps ids apart whatever names a sender picks.
     const id = `dkim-key-${index}-${key.domain}-${key.selector}`;
+    if (!ownKey(key.domain)) {
+      add(
+        id,
+        "info",
+        `DKIM key of ${key.domain}`,
+        `${key.domain} also signs this email with its own key (${name}${key.bits !== null ? `, ${key.bits}-bit ${key.key === "ed25519" ? "Ed25519" : "RSA"}` : ""}). That key belongs to ${key.domain}, not to ${fromDomainName}, and DMARC does not read it, so there is nothing to change on your side.`
+      );
+      continue;
+    }
     // A bad extra signature does not matter while another one passes.
     const otherPasses = auth.dkim.some(
       (signature) =>
@@ -443,7 +485,8 @@ function authenticationFindings({ email }: DeliverabilityInput, add: Add) {
       );
     }
   }
-  if (keys.length > 0 && keys.every((key) => key.key === "ed25519")) {
+  const ownKeys = keys.filter((key) => ownKey(key.domain));
+  if (ownKeys.length > 0 && ownKeys.every((key) => key.key === "ed25519")) {
     add(
       "dkim-ed25519-only",
       "warn",
@@ -483,6 +526,13 @@ function serverFindings({ email }: DeliverabilityInput, add: Add) {
   if (auth && !auth.error && auth.iprev) {
     if (auth.iprev.result === "pass" && auth.iprev.ptr) {
       add("ptr", "pass", "Reverse DNS", `${ip} resolves to ${auth.iprev.ptr} and back.`);
+    } else if (iprevUnchecked(auth.iprev.result)) {
+      add(
+        "ptr",
+        "info",
+        "Reverse DNS not checked",
+        `The reverse DNS of ${ip} could not be looked up when the email arrived (${auth.iprev.result}), so it says nothing either way.`
+      );
     } else {
       add(
         "ptr",

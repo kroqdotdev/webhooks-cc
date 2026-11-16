@@ -1,3 +1,4 @@
+import { deviceRequester } from "@/lib/device-requester";
 import { extractBearerToken } from "@/lib/api-auth";
 import { publicEnv } from "@/lib/env";
 import { getClientIp, checkRateLimitByKeyWithInfo, checkRateLimitWithInfo } from "@/lib/rate-limit";
@@ -154,6 +155,8 @@ async function handle(request: Request): Promise<Response> {
       // Without a Cloudflare or proxy header (local runs) there is no address to pass on.
       extra: {
         clientIp: clientIpOrNull(request),
+        // Where the approval pages say an agent asked from (deviceRequester()).
+        country: deviceRequester(request, {}).country,
         userId: validation.userId,
         groups: tools.groups,
         readOnly: tools.readOnly,

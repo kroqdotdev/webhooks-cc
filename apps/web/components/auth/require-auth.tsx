@@ -1,5 +1,6 @@
 "use client";
 
+import { PageLoading } from "@/components/page-loading";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { SupabaseAuthProvider, useAuth } from "@/components/providers/supabase-auth-provider";
@@ -52,11 +53,7 @@ function RequireAuthInner({ children }: { children: React.ReactNode }) {
   }, [isAuthenticated, isLoading, router]);
 
   if (isLoading || (isAuthenticated && needsSecondFactor === null)) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="animate-pulse text-muted-foreground">Loading...</div>
-      </div>
-    );
+    return <PageLoading />;
   }
 
   if (!isAuthenticated) {

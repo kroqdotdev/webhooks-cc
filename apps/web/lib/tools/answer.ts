@@ -12,6 +12,8 @@ export interface AnswerExplanation {
   title: string;
   /** What it means and what to do about it. */
   detail: string;
+  /** Something to know besides the verdict, shown under it. */
+  warning?: string;
 }
 
 /** The provider's answer as the browser read it. */
