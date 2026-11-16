@@ -580,7 +580,7 @@ function serverFindings({ email }: DeliverabilityInput, add: Add) {
         "helo",
         "info",
         "HELO not checked",
-        `The server introduced itself as ${helo.name}, whose addresses could not be looked up when the email arrived, so it says nothing either way.`
+        `The server introduced itself as ${helo.name}, whose addresses could not be looked up when the email arrived, so whether it resolves is unknown.`
       );
     } else {
       add(
