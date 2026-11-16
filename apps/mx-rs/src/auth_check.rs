@@ -14,9 +14,16 @@
 //! a blocking task, so the task carries the same deadline for its DNS work and
 //! holds one of a fixed number of slots until it has really ended: stalled
 //! checks cannot pile up, each holding a message.
+//!
+//! A lookup that could not finish (a timeout, SERVFAIL) is RFC 8601's
+//! `temperror`, never a `fail`: a sender with a valid PTR record must not be
+//! told its reverse DNS is missing because our resolver was slow. DNS
+//! queries are sent again after `DNS_ATTEMPT_TIMEOUT`, and the resolver's
+//! cache is shared by every session, so a sender's records are looked up
+//! once per TTL rather than once per message.
 
 use std::future::Future;
-use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -25,9 +32,12 @@ use tokio::time::Instant;
 
 use mail_auth::common::cache::NoCache;
 use mail_auth::dmarc::Policy;
+use mail_auth::hickory_resolver::config::{NameServerConfig, ResolverConfig, ResolverOpts};
+use mail_auth::hickory_resolver::system_conf::read_system_conf;
 use mail_auth::{
-    AuthenticatedMessage, AuthenticationResults, DkimResult, DmarcResult, MessageAuthenticator,
-    RecordSet, SpfResult, dmarc::verify::DmarcParameters, spf::verify::SpfParameters,
+    AuthenticatedMessage, AuthenticationResults, DkimResult, DmarcResult, DnsError,
+    MessageAuthenticator, RecordSet, SpfResult, dmarc::verify::DmarcParameters,
+    spf::verify::SpfParameters,
 };
 use serde_json::{Value, json};
 
@@ -49,6 +59,13 @@ const MAX_DOMAIN_CHARS: usize = 253;
 /// already in hand are kept when they run long.
 const SETUP_MARGIN: Duration = Duration::from_millis(250);
 
+/// How long one DNS query waits for its answer before it is sent again. A
+/// lost UDP packet costs this long, not the whole budget.
+const DNS_ATTEMPT_TIMEOUT: Duration = Duration::from_secs(2);
+/// Times a query is sent before the lookup counts as failed; the callers'
+/// budgets end it sooner.
+const DNS_ATTEMPTS: usize = 3;
+
 /// The client's reverse DNS, looked up when the connection opens.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct ReverseDns {
@@ -56,7 +73,35 @@ pub struct ReverseDns {
     pub name: Option<String>,
     /// The PTR name resolves back to the client's address.
     pub confirmed: bool,
+    /// The lookup could not finish (a timeout, SERVFAIL), so nothing is
+    /// known: neither a pass nor a fail.
+    pub temporary_error: bool,
 }
+
+impl ReverseDns {
+    /// A lookup that ran out of time before it had an answer.
+    pub fn incomplete() -> Self {
+        Self {
+            temporary_error: true,
+            ..Self::default()
+        }
+    }
+
+    /// RFC 8601's iprev result.
+    pub fn iprev_result(&self) -> &'static str {
+        if self.confirmed {
+            "pass"
+        } else if self.temporary_error {
+            "temperror"
+        } else {
+            "fail"
+        }
+    }
+}
+
+/// A receiver for a reverse lookup that outlived the connection's wait:
+/// `None` until it has finished.
+pub type LateReverseDns = tokio::sync::watch::Receiver<Option<ReverseDns>>;
 
 /// Everything the checks need, owned, so they can run on another thread.
 pub struct AuthRequest {
@@ -83,10 +128,10 @@ pub struct AuthChecker {
 }
 
 impl AuthChecker {
-    /// Uses the system's resolver configuration. Without one the checks are
-    /// skipped and reported as unavailable.
-    pub fn new(hostname: &str, budget: Duration, slots: usize) -> Self {
-        let authenticator = match MessageAuthenticator::new_system_conf() {
+    /// Asks `dns_servers`, or the system's resolvers when the list is empty.
+    /// Without a resolver the checks are skipped and reported as unavailable.
+    pub fn new(hostname: &str, budget: Duration, slots: usize, dns_servers: &[SocketAddr]) -> Self {
+        let authenticator = match authenticator(dns_servers) {
             Ok(authenticator) => Some(authenticator),
             Err(e) => {
                 tracing::warn!(error = %e, "no DNS resolver; authentication checks are off");
@@ -113,27 +158,29 @@ impl AuthChecker {
     }
 
     /// Reverse DNS for a new connection, within `budget`. Network work only,
-    /// so it runs on the async runtime.
+    /// so it runs on the async runtime. Running out of time is a temporary
+    /// error, as is any failure other than "no such record".
     pub async fn reverse_dns(&self, ip: IpAddr, budget: Duration) -> ReverseDns {
         let Some(authenticator) = &self.authenticator else {
             return ReverseDns::default();
         };
         let lookup = async {
             let no_cache = None::<&NoCache<IpAddr, RecordSet<Box<str>>>>;
-            let Ok(ptr) = authenticator.ptr_lookup(ip, no_cache).await else {
-                return ReverseDns::default();
+            let names = match authenticator.ptr_lookup(ip, no_cache).await {
+                Ok(ptr) => ptr
+                    .rrset
+                    .iter()
+                    .take(MAX_PTR_NAMES)
+                    .map(|name| name.trim_end_matches('.').to_ascii_lowercase())
+                    .collect(),
+                Err(e) if is_absent(&e) => Vec::new(),
+                Err(_) => return ReverseDns::incomplete(),
             };
-            let names = ptr
-                .rrset
-                .iter()
-                .take(MAX_PTR_NAMES)
-                .map(|name| name.trim_end_matches('.').to_ascii_lowercase())
-                .collect();
-            first_confirmed(names, |name| resolves_to(authenticator, name, ip)).await
+            first_confirmed(names, |name| forward(authenticator, name, ip)).await
         };
         tokio::time::timeout(budget, lookup)
             .await
-            .unwrap_or_default()
+            .unwrap_or_else(|_| ReverseDns::incomplete())
     }
 
     pub async fn check(&self, request: AuthRequest) -> AuthOutcome {
@@ -235,6 +282,60 @@ fn nul_free(text: &str) -> String {
     out
 }
 
+/// The resolver every check uses: `servers`, or the system's resolvers, with
+/// retries tuned for checks that have a few seconds each.
+fn authenticator(servers: &[SocketAddr]) -> Result<MessageAuthenticator, String> {
+    let (config, mut options) = if servers.is_empty() {
+        read_system_conf().map_err(|e| e.to_string())?
+    } else {
+        let servers = servers
+            .iter()
+            .map(|server| {
+                let mut config = NameServerConfig::udp_and_tcp(server.ip());
+                for connection in &mut config.connections {
+                    connection.port = server.port();
+                }
+                config
+            })
+            .collect();
+        (
+            ResolverConfig::from_name_servers(servers),
+            ResolverOpts::default(),
+        )
+    };
+    tune(&mut options);
+    MessageAuthenticator::new(config, options).map_err(|e| e.to_string())
+}
+
+/// resolv.conf's defaults wait 5 s for each answer; a lost packet would use
+/// up a check's whole budget.
+fn tune(options: &mut ResolverOpts) {
+    options.timeout = DNS_ATTEMPT_TIMEOUT;
+    options.attempts = DNS_ATTEMPTS;
+}
+
+/// The lookup finished and found nothing: the name or record does not exist
+/// (NXDOMAIN, or no data), or it is not one a lookup can be made for. Any
+/// other error means the lookup did not finish.
+fn is_absent(error: &mail_auth::Error) -> bool {
+    matches!(
+        error,
+        mail_auth::Error::Dns(DnsError::RecordNotFound(_) | DnsError::InvalidRecordType)
+            | mail_auth::Error::ParseError
+    )
+}
+
+/// What a forward lookup of a PTR name says about the client's address.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Forward {
+    Matches,
+    /// The name has addresses, or definitely none, and the client's is not
+    /// among them.
+    Differs,
+    /// The lookup did not finish.
+    Failed,
+}
+
 /// The PTR names to look at; more are ignored.
 const MAX_PTR_NAMES: usize = 4;
 
@@ -242,22 +343,63 @@ const MAX_PTR_NAMES: usize = 4;
 /// name. An overall "some name matched" is not enough: a sender that controls
 /// its reverse zone could list a provider's name it does not own next to its
 /// own confirmed one.
-async fn first_confirmed<F, Fut>(names: Vec<String>, mut resolves_to_client: F) -> ReverseDns
+///
+/// When no name matched and a forward lookup did not finish, the answer is a
+/// temporary error: that name might have matched.
+async fn first_confirmed<F, Fut>(names: Vec<String>, mut forward_of: F) -> ReverseDns
 where
     F: FnMut(String) -> Fut,
-    Fut: Future<Output = bool>,
+    Fut: Future<Output = Forward>,
 {
+    let mut unfinished = false;
     for name in &names {
-        if resolves_to_client(name.clone()).await {
-            return ReverseDns {
-                name: Some(name.clone()),
-                confirmed: true,
-            };
+        match forward_of(name.clone()).await {
+            Forward::Matches => {
+                return ReverseDns {
+                    name: Some(name.clone()),
+                    confirmed: true,
+                    temporary_error: false,
+                };
+            }
+            Forward::Differs => {}
+            Forward::Failed => unfinished = true,
         }
     }
     ReverseDns {
         name: names.into_iter().next(),
         confirmed: false,
+        temporary_error: unfinished,
+    }
+}
+
+/// Whether `name` resolves to `ip`, telling a lookup that did not finish
+/// apart from one that found other addresses or none.
+pub(crate) async fn forward(
+    authenticator: &MessageAuthenticator,
+    name: String,
+    ip: IpAddr,
+) -> Forward {
+    let found = match ip {
+        IpAddr::V4(v4) => authenticator
+            .ipv4_lookup(
+                name.as_str(),
+                None::<&NoCache<Box<str>, RecordSet<Ipv4Addr>>>,
+            )
+            .await
+            .map(|found| found.rrset.contains(&v4)),
+        IpAddr::V6(v6) => authenticator
+            .ipv6_lookup(
+                name.as_str(),
+                None::<&NoCache<Box<str>, RecordSet<Ipv6Addr>>>,
+            )
+            .await
+            .map(|found| found.rrset.contains(&v6)),
+    };
+    match found {
+        Ok(true) => Forward::Matches,
+        Ok(false) => Forward::Differs,
+        Err(e) if is_absent(&e) => Forward::Differs,
+        Err(_) => Forward::Failed,
     }
 }
 
@@ -266,22 +408,7 @@ pub(crate) async fn resolves_to(
     name: String,
     ip: IpAddr,
 ) -> bool {
-    match ip {
-        IpAddr::V4(v4) => authenticator
-            .ipv4_lookup(
-                name.as_str(),
-                None::<&NoCache<Box<str>, RecordSet<Ipv4Addr>>>,
-            )
-            .await
-            .is_ok_and(|found| found.rrset.contains(&v4)),
-        IpAddr::V6(v6) => authenticator
-            .ipv6_lookup(
-                name.as_str(),
-                None::<&NoCache<Box<str>, RecordSet<Ipv6Addr>>>,
-            )
-            .await
-            .is_ok_and(|found| found.rrset.contains(&v6)),
-    }
+    forward(authenticator, name, ip).await == Forward::Matches
 }
 
 /// Run blocking `work` once one of `slots` is free, answering by `deadline`.
@@ -347,7 +474,7 @@ async fn run(
     let mut json = json!({
         "spf": { "result": spf_result(spf.result()), "domain": spf.domain() },
         "iprev": {
-            "result": if request.reverse_dns.confirmed { "pass" } else { "fail" },
+            "result": request.reverse_dns.iprev_result(),
             "ptr": request.reverse_dns.name,
         },
     });
@@ -623,32 +750,155 @@ mod tests {
     #[tokio::test]
     async fn trusts_only_the_ptr_name_that_resolves_back() {
         let names = |list: &[&str]| list.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        let matching = |wanted: &'static str| {
+            move |n: String| {
+                std::future::ready(if n == wanted {
+                    Forward::Matches
+                } else {
+                    Forward::Differs
+                })
+            }
+        };
         // A provider's name listed first, the sender's own second: only the
         // second one resolves back to the client.
-        let found = first_confirmed(names(&["smtp.google.com", "mail.attacker.test"]), |n| {
-            std::future::ready(n == "mail.attacker.test")
-        })
+        let found = first_confirmed(
+            names(&["smtp.google.com", "mail.attacker.test"]),
+            matching("mail.attacker.test"),
+        )
         .await;
         assert_eq!(
             found,
             ReverseDns {
                 name: Some("mail.attacker.test".into()),
-                confirmed: true
+                confirmed: true,
+                temporary_error: false,
             }
         );
-        let none =
-            first_confirmed(names(&["a.test", "b.test"]), |_| std::future::ready(false)).await;
+        let none = first_confirmed(names(&["a.test", "b.test"]), matching("c.test")).await;
         assert_eq!(
             none,
             ReverseDns {
                 name: Some("a.test".into()),
-                confirmed: false
+                ..ReverseDns::default()
             }
         );
+        assert_eq!(none.iprev_result(), "fail");
         assert_eq!(
-            first_confirmed(vec![], |_| std::future::ready(true)).await,
+            first_confirmed(vec![], |_| std::future::ready(Forward::Matches)).await,
             ReverseDns::default()
         );
+    }
+
+    #[tokio::test]
+    async fn a_forward_lookup_that_did_not_finish_is_a_temporary_error() {
+        let names = |list: &[&str]| list.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        // The first name timed out, the second resolves elsewhere: the first
+        // might have matched, so nothing is known.
+        let unknown = first_confirmed(names(&["a.test", "b.test"]), |n| {
+            std::future::ready(if n == "a.test" {
+                Forward::Failed
+            } else {
+                Forward::Differs
+            })
+        })
+        .await;
+        assert_eq!(
+            unknown,
+            ReverseDns {
+                name: Some("a.test".into()),
+                confirmed: false,
+                temporary_error: true,
+            }
+        );
+        assert_eq!(unknown.iprev_result(), "temperror");
+        // A later name that matches still passes.
+        let found = first_confirmed(names(&["a.test", "b.test"]), |n| {
+            std::future::ready(if n == "a.test" {
+                Forward::Failed
+            } else {
+                Forward::Matches
+            })
+        })
+        .await;
+        assert_eq!(found.iprev_result(), "pass");
+        assert!(!found.temporary_error);
+    }
+
+    #[test]
+    fn only_a_missing_record_is_a_definite_answer() {
+        use mail_auth::hickory_resolver::proto::op::ResponseCode;
+        assert!(is_absent(&mail_auth::Error::Dns(DnsError::RecordNotFound(
+            ResponseCode::NXDomain
+        ))));
+        assert!(is_absent(&mail_auth::Error::Dns(DnsError::RecordNotFound(
+            ResponseCode::NoError
+        ))));
+        assert!(!is_absent(&mail_auth::Error::Dns(DnsError::Resolver(
+            "request timed out".into()
+        ))));
+        assert!(!is_absent(&mail_auth::Error::Io("reset".into())));
+        assert_eq!(ReverseDns::incomplete().iprev_result(), "temperror");
+        assert_eq!(ReverseDns::default().iprev_result(), "fail");
+    }
+
+    #[test]
+    fn retries_dns_queries_well_inside_the_budgets() {
+        let mut options = ResolverOpts::default();
+        tune(&mut options);
+        assert_eq!(options.timeout, DNS_ATTEMPT_TIMEOUT);
+        assert_eq!(options.attempts, DNS_ATTEMPTS);
+        assert!(options.cache_size > 0, "answers are kept across messages");
+        let defaults = crate::config::Timeouts::default();
+        assert!(DNS_ATTEMPT_TIMEOUT < defaults.reverse_dns);
+        assert!(DNS_ATTEMPT_TIMEOUT * 2 < defaults.auth_checks);
+    }
+
+    /// A DNS server on a loopback port that answers every query with
+    /// `rcode`, or never answers when it is `None`.
+    async fn fake_dns(rcode: Option<u8>) -> SocketAddr {
+        let socket = tokio::net::UdpSocket::bind("127.0.0.1:0").await.unwrap();
+        let address = socket.local_addr().unwrap();
+        tokio::spawn(async move {
+            let mut buf = [0u8; 512];
+            while let Ok((n, from)) = socket.recv_from(&mut buf).await {
+                let Some(rcode) = rcode else { continue };
+                // The query itself, turned into a response: QR and RA set,
+                // the answer code in the low bits of the fourth byte.
+                let mut reply = buf[..n].to_vec();
+                reply[2] |= 0x80;
+                reply[3] = 0x80 | rcode;
+                let _ = socket.send_to(&reply, from).await;
+            }
+        });
+        address
+    }
+
+    fn checker_asking(server: SocketAddr) -> AuthChecker {
+        AuthChecker::new("mx.example", Duration::from_secs(1), 1, &[server])
+    }
+
+    #[tokio::test]
+    async fn a_lookup_that_got_no_answer_is_a_temporary_error() {
+        let checker = checker_asking(fake_dns(None).await);
+        let found = checker
+            .reverse_dns("192.0.2.1".parse().unwrap(), Duration::from_millis(300))
+            .await;
+        assert_eq!(found, ReverseDns::incomplete());
+        assert_eq!(found.iprev_result(), "temperror");
+    }
+
+    #[tokio::test]
+    async fn servfail_is_a_temporary_error_and_nxdomain_a_failure() {
+        let ip: IpAddr = "192.0.2.1".parse().unwrap();
+        let servfail = checker_asking(fake_dns(Some(2)).await);
+        assert_eq!(
+            servfail.reverse_dns(ip, Duration::from_secs(5)).await,
+            ReverseDns::incomplete()
+        );
+        let nxdomain = checker_asking(fake_dns(Some(3)).await);
+        let found = nxdomain.reverse_dns(ip, Duration::from_secs(5)).await;
+        assert_eq!(found, ReverseDns::default());
+        assert_eq!(found.iprev_result(), "fail");
     }
 
     #[tokio::test]

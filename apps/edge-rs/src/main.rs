@@ -1113,9 +1113,25 @@ async fn proxy(
         }
         content::Pass::AsSent => body,
     };
-    // Cut off past the cap when the length was not stated up front, and
-    // sent no faster than the share's pace (pace.rs).
-    let body = pace::Paced::wrap(Limited::new(body, content::MAX_RESPONSE).boxed(), paces);
+    // Cut off past the cap when the length was not stated up front (the
+    // visitor's download fails, and the CLI hears why), and sent no faster
+    // than the share's pace (pace.rs).
+    let cut = {
+        let session = session.clone();
+        move || {
+            if session.limits.should_warn_blocked(Instant::now()) {
+                session.notify(&EdgeMessage::Notice {
+                    text: format!(
+                        "Cut off at {} MB: {}. Previews pass responses up to that size; one that does not state its length is ended there, and the visitor's download fails.",
+                        content::MAX_RESPONSE / (1024 * 1024),
+                        path.chars().take(120).collect::<String>()
+                    ),
+                });
+            }
+        }
+    };
+    let body = Limited::new(body, content::MAX_RESPONSE).boxed();
+    let body = pace::Paced::wrap(content::OnCut::new(body, cut).boxed(), paces);
     Response::from_parts(parts, body)
 }
 

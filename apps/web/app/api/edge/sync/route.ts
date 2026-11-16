@@ -54,7 +54,7 @@ export async function POST(request: Request) {
   const admin = createAdminClient();
   // Runs open here that the edge no longer holds: a close that never arrived
   // (a redeploy, a failed call, an open answered after the edge gave up).
-  // Left open they would hold a slot, and a live endpoint would answer 502
+  // Left open they would hold a slot, and a live endpoint would answer 503
   // for good. They end as 'closed', so a live one gets its usual grace.
   // Runs younger than a minute may not be in the edge's list yet.
   const { error: unheldError } = await admin.rpc("tunnel_end_unheld", {

@@ -249,7 +249,7 @@ pub enum Command {
         #[arg(long, conflicts_with_all = ["email_format", "email_path"])]
         no_email: bool,
 
-        /// Relay each webhook to the local server while the sender waits, so it gets your app's answer (the capture is kept either way; 502 when whk is not connected, 504 when your app takes over 25 s)
+        /// Relay each webhook to the local server while the sender waits, so it gets your app's answer (the capture is kept either way; 503 with the reason when whk is not connected or your app takes over 25 s)
         #[arg(long)]
         live: bool,
     },

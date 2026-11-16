@@ -177,10 +177,11 @@ function isAsciiHex(bytes: Buffer): boolean {
  * The API's `liveResponse` on a request: what the local app answered a live
  * capture (`whk tunnel --live`; the column is from migration 00091, written
  * by 00092's record_live_response()), or what stood in for an answer.
- * `outcome` is "answered" when the app answered, else "offline" (no
- * live session, 502), "timeout" (no answer within 25 s, 504), "unreachable"
- * (nothing on the port, or the edge out of reach, 502), "busy" (503) or
- * "refused": 400 for a path that would have left the endpoint, 502 for an
+ * `outcome` is "answered" when the app answered, else, each a 503 (502 or
+ * 504 in rows from before November 2026): "offline" (no live session),
+ * "timeout" (no answer within 25 s), "unreachable" (nothing on the port, or
+ * the edge out of reach), "busy" or "refused": 400 for a path that would
+ * have left the endpoint, 503 for an
  * answer not passed back (a download, a script or another non-API type, a
  * stated size over 1 MB), or the app's own status when the answer streamed
  * past 1 MB and was cut off.

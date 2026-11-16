@@ -265,7 +265,7 @@ impl Web {
     /// times over about a minute when the web app is not there (a deploy
     /// recreating it) or answers with an error: a close the web app never
     /// hears keeps the run open there, holding a slot and, for a live
-    /// tunnel, keeping its endpoint answering 502. Logged once if it never
+    /// tunnel, keeping its endpoint answering 503. Logged once if it never
     /// lands; the web app's sync also ends runs the edge no longer lists.
     pub async fn closed(&self, share_id: &str, reason: &str) {
         let web = self.clone();

@@ -8,19 +8,22 @@
 //! released, so a slow app never holds the pool.
 //!
 //! The edge marks its answers with `x-whk-live`: `answered` when the app
-//! answered (whatever its status), or what stood in for an answer:
-//! `offline` (502, no session), `timeout` (504, no answer within 25 s),
-//! `unreachable` (502, nothing on the port or the tunnel dropped), `busy`
-//! (503, the account's streams are in use), `refused` (502, an answer the
-//! edge does not pass back: a download, a type no API answers with, or one
-//! over [`MAX_ANSWER_BYTES`]; or, as a 404, our own secret or path, which is
-//! a fault on our side). The header is removed before the answer goes out.
-//! When the edge itself cannot be reached the sender gets 502, and a capture
-//! past the account's live relays gets 503 with `Retry-After`.
+//! answered (whatever its status), or what stood in for an answer, always a
+//! 503 with the reason as JSON: `offline` (no session), `timeout` (no answer
+//! within 25 s), `unreachable` (nothing on the port or the tunnel dropped),
+//! `busy` (the account's streams are in use, with `Retry-After`), `refused`
+//! (an answer the edge does not pass back: a download, a type no API answers
+//! with, or one over [`MAX_ANSWER_BYTES`]; or, as a 404, our own secret or
+//! path, which is a fault on our side). The header is removed before the
+//! answer goes out. When the edge itself cannot be reached the sender gets a
+//! 503 of ours ([`failed`]), and a capture past the account's live relays a
+//! 503 with `Retry-After`. Never 502 or 504: Cloudflare, in front of the
+//! capture host, replaces an origin's 502 or 504 with its own page, and the
+//! sender would never read why.
 //!
 //! Runs end only through the edge (its close, sync or start), so an edge
 //! that is down, or up without the endpoint's session, would leave a live
-//! endpoint answering 502 for as long as that lasts. [`EdgeHealth`] stops
+//! endpoint answering 503 for as long as that lasts. [`EdgeHealth`] stops
 //! that after [`EDGE_DOWN_GRACE`], the grace the web app gives a dropped
 //! CLI: from then on the endpoint's captures are answered as if it were not
 //! live (the mock response or the rules, recorded as such), and one capture
@@ -485,14 +488,14 @@ impl LiveRelay {
         let started = Instant::now();
         let busy = || {
             metrics::live("receiver_busy");
-            let mut response = (StatusCode::SERVICE_UNAVAILABLE, "retry").into_response();
+            let mut response = failed(BUSY);
             response.headers_mut().insert(
                 "retry-after",
                 HeaderValue::from_static(BUSY_RETRY_AFTER_SECS),
             );
             (
                 response,
-                Ok(stand_in(503, "busy", started)),
+                Ok(stand_in(503, "busy", BUSY, started)),
                 Reach::NotTried,
             )
         };
@@ -522,8 +525,13 @@ impl LiveRelay {
         ) else {
             metrics::live("bad_path");
             return (
-                (StatusCode::BAD_REQUEST, "bad path").into_response(),
-                Ok(stand_in(400, "refused", started)),
+                (
+                    StatusCode::BAD_REQUEST,
+                    [(axum::http::header::CONTENT_TYPE, "application/json")],
+                    reason_body(BAD_PATH),
+                )
+                    .into_response(),
+                Ok(stand_in(400, "refused", BAD_PATH, started)),
                 Reach::NotTried,
             );
         };
@@ -573,18 +581,18 @@ impl LiveRelay {
                     "edge_unreachable"
                 });
                 tracing::warn!(timed_out, error = %e, "live relay: edge not reachable");
-                // The edge answers within 25 s itself (a 504 of its own), so
+                // The edge answers within 25 s itself (a 503 of its own), so
                 // no head at all is the edge gone, a timeout included.
                 return if timed_out {
                     (
-                        (StatusCode::GATEWAY_TIMEOUT, "live tunnel timed out").into_response(),
-                        Ok(stand_in(504, "timeout", started)),
+                        failed(NO_ANSWER),
+                        Ok(stand_in(503, "timeout", NO_ANSWER, started)),
                         Reach::Down,
                     )
                 } else {
                     (
-                        (StatusCode::BAD_GATEWAY, "live tunnel unreachable").into_response(),
-                        Ok(stand_in(502, "unreachable", started)),
+                        failed(UNREACHABLE),
+                        Ok(stand_in(503, "unreachable", UNREACHABLE, started)),
                         Reach::Down,
                     )
                 };
@@ -596,12 +604,12 @@ impl LiveRelay {
         if outcome == "refused" && status == StatusCode::NOT_FOUND {
             // The edge did not take our secret or path: a configuration
             // fault on our side, not the sender's. (Its other refusals are
-            // 502s about the app's answer, passed on below.)
+            // 503s about the app's answer, passed on below.)
             metrics::live("refused");
             tracing::error!("live relay: the edge refused the relay (check EDGE_SECRET)");
             return (
-                (StatusCode::BAD_GATEWAY, "live tunnel unreachable").into_response(),
-                Ok(stand_in(502, "unreachable", started)),
+                failed(UNREACHABLE),
+                Ok(stand_in(503, "unreachable", UNREACHABLE, started)),
                 Reach::Down,
             );
         }
@@ -649,8 +657,8 @@ impl LiveRelay {
         match builder.body(body) {
             Ok(response) => (response, Err(rx), reach),
             Err(_) => (
-                (StatusCode::BAD_GATEWAY, "live tunnel unreachable").into_response(),
-                Ok(stand_in(502, "unreachable", started)),
+                failed(UNREACHABLE),
+                Ok(stand_in(503, "unreachable", UNREACHABLE, started)),
                 reach,
             ),
         }
@@ -1079,12 +1087,41 @@ fn outcome_of(value: Option<&HeaderValue>) -> &'static str {
     }
 }
 
-fn stand_in(status: u16, outcome: &'static str, started: Instant) -> LiveRecord {
+const UNREACHABLE: &str = "The live tunnel could not be reached.";
+const NO_ANSWER: &str = "The live tunnel did not answer in time.";
+const BUSY: &str = "webhooks.cc is busy relaying to this live tunnel; try again in a few seconds.";
+const BAD_PATH: &str = "The request path cannot be relayed to the live tunnel.";
+
+/// What the receiver answers in the app's place when the edge cannot: a 503
+/// with the reason, as the edge's own answers are.
+/// The answer when the relay task itself failed: the tunnel could not be
+/// reached, as far as the sender can tell.
+pub(crate) fn relay_failed_response() -> Response {
+    failed(UNREACHABLE)
+}
+
+/// The JSON body every answer that stands in for the app carries.
+fn reason_body(reason: &str) -> String {
+    serde_json::json!({ "error": reason }).to_string()
+}
+
+fn failed(reason: &str) -> Response {
+    (
+        StatusCode::SERVICE_UNAVAILABLE,
+        [(axum::http::header::CONTENT_TYPE, "application/json")],
+        reason_body(reason),
+    )
+        .into_response()
+}
+
+/// The record of an answer that stood in for the app, with the same body
+/// the sender got, so the stored request shows what was answered.
+fn stand_in(status: u16, outcome: &'static str, reason: &str, started: Instant) -> LiveRecord {
     LiveRecord {
         status,
         ms: elapsed_ms(started),
         outcome,
-        ..recorded_body(b"")
+        ..recorded_body(reason_body(reason).as_bytes())
     }
 }
 
@@ -1098,6 +1135,18 @@ mod tests {
     use axum::Router;
     use axum::extract::Request;
     use axum::routing::any;
+
+    #[tokio::test]
+    async fn a_stand_in_records_the_body_the_sender_got() {
+        let record = stand_in(503, "busy", BUSY, Instant::now());
+        let sent = axum::body::to_bytes(failed(BUSY).into_body(), 4096)
+            .await
+            .unwrap();
+        assert_eq!(record.body.as_bytes(), &sent[..]);
+        let parsed: serde_json::Value = serde_json::from_slice(&sent).unwrap();
+        assert_eq!(parsed["error"], BUSY);
+        assert_eq!(record.body_encoding, "utf8");
+    }
 
     #[test]
     fn the_path_after_the_slug_keeps_its_encoding() {
@@ -1231,7 +1280,7 @@ mod tests {
         let t0 = Instant::now();
         let at = |secs: u64| t0 + Duration::from_secs(secs);
         assert!(health.should_relay("ep_1", t0));
-        // The edge is gone: relayed (and answered 502) for the grace.
+        // The edge is gone: relayed (and answered 503) for the grace.
         assert!(!health.note("ep_1", Reach::Down, t0));
         assert!(health.should_relay("ep_1", at(60)));
         assert!(!health.note("ep_1", Reach::Down, at(60)));
@@ -1344,7 +1393,7 @@ mod tests {
             "answered as not live"
         );
         assert!(!relay.relays("ep_1"), "and the next ones without a try");
-        // Within the grace, the sender still gets the 502.
+        // Within the grace, the sender still gets the 503.
         let fresh = relay_to(base, 16);
         let (response, recorded) = fresh
             .relay_unless_edge_down(live_request(&headers, &Method::POST))
@@ -1365,7 +1414,7 @@ mod tests {
                 "answered"
             };
             axum::http::Response::builder()
-                .status(if mark == "offline" { 502 } else { 200 })
+                .status(if mark == "offline" { 503 } else { 200 })
                 .header(LIVE_HEADER, mark)
                 .body(Body::from("{}"))
                 .unwrap()
@@ -1652,7 +1701,7 @@ mod tests {
     async fn the_edges_stand_ins_pass_through_with_their_outcome() {
         let base = fake_edge(|_req: Request| {
             axum::http::Response::builder()
-                .status(502)
+                .status(503)
                 .header(LIVE_HEADER, "offline")
                 .body(Body::from("offline"))
                 .unwrap()
@@ -1662,13 +1711,13 @@ mod tests {
         let headers = HeaderMap::new();
         let method = Method::POST;
         let (status, answer_headers, _, record) = exchange(&relay, &headers, &method).await;
-        assert_eq!(status, StatusCode::BAD_GATEWAY);
+        assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
         assert!(answer_headers.get(LIVE_HEADER).is_none());
-        assert_eq!((record.status, record.outcome), (502, "offline"));
+        assert_eq!((record.status, record.outcome), (503, "offline"));
     }
 
     #[tokio::test]
-    async fn a_refusing_edge_or_no_edge_is_a_502() {
+    async fn a_refusing_edge_or_no_edge_is_a_503_with_the_reason() {
         let base = fake_edge(|_req: Request| {
             axum::http::Response::builder()
                 .status(404)
@@ -1679,8 +1728,13 @@ mod tests {
         .await;
         let headers = HeaderMap::new();
         let method = Method::GET;
-        let (status, _, _, record) = exchange(&relay_to(base, 16), &headers, &method).await;
-        assert_eq!(status, StatusCode::BAD_GATEWAY);
+        let (status, _, body, record) = exchange(&relay_to(base, 16), &headers, &method).await;
+        // Not 502: Cloudflare would put its own page in its place.
+        assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
+        assert_eq!(
+            &body[..],
+            br#"{"error":"The live tunnel could not be reached."}"#
+        );
         assert_eq!(record.outcome, "unreachable");
 
         // Nothing listens on this port.
@@ -1688,8 +1742,8 @@ mod tests {
         let closed = format!("http://{}", listener.local_addr().unwrap());
         drop(listener);
         let (status, _, _, record) = exchange(&relay_to(closed, 16), &headers, &method).await;
-        assert_eq!(status, StatusCode::BAD_GATEWAY);
-        assert_eq!((record.status, record.outcome), (502, "unreachable"));
+        assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
+        assert_eq!((record.status, record.outcome), (503, "unreachable"));
     }
 
     #[tokio::test]
@@ -1884,11 +1938,11 @@ mod tests {
 
     #[tokio::test]
     async fn the_edges_refusal_of_an_answer_passes_on_as_refused() {
-        // A 502 marked refused is the edge turning the app's answer down (a
+        // A 503 marked refused is the edge turning the app's answer down (a
         // download, say), not a fault of ours.
         let base = fake_edge(|_req: Request| {
             axum::http::Response::builder()
-                .status(502)
+                .status(503)
                 .header("content-type", "application/json")
                 .header(LIVE_HEADER, "refused")
                 .body(Body::from(r#"{"error":"not passed back"}"#))
@@ -1898,9 +1952,9 @@ mod tests {
         let headers = HeaderMap::new();
         let method = Method::POST;
         let (status, _, body, record) = exchange(&relay_to(base, 16), &headers, &method).await;
-        assert_eq!(status, StatusCode::BAD_GATEWAY);
+        assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
         assert_eq!(&body[..], br#"{"error":"not passed back"}"#);
-        assert_eq!((record.status, record.outcome), (502, "refused"));
+        assert_eq!((record.status, record.outcome), (503, "refused"));
     }
 
     #[test]

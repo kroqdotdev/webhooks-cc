@@ -895,6 +895,7 @@ mod tests {
         let confirmed = ReverseDns {
             name: Some("mail.example.com".into()),
             confirmed: true,
+            temporary_error: false,
         };
         let input = |helo: &'static str, reverse_dns: &'static ReverseDns| SetupInput {
             ip: ip(),

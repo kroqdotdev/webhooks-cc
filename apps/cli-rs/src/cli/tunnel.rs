@@ -416,7 +416,7 @@ fn not_relayed(count: usize) -> String {
 
 /// What `whk tunnel --live` says when the relay is down and captures come
 /// from the stream instead.
-const LIVE_FALLBACK: &str = "The live relay is not connected: forwarding captures from the stream like a plain tunnel until it is back (senders get 502 for 2 minutes, then the endpoint's mock).";
+const LIVE_FALLBACK: &str = "The live relay is not connected: forwarding captures from the stream like a plain tunnel until it is back (senders get 503 for 2 minutes, then the endpoint's mock).";
 
 /// How long the edge's line for a relayed capture is remembered, for its
 /// copy on the stream to find. Long, since the stream can be down for a

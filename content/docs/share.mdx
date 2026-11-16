@@ -160,9 +160,11 @@ A share serves web pages, not files. To keep previews from being used to hand ou
 - videos, audio, documents, archives, installers and other binaries
 - any response sent as a download (`Content-Disposition: attachment`), except images a page loads
 - responses with no `Content-Type` (an untyped error page, such as SvelteKit's `403`, still shows as plain text, up to 64 KB)
-- responses over 50 MB
+- responses that state a size (`Content-Length`) over 50 MB
 
-The CLI tells you once when something was kept back.
+A response streamed without a stated size is passed on as it comes and cut off at 50 MB. By then the visitor already has its status and headers, so the edge cannot swap in its page: the download fails partway (an aborted transfer, never a file that looks complete but is short).
+
+The CLI tells you once when something was kept back or cut off.
 
 **Werkzeug's debugger.** `flask run --debug` turns on a console that runs Python on your machine, and it trusts requests that come through a share. The edge refuses the debugger's console and its commands, so visitors never get a prompt on your computer. Its traceback pages still show, with your code in them: share without `--debug`, or behind `--password`.
 

@@ -591,10 +591,10 @@ class LiveResponse:
     body_truncated: bool
     body_encoding: str
     ms: int | None
-    #: ``"answered"``, or what the sender got instead: ``"offline"`` (502),
-    #: ``"timeout"`` (504), ``"unreachable"`` (502), ``"busy"`` (503) or
+    #: ``"answered"``, or what the sender got instead, a 503 with the reason
+    #: as JSON: ``"offline"``, ``"timeout"``, ``"unreachable"``, ``"busy"`` or
     #: ``"refused"``: the answer was not passed back as it was. 400 when the
-    #: path left the endpoint; 502 when the answer was refused (a download, a
+    #: path left the endpoint; 503 when the answer was refused (a download, a
     #: script or another type an API does not answer with, or a stated size
     #: over 1 MB); or the app's own status when the answer streamed past
     #: 1 MB and was cut off, so the sender got a broken stream.

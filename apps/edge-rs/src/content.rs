@@ -13,7 +13,11 @@
 //! always miss the next one; a response with no type at all is refused too,
 //! as browsers may save it as a file. Bodies are capped at
 //! [`MAX_RESPONSE`], up front when the length is stated and while streaming
-//! when it is not.
+//! when it is not. A streamed body has had its status and headers sent by
+//! the time it passes the cap, so it can only be cut off: the visitor's
+//! download fails (an aborted stream, never a silently short file), and the
+//! CLI is told ([`OnCut`]). Holding 50 MB back to check first would cost the
+//! edge that much memory per response.
 //!
 //! An error with no type is the one exception: SvelteKit, for one, answers
 //! a form from another site with a 403 and no `Content-Type`, and the
@@ -317,6 +321,53 @@ where
         hint.set_lower(inner.lower().min(left));
         hint.set_upper(inner.upper().map_or(left, |u| u.min(left)));
         hint
+    }
+}
+
+/// Calls `on_cut` once when the body ends with `http_body_util`'s
+/// `LengthLimitError`, that is, when a body of unstated length ran past
+/// its cap and was cut off.
+pub struct OnCut<B> {
+    inner: B,
+    on_cut: Option<Box<dyn FnOnce() + Send + Sync>>,
+}
+
+impl<B> OnCut<B> {
+    pub fn new(inner: B, on_cut: impl FnOnce() + Send + Sync + 'static) -> Self {
+        Self {
+            inner,
+            on_cut: Some(Box::new(on_cut)),
+        }
+    }
+}
+
+impl<B> HttpBody for OnCut<B>
+where
+    B: HttpBody<Data = Bytes, Error = Box<dyn std::error::Error + Send + Sync>> + Unpin,
+{
+    type Data = Bytes;
+    type Error = B::Error;
+
+    fn poll_frame(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+    ) -> Poll<Option<Result<Frame<Bytes>, Self::Error>>> {
+        let frame = ready!(Pin::new(&mut self.inner).poll_frame(cx));
+        if let Some(Err(e)) = &frame
+            && e.is::<http_body_util::LengthLimitError>()
+            && let Some(on_cut) = self.on_cut.take()
+        {
+            on_cut();
+        }
+        Poll::Ready(frame)
+    }
+
+    fn is_end_stream(&self) -> bool {
+        self.inner.is_end_stream()
+    }
+
+    fn size_hint(&self) -> SizeHint {
+        self.inner.size_hint()
     }
 }
 
@@ -691,5 +742,31 @@ mod tests {
         assert!(matches!(video(&["   "]), Err(Refusal::Kind(_))));
         assert!(matches!(video(&["/a", "/b"]), Err(Refusal::Kind(_))));
         assert!(matches!(video(&["/a"]), Ok(Pass::AsSent)));
+    }
+
+    #[tokio::test]
+    async fn a_streamed_body_past_the_cap_fails_and_says_so_once() {
+        use http_body_util::{BodyExt, Limited, StreamBody};
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        let chunks = (0..4)
+            .map(|_| Ok::<_, std::convert::Infallible>(Frame::data(Bytes::from(vec![0u8; 10]))));
+        let streamed = StreamBody::new(futures::stream::iter(chunks));
+        let cuts = std::sync::Arc::new(AtomicUsize::new(0));
+        let counted = cuts.clone();
+        let body = OnCut::new(Limited::new(streamed, 25).boxed(), move || {
+            counted.fetch_add(1, Ordering::SeqCst);
+        });
+        // An error, not a short body that looks whole.
+        assert!(body.collect().await.is_err());
+        assert_eq!(cuts.load(Ordering::SeqCst), 1);
+
+        let whole = http_body_util::Full::new(Bytes::from_static(b"fits"));
+        let cuts = std::sync::Arc::new(AtomicUsize::new(0));
+        let counted = cuts.clone();
+        let body = OnCut::new(Limited::new(whole, 25).boxed(), move || {
+            counted.fetch_add(1, Ordering::SeqCst);
+        });
+        assert_eq!(body.collect().await.unwrap().to_bytes(), "fits");
+        assert_eq!(cuts.load(Ordering::SeqCst), 0);
     }
 }

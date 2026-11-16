@@ -1,6 +1,10 @@
 //! The pages a visitor sees when there is nothing to show, in the style of
 //! the site. Plain HTML, no scripts, nothing loaded from elsewhere. Each
 //! page of a preview links to the report form for that address.
+//!
+//! The text is set in the system's own fonts, on purpose: the site's IBM
+//! Plex would be a font file fetched by every visitor of every preview from
+//! somewhere, and the policy here loads nothing (`default-src 'none'`).
 
 use bytes::Bytes;
 use http::{Response, StatusCode, header};
@@ -12,14 +16,14 @@ use crate::meter::own_page;
 const STYLE: &str = r#"
 :root { color-scheme: light dark; --bg: #f6f7f5; --surface: #ffffff; --sunken: #eef0ec; --ink: #16181a; --muted: #5a5f63; --rule: #d9ddd8; --edge: #a3a8a4; --fail: #b3261e; --brand: #1f5f4a; --fill: #1f5f4a; --fill-hover: #26735a; --fill-ink: #ffffff; }
 @media (prefers-color-scheme: dark) { :root { --bg: #121413; --surface: #1a1d1b; --sunken: #0d0f0e; --ink: #e9ece9; --muted: #a2a8a4; --rule: #2e3330; --edge: #5b625e; --fail: #ff8f80; --brand: #7cc7a8; --fill: #2f7a5f; --fill-hover: #379070; --fill-ink: #ffffff; } }
-body { margin: 0; min-height: 100dvh; display: grid; place-items: center; background: var(--bg); color: var(--ink); font: 17px/1.6 "IBM Plex Sans", system-ui, sans-serif; }
+body { margin: 0; min-height: 100dvh; display: grid; place-items: center; background: var(--bg); color: var(--ink); font: 17px/1.6 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
 main { width: 100%; max-width: 34rem; box-sizing: border-box; margin: 1rem; padding: 2rem 1.75rem; background: var(--surface); border: 1px solid var(--rule); border-radius: 6px; }
-.brand { margin: 0 0 2rem; color: var(--ink); font: 600 1rem/1 "IBM Plex Mono", ui-monospace, monospace; letter-spacing: -0.01em; }
+.brand { margin: 0 0 2rem; color: var(--ink); font: 600 1rem/1 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; letter-spacing: -0.01em; }
 .brand span { color: var(--brand); }
 h1 { margin: 0 0 0.75rem; font-size: 1.75rem; font-weight: 600; line-height: 1.15; letter-spacing: -0.02em; }
 p { margin: 0 0 1rem; color: var(--muted); }
-code { font: 15px "IBM Plex Mono", ui-monospace, monospace; color: var(--ink); }
-.address { margin: 1.25rem 0 1.5rem; padding: 0.8rem 1rem; border: 1px solid var(--rule); border-radius: 4px; background: var(--sunken); color: var(--ink); font: 16px/1.45 "IBM Plex Mono", ui-monospace, monospace; overflow-wrap: anywhere; }
+code { font: 15px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; color: var(--ink); }
+.address { margin: 1.25rem 0 1.5rem; padding: 0.8rem 1rem; border: 1px solid var(--rule); border-radius: 4px; background: var(--sunken); color: var(--ink); font: 16px/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; overflow-wrap: anywhere; }
 a { color: var(--brand); text-underline-offset: 4px; }
 .actions { margin: 1.75rem 0 1.25rem; }
 .quiet { font-size: 15px; }
@@ -472,5 +476,12 @@ mod tests {
         assert!(html.contains(
             "<a href=\"https://webhooks.cc/report?url=x&amp;y=&quot;z&quot;\">Report it</a>"
         ));
+    }
+
+    #[test]
+    fn pages_name_only_fonts_the_system_has() {
+        // A named web font would never load: the policy allows no fetch.
+        assert!(!STYLE.contains("Plex"));
+        assert!(STYLE.contains("system-ui") && STYLE.contains("ui-monospace"));
     }
 }

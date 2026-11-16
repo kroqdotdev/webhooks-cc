@@ -186,7 +186,7 @@ export async function stopShares(which: StopWhich, kind: StopKind): Promise<Stop
       )
       .in("end_reason", DROPPED_ENDINGS);
     if (markError) throw markError;
-    // The drop left its endpoint answering 502 for two minutes while the CLI
+    // The drop left its endpoint answering 503 for two minutes while the CLI
     // reconnects; a stop means no reconnect, so senders get the endpoint's
     // usual answer at once. One that went live again is ended below.
     const endpoints = [
