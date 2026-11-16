@@ -4265,6 +4265,16 @@ describe("errors from the API", () => {
     expect(error.hint).toContain("list_endpoints");
   });
 
+  it("says the status in words when the API answers only a code", async () => {
+    const tools = getRegisteredTools(failingClient(404, '{"error":"not_found"}'));
+    const result = await tools.get_request.handler({ requestId: "req_missing" });
+    expect(result.isError).toBe(true);
+    const error = parseJsonResult(result);
+    expect(error.code).toBe("not_found");
+    expect(error.message).toBe("Not found");
+    expect(error.hint).toContain("list_requests");
+  });
+
   it("never answers raw JSON or the SDK's method names as an error", async () => {
     const bodies: Array<[number, string]> = [
       [404, '{"error":"Endpoint not found"}'],

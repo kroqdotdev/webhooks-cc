@@ -865,10 +865,30 @@ def test_errors_are_typed(status: int, error_type: type[Exception]) -> None:
             "name is too long",
         ),
         (502, "Bad gateway", "Bad gateway"),
-        (400, json.dumps({"error": "invalid_input", "message": "y" * 250}), "y" * 250),
+        (400, json.dumps({"error": "invalid_input", "message": "y " * 125}), "y " * 125),
         (500, "z" * 400, "z" * 200 + "..."),
         # A message only JavaScript's trim() calls blank (U+FEFF) gives way to the error.
         (400, '{"message":"\\ufeff ","error":"name is too long"}', "name is too long"),
+        # A bare code is no sentence: the status is said in words instead.
+        (
+            404,
+            '{"error":"not_found"}',
+            "Not found: use client.endpoints.list() to see your endpoints",
+        ),
+        (
+            404,
+            '{"error":"Request not found"}',
+            "Request not found: use client.endpoints.list() to see your endpoints",
+        ),
+        (
+            404,
+            '{"error":"not_found","message":"Request not found"}',
+            "Request not found: use client.endpoints.list() to see your endpoints",
+        ),
+        (403, '{"error":"forbidden"}', "Forbidden"),
+        (409, '{"error":"conflict"}', "Conflict"),
+        (500, '{"error":"internal"}', "Server error"),
+        (422, '{"error":"some_code"}', "Request failed (HTTP 422)"),
     ],
 )
 def test_error_messages_are_the_plain_text_of_the_body(
@@ -879,6 +899,20 @@ def test_error_messages_are_the_plain_text_of_the_body(
         client.endpoints.get("acme")
     assert caught.value.message == message
     assert not caught.value.message.startswith("{")
+
+
+def test_a_bare_code_keeps_its_meaning() -> None:
+    cursor = make_client(lambda request: httpx.Response(400, json={"error": "invalid_cursor"}))
+    with pytest.raises(errors.InvalidCursorError):
+        cursor.endpoints.get("acme")
+    busy = make_client(lambda request: httpx.Response(429, json={"error": "search_busy"}))
+    with pytest.raises(errors.RateLimitError) as caught:
+        busy.endpoints.get("acme")
+    assert caught.value.code == "search_busy"
+    plain = make_client(lambda request: httpx.Response(400, json={"error": "invalid_input"}))
+    with pytest.raises(errors.WebhooksCCError) as other:
+        plain.endpoints.get("acme")
+    assert other.value.message == "Bad request"
 
 
 def test_rate_limit_error_carries_the_headers() -> None:
@@ -2185,7 +2219,7 @@ def test_an_invalid_cursor_has_its_own_error() -> None:
     with pytest.raises(errors.WebhooksCCError) as plain:
         other.requests.search_page(q="x")
     assert not isinstance(plain.value, errors.InvalidCursorError)
-    assert "invalid_q" in plain.value.message
+    assert plain.value.message == "Bad request"
 
 
 def test_a_busy_search_is_retried_after_retry_after(monkeypatch: pytest.MonkeyPatch) -> None:

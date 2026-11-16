@@ -20,7 +20,8 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   const reply = (body: unknown, status = 200) =>
     applyRateLimitHeaders(Response.json(body, { status }), rateLimit);
 
-  if (!/^[0-9a-f-]{36}$/i.test(id)) return reply({ error: "not_found" }, 404);
+  if (!/^[0-9a-f-]{36}$/i.test(id))
+    return reply({ error: "not_found", message: "Request not found" }, 404);
   try {
     const { data, error } = await createAdminClient()
       .from("requests")
@@ -32,10 +33,12 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
         endpoints: { user_id: string | null; slug: string };
       }>();
     if (error) throw error;
-    if (!data || data.endpoints.user_id !== auth.userId) return reply({ error: "not_found" }, 404);
+    if (!data || data.endpoints.user_id !== auth.userId)
+      return reply({ error: "not_found", message: "Request not found" }, 404);
     // Past retention it is gone, whether or not the cleanup has deleted it yet.
     const retained = await getRetainedRequestsByIds(data.endpoint_id, [data.id]);
-    if (retained.length === 0) return reply({ error: "not_found" }, 404);
+    if (retained.length === 0)
+      return reply({ error: "not_found", message: "Request not found" }, 404);
     const queued = await replayRequests(data.endpoint_id, [data.id]);
     await auditUserAction(request, auth.userId, {
       action: "request.replayed",

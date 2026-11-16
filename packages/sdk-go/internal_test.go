@@ -316,6 +316,22 @@ func TestSearchCollectsMoreThanAPageHolds(t *testing.T) {
 	}
 }
 
+// A bare code gives way to the status in words, and stays the error's code.
+func TestABareCodeIsKeptAsTheCode(t *testing.T) {
+	cases := []struct {
+		body, message, code string
+	}{
+		{`{"error":"not_found"}`, "Not found: Use Endpoints.List to see your endpoints", "not_found"},
+		{`{"error":"not_found","message":"Request not found"}`, "Request not found: Use Endpoints.List to see your endpoints", "not_found"},
+	}
+	for _, c := range cases {
+		err := errorFromResponse(&apiResponse{status: http.StatusNotFound, body: []byte(c.body)}, "/requests/r1")
+		if err.Message != c.message || err.code != c.code {
+			t.Errorf("%s: message %q, code %q", c.body, err.Message, err.code)
+		}
+	}
+}
+
 // An error on a later page is the call's error, never a short result.
 func TestAnErrorOnALaterPageIsReturned(t *testing.T) {
 	ctx := context.Background()

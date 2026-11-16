@@ -1,0 +1,7 @@
+{
+  "title": "Readable not-found errors for requests",
+  "items": [
+    "A request id that does not exist answers a readable message beside its not_found code, on the request, raw message, attachment, replay and render routes",
+    "The changelog lists SDK 1.31.1"
+  ]
+}

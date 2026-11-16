@@ -1035,7 +1035,7 @@ func TestAnInvalidCursorHasItsOwnError(t *testing.T) {
 		t.Errorf("count page: %v", err)
 	}
 	// Another 400 is not an invalid cursor.
-	if _, err := client.Requests.SearchPage(ctx, webhookscc.SearchOptions{Query: "x"}, ""); err == nil || errors.Is(err, webhookscc.ErrInvalidCursor) || !strings.Contains(err.Error(), "invalid_q") {
+	if _, err := client.Requests.SearchPage(ctx, webhookscc.SearchOptions{Query: "x"}, ""); err == nil || errors.Is(err, webhookscc.ErrInvalidCursor) || !strings.Contains(err.Error(), "Bad request") {
 		t.Errorf("another 400: %v", err)
 	}
 }
@@ -1262,12 +1262,21 @@ func TestErrorMessagesAreThePlainTextOfTheBody(t *testing.T) {
 		{400, `{"error":"invalid_input","message":"name is too long"}`, "name is too long"},
 		{502, "Bad gateway", "Bad gateway"},
 		{401, `{"error":"Unauthorized"}`, "Unauthorized. Get an API key at https://webhooks.cc/account/api-keys"},
-		{400, `{"error":"invalid_input","message":"` + strings.Repeat("y", 250) + `"}`, strings.Repeat("y", 250)},
+		{400, `{"error":"invalid_input","message":"` + strings.Repeat("y ", 125) + `"}`, strings.Repeat("y ", 125)},
 		{500, strings.Repeat("z", 400), strings.Repeat("z", 200) + "..."},
 		// A message only JavaScript's trim() calls blank (U+FEFF) gives way to the error.
 		{400, `{"message":"\ufeff ","error":"name is too long"}`, "name is too long"},
 		// A short message is trimmed as JavaScript trims it before its hint.
 		{404, "\ufeffNot found\ufeff", "Not found: Use Endpoints.List to see your endpoints"},
+		// A bare code is no sentence: the status is said in words instead.
+		{404, `{"error":"not_found"}`, "Not found: Use Endpoints.List to see your endpoints"},
+		{404, `{"error":"Request not found"}`, "Request not found: Use Endpoints.List to see your endpoints"},
+		{404, `{"error":"not_found","message":"Request not found"}`, "Request not found: Use Endpoints.List to see your endpoints"},
+		{400, `{"error":"invalid_input"}`, "Bad request"},
+		{403, `{"error":"forbidden"}`, "Forbidden"},
+		{409, `{"error":"conflict"}`, "Conflict"},
+		{500, `{"error":"internal"}`, "Server error"},
+		{422, `{"error":"some_code"}`, "Request failed (HTTP 422)"},
 	}
 	for _, c := range cases {
 		api := newFakeAPI(t)
