@@ -1,7 +1,8 @@
 {
-  "title": "Readable not-found errors for requests",
+  "title": "Readable not-found errors",
   "items": [
-    "A request id that does not exist answers a readable message beside its not_found code, on the request, raw message, attachment, replay, render and share routes",
+    "A not_found answer carries a readable message beside its code (\"Request not found\", \"Endpoint not found\", \"Attachment not found\", \"Share link not found\", \"Connected agent not found\", \"Google connection not found\") on the request, endpoint request list, attachment, share link, connected agent and Google connection routes",
+    "The hosted MCP server calls a refusal because something already exists or is in use (HTTP 409) a conflict rather than a validation error",
     "The changelog lists SDK 1.31.1"
   ]
 }

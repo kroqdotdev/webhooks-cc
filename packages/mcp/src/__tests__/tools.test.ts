@@ -4279,6 +4279,14 @@ describe("errors from the API", () => {
       await since.list_requests.handler({ endpointSlug: "acme", limit: 5 })
     );
     expect(refused.message).toBe("Bad request (invalid_since)");
+    expect(refused.code).toBe("validation_error");
+  });
+
+  it("calls a 409 a conflict", async () => {
+    const tools = getRegisteredTools(failingClient(409, '{"error":"slug_exists"}'));
+    const error = parseJsonResult(await tools.get_endpoint.handler({ slug: "acme" }));
+    expect(error.code).toBe("conflict");
+    expect(error.message).toBe("Conflict (slug_exists)");
   });
 
   it("never answers raw JSON or the SDK's method names as an error", async () => {

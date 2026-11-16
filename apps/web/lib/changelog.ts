@@ -3338,6 +3338,7 @@ export const CHANGELOG: ChangelogEntry[] = [
       "The tool list is smaller: conditions of response rules, filters and layouts are described once per list, a rule's response once as `mockResponse`, and input schemas leave out the `$schema` URI (MCP reads JSON Schema 2020-12 without it). The core list is 59.1 KB as sent (from 63.4 KB), the full one 119.3 KB (from 128.1 KB)",
       "On the hosted server, names in `?tools=` that are no group are reported on `describe` and in the instructions, and when none of the names is a group the client's own default applies rather than the core",
       'An API error that names only a code reads as the status in words ("Not found" for a request id that does not exist, with the `list_requests` hint), keeping the code in brackets when it says more ("Bad request (invalid_since)")',
+      "A refusal because something already exists or is in use (HTTP 409) has the tool error code `conflict`, not `validation_error`",
     ],
   },
   {

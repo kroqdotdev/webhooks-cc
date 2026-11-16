@@ -46,7 +46,8 @@ export async function POST(request: Request) {
     const connection = (await listGoogleConnections(auth.userId)).find(
       (candidate) => candidate.id === body.connectionId
     );
-    if (!connection) return reply({ error: "not_found" }, 404);
+    if (!connection)
+      return reply({ error: "not_found", message: "Google connection not found" }, 404);
     const site = parseSite(request.headers.get(SITE_HEADER));
     return reply({ url: pickerUrl(config, site, body.nonce, connection.email) });
   } catch (error) {

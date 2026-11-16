@@ -1158,7 +1158,13 @@ function splitHint(message: string): { message: string; hint: string | null } {
 
 /** The codes a tool error carries. */
 export type ToolErrorCode =
-  "unauthorized" | "not_found" | "rate_limited" | "timeout" | "validation_error" | "server_error";
+  | "unauthorized"
+  | "not_found"
+  | "conflict"
+  | "rate_limited"
+  | "timeout"
+  | "validation_error"
+  | "server_error";
 
 /** A tool error as every tool answers one. */
 interface ToolErrorPayload {
@@ -1264,7 +1270,12 @@ function errorPayload(error: unknown, remote: boolean): ToolErrorPayload {
   } else if (error instanceof TimeoutError) {
     payload.code = "timeout";
   } else if (error instanceof WebhooksCCError) {
-    payload.code = error.statusCode >= 500 ? "server_error" : "validation_error";
+    payload.code =
+      error.statusCode >= 500
+        ? "server_error"
+        : error.statusCode === 409
+          ? "conflict"
+          : "validation_error";
   }
 
   if (error instanceof WebhooksCCError) {

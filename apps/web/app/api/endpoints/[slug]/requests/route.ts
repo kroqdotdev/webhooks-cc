@@ -45,7 +45,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ slug
     });
 
     if (!data) {
-      return Response.json({ error: "not_found" }, { status: 404 });
+      return Response.json({ error: "not_found", message: "Endpoint not found" }, { status: 404 });
     }
 
     return Response.json(extracts ? await withEmailExtracts(data) : data);
@@ -79,7 +79,7 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ s
     });
 
     if (!data) {
-      return Response.json({ error: "not_found" }, { status: 404 });
+      return Response.json({ error: "not_found", message: "Endpoint not found" }, { status: 404 });
     }
 
     return new Response(null, { status: 204 });
