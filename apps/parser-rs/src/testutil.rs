@@ -269,3 +269,48 @@ pub(crate) fn compound_file(streams: &[(&str, &[u8])]) -> Vec<u8> {
     cfb.flush().unwrap();
     cfb.into_inner().into_inner()
 }
+
+/// `zip` with one more central-directory record that shares `target`'s
+/// local header (so its data start) under another name and declares size 0:
+/// the shape of an archive that tries to make a meter charge 0 for `target`.
+pub(crate) fn with_alias_record(zip: &[u8], target: &str) -> Vec<u8> {
+    let u16_at = |b: &[u8], i: usize| u16::from_le_bytes([b[i], b[i + 1]]) as usize;
+    let u32_at =
+        |b: &[u8], i: usize| u32::from_le_bytes([b[i], b[i + 1], b[i + 2], b[i + 3]]) as usize;
+    let eocd = zip
+        .windows(4)
+        .rposition(|w| w == b"PK\x05\x06")
+        .expect("an end record");
+    let count = u16_at(zip, eocd + 10);
+    let cd_off = u32_at(zip, eocd + 16);
+    let mut records: Vec<Vec<u8>> = Vec::new();
+    let mut p = cd_off;
+    for _ in 0..count {
+        let len = 46 + u16_at(zip, p + 28) + u16_at(zip, p + 30) + u16_at(zip, p + 32);
+        records.push(zip[p..p + len].to_vec());
+        p += len;
+    }
+    let original = records
+        .iter()
+        .find(|r| &r[46..46 + u16_at(r, 28)] == target.as_bytes())
+        .expect("the target entry")
+        .clone();
+    let name = b"zz/alias.xml";
+    let mut alias = original[..46].to_vec();
+    alias[16..28].fill(0); // crc, compressed and uncompressed size
+    alias[28..30].copy_from_slice(&(name.len() as u16).to_le_bytes());
+    alias[30..34].fill(0); // no extra field, no comment
+    alias.extend_from_slice(name);
+    records.push(alias);
+    let cd: Vec<u8> = records.concat();
+    let mut out = zip[..cd_off].to_vec();
+    out.extend_from_slice(&cd);
+    out.extend_from_slice(b"PK\x05\x06");
+    out.extend_from_slice(&[0, 0, 0, 0]);
+    out.extend_from_slice(&(records.len() as u16).to_le_bytes());
+    out.extend_from_slice(&(records.len() as u16).to_le_bytes());
+    out.extend_from_slice(&(cd.len() as u32).to_le_bytes());
+    out.extend_from_slice(&(cd_off as u32).to_le_bytes());
+    out.extend_from_slice(&[0, 0]);
+    out
+}

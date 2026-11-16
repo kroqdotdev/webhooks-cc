@@ -23,7 +23,9 @@ pub(crate) const MAX_CELLS_VISITED: u64 = 5_000_000;
 
 /// What calamine may inflate past the entries' declared sizes: a workbook
 /// opens each part once (and the zip crate never inflates past a declared
-/// size), so honest files stay far below it, while sheets that make calamine
+/// size), so honest files stay far below it (calamine 0.38 opens each part
+/// once; should it ever read one twice, as with its `picture` feature, an
+/// honest part over this margin would come back truncated), while sheets that make calamine
 /// reopen one part again and again run out of it, however they name the part
 /// and however well it compresses. The parse then stops, marked truncated.
 const REREAD_MARGIN: u64 = 1 << 20;
@@ -43,17 +45,26 @@ struct Metered<'a> {
 
 impl<'a> Metered<'a> {
     fn new(input: &'a [u8], exceeded: std::rc::Rc<std::cell::Cell<bool>>) -> Self {
-        let mut sizes = std::collections::HashMap::new();
+        let mut sizes: std::collections::HashMap<u64, u64> = std::collections::HashMap::new();
         let mut total: u64 = 0;
-        if let Ok(mut archive) = zip::ZipArchive::new(Cursor::new(input)) {
-            for i in 0..archive.len() {
-                if let Ok(entry) = archive.by_index_raw(i)
-                    && let Some(start) = entry.data_start()
-                {
-                    sizes.insert(start, entry.size());
-                    total = total.saturating_add(entry.size());
+        match zip::ZipArchive::new(Cursor::new(input)) {
+            Ok(mut archive) => {
+                for i in 0..archive.len() {
+                    if let Ok(entry) = archive.by_index_raw(i)
+                        && let Some(start) = entry.data_start()
+                    {
+                        // Two records on one data start (the zip guard
+                        // refuses overlaps; this holds even so): charge the
+                        // larger size, so a record declaring 0 cannot make
+                        // the real part free to reread.
+                        let size = sizes.entry(start).or_insert(0);
+                        *size = (*size).max(entry.size());
+                        total = total.saturating_add(entry.size());
+                    }
                 }
             }
+            // Fail closed: an archive the meter cannot read is never read.
+            Err(_) => exceeded.set(true),
         }
         Self {
             inner: Cursor::new(input),
@@ -602,6 +613,16 @@ mod tests {
         assert!(truncated);
         assert!(sheets.len() <= 2, "read {} times", sheets.len());
         assert!(started.elapsed() < std::time::Duration::from_secs(5));
+    }
+
+    #[test]
+    fn an_alias_record_for_the_same_data_is_refused() {
+        use crate::testutil::{raw_xlsx, with_alias_record};
+        let book = raw_xlsx(&[br#"<row r="1"><c r="A1"><v>1</v></c></row>"#]);
+        assert!(parse(&book, 100).is_ok());
+        let aliased = with_alias_record(&book, "xl/worksheets/sheet1.xml");
+        let failure = parse(&aliased, 100).unwrap_err();
+        assert_eq!(failure.code, ErrorCode::ZipBomb);
     }
 
     #[test]
