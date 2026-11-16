@@ -198,6 +198,22 @@ describe("toEmailCapture", () => {
         },
       },
     })?.auth;
+    // Older captures recorded no error; a failed lookup carries one.
+    const unchecked = toEmailCapture({
+      auth: {
+        setup: {
+          helo: {
+            name: "mail.tidewater.app",
+            ip_literal: false,
+            fqdn: true,
+            resolves: false,
+            matches_ptr: false,
+            error: "lookup failed",
+          },
+        },
+      },
+    })?.auth?.setup?.helo;
+    expect(unchecked).toMatchObject({ resolves: false, error: "lookup failed" });
     expect(auth?.arc).toEqual({
       result: "pass",
       sets: 2,
@@ -247,6 +263,7 @@ describe("toEmailCapture", () => {
         fqdn: true,
         resolves: true,
         matchesPtr: false,
+        error: null,
       },
       error: null,
     });

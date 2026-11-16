@@ -97,6 +97,8 @@ pub struct Limiter {
 #[derive(Default)]
 struct State {
     lookups: HashMap<ClientKey, usize>,
+    /// Reverse lookups running on the whole host, every client's together.
+    lookups_total: usize,
     sessions: HashMap<ClientKey, usize>,
     data: HashMap<ClientKey, usize>,
     messages: Expiring<ClientKey, Window>,
@@ -121,6 +123,16 @@ impl State {
     }
 }
 
+/// What `start_lookup` allows for a new connection.
+pub enum Lookup {
+    /// The client has too many lookups running: refuse the connection.
+    Refused,
+    /// Every reverse lookup the host allows is running: go on without one,
+    /// recording that reverse DNS could not be checked.
+    Unchecked,
+    Started(SlotGuard),
+}
+
 /// Holds one of a client's counted slots until dropped.
 pub struct SlotGuard {
     limiter: Arc<Limiter>,
@@ -131,6 +143,9 @@ pub struct SlotGuard {
 impl Drop for SlotGuard {
     fn drop(&mut self) {
         let mut state = self.limiter.lock();
+        if self.slot == Slot::Lookup {
+            state.lookups_total = state.lookups_total.saturating_sub(1);
+        }
         let map = state.slots(self.slot);
         if let Some(count) = map.get_mut(&self.key) {
             *count = count.saturating_sub(1);
@@ -159,7 +174,7 @@ impl Limiter {
 
     fn take_slot(self: &Arc<Self>, client: Client, slot: Slot) -> Option<SlotGuard> {
         let max = match (slot, client.trusted) {
-            // Trust is not known yet while the lookup runs.
+            // Trust is not known yet while the lookup runs (`start_lookup`).
             (Slot::Lookup, _) | (Slot::Session, false) => self.limits.sessions_per_client,
             (Slot::Session, true) => self.limits.trusted_sessions_per_client,
             (Slot::Data, false) => self.limits.data_per_client,
@@ -181,8 +196,24 @@ impl Limiter {
     /// A slot for the reverse-DNS lookup of a new connection, counted as an
     /// untrusted client because trust is what the lookup decides. Without it
     /// one network could hold every connection slot while its lookups run.
-    pub fn start_lookup(self: &Arc<Self>, ip: IpAddr) -> Option<SlotGuard> {
-        self.take_slot(Client::new(ip, false), Slot::Lookup)
+    /// Lookups also outlive their connections, so the host caps them all
+    /// together too: past that cap the connection goes on unchecked.
+    pub fn start_lookup(self: &Arc<Self>, ip: IpAddr) -> Lookup {
+        let key = ClientKey::of(ip, false);
+        let mut state = self.lock();
+        if state.lookups.get(&key).copied().unwrap_or(0) >= self.limits.sessions_per_client {
+            return Lookup::Refused;
+        }
+        if state.lookups_total >= self.limits.reverse_lookups {
+            return Lookup::Unchecked;
+        }
+        *state.lookups.entry(key).or_insert(0) += 1;
+        state.lookups_total += 1;
+        Lookup::Started(SlotGuard {
+            limiter: Arc::clone(self),
+            key,
+            slot: Slot::Lookup,
+        })
     }
 
     /// A session slot, unless the client has too many open.
@@ -257,6 +288,14 @@ pub fn is_trusted_name(name: &str, suffixes: &[String]) -> bool {
 mod tests {
     use super::*;
 
+    fn started(lookup: Lookup) -> SlotGuard {
+        match lookup {
+            Lookup::Started(slot) => slot,
+            Lookup::Refused => panic!("refused"),
+            Lookup::Unchecked => panic!("unchecked"),
+        }
+    }
+
     fn limits() -> Limits {
         Limits {
             sessions_per_client: 2,
@@ -329,18 +368,42 @@ mod tests {
     fn caps_lookups_as_untrusted_and_apart_from_sessions() {
         let limiter = Limiter::new(limits());
         let ip = "2001:db8:1:2::1".parse().unwrap();
-        let a = limiter.start_lookup(ip).unwrap();
-        let _b = limiter
-            .start_lookup("2001:db8:1:2::ffff".parse().unwrap())
-            .unwrap();
-        assert!(limiter.start_lookup(ip).is_none(), "same /64, cap of 2");
+        let a = started(limiter.start_lookup(ip));
+        let _b = started(limiter.start_lookup("2001:db8:1:2::ffff".parse().unwrap()));
+        assert!(
+            matches!(limiter.start_lookup(ip), Lookup::Refused),
+            "same /64, cap of 2"
+        );
         assert!(
             limiter
                 .open_session(client("2001:db8:1:2::1", false))
                 .is_some()
         );
         drop(a);
-        assert!(limiter.start_lookup(ip).is_some());
+        started(limiter.start_lookup(ip));
+    }
+
+    #[test]
+    fn caps_lookups_on_the_whole_host() {
+        let limiter = Limiter::new(Limits {
+            reverse_lookups: 3,
+            ..limits()
+        });
+        let busy = "192.0.2.1".parse().unwrap();
+        let first = started(limiter.start_lookup(busy));
+        let _second = started(limiter.start_lookup(busy));
+        let _third = started(limiter.start_lookup("192.0.2.2".parse().unwrap()));
+        // Another client goes on unchecked rather than waiting.
+        let other = "198.51.100.1".parse().unwrap();
+        assert!(matches!(limiter.start_lookup(other), Lookup::Unchecked));
+        // A client over its own cap is still refused, as before.
+        assert!(matches!(limiter.start_lookup(busy), Lookup::Refused));
+        drop(first);
+        let _fourth = started(limiter.start_lookup(other));
+        assert!(matches!(
+            limiter.start_lookup("203.0.113.1".parse().unwrap()),
+            Lookup::Unchecked
+        ));
     }
 
     #[test]

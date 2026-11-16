@@ -23,7 +23,7 @@ use mail_auth::hickory_resolver::net::{DnsError, NetError};
 use mail_auth::hickory_resolver::proto::rr::{Name, RData};
 use serde_json::{Value, json};
 
-use crate::auth_check::{ReverseDns, resolves_to};
+use crate::auth_check::{Forward, ReverseDns, forward};
 
 /// SPF records fetched while counting lookups, the first one included. The
 /// count stops there and is reported as capped: past RFC 7208's limit of 10
@@ -51,7 +51,8 @@ pub(crate) enum TxtAnswer {
 /// The DNS this module needs, so tests can answer without a network.
 pub(crate) trait Dns {
     async fn txt(&self, name: &str) -> TxtAnswer;
-    async fn resolves_to(&self, name: &str, ip: IpAddr) -> bool;
+    /// Whether `name` resolves to `ip`, does not, or could not be looked up.
+    async fn forward(&self, name: &str, ip: IpAddr) -> Forward;
 }
 
 /// The system resolver, through mail-auth's.
@@ -94,8 +95,8 @@ impl Dns for LiveDns<'_> {
         }
     }
 
-    async fn resolves_to(&self, name: &str, ip: IpAddr) -> bool {
-        resolves_to(self.0, name.to_string(), ip).await
+    async fn forward(&self, name: &str, ip: IpAddr) -> Forward {
+        forward(self.0, name.to_string(), ip).await
     }
 }
 
@@ -554,20 +555,31 @@ async fn helo(dns: &impl Dns, input: &SetupInput<'_>) -> Value {
     let name = input.helo.trim().trim_end_matches('.').to_ascii_lowercase();
     let literal = name.starts_with('[') || name.parse::<IpAddr>().is_ok();
     let fqdn = !literal && name.contains('.');
-    let resolves = fqdn && dns.resolves_to(&name, input.ip).await;
+    let forward = if fqdn {
+        Some(dns.forward(&name, input.ip).await)
+    } else {
+        None
+    };
     let matches_ptr = input.reverse_dns.confirmed
         && input
             .reverse_dns
             .name
             .as_deref()
             .is_some_and(|ptr| ptr.eq_ignore_ascii_case(&name));
-    json!({
+    let mut found = json!({
         "name": cut(&name, MAX_URI_CHARS),
         "ip_literal": literal,
         "fqdn": fqdn,
-        "resolves": resolves,
+        "resolves": forward == Some(Forward::Matches),
         "matches_ptr": matches_ptr,
-    })
+    });
+    // A lookup that timed out or got SERVFAIL says nothing about the name.
+    // `resolves` stays a boolean for older readers, and `error` tells the
+    // web app it is unknown rather than false.
+    if forward == Some(Forward::Failed) {
+        found["error"] = json!("lookup failed");
+    }
+    found
 }
 
 #[cfg(test)]
@@ -581,6 +593,8 @@ mod tests {
         txt: HashMap<String, Vec<String>>,
         failing: Vec<String>,
         addresses: HashMap<String, IpAddr>,
+        /// Names whose address lookup fails (a timeout, SERVFAIL).
+        unreachable: Vec<String>,
         asked: Mutex<Vec<String>>,
     }
 
@@ -606,8 +620,14 @@ mod tests {
             }
         }
 
-        async fn resolves_to(&self, name: &str, ip: IpAddr) -> bool {
-            self.addresses.get(name) == Some(&ip)
+        async fn forward(&self, name: &str, ip: IpAddr) -> Forward {
+            if self.unreachable.iter().any(|n| n == name) {
+                Forward::Failed
+            } else if self.addresses.get(name) == Some(&ip) {
+                Forward::Matches
+            } else {
+                Forward::Differs
+            }
         }
     }
 
@@ -890,8 +910,13 @@ mod tests {
 
     #[tokio::test]
     async fn judges_nothing_about_helo_only_records_it() {
-        let mut dns = StubDns::default();
+        let mut dns = StubDns {
+            unreachable: vec!["slow.example.com".into()],
+            ..StubDns::default()
+        };
         dns.addresses.insert("mail.example.com".into(), ip());
+        dns.addresses
+            .insert("other.example.com".into(), "192.0.2.9".parse().unwrap());
         let confirmed = ReverseDns {
             name: Some("mail.example.com".into()),
             confirmed: true,
@@ -919,6 +944,16 @@ mod tests {
         assert_eq!(
             helo(&dns, &input("localhost", none)).await["fqdn"],
             json!(false)
+        );
+        // Another address: a definite no, with no error.
+        assert_eq!(
+            helo(&dns, &input("other.example.com", none)).await,
+            json!({ "name": "other.example.com", "ip_literal": false, "fqdn": true, "resolves": false, "matches_ptr": false })
+        );
+        // A lookup that did not finish is unknown, not "does not resolve".
+        assert_eq!(
+            helo(&dns, &input("slow.example.com", none)).await,
+            json!({ "name": "slow.example.com", "ip_literal": false, "fqdn": true, "resolves": false, "matches_ptr": false, "error": "lookup failed" })
         );
     }
 }

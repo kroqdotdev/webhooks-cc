@@ -81,6 +81,10 @@ pub struct EgressConfig {
 /// Limits applied before mail is accepted (see `limits`).
 #[derive(Clone, Debug)]
 pub struct Limits {
+    /// Reverse-DNS lookups running at once on the whole host. A lookup can
+    /// outlive its connection, so the session cap does not bound them; past
+    /// this a new connection's reverse DNS is recorded as not checked.
+    pub reverse_lookups: usize,
     pub sessions_per_client: usize,
     pub trusted_sessions_per_client: usize,
     /// DATA transfers running at once per client.
@@ -124,6 +128,7 @@ pub struct Timeouts {
 impl Default for Limits {
     fn default() -> Self {
         Self {
+            reverse_lookups: 256,
             sessions_per_client: 10,
             trusted_sessions_per_client: 50,
             data_per_client: 2,
@@ -257,7 +262,10 @@ impl Config {
                         .unwrap_or_else(|bad| panic!("MX_DNS_SERVERS: '{bad}' is not an address"))
                 })
                 .unwrap_or_default(),
-            limits: Limits::default(),
+            limits: Limits {
+                reverse_lookups: parse_env_or("MX_MAX_REVERSE_LOOKUPS", 256).max(1),
+                ..Limits::default()
+            },
             timeouts: Timeouts::default(),
             egress: egress_from_env(),
         }

@@ -48,6 +48,7 @@ function setup(overrides: Partial<EmailSenderSetup> = {}): EmailSenderSetup {
       fqdn: true,
       resolves: true,
       matchesPtr: true,
+      error: null,
     },
     error: null,
     ...overrides,
@@ -163,6 +164,7 @@ describe("deliverabilityReport", () => {
         fqdn: false,
         resolves: false,
         matchesPtr: false,
+        error: null,
       },
       bimi: { found: true, domain: "acme.example", logo: true, authority: false, error: null },
     });
@@ -606,5 +608,25 @@ describe("deliverabilityReport", () => {
     const old = email();
     old.auth = { ...old.auth!, iprev: { result: "fail", ptr: null } };
     expect(byId(report(old).findings).ptr).toBe("fail");
+  });
+
+  it("says the HELO name was not checked when its lookup failed, and counts nothing to fix", () => {
+    const helo = {
+      name: "mail.acme.example",
+      ipLiteral: false,
+      fqdn: true,
+      resolves: false,
+      matchesPtr: false,
+      error: "lookup failed",
+    };
+    const capture = email();
+    capture.auth!.setup = setup({ helo });
+    const findings = report(capture).findings;
+    expect(byId(findings).helo).toBe("info");
+    expect(findings.find((f) => f.id === "helo")!.title).toBe("HELO not checked");
+    // A definite answer that it does not resolve is still a warning.
+    const wrong = email();
+    wrong.auth!.setup = setup({ helo: { ...helo, error: null } });
+    expect(byId(report(wrong).findings).helo).toBe("warn");
   });
 });

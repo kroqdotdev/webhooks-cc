@@ -31,7 +31,7 @@ use auth_check::{AuthChecker, AuthOutcome, AuthRequest, LateReverseDns, ReverseD
 use config::Config;
 use expiring::Expiring;
 use ingest::{Delivery, Ingest};
-use limits::{Client, ClientKey, Limiter, SlotGuard, is_trusted_name};
+use limits::{Client, ClientKey, Limiter, Lookup, SlotGuard, is_trusted_name};
 use reply::{CheckStatus, DeliverOutcome, Reply};
 use retry_store::RetryStore;
 use session::{Backend, Peer, Session, Shared};
@@ -89,6 +89,8 @@ struct Server {
     /// Recent reverse-DNS answers: a sending server usually opens several
     /// connections in a row.
     reverse_dns: Mutex<Expiring<IpAddr, (ReverseDns, Instant)>>,
+    /// When the host-wide reverse lookup cap was last logged.
+    lookup_cap_logged: Mutex<Option<Instant>>,
 }
 
 fn main() {
@@ -183,6 +185,7 @@ async fn run(statoss: bool) {
         sessions: Arc::new(Semaphore::new(config.max_sessions)),
         refusals: Mutex::new(Expiring::capped(CACHE_CAP)),
         reverse_dns: Mutex::new(Expiring::capped(CACHE_CAP)),
+        lookup_cap_logged: Mutex::new(None),
     });
     let (stop, stopped) = watch::channel(false);
 
@@ -275,24 +278,33 @@ async fn accept_loop(
             // under a per-client cap of its own.
             let (reverse_dns, late_reverse_dns) = match server.cached_reverse_dns(ip) {
                 Some(found) => (found, None),
-                None => {
-                    let Some(lookup) = server.shared.limiter.start_lookup(ip) else {
+                None => match server.shared.limiter.start_lookup(ip) {
+                    Lookup::Started(lookup) => {
+                        let mut answer = server.clone().look_up_reverse_dns(ip, lookup);
+                        let wait = server.shared.timeouts.reverse_dns;
+                        let found = tokio::time::timeout(wait, answer.wait_for(Option::is_some))
+                            .await
+                            .ok()
+                            .and_then(|found| found.ok().and_then(|found| (*found).clone()));
+                        match found {
+                            Some(found) => (found, None),
+                            // The session starts without it; its messages
+                            // take the answer if it comes in time.
+                            None => (ReverseDns::incomplete(), Some(answer)),
+                        }
+                    }
+                    Lookup::Refused => {
                         server.refuse(stream, Client::new(ip, false), &reply::TOO_BUSY);
                         return;
-                    };
-                    let mut answer = server.clone().look_up_reverse_dns(ip, lookup);
-                    let wait = server.shared.timeouts.reverse_dns;
-                    let found = tokio::time::timeout(wait, answer.wait_for(Option::is_some))
-                        .await
-                        .ok()
-                        .and_then(|found| found.ok().and_then(|found| (*found).clone()));
-                    match found {
-                        Some(found) => (found, None),
-                        // The session starts without it; its messages take
-                        // the answer if it comes in time.
-                        None => (ReverseDns::incomplete(), Some(answer)),
                     }
-                }
+                    // Every lookup the host allows is running: the session
+                    // goes on with reverse DNS not checked (iprev temperror,
+                    // neither a pass nor a fail), and nothing is cached.
+                    Lookup::Unchecked => {
+                        server.note_lookup_cap();
+                        (ReverseDns::incomplete(), None)
+                    }
+                },
             };
             let trusted = reverse_dns.confirmed
                 && reverse_dns
@@ -379,6 +391,23 @@ impl Server {
         cache.insert(ip, (found.clone(), now), |_, (_, at)| {
             now.duration_since(*at) < REVERSE_DNS_CACHE_FOR
         });
+    }
+
+    /// Logs, at most once a minute, that connections are going on without
+    /// reverse DNS because every lookup slot on the host is taken.
+    fn note_lookup_cap(&self) {
+        let now = Instant::now();
+        let mut logged = self
+            .lookup_cap_logged
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        if logged.is_none_or(|at| now.duration_since(at) >= REFUSAL_LOG_EVERY) {
+            *logged = Some(now);
+            tracing::warn!(
+                max = self.shared.limiter.limits().reverse_lookups,
+                "reverse lookups at the host's cap; new connections go on unchecked"
+            );
+        }
     }
 
     /// Send one 421 and close, without holding a session slot. Logged at most

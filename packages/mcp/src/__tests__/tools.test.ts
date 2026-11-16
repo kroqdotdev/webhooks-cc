@@ -2979,6 +2979,7 @@ describe("email and forwarding tools", () => {
           fqdn: true,
           resolves: true,
           matchesPtr: true,
+          error: null,
         },
         error: null,
       },
