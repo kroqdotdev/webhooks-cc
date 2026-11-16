@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { SkipTargetAbove } from "@/components/nav/skip-target";
 import Link from "next/link";
 import { BookOpen, Mail } from "lucide-react";
 import { useAuth } from "@/components/providers/supabase-auth-provider";
@@ -38,9 +39,11 @@ export function SupportHome() {
       {isLoading ? (
         <ListSkeleton />
       ) : isAuthenticated ? (
-        <MfaGate>
-          <TicketList token={session?.access_token ?? null} userId={session?.user.id ?? null} />
-        </MfaGate>
+        <SkipTargetAbove>
+          <MfaGate>
+            <TicketList token={session?.access_token ?? null} userId={session?.user.id ?? null} />
+          </MfaGate>
+        </SkipTargetAbove>
       ) : (
         <SignedOut />
       )}

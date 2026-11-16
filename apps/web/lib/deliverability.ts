@@ -419,7 +419,7 @@ function authenticationFindings({ email }: DeliverabilityInput, add: Add) {
         id,
         "info",
         `DKIM key of ${key.domain}`,
-        `${key.domain} also signs this email with its own key (${name}${key.bits !== null ? `, ${key.bits}-bit ${key.key === "ed25519" ? "Ed25519" : "RSA"}` : ""}). That key belongs to ${key.domain}, not to ${fromDomainName}, and DMARC does not read it, so there is nothing to change on your side.`
+        `${key.domain} signs this email with its own key (${name}${key.bits !== null ? `, ${key.bits}-bit ${key.key === "ed25519" ? "Ed25519" : "RSA"}` : ""}). That key belongs to ${key.domain}, not to ${fromDomainName}, and DMARC does not read it for ${fromDomainName}; how strong it is is ${key.domain}'s to change.`
       );
       continue;
     }

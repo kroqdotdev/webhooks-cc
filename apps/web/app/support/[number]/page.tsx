@@ -1,4 +1,5 @@
 import { Suspense } from "react";
+import { SkipTargetAbove } from "@/components/nav/skip-target";
 import type { Metadata } from "next";
 import { RequireAuth } from "@/components/auth/require-auth";
 import { SiteHeader } from "@/components/nav/site-header";
@@ -14,11 +15,13 @@ export default async function TicketPage({ params }: { params: Promise<{ number:
   return (
     <div className="min-h-screen">
       <SiteHeader />
-      <RequireAuth>
-        <Suspense>
-          <TicketView number={number} />
-        </Suspense>
-      </RequireAuth>
+      <SkipTargetAbove>
+        <RequireAuth>
+          <Suspense>
+            <TicketView number={number} />
+          </Suspense>
+        </RequireAuth>
+      </SkipTargetAbove>
     </div>
   );
 }

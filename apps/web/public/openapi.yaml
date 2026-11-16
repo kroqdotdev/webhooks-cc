@@ -2001,7 +2001,16 @@ paths:
       description: |
         What was delivered and what failed among the deliveries queued in the last 24 hours, what
         is waiting now, and the failed and total counts among the deliveries still kept. Each
-        count stops at 100,000. Owner only: anyone else gets `404`.
+        count stops at 100,000. With `destination`, the counts are that destination's alone.
+        Owner only: anyone else gets `404`.
+      parameters:
+        - name: destination
+          in: query
+          required: false
+          description: Count only this destination's deliveries (its id).
+          schema:
+            type: string
+            format: uuid
       responses:
         "200":
           description: The counts
