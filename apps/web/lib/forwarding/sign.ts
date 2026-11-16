@@ -24,9 +24,18 @@ export function forwardMessageId(requestId: string): string {
   return `msg_${requestId.replace(/-/g, "")}`;
 }
 
-/** "v1," and the base64 HMAC-SHA256 of "id.timestamp.body". */
-export function signForward(secret: string, id: string, timestamp: number, body: string): string {
-  const mac = createHmac("sha256", secretKey(secret)).update(`${id}.${timestamp}.${body}`);
+/**
+ * "v1," and the base64 HMAC-SHA256 of "id.timestamp.body", over the body's
+ * exact bytes: a text body is its UTF-8, and a form carrying a binary file
+ * (a SendGrid or Mailgun shape) is signed as the bytes it is sent as.
+ */
+export function signForward(
+  secret: string,
+  id: string,
+  timestamp: number,
+  body: string | Uint8Array
+): string {
+  const mac = createHmac("sha256", secretKey(secret)).update(`${id}.${timestamp}.`).update(body);
   return `v1,${mac.digest("base64")}`;
 }
 
@@ -34,7 +43,7 @@ export function signForward(secret: string, id: string, timestamp: number, body:
 export function forwardHeaders(
   secret: string,
   requestId: string,
-  body: string,
+  body: string | Uint8Array,
   now: Date = new Date()
 ): Record<string, string> {
   const id = forwardMessageId(requestId);

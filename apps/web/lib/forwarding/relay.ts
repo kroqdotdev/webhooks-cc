@@ -40,7 +40,7 @@ export interface Outgoing {
   url: string;
   headers: [string, string][];
   body: Buffer | null;
-  /** relay: any method and headers; forward: a JSON POST (signed JSON, chat). */
+  /** relay: any method and headers; forward: a POST of signed JSON, chat or a mail provider shape. */
   mode: "relay" | "forward";
 }
 

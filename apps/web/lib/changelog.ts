@@ -30,7 +30,7 @@ export const TRACK_LABELS: Record<ChangelogTrack, string> = {
 const RELEASE = release as { version: string | null; entries: ChangelogEntry[] };
 
 export const APP_VERSION: string = RELEASE.version ?? "dev";
-export const CLI_VERSION = "1.20.3";
+export const CLI_VERSION = "1.20.4";
 export const SDK_VERSION = "1.33.0";
 export const PYTHON_SDK_VERSION = "0.12.0";
 export const GO_SDK_VERSION = "0.12.0";
@@ -2144,6 +2144,16 @@ export const CHANGELOG: ChangelogEntry[] = [
   },
 
   // ─── CLI ────────────────────────────────────────────────────────────
+  {
+    version: "1.20.4",
+    date: "2026-11-16",
+    title: "Binary Attachments In Tunnelled Forms, One Destination's Counts",
+    track: "cli",
+    items: [
+      "`whk tunnel --email-format sendgrid` and `--email-format mailgun` post the form's exact bytes, so a PDF or an image attached to the email reaches your handler as the file it is, as those providers post it. Against a server from before this, the form is posted as text without binary files, as before",
+      "`whk deliveries summary <slug> --destination <id>` counts only that destination's deliveries, so it agrees with `whk deliveries ls --destination`",
+    ],
+  },
   {
     version: "1.20.3",
     date: "2026-11-16",

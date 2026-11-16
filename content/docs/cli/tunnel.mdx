@@ -135,7 +135,7 @@ whk tunnel 3000 --email-format mailgun --email-path /webhooks/mailgun
 
 `--mailgun-signing-key <key>` works too. The key is only used with `--email-format mailgun`: it goes to webhooks.cc with each email to sign that form, and is not stored.
 
-What differs from the real thing: the provider formats leave attachment files out (the JSON format lists each attachment, and the dashboard and API download them), and the text and HTML are what webhooks.cc kept, up to 256 KB each.
+What differs from the real thing: attachment files ride along up to 1 MB per email (Postmark and CloudMailin in their JSON, SendGrid and Mailgun as file parts with their exact bytes, so a PDF or an image arrives as the file it is; past that, CloudMailin's shape carries a file's download link and the others leave it out, while the JSON format lists every attachment), and the text and HTML are what webhooks.cc kept, up to 256 KB each.
 
 ### Skip emails
 

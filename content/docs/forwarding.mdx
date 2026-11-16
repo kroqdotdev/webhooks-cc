@@ -268,12 +268,12 @@ For either kind, in Node without dependencies:
 ```ts
 import { createHmac, timingSafeEqual } from "node:crypto";
 
-function verify(rawBody: string, headers: Record<string, string>, secret: string): boolean {
+function verify(rawBody: string | Buffer, headers: Record<string, string>, secret: string): boolean {
   const id = headers["webhook-id"];
   const timestamp = headers["webhook-timestamp"];
   if (!id || !timestamp || Math.abs(Date.now() / 1000 - Number(timestamp)) > 300) return false;
   const key = Buffer.from(secret.replace(/^whsec_/, ""), "base64");
-  const expected = createHmac("sha256", key).update(`${id}.${timestamp}.${rawBody}`).digest();
+  const expected = createHmac("sha256", key).update(`${id}.${timestamp}.`).update(rawBody).digest();
   return (headers["webhook-signature"] ?? "").split(" ").some((part) => {
     const given = Buffer.from(part.replace(/^v1,/, ""), "base64");
     return given.length === expected.length && timingSafeEqual(given, expected);
@@ -337,7 +337,7 @@ If your app already receives email through an inbound mail service, a destinatio
 
 The Mailgun form is signed as Mailgun signs it when you enter your **Mailgun signing key** (the HTTP webhook signing key under API Security in Mailgun): `signature` is the hex HMAC-SHA256 of `timestamp` and `token`, so your handler's check passes; without a key it is empty. The key is stored encrypted and never shown again. Every shape also carries this destination's Standard Webhooks headers, so a handler can check that a delivery came from here.
 
-What differs from the real thing: attachments follow the destination's [attachments](#attachments) setting. With **Inline**, Postmark and CloudMailin carry their contents in their JSON, and the SendGrid and Mailgun forms carry text files (CSV, JSON, XML, text) as file parts, as the providers post them; a binary file (a PDF, an image) is left out of those two forms, because a form part could only carry it as base64 text, which most form parsers would hand your handler in place of the file. With **Links**, the SendGrid, Mailgun and Postmark shapes carry no files and CloudMailin's carries each file's link (the [email JSON](#an-email) carries the links too). Also: the text and HTML are what webhooks.cc kept (up to 256 KB each); and fields a provider computes for itself (Postmark's `MessageID`, SendGrid's SpamAssassin report) come from webhooks.cc's own checks or the request id. HTTP requests to such a destination go as received. To try a shape on one email, use `whk tunnel --email-format postmark` [on localhost](/docs/cli/tunnel), `client.emails.render()` in the SDK, or `render_email` in the [MCP server](/docs/mcp/tools#render_email). Those can carry binary files too: `render()` with `bodyEncoding: "base64"` returns the form's exact bytes, every file included, and `render_email` posts them that way to its `targetUrl`.
+What differs from the real thing: attachments follow the destination's [attachments](#attachments) setting. With **Inline**, Postmark and CloudMailin carry their contents in their JSON, and the SendGrid and Mailgun forms carry every file as a file part with its exact bytes, a PDF or an image as much as a CSV, as the providers post them. A form with a binary file is not UTF-8 text, so check its signature against the raw bytes of the body, as the [examples](#verify-the-signature) do, not against the body decoded as text. With **Links**, the SendGrid, Mailgun and Postmark shapes carry no files and CloudMailin's carries each file's link (the [email JSON](#an-email) carries the links too). Also: the text and HTML are what webhooks.cc kept (up to 256 KB each); and fields a provider computes for itself (Postmark's `MessageID`, SendGrid's SpamAssassin report) come from webhooks.cc's own checks or the request id. HTTP requests to such a destination go as received. To try a shape on one email, use `whk tunnel --email-format postmark` [on localhost](/docs/cli/tunnel), `client.emails.render()` in the SDK, or `render_email` in the [MCP server](/docs/mcp/tools#render_email). Those carry binary files too: `whk tunnel` posts the forms' exact bytes, `render()` with `bodyEncoding: "base64"` returns them, and `render_email` posts them that way to its `targetUrl`.
 
 ## Attachments
 

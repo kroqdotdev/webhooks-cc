@@ -11,14 +11,15 @@ import {
 
 let server: Server;
 let base: string;
-let lastRequest: { headers: IncomingMessage["headers"]; body: string } | null = null;
+let lastRequest: { headers: IncomingMessage["headers"]; body: string; bytes: Buffer } | null = null;
 
 beforeAll(async () => {
   server = createServer((req, res) => {
-    let body = "";
-    req.on("data", (chunk) => (body += chunk));
+    const chunks: Buffer[] = [];
+    req.on("data", (chunk: Buffer) => chunks.push(chunk));
     req.on("end", () => {
-      lastRequest = { headers: req.headers, body };
+      const bytes = Buffer.concat(chunks);
+      lastRequest = { headers: req.headers, body: bytes.toString("utf8"), bytes };
       if (req.url === "/ok") {
         res.writeHead(200, { "content-type": "application/json" }).end('{"received":true}');
       } else if (req.url === "/redirect") {
@@ -55,6 +56,19 @@ describe("sendForward, direct", () => {
     expect(isDelivered(result)).toBe(true);
     expect(lastRequest?.body).toBe('{"a":1}');
     expect(lastRequest?.headers["webhook-id"]).toBe("msg_1");
+  });
+
+  it("sends a body that is not UTF-8 byte for byte", async () => {
+    // A form with a PNG part: bytes no text decoding keeps.
+    const form = Buffer.concat([
+      Buffer.from("--b\r\nContent-Type: image/png\r\n\r\n"),
+      Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0xff, 0xfe]),
+      Buffer.from("\r\n--b--\r\n"),
+    ]);
+    const result = await sendForward(jsonForward(`${base}/ok`, headers, form), local);
+    expect(result.status).toBe(200);
+    expect(lastRequest?.bytes.equals(form)).toBe(true);
+    expect(lastRequest?.headers["content-length"]).toBe(String(form.byteLength));
   });
 
   it("does not follow redirects, which do not count as delivered", async () => {
@@ -113,6 +127,16 @@ describe("sendForward, through the proxy", () => {
     expect(lastRequest?.headers["x-proxy-mode"]).toBe("forward");
     expect(lastRequest?.headers["x-auth"]).toBe("s");
     expect(lastRequest?.headers["webhook-id"]).toBe("msg_1");
+  });
+
+  it("passes a body that is not UTF-8 to the proxy byte for byte", async () => {
+    const form = Buffer.from([0x2d, 0x2d, 0x62, 0x0d, 0x0a, 0x00, 0xff, 0xfe, 0x80, 0xc3]);
+    await sendForward(jsonForward("https://api.example.com/hook", headers, form), {
+      ...local,
+      proxy: { url: `${base}/proxy`, secret: "s" },
+    });
+    expect(lastRequest?.headers["x-proxy-mode"]).toBe("forward");
+    expect(lastRequest?.bytes.equals(form)).toBe(true);
   });
 
   it("never lets a delivery's headers steer the proxy", async () => {

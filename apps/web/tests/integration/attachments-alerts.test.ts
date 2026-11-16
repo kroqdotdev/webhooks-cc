@@ -33,7 +33,7 @@ let ownerEmail: string;
 const endpointIds: string[] = [];
 let server: Server;
 let base: string;
-const received: { path: string; headers: IncomingHttpHeaders; body: string }[] = [];
+const received: { path: string; headers: IncomingHttpHeaders; body: string; bytes: Buffer }[] = [];
 
 beforeAll(async () => {
   ownerEmail = `test-attachments-alerts-${Date.now()}@webhooks-test.local`;
@@ -47,10 +47,11 @@ beforeAll(async () => {
   await admin.from("users").update({ plan: "pro", request_limit: 100_000 }).eq("id", userId);
 
   server = createServer((req, res) => {
-    let body = "";
-    req.on("data", (chunk) => (body += chunk));
+    const chunks: Buffer[] = [];
+    req.on("data", (chunk: Buffer) => chunks.push(chunk));
     req.on("end", () => {
-      received.push({ path: req.url ?? "", headers: req.headers, body });
+      const bytes = Buffer.concat(chunks);
+      received.push({ path: req.url ?? "", headers: req.headers, body: bytes.toString(), bytes });
       res.writeHead(req.url === "/down" ? 500 : 200).end("{}");
     });
   });
@@ -193,6 +194,52 @@ describe.skipIf(!isObjectStorageConfigured())("attachments in deliveries", () =>
     });
     expect(otherIndex.status).toBe(403);
     expect((await getObjectBytes(`m/${requestId}/a/0`))?.toString()).toBe(csv);
+  });
+
+  it("sends a binary file in the SendGrid and Mailgun forms as its exact bytes", async () => {
+    const target = await endpoint("binary forms");
+    for (const format of ["sendgrid", "mailgun"] as const) {
+      await createDestination(target.id, {
+        url: `${base}/form-${format}`,
+        format,
+        attachments: "inline",
+        email: true,
+        http: false,
+      });
+    }
+    const requestId = crypto.randomUUID();
+    // A PDF's start and bytes no UTF-8 text has.
+    const pdf = Buffer.concat([Buffer.from("%PDF-1.7\n"), Buffer.from([0xff, 0xfe, 0x00, 0x80])]);
+    await putObject(`m/${requestId}/raw.eml`, "Subject: Invoice\r\n\r\nbody\r\n", "message/rfc822");
+    await putObject(`m/${requestId}/a/0`, pdf, "application/octet-stream");
+    await captureEmail(target.slug, "Invoice", {
+      requestId,
+      stored: true,
+      attachments: [
+        {
+          filename: "invoice.pdf",
+          content_type: "application/pdf",
+          size: pdf.length,
+          inline: false,
+        },
+      ],
+    });
+    await drain(target.id);
+
+    for (const [path, field] of [
+      ["/form-sendgrid", "attachment1"],
+      ["/form-mailgun", "attachment-1"],
+    ]) {
+      const got = received.find((r) => r.path === path);
+      expect(got, path).toBeTruthy();
+      expect(got!.headers["content-type"]).toMatch(/^multipart\/form-data; boundary=/);
+      const form = await new Response(Uint8Array.from(got!.bytes), {
+        headers: { "content-type": got!.headers["content-type"]! },
+      }).formData();
+      const file = form.get(field) as File;
+      expect(file.name).toBe("invoice.pdf");
+      expect(Buffer.from(await file.arrayBuffer()).equals(pdf)).toBe(true);
+    }
   });
 
   it("sends names only when the destination says so", async () => {

@@ -12,9 +12,12 @@ import { checkForwardUrl, resolveForwardTarget } from "./target";
  * addresses checked by target.ts. Redirects are never followed: only a 2xx
  * from the URL itself counts as delivered.
  *
- * A JSON forward (signed JSON, chat) uses the proxy's forward mode; a relay
- * (an HTTP request as received) its relay mode, which takes the method,
- * headers and base64 body as JSON.
+ * A POST with only the content type and Standard Webhooks headers (signed
+ * JSON, chat, a mail provider's shape) uses the proxy's forward mode, which
+ * sends the body's bytes as they are, so a form with a binary file arrives
+ * intact; a relay (an HTTP request as received, or anything with the
+ * owner's headers) its relay mode, which takes the method, headers and
+ * base64 body as JSON.
  */
 
 export interface SendResult {
@@ -113,7 +116,7 @@ async function viaProxy(
     };
   }
   const proxyHeaders: Record<string, string> = {};
-  let body: string | null;
+  let body: string | Uint8Array<ArrayBuffer> | null;
   if (outgoing.mode === "relay") {
     // The Worker sends this method, these headers and these bytes as they are.
     // The target goes inside the envelope, not in X-Target-URL, so a Worker
@@ -131,8 +134,9 @@ async function viaProxy(
     for (const [name, value] of outgoing.headers) {
       if (!PROXY_CONTROL_HEADERS.has(name.toLowerCase())) proxyHeaders[name] = value;
     }
-    // Forward mode carries JSON (signed JSON, chat), which is text.
-    body = outgoing.body ? outgoing.body.toString("utf8") : null;
+    // The exact bytes: the Worker posts the body it receives as it is
+    // (request.arrayBuffer()), so a form's binary file part survives.
+    body = outgoing.body ? Uint8Array.from(outgoing.body) : null;
   }
   // Set last, so they always win.
   if (outgoing.mode !== "relay") proxyHeaders["x-target-url"] = outgoing.url;
@@ -268,22 +272,23 @@ async function direct(
 }
 
 /**
- * A signed JSON or chat delivery: a POST with these headers and this body.
- * The proxy's forward mode passes only the content type and the Standard
- * Webhooks headers, so a delivery with the owner's own headers goes through
- * its relay mode, which sends every header.
+ * A signed JSON, chat or mail provider delivery: a POST with these headers
+ * and this body (text as UTF-8, or the exact bytes of a form with a binary
+ * file). The proxy's forward mode passes only the content type and the
+ * Standard Webhooks headers, so a delivery with the owner's own headers goes
+ * through its relay mode, which sends every header.
  */
 export function jsonForward(
   url: string,
   headers: Record<string, string>,
-  body: string,
+  body: string | Buffer,
   options: { ownerHeaders?: boolean } = {}
 ): Outgoing {
   return {
     method: "POST",
     url,
     headers: Object.entries(headers),
-    body: Buffer.from(body, "utf8"),
+    body: typeof body === "string" ? Buffer.from(body, "utf8") : body,
     mode: options.ownerHeaders ? "relay" : "forward",
   };
 }

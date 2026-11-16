@@ -197,11 +197,19 @@ impl ApiClient {
         resp.parse("deliveries")
     }
 
-    /// `{ last24h: { delivered, failed }, pending, failed, total }`.
-    pub async fn delivery_summary(&self, slug: &str) -> Result<Fetched<Value>> {
+    /// `{ last24h: { delivered, failed }, pending, failed, total }`, of every
+    /// destination or of one (its id).
+    pub async fn delivery_summary(
+        &self,
+        slug: &str,
+        destination: Option<&str>,
+    ) -> Result<Fetched<Value>> {
         self.require_auth()?;
+        let query = destination.map_or_else(String::new, |id| {
+            format!("?destination={}", crate::util::url::encode(id))
+        });
         let resp = self
-            .get(&format!("{}/summary", deliveries_path(slug)))
+            .get(&format!("{}/summary{query}", deliveries_path(slug)))
             .await?;
         resp.parse("delivery summary")
     }

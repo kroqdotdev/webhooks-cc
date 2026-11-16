@@ -165,6 +165,87 @@ describe("email shapes and fields", () => {
     expect(form.get("signature")).toBe(expected);
   });
 
+  describe("binary attachments in the forms", () => {
+    // A PDF's first bytes and a byte no UTF-8 text has: carried as they are.
+    const pdf = Buffer.from([
+      0x25, 0x50, 0x44, 0x46, 0x2d, 0x31, 0x2e, 0x37, 0x0a, 0xff, 0xfe, 0x00,
+    ]);
+    const withFiles = () => {
+      const email = capturedEmail();
+      email.email!.attachments = [
+        {
+          filename: "invoice.pdf",
+          contentType: "application/pdf",
+          size: pdf.byteLength,
+          contentId: null,
+          inline: false,
+          content: pdf.toString("base64"),
+        },
+        {
+          filename: "lines.csv",
+          contentType: "text/csv",
+          size: 8,
+          contentId: null,
+          inline: false,
+          content: Buffer.from("sku,qty\n").toString("base64"),
+        },
+      ];
+      return email;
+    };
+
+    it.each(["sendgrid", "mailgun"] as const)(
+      "%s carries a PDF as its exact bytes, signed over those bytes",
+      (format) => {
+        const prepared = outgoingFor(withFiles(), settings({ format }));
+        if (!("outgoing" in prepared)) throw new Error(prepared.reason);
+        const { outgoing } = prepared;
+        expect(outgoing.mode).toBe("forward");
+        const body = outgoing.body!;
+        expect(body.includes(pdf)).toBe(true);
+        expect(body.includes(Buffer.from("sku,qty\n"))).toBe(true);
+        expect(body.includes(Buffer.from('filename="invoice.pdf"'))).toBe(true);
+        expect(body.toString("latin1")).not.toContain(pdf.toString("base64"));
+
+        const headers = Object.fromEntries(outgoing.headers);
+        expect(headers["content-type"]).toMatch(/^multipart\/form-data; boundary=/);
+        const signed = Buffer.concat([
+          Buffer.from(`${headers["webhook-id"]}.${headers["webhook-timestamp"]}.`),
+          body,
+        ]);
+        const key = Buffer.from(SECRET.slice("whsec_".length), "base64");
+        const expected = createHmac("sha256", key).update(signed).digest("base64");
+        expect(headers["webhook-signature"]).toBe(`v1,${expected}`);
+      }
+    );
+
+    it("sends the bytes through relay mode with the owner's headers", () => {
+      const prepared = outgoingFor(
+        withFiles(),
+        settings({ format: "sendgrid", ownerHeaders: [["x-acme", "1"]] })
+      );
+      if (!("outgoing" in prepared)) throw new Error(prepared.reason);
+      expect(prepared.outgoing.mode).toBe("relay");
+      expect(prepared.outgoing.body!.includes(pdf)).toBe(true);
+    });
+
+    it("keeps the JSON shapes' bytes and signature as they were", () => {
+      const prepared = outgoingFor(withFiles(), settings({ format: "postmark" }));
+      if (!("outgoing" in prepared)) throw new Error(prepared.reason);
+      const text = prepared.outgoing.body!.toString("utf8");
+      const json = JSON.parse(text);
+      expect(json.Attachments[0]).toMatchObject({
+        Name: "invoice.pdf",
+        Content: pdf.toString("base64"),
+      });
+      const headers = Object.fromEntries(prepared.outgoing.headers);
+      const key = Buffer.from(SECRET.slice("whsec_".length), "base64");
+      const expected = createHmac("sha256", key)
+        .update(`${headers["webhook-id"]}.${headers["webhook-timestamp"]}.${text}`)
+        .digest("base64");
+      expect(headers["webhook-signature"]).toBe(`v1,${expected}`);
+    });
+  });
+
   it("fills in the endpoint's fields in templates and the JSON", () => {
     const template = outgoingFor(
       capturedEmail(),

@@ -10,7 +10,10 @@
  *   the answer is 200 when the destination accepted it, 502 otherwise.
  * - Forwarding (`X-Proxy-Mode: forward`, the web app's email forwarding,
  *   apps/web/lib/forwarding): the content type and the Standard Webhooks
- *   headers pass through, redirects are not followed, and the answer is
+ *   headers pass through, the body goes on as the exact bytes it came as
+ *   (never decoded as text: a SendGrid or Mailgun form carries binary files,
+ *   apps/web/lib/forwarding/notify-proxy.test.ts checks it), redirects are
+ *   not followed, and the answer is
  *   always JSON: `{ status, body, durationMs, retryAfter }` with the
  *   destination's status, the start of its body, its own time and its
  *   Retry-After header, or `{ error }` when it could not be reached.
