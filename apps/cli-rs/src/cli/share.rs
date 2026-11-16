@@ -3,10 +3,13 @@
 
 use std::io::IsTerminal;
 
-use anyhow::{Result, bail};
+use anyhow::Result;
 
 use crate::api::ApiClient;
-use crate::cli::output::{bold, dim, green, sanitize, sanitize_line};
+use crate::cli::output::{
+    Cell, bold, dim, green, header_row, sanitize, sanitize_line, table_lines,
+};
+use crate::error::CliError;
 use crate::share::events::{self, Event};
 use crate::share::{self, Kind, Session, Update, duration, printable};
 use crate::types::{
@@ -30,11 +33,21 @@ pub async fn run(client: &ApiClient, options: ShareOptions) -> Result<()> {
     let result = run_inner(client, options).await;
     if json && let Err(e) = &result {
         let c = crate::error::classify(e);
+        // The message keeps the hint too, as before: the SDK's share helper
+        // (and so the MCP server) shows only the message.
         let message = match &c.hint {
             Some(hint) => format!("{e:#} {hint}"),
             None => format!("{e:#}"),
         };
-        Event::Error { message: &message }.print();
+        Event::Error {
+            code: c.code,
+            message: &message,
+            exit: c.exit,
+            status: c.status,
+            hint: c.hint.as_deref(),
+            retry_after: c.retry_after,
+        }
+        .print();
         events::flush(events::FINAL_WAIT);
         // The same exit status as any other failure (see `whk --help`).
         std::process::exit(c.exit);
@@ -45,8 +58,13 @@ pub async fn run(client: &ApiClient, options: ShareOptions) -> Result<()> {
 }
 
 async fn run_inner(client: &ApiClient, options: ShareOptions) -> Result<()> {
-    client.require_auth()?;
+    // Arguments first: a mistake there is said whether or not this
+    // machine is logged in.
     let target = share::parse_share_target(&options.target)?;
+    if let Some(name) = &options.name {
+        share::check_name(name)?;
+    }
+    client.require_auth()?;
     let password = if options.password {
         Some(share::read_password()?)
     } else {
@@ -446,13 +464,11 @@ fn print_shares(result: &SharesResponse, ended: bool) {
             );
         }
     } else {
-        println!(
-            "  {}",
-            dim(&format!(
-                "{:<28} {:<44} {:<17} {:>9} {:>8}  {}",
-                "NAME", "LINK", "STARTED", "DATA", "REQUESTS", "ID"
-            ))
-        );
+        let mut rows = vec![header_row(
+            &["NAME", "LINK", "STARTED", "DATA", "REQUESTS", "ID"],
+            &[3, 4],
+        )];
+        let mut reasons = Vec::new();
         for share in &result.shares {
             let mut name = sanitize_line(&share_label(share));
             if share.password {
@@ -468,16 +484,26 @@ fn print_shares(result: &SharesResponse, ended: bool) {
                 .as_ref()
                 .map(|t| t.display())
                 .unwrap_or_else(|| "-".to_string());
-            println!(
-                "  {:<28} {:<44} {:<17} {:>9} {:>8}  {}",
-                bold(&name),
-                sanitize_line(share.url.as_deref().unwrap_or("-")),
-                started,
-                data(share.bytes),
-                share.requests,
-                dim(&share.id),
-            );
-            if ended && let Some(reason) = &share.end_reason {
+            rows.push(vec![
+                (name, Cell::Bold),
+                (
+                    sanitize_line(share.url.as_deref().unwrap_or("-")),
+                    Cell::Plain,
+                ),
+                (started, Cell::Plain),
+                (data(share.bytes), Cell::Right),
+                (share.requests.to_string(), Cell::Right),
+                (share.id.clone(), Cell::Dim),
+            ]);
+            reasons.push(share.end_reason.as_deref().filter(|_| ended));
+        }
+        let mut lines = table_lines("  ", &rows).into_iter();
+        if let Some(header) = lines.next() {
+            println!("{header}");
+        }
+        for (line, reason) in lines.zip(reasons) {
+            println!("{line}");
+            if let Some(reason) = reason {
                 println!("    {}", dim(&format!("ended: {}", sanitize_line(reason))));
             }
         }
@@ -499,15 +525,19 @@ pub fn resolve_share<'a>(shares: &'a [Share], needle: &str) -> Result<&'a Share>
         .collect();
     match by_name.as_slice() {
         [share] => Ok(share),
-        [] => bail!("No live share named or with id {needle:?}. See `whk shares ls`."),
-        many => bail!(
+        [] => Err(CliError::NotFound(format!(
+            "No live share named or with id {needle:?}. See `whk shares ls`."
+        ))
+        .into()),
+        many => Err(CliError::Usage(format!(
             "{} live shares match {needle:?}; give the id instead ({})",
             many.len(),
             many.iter()
                 .map(|s| s.id.as_str())
                 .collect::<Vec<_>>()
                 .join(", ")
-        ),
+        ))
+        .into()),
     }
 }
 
@@ -562,7 +592,7 @@ pub async fn stop(client: &ApiClient, needle: &str, json: bool) -> Result<()> {
     let ended;
     let share = match found {
         Ok(share) => share,
-        Err(err) if err.to_string().starts_with("No live share") => {
+        Err(err) if matches!(err.downcast_ref(), Some(CliError::NotFound(_))) => {
             ended = client.list_shares(true).await?;
             match resolve_reconnecting(&ended.shares, needle, chrono::Utc::now()) {
                 Some(share) => share,
@@ -666,26 +696,28 @@ pub async fn names(client: &ApiClient, json: bool) -> Result<()> {
             );
         }
     } else {
-        println!(
-            "  {}",
-            dim(&format!(
-                "{:<28} {:<44} {:<20} {}",
-                "NAME", "LINK", "TEAM", "NOTES"
-            ))
-        );
+        let mut rows = vec![header_row(&["NAME", "LINK", "TEAM", "NOTES"], &[])];
         for name in &result.names {
-            println!(
-                "  {:<28} {:<44} {:<20} {}",
-                bold(&sanitize_line(&name.name)),
-                sanitize_line(name.url.as_deref().unwrap_or("-")),
-                sanitize_line(
-                    name.team
-                        .as_ref()
-                        .and_then(|t| t.name.as_deref())
-                        .unwrap_or("-")
+            rows.push(vec![
+                (sanitize_line(&name.name), Cell::Bold),
+                (
+                    sanitize_line(name.url.as_deref().unwrap_or("-")),
+                    Cell::Plain,
                 ),
-                dim(&name_notes(name)),
-            );
+                (
+                    sanitize_line(
+                        name.team
+                            .as_ref()
+                            .and_then(|t| t.name.as_deref())
+                            .unwrap_or("-"),
+                    ),
+                    Cell::Plain,
+                ),
+                (name_notes(name), Cell::Dim),
+            ]);
+        }
+        for line in table_lines("  ", &rows) {
+            println!("{line}");
         }
     }
     if let (Some(used), Some(limit)) = (result.used, result.limit)
@@ -736,6 +768,7 @@ fn name_notes(name: &TunnelName) -> String {
 
 /// `whk names reserve <name> [--team <id|name>]`.
 pub async fn reserve(client: &ApiClient, name: &str, team: Option<&str>, json: bool) -> Result<()> {
+    share::check_name(name)?;
     let team_id = match team {
         Some(team) => Some(team_id(client, team).await?),
         None => None,
@@ -775,15 +808,19 @@ async fn team_id(client: &ApiClient, wanted: &str) -> Result<String> {
         .collect();
     match matches.as_slice() {
         [team] => Ok(team.id.clone()),
-        [] => bail!("You are in no team named {wanted:?}. See `whk teams list`."),
-        many => bail!(
+        [] => Err(CliError::NotFound(format!(
+            "You are in no team named {wanted:?}. See `whk teams list`."
+        ))
+        .into()),
+        many => Err(CliError::Usage(format!(
             "{} teams are named {wanted:?}; give the id instead ({})",
             many.len(),
             many.iter()
                 .map(|t| t.id.as_str())
                 .collect::<Vec<_>>()
                 .join(", ")
-        ),
+        ))
+        .into()),
     }
 }
 

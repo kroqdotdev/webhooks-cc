@@ -31,8 +31,21 @@ pub enum Event<'a> {
     Retrying { message: &'a str, seconds: u64 },
     /// The share ended, and why; the CLI exits next.
     Stopped { reason: &'a str },
-    /// What went wrong; the CLI exits with 1 next.
-    Error { message: &'a str },
+    /// What went wrong, with the same code, exit status and hint as any
+    /// other command's `{"error": ...}` (see `whk --help`); the CLI exits
+    /// with that status next.
+    #[serde(rename_all = "camelCase")]
+    Error {
+        code: &'a str,
+        message: &'a str,
+        exit: i32,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        status: Option<u16>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        hint: Option<&'a str>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        retry_after: Option<u64>,
+    },
 }
 
 impl Event<'_> {
@@ -194,10 +207,27 @@ mod tests {
         );
         assert_eq!(
             Event::Error {
-                message: "Not logged in."
+                code: "not_logged_in",
+                message: "Not logged in.",
+                exit: 3,
+                status: None,
+                hint: Some("Run `whk auth login`."),
+                retry_after: None,
             }
             .line(),
-            r#"{"event":"error","message":"Not logged in."}"#
+            r#"{"event":"error","code":"not_logged_in","message":"Not logged in.","exit":3,"hint":"Run `whk auth login`."}"#
+        );
+        assert_eq!(
+            Event::Error {
+                code: "rate_limited",
+                message: "Slow down.",
+                exit: 6,
+                status: Some(429),
+                hint: None,
+                retry_after: Some(5),
+            }
+            .line(),
+            r#"{"event":"error","code":"rate_limited","message":"Slow down.","exit":6,"status":429,"retryAfter":5}"#
         );
     }
 

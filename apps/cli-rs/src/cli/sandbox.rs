@@ -19,8 +19,10 @@ use crate::agent::sandbox::{Sandbox, registration_gone};
 use crate::api::ApiClient;
 use crate::auth;
 use crate::cli::output::{
-    bold, dim, green, print_request_detail, print_request_line, red, sanitize_line,
+    Cell, bold, dim, green, header_row, print_request_detail, print_request_line, red,
+    sanitize_line, table_lines,
 };
+use crate::error::CliError;
 use crate::types::CapturedRequest;
 use crate::util::format::{format_timestamp, parse_duration};
 
@@ -59,10 +61,11 @@ fn print_json_line(value: &Value) {
 fn require_sandbox(client: &ApiClient, store: &CredentialStore) -> Result<Sandbox> {
     match Sandbox::existing(&client.agent_http, &client.base_url, store) {
         Some(sandbox) => Ok(sandbox),
-        None => bail!(
-            "no_sandbox: no live sandbox registration is saved for {}. Run `whk sandbox create` first.",
+        None => Err(CliError::NotFound(format!(
+            "No live sandbox registration is saved for {}. Run `whk sandbox create` first.",
             store.issuer()
-        ),
+        ))
+        .into()),
     }
 }
 
@@ -236,23 +239,23 @@ pub async fn list(client: &ApiClient, json: bool) -> Result<()> {
             bold("whk sandbox create")
         );
     } else {
-        println!(
-            "  {:<20} {:<10} {}",
-            dim("SLUG"),
-            dim("CAPTURES"),
-            dim("URL")
-        );
+        let mut rows = vec![header_row(&["SLUG", "CAPTURES", "URL"], &[])];
         for endpoint in &endpoints {
             let captured = endpoint
                 .get("requestCount")
                 .and_then(Value::as_u64)
                 .unwrap_or(0);
-            println!(
-                "  {:<20} {:<10} {}",
-                bold(&sanitize_line(text(endpoint, "slug"))),
-                format!("{captured}/{SANDBOX_REQUESTS_PER_ENDPOINT}"),
-                dim(&sanitize_line(text(endpoint, "url")))
-            );
+            rows.push(vec![
+                (sanitize_line(text(endpoint, "slug")), Cell::Bold),
+                (
+                    format!("{captured}/{SANDBOX_REQUESTS_PER_ENDPOINT}"),
+                    Cell::Plain,
+                ),
+                (sanitize_line(text(endpoint, "url")), Cell::Dim),
+            ]);
+        }
+        for line in table_lines("  ", &rows) {
+            println!("{line}");
         }
     }
     if let Some(budget) = limits.get("budget") {
@@ -354,6 +357,7 @@ pub async fn requests(
 }
 
 pub async fn request(client: &ApiClient, id: &str, json: bool) -> Result<()> {
+    let id = crate::util::request_id(id)?;
     let store = store_for(client);
     let sandbox = require_sandbox(client, &store)?;
     let value = sandbox.get_request(id).await.map_err(explain_gone)?;
@@ -454,10 +458,11 @@ pub async fn wait(
         }
         let left = deadline.saturating_duration_since(Instant::now());
         if left.is_zero() {
-            bail!(
-                "timeout: {} of {count} request(s) arrived at {slug} within {timeout}",
+            return Err(CliError::Timeout(format!(
+                "{} of {count} request(s) arrived at {slug} within {timeout}. Check that the sender ran.",
                 collected.len()
-            );
+            ))
+            .into());
         }
         tokio::time::sleep(left.min(pause)).await;
     }
@@ -568,7 +573,9 @@ pub async fn connect(
     // Sent, stored and compared as the server keeps it, like the SDKs do.
     let email = normalize_email(email);
     if email.is_empty() {
-        bail!("invalid_request: --email needs the address the human signs in with");
+        return Err(
+            CliError::Usage("--email needs the address the human signs in with".into()).into(),
+        );
     }
     let email = email.as_str();
     let store = store_for(client);
@@ -706,19 +713,23 @@ pub async fn connect(
         }
     };
 
-    let (status, message) = match outcome {
+    // Each ending has its code and exit status from the table in `whk --help`.
+    let (status, error): (&str, anyhow::Error) = match outcome {
         Outcome::Claimed => return Ok(()),
         Outcome::Declined => (
             "declined",
-            "access_denied: the human declined the connection",
+            anyhow::Error::new(CliError::ApprovalDenied).context("the human declined the connection"),
         ),
         Outcome::Expired => (
             "expired",
-            "expired_token: the code expired before it was entered. Run `whk sandbox connect` again for a new one",
+            CliError::Timeout(
+                "the code expired before it was entered. Run `whk sandbox connect` again for a new one".into(),
+            )
+            .into(),
         ),
         Outcome::Timeout => (
             "timeout",
-            "timeout: the human did not connect the agent in time",
+            CliError::Timeout("the human did not connect the agent in time".into()).into(),
         ),
     };
     if json {
@@ -726,7 +737,7 @@ pub async fn connect(
             &json!({ "status": status, "registration_id": registration.registration_id }),
         );
     }
-    bail!("{message}")
+    Err(error)
 }
 
 pub async fn forget(client: &ApiClient, claimed: bool, sandbox: bool, json: bool) -> Result<()> {

@@ -23,14 +23,7 @@ fn print_json(answer: &crate::api::client::Fetched<Value>) -> Result<()> {
 }
 
 pub async fn one(client: &ApiClient, request_id: &str, yes: bool, json: bool) -> Result<()> {
-    let request_id = request_id.trim();
-    if !crate::util::is_uuid(request_id) {
-        return Err(CliError::Usage(format!(
-            "{} is not a request id: `whk requests list <slug>` shows them",
-            sanitize_line(request_id)
-        ))
-        .into());
-    }
+    let request_id = crate::util::request_id(request_id)?;
     confirm(
         &format!(
             "Run request {} through its endpoint again now (layouts, then every destination that takes it)?",
@@ -41,7 +34,7 @@ pub async fn one(client: &ApiClient, request_id: &str, yes: bool, json: bool) ->
     let answer = client.replay_request(request_id).await.map_err(|error| {
         // The route answers a bare code for a request it will not replay.
         match error.downcast::<crate::error::ApiError>() {
-            Ok(mut api) if api.message == "not_found" => {
+            Ok(mut api) if api.code.as_deref() == Some("not_found") => {
                 api.message = format!(
                     "No captured request {} on an endpoint you own (or it is past retention).",
                     sanitize_line(request_id)

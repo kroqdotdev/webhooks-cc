@@ -24,7 +24,7 @@ These work with every subcommand.
 | `--json`        | Print the API's answers as JSON (NDJSON for streams) and failures as `{"error": {...}}` on stderr |
 | `--api-url`     | Use another API base URL (also: `WHK_API_URL`)                      |
 | `--webhook-url` | Use another webhook receiver URL (also: `WHK_WEBHOOK_URL`)          |
-| `--no-color`    | Disable colored output                                              |
+| `--no-color`    | Disable colored output (it is off already when stdout is not a terminal, or `NO_COLOR` is set) |
 
 The first time you stop a tunnel or a share with Ctrl+C, `whk` prints a link to its GitHub repository, once per machine. It never prints with `--json`, in CI, or when the output is piped; set `WHK_NO_STAR_HINT=1` to turn it off everywhere.
 
@@ -189,10 +189,10 @@ whk share <port>
 
 | Flag         | Description                                                                                  |
 | ------------ | -------------------------------------------------------------------------------------------- |
-| `--name`     | Share under a name you reserved, or reserve it now if nobody holds it (it counts against your plan's names); a random name otherwise |
+| `--name`     | Share under a name you reserved, or reserve it now if nobody holds it (it counts against your plan's names); a random name otherwise. A new share under one of your own names replaces your older share under it |
 | `--password` | Ask visitors for a password (prompted, or from `WHK_SHARE_PASSWORD`; Pro, Business and teams) |
 | `--no-qr`    | Do not draw the link as a QR code                                                            |
-| `--json`     | One JSON event per line (`live`, `request`, `reconnected`, `retrying`, `notice`, `stopped`, `error`); `stopped` exits 0, `error` (refused before it opened) exits 1 |
+| `--json`     | One JSON event per line (`live`, `request`, `reconnected`, `retrying`, `notice`, `stopped`, `error`); `stopped` exits 0, and `error` (refused before it opened) carries the same `code`, `exit`, `status` and `hint` as any other command's failure and exits with that status |
 
 ## shares
 
@@ -308,9 +308,11 @@ Replay a captured request to a target URL. Emails cannot be replayed as HTTP req
 whk replay <request-id>
 ```
 
-| Flag   | Description                                              |
-| ------ | -------------------------------------------------------- |
-| `--to` | Target URL for replay (default: `http://localhost:8080`) |
+| Flag   | Description                                                                                                                       |
+| ------ | --------------------------------------------------------------------------------------------------------------------------------- |
+| `--to` | Base URL to send it to (default: `http://localhost:8080`); the captured path is added to it, as `whk tunnel` does: with `--to http://localhost:3000/api`, a request captured at `/stripe` goes to `/api/stripe` |
+
+`--json` prints the URL it was sent to and your server's answer: `{ "url", "status", "statusText", "duration_ms", "headers", "body", "bodySize" }`.
 
 ## send
 

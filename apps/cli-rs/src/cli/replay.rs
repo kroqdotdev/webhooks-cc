@@ -2,7 +2,7 @@ use anyhow::{Context, Result};
 use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
 
 use crate::api::ApiClient;
-use crate::cli::output::{bold, dim, green, red};
+use crate::cli::output::{bold, dim, green, red, sanitize, sanitize_line};
 use crate::util::body::resolve_body;
 
 /// Headers to strip when replaying (hop-by-hop + sensitive + proxy).
@@ -35,13 +35,15 @@ const STRIP_HEADERS: &[&str] = &[
 ];
 
 pub async fn run(client: &ApiClient, request_id: &str, target_url: &str, json: bool) -> Result<()> {
+    let request_id = crate::util::request_id(request_id)?;
     let req = client.get_request(request_id).await?;
 
     if req.is_email() {
-        anyhow::bail!(
+        return Err(crate::error::CliError::Usage(format!(
             "{request_id} is a captured email, which cannot be replayed as an HTTP request. \
              To send emails to your server, use forwarding: https://webhooks.cc/docs/forwarding"
-        );
+        ))
+        .into());
     }
 
     let method: reqwest::Method = req.method.parse().unwrap_or(reqwest::Method::POST);
@@ -74,15 +76,28 @@ pub async fn run(client: &ApiClient, request_id: &str, target_url: &str, json: b
     let duration = start.elapsed();
 
     let status = resp.status();
+    let response_headers: serde_json::Map<String, serde_json::Value> = resp
+        .headers()
+        .iter()
+        .map(|(name, value)| {
+            (
+                name.to_string(),
+                serde_json::Value::from(String::from_utf8_lossy(value.as_bytes()).into_owned()),
+            )
+        })
+        .collect();
     let body = resp.text().await.unwrap_or_default();
 
     if json {
         println!(
             "{}",
             serde_json::json!({
+                "url": url,
                 "status": status.as_u16(),
                 "statusText": status.to_string(),
                 "duration_ms": duration.as_millis(),
+                "headers": response_headers,
+                "body": body,
                 "bodySize": body.len(),
             })
         );
@@ -95,13 +110,16 @@ pub async fn run(client: &ApiClient, request_id: &str, target_url: &str, json: b
         println!(
             "  {} Replayed {} {} -> {} ({:.0?})",
             green("✓"),
-            bold(&req.method),
-            req.path,
+            bold(&sanitize_line(&req.method)),
+            sanitize_line(&url),
             status_str,
             duration,
         );
         if !body.is_empty() {
-            println!("\n{}", dim(&body.chars().take(500).collect::<String>()));
+            println!(
+                "\n{}",
+                dim(&sanitize(&body.chars().take(500).collect::<String>()))
+            );
         }
     }
 

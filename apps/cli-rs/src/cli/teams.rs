@@ -4,7 +4,10 @@ use serde_json::{Value, json};
 use crate::api::ApiClient;
 use crate::cli::account::{ApprovalOptions, ask};
 use crate::cli::confirm::confirm;
-use crate::cli::output::{bold, dim, green, red, sanitize};
+use crate::cli::output::{
+    Cell, bold, dim, green, header_row, red, sanitize, sanitize_line, table_lines,
+};
+use crate::error::CliError;
 use crate::types::{Team, TeamInvite, TeamMember};
 use crate::util::format::format_timestamp;
 
@@ -14,7 +17,10 @@ use crate::util::format::format_timestamp;
 pub fn resolve_team<'a>(teams: &'a [Team], needle: &str) -> Result<&'a Team> {
     let needle = needle.trim();
     if needle.is_empty() {
-        anyhow::bail!("team is required (a team id or name; see `whk teams list`)");
+        return Err(CliError::Usage(
+            "team is required (a team id or name; see `whk teams list`)".into(),
+        )
+        .into());
     }
 
     if let Some(team) = teams.iter().find(|t| t.id == needle) {
@@ -29,17 +35,19 @@ pub fn resolve_team<'a>(teams: &'a [Team], needle: &str) -> Result<&'a Team> {
 
     match by_name.as_slice() {
         [team] => Ok(team),
-        [] => anyhow::bail!(
+        [] => Err(CliError::NotFound(format!(
             "no team named or with id {needle:?}; run `whk teams list` to see your teams"
-        ),
-        many => anyhow::bail!(
+        ))
+        .into()),
+        many => Err(CliError::Usage(format!(
             "{} teams are named {needle:?}; pass the id instead ({})",
             many.len(),
             many.iter()
                 .map(|t| t.id.as_str())
                 .collect::<Vec<_>>()
                 .join(", ")
-        ),
+        ))
+        .into()),
     }
 }
 
@@ -61,74 +69,55 @@ fn status_label(team: &Team) -> String {
 }
 
 pub fn print_team_table(teams: &[Team]) {
-    // Pad before dimming: the escape codes would otherwise count toward the
-    // column width and shift every header right of NAME.
-    println!(
-        "  {}",
-        dim(&format!(
-            "{:<24} {:<8} {:<6} {:<8} {:<22} {:<12} {}",
-            "NAME", "ROLE", "SEATS", "MEMBERS", "REQUESTS", "STATUS", "ID"
-        ))
-    );
+    let mut rows = vec![header_row(
+        &[
+            "NAME", "ROLE", "SEATS", "MEMBERS", "REQUESTS", "STATUS", "ID",
+        ],
+        &[],
+    )];
     for team in teams {
         let requests = if team.suspended {
             "-".to_string()
         } else {
             format!("{}/{}", team.requests_used, team.request_limit)
         };
-        println!(
-            "  {:<24} {:<8} {:<6} {:<8} {:<22} {:<12} {}",
-            bold(&sanitize(&team.name)),
-            sanitize(&team.role),
-            team.seats,
-            team.member_count,
-            requests,
-            status_label(team),
-            dim(&team.id),
-        );
+        rows.push(vec![
+            (sanitize_line(&team.name), Cell::Bold),
+            (sanitize_line(&team.role), Cell::Plain),
+            (team.seats.to_string(), Cell::Plain),
+            (team.member_count.to_string(), Cell::Plain),
+            (requests, Cell::Plain),
+            (status_label(team), Cell::Plain),
+            (team.id.clone(), Cell::Dim),
+        ]);
+    }
+    for line in table_lines("  ", &rows) {
+        println!("{line}");
     }
 }
 
 fn print_invite_table(invites: &[TeamInvite], show_team: bool) {
-    if show_team {
-        println!(
-            "  {}",
-            dim(&format!(
-                "{:<24} {:<28} {:<20} {}",
-                "TEAM", "FROM", "SENT", "INVITE ID"
-            ))
-        );
-    } else {
-        println!(
-            "  {}",
-            dim(&format!(
-                "{:<32} {:<28} {:<20} {}",
-                "EMAIL", "FROM", "SENT", "INVITE ID"
-            ))
-        );
-    }
+    let first = if show_team { "TEAM" } else { "EMAIL" };
+    let mut rows = vec![header_row(&[first, "FROM", "SENT", "INVITE ID"], &[])];
     for invite in invites {
         let sent = invite
             .created_at
             .map(format_timestamp)
             .unwrap_or_else(|| "-".to_string());
-        if show_team {
-            println!(
-                "  {:<24} {:<28} {:<20} {}",
-                bold(&sanitize(&invite.team_name)),
-                sanitize(&invite.inviter_email),
-                sent,
-                dim(&invite.id),
-            );
+        let lead = if show_team {
+            (sanitize_line(&invite.team_name), Cell::Bold)
         } else {
-            println!(
-                "  {:<32} {:<28} {:<20} {}",
-                sanitize(&invite.invited_email),
-                sanitize(&invite.inviter_email),
-                sent,
-                dim(&invite.id),
-            );
-        }
+            (sanitize_line(&invite.invited_email), Cell::Plain)
+        };
+        rows.push(vec![
+            lead,
+            (sanitize_line(&invite.inviter_email), Cell::Plain),
+            (sent, Cell::Plain),
+            (invite.id.clone(), Cell::Dim),
+        ]);
+    }
+    for line in table_lines("  ", &rows) {
+        println!("{line}");
     }
 }
 
@@ -162,25 +151,24 @@ pub async fn members(client: &ApiClient, team: &str, json: bool) -> Result<()> {
     }
 
     println!("{} ({})", bold(&sanitize(&team.name)), status_label(&team));
-    println!(
-        "  {}",
-        dim(&format!(
-            "{:<32} {:<24} {:<8} {}",
-            "EMAIL", "NAME", "ROLE", "JOINED"
-        ))
-    );
+    let mut rows = vec![header_row(&["EMAIL", "NAME", "ROLE", "JOINED"], &[])];
     for member in &result.members {
         let joined = member
             .joined_at
             .map(format_timestamp)
             .unwrap_or_else(|| "-".to_string());
-        println!(
-            "  {:<32} {:<24} {:<8} {}",
-            sanitize(&member.email),
-            sanitize(member.name.as_deref().unwrap_or("-")),
-            sanitize(&member.role),
-            dim(&joined),
-        );
+        rows.push(vec![
+            (sanitize_line(&member.email), Cell::Plain),
+            (
+                sanitize_line(member.name.as_deref().unwrap_or("-")),
+                Cell::Plain,
+            ),
+            (sanitize_line(&member.role), Cell::Plain),
+            (joined, Cell::Dim),
+        ]);
+    }
+    for line in table_lines("  ", &rows) {
+        println!("{line}");
     }
 
     if !result.pending_invites.is_empty() {
@@ -336,7 +324,10 @@ pub async fn decline(client: &ApiClient, invite_id: &str, json: bool) -> Result<
 pub fn resolve_member<'a>(members: &'a [TeamMember], needle: &str) -> Result<&'a TeamMember> {
     let needle = needle.trim();
     if needle.is_empty() {
-        anyhow::bail!("member is required (a user id or email; see `whk teams members`)");
+        return Err(CliError::Usage(
+            "member is required (a user id or email; see `whk teams members`)".into(),
+        )
+        .into());
     }
     if let Some(member) = members.iter().find(|m| m.user_id == needle) {
         return Ok(member);
@@ -346,9 +337,10 @@ pub fn resolve_member<'a>(members: &'a [TeamMember], needle: &str) -> Result<&'a
         .iter()
         .find(|m| m.email.to_lowercase() == lowered)
         .ok_or_else(|| {
-            anyhow::anyhow!(
+            CliError::NotFound(format!(
                 "no member with user id or email {needle:?}; run `whk teams members <team>` to see them"
-            )
+            ))
+            .into()
         })
 }
 
@@ -357,7 +349,10 @@ pub fn resolve_member<'a>(members: &'a [TeamMember], needle: &str) -> Result<&'a
 pub fn resolve_invite<'a>(invites: &'a [TeamInvite], needle: &str) -> Result<&'a TeamInvite> {
     let needle = needle.trim();
     if needle.is_empty() {
-        anyhow::bail!("invite is required (an invite id or the invited email)");
+        return Err(CliError::Usage(
+            "invite is required (an invite id or the invited email)".into(),
+        )
+        .into());
     }
     if let Some(invite) = invites.iter().find(|i| i.id == needle) {
         return Ok(invite);
@@ -367,9 +362,10 @@ pub fn resolve_invite<'a>(invites: &'a [TeamInvite], needle: &str) -> Result<&'a
         .iter()
         .find(|i| i.invited_email.to_lowercase() == lowered)
         .ok_or_else(|| {
-            anyhow::anyhow!(
+            CliError::NotFound(format!(
                 "no pending invite with id or email {needle:?}; run `whk teams members <team>` to see them"
-            )
+            ))
+            .into()
         })
 }
 

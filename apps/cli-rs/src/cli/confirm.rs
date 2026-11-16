@@ -39,7 +39,7 @@ pub(crate) fn decide(
 ) -> Result<()> {
     if !interactive {
         return Err(CliError::ConfirmationRequired(format!(
-            "{question} Not asked, because no terminal is attached: pass --yes to go ahead."
+            "{question} Not asked, because no terminal is attached."
         ))
         .into());
     }
@@ -64,7 +64,9 @@ mod tests {
         .unwrap_err();
         let c = classify(&error);
         assert_eq!((c.code, c.exit), ("confirmation_required", 9));
-        assert!(error.to_string().contains("--yes"));
+        // The hint says to pass --yes, once: the message does not repeat it.
+        assert!(c.hint.unwrap().contains("--yes"));
+        assert!(!error.to_string().contains("--yes"));
     }
 
     #[test]

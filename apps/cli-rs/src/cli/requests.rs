@@ -61,6 +61,7 @@ pub async fn list(
 }
 
 pub async fn get(client: &ApiClient, id: &str, json: bool) -> Result<()> {
+    let id = crate::util::request_id(id)?;
     let req = client.get_request(id).await?;
     if json {
         println!("{}", serde_json::to_string_pretty(&req.json())?);

@@ -1,9 +1,10 @@
-use anyhow::{Result, bail};
+use anyhow::Result;
 use std::collections::HashMap;
 use std::io::Read;
 
 use crate::api::ApiClient;
 use crate::cli::output::{bold, dim, green, red};
+use crate::error::CliError;
 use crate::types::SendWebhookRequest;
 
 pub async fn send_to_endpoint(
@@ -21,14 +22,14 @@ pub async fn send_to_endpoint(
         Some(d) if d.starts_with('@') => {
             let path = &d[1..];
             let file = std::fs::File::open(path)
-                .map_err(|e| anyhow::anyhow!("failed to read {path}: {e}"))?;
+                .map_err(|e| CliError::Usage(format!("failed to read {path}: {e}")))?;
             let mut limited = file.take(10 * 1024 * 1024 + 1);
             let mut contents = String::new();
             limited
                 .read_to_string(&mut contents)
-                .map_err(|e| anyhow::anyhow!("failed to read {path}: {e}"))?;
+                .map_err(|e| CliError::Usage(format!("failed to read {path}: {e}")))?;
             if contents.len() > 10 * 1024 * 1024 {
-                bail!("file too large (max 10MB)");
+                return Err(CliError::Usage("file too large (max 10MB)".into()).into());
             }
             Some(contents)
         }
@@ -89,14 +90,14 @@ pub async fn send_to_url(
         Some(d) if d.starts_with('@') => {
             let path = &d[1..];
             let file = std::fs::File::open(path)
-                .map_err(|e| anyhow::anyhow!("failed to read {path}: {e}"))?;
+                .map_err(|e| CliError::Usage(format!("failed to read {path}: {e}")))?;
             let mut limited = file.take(10 * 1024 * 1024 + 1);
             let mut contents = String::new();
             limited
                 .read_to_string(&mut contents)
-                .map_err(|e| anyhow::anyhow!("failed to read {path}: {e}"))?;
+                .map_err(|e| CliError::Usage(format!("failed to read {path}: {e}")))?;
             if contents.len() > 10 * 1024 * 1024 {
-                bail!("file too large (max 10MB)");
+                return Err(CliError::Usage("file too large (max 10MB)".into()).into());
             }
             Some(contents)
         }
@@ -133,7 +134,7 @@ fn parse_headers(headers: &[String]) -> Result<HashMap<String, String>> {
     for h in headers {
         let (k, v) = h
             .split_once(':')
-            .ok_or_else(|| anyhow::anyhow!("invalid header: {h} (expected Key:Value)"))?;
+            .ok_or_else(|| CliError::Usage(format!("invalid header: {h} (expected Key:Value)")))?;
         map.insert(k.trim().to_string(), v.trim().to_string());
     }
     Ok(map)
@@ -161,9 +162,13 @@ pub async fn send_test_email(
     template: Option<&str>,
     json_output: bool,
 ) -> Result<()> {
-    let answer = client
+    let answer = match client
         .send_test_email(&test_email_body(slug, tag, template))
-        .await?;
+        .await
+    {
+        Ok(answer) => answer,
+        Err(error) => return Err(explain_template(client, slug, template, error).await),
+    };
     if json_output {
         println!("{}", serde_json::to_string_pretty(&answer.json())?);
         return Ok(());
@@ -189,6 +194,46 @@ pub async fn send_test_email(
         );
     }
     Ok(())
+}
+
+/// A template the server does not know is a bad argument: said with the
+/// ids it does know, from the same list `whk layouts templates` reads.
+async fn explain_template(
+    client: &ApiClient,
+    slug: &str,
+    template: Option<&str>,
+    error: anyhow::Error,
+) -> anyhow::Error {
+    let unknown = error
+        .downcast_ref::<crate::error::ApiError>()
+        .is_some_and(|e| e.status == 400 && e.message.starts_with("Unknown template"));
+    let Some(template) = template.filter(|_| unknown) else {
+        return error;
+    };
+    let ids: Vec<String> = match client.layout_templates(slug).await {
+        Ok(answer) => answer
+            .value
+            .get("templates")
+            .and_then(serde_json::Value::as_array)
+            .map(|list| {
+                list.iter()
+                    .filter_map(|t| t.get("id")?.as_str())
+                    .map(crate::cli::output::sanitize_line)
+                    .collect()
+            })
+            .unwrap_or_default(),
+        Err(_) => Vec::new(),
+    };
+    let known = if ids.is_empty() {
+        "`whk layouts templates <slug>` lists them".to_string()
+    } else {
+        format!("use one of {}", ids.join(", "))
+    };
+    CliError::Usage(format!(
+        "There is no ready-made layout {:?}: {known}.",
+        crate::cli::output::sanitize_line(template.trim())
+    ))
+    .into()
 }
 
 #[cfg(test)]

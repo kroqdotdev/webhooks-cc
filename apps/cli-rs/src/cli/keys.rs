@@ -164,7 +164,6 @@ pub(crate) async fn collect(
     deadline: Instant,
     json: bool,
 ) -> Result<()> {
-    use anyhow::Context;
     loop {
         // A poll may collect the result, which is handed over once: never
         // start one past the deadline.
@@ -174,9 +173,19 @@ pub(crate) async fn collect(
             ))
             .into());
         }
-        let answer = client.get_approval(id).await.with_context(|| {
-            format!("could not check approval {id}; run `whk approvals wait {id}` to try again")
-        })?;
+        let answer = match client.get_approval(id).await {
+            Ok(answer) => answer,
+            // Only a failure a retry can get past says to try again.
+            Err(error) => {
+                return Err(match crate::error::classify(&error).exit {
+                    4 => error.context(format!("no approval with id {id}")),
+                    6 | 7 => error.context(format!(
+                        "could not check approval {id}; run `whk approvals wait {id}` to try again"
+                    )),
+                    _ => error,
+                });
+            }
+        };
         let ApprovalAnswer { approval, result } = &answer.value;
         match approval.status.as_str() {
             "completed" => {

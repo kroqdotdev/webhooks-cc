@@ -296,7 +296,7 @@ pub async fn redeliver(
     yes: bool,
     json: bool,
 ) -> Result<()> {
-    let request_id = request_id.trim();
+    let request_id = crate::util::request_id(request_id)?;
     let question = match destination {
         Some(id) => format!(
             "Send request {request_id} to destination {} again now, whatever its filter says?",
@@ -510,16 +510,22 @@ mod tests {
             axum::routing::post(
                 move |axum::extract::Path(id): axum::extract::Path<String>,
                       axum::Json(body): axum::Json<Value>| async move {
-                    assert_eq!(id, "r1");
+                    assert_eq!(id, "0b0e1c2d-3f40-4a5b-8c6d-7e8f90a1b2c3");
                     *seen.lock().unwrap() = Some(body);
                     axum::Json(json!({ "id": "x9" }))
                 },
             ),
         );
         let base = serve(app).await;
-        redeliver(&client(&base), "r1", Some("d1"), true, true)
-            .await
-            .unwrap();
+        redeliver(
+            &client(&base),
+            "0b0e1c2d-3f40-4a5b-8c6d-7e8f90a1b2c3",
+            Some("d1"),
+            true,
+            true,
+        )
+        .await
+        .unwrap();
         assert_eq!(
             sent.lock().unwrap().clone(),
             Some(json!({ "destinationId": "d1" }))

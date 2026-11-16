@@ -51,9 +51,9 @@ pub async fn run(
 
     let mut extra_headers = HashMap::new();
     for h in &headers {
-        let (k, v) = h
-            .split_once(':')
-            .ok_or_else(|| anyhow::anyhow!("invalid header: {h} (expected Key:Value)"))?;
+        let (k, v) = h.split_once(':').ok_or_else(|| {
+            crate::error::CliError::Usage(format!("invalid header: {h} (expected Key:Value)"))
+        })?;
         extra_headers.insert(k.trim().to_string(), v.trim().to_string());
     }
 

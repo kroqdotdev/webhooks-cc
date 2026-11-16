@@ -1,0 +1,8 @@
+{
+  "title": "whk 1.20.2",
+  "items": [
+    "The changelog lists whk 1.20.2: exit statuses that follow the documented table, quiet exits when a pipe closes, plain output without a terminal, and clearer errors",
+    "The CLI pages describe the `exit` field on failures, `whk share --json`'s `error` event, colour without a terminal, and where `whk replay --to` sends a request",
+    "The Share localhost page says that a new share under one of your own names replaces your older one"
+  ]
+}

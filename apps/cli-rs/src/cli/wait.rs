@@ -251,7 +251,7 @@ pub async fn run(client: &ApiClient, options: WaitOptions, json: bool) -> Result
             Ok(event) => event,
             Err(_) => {
                 break Err(CliError::Timeout(format!(
-                    "{} of {count} matching request(s) arrived at {slug} within {}",
+                    "{} of {count} matching request(s) arrived at {slug} within {}. Check that the sender ran.",
                     matched.len(),
                     options.timeout
                 ))
