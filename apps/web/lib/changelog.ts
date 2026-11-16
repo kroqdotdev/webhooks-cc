@@ -2579,7 +2579,7 @@ export const CHANGELOG: ChangelogEntry[] = [
       "`apiKeys.list()` adds `keyPrefix`, `createdAt`, `expiresAt` and `lastUsedAt`; the snake_case fields stay, deprecated",
       "A short 404 points at the list for its resource (`client.apiKeys.list()`, `client.destinations.list(slug)`, ...), not always at endpoints",
       "An answer that is only a code reads as a sentence where the SDK knows it (`Invalid search cursor: start the search again without a cursor`); the shared error vectors carry the table",
-      "Link extraction keeps verify and sign-in links on GitHub, Discord and help or support hosts, and order tracking links; it drops open-tracking pixels by shape and social profile links rather than whole hosts",
+      "Link extraction keeps a link whose host or path asks for something (verify, confirm, sign in) on any host, GitHub, Discord and support sites included, a social site's click-tracked button whose label does, and order tracking links; help, footer and social links are still dropped otherwise, and a campaign tag in the query no longer counts",
       "The Mailgun and SendGrid shapes of an email with text attachments (CSV, JSON, XML, text) are multipart/form-data with a file part per attachment (`attachment-count` and `attachment-1`..., or `attachments`, `attachment-info` and `attachment1`...), as the providers post them; binary files (a PDF, an image) are left out of those two forms",
       "The README covers every namespace: destinations, alerts, API keys, billing, approvals, shares, names, share links, domains, Google, agents, AI setup and account",
     ],

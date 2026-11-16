@@ -38,36 +38,25 @@ const URL_IN_TEXT = /\bhttps?:\/\/[^\s<>"'`)\]]+/gi;
 const HREF = /\bhref\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>"']+))/i;
 const ACTION =
   /(confirm|verif|activat|reset|magic|log-?in|sign-?in|signin|login|invit|accept|approve|validat|onboard|set-?up|password|token|auth)/i;
-/**
- * Never worth a click in a test: unsubscribe and preference pages, wherever
- * the URL or the label says so, even when the link carries a token.
- */
+/** Never worth a click in a test, whatever else the link says. */
 const UNSUBSCRIBE =
   /(unsubscribe|opt-?out|preferences|manage[-_ ]?(?:email|notification|subscription)s?\b)/i;
 /**
- * Footer pages, matched as a whole path segment or as the first label of
- * the host (help.acme.com), never as any substring: support.acme.com/verify
- * and /orders/123/track are links a test wants. Only links that are not
- * action links are dropped for these.
+ * Footer and help pages, anywhere in the URL or the label, dropped unless
+ * the link's host or path asks for something (see `rescued`). `/track/` is
+ * not here: order tracking is a link a test wants, and open-tracking pixels
+ * are caught by their shape (PIXEL_PATH).
  */
-const FOOTER_WORDS =
-  /^(?:privacy(?:-(?:policy|notice|statement))?|cookies|cookie-policy|terms(?:-of-(?:service|use))?|tos|legal|help|help-center|helpcenter|support|faq|contact(?:-us)?)$/i;
-const FOOTER_LABEL =
-  /^(?:privacy(?: policy)?|terms(?: of (?:service|use))?|legal|help(?: center)?|support|contact(?: us| support)?|faq|get help|help & support)$/i;
-/** Footer phrases anywhere in a label: "Visit our Help Center", "Privacy Notice". */
-const FOOTER_PHRASE =
-  /\b(?:privacy (?:policy|notice|statement)|terms of (?:service|use)|help cent(?:er|re)|help & support|contact us|frequently asked questions)\b/i;
+const DROP = /(privacy|terms|legal|help|support|\/open\/|\/pixel)/i;
 /**
- * The shape of an open-tracking pixel's path: a last segment like `open`,
- * `pixel.gif` or `o.gif`, or a `/pixel/` segment anywhere. Click-tracking
- * redirects (`/ls/click`, `/track/click`) lead to the real link and stay.
+ * The shape of an open-tracking pixel's path: a last segment like
+ * `pixel.gif`, `open.gif` or `o.gif`, SendGrid's `/wf/open`, or a `/pixel/`
+ * segment anywhere. Click-tracking redirects lead to the real link and stay.
  */
 const PIXEL_PATH =
   /(?:\/(?:pixel|beacon|spacer|blank)(?:\.(?:gif|png|jpe?g|php))?\/?$|\/(?:open|opened)\.(?:gif|png|jpe?g|php)$|\/wf\/open\/?$|\/[a-z]\.(?:gif|png)$|\/pixel\/)/i;
 const SOCIAL_HOSTS =
-  /(^|\.)((facebook|twitter|x|linkedin|instagram|youtube|tiktok|github|discord|medium|threads|pinterest)\.com|bsky\.app)$/i;
-/** First segments of a social profile's path: linkedin.com/company/acme, youtube.com/channel/... */
-const PROFILE_PREFIX = /^(?:company|in|channel|c|user|users|school|showcase|pages|groups|orgs|r)$/i;
+  /(^|\.)(facebook|twitter|x|linkedin|instagram|youtube|tiktok|github|discord|medium)\.com$/i;
 const MAX_LINKS = 20;
 
 const ENTITIES: Record<string, string> = {
@@ -263,69 +252,24 @@ function cleanUrl(url: string): string | null {
 }
 
 /** A social network's profile or page link (a footer's "Follow us"), not a link to act on. */
-function isSocialProfile(url: URL): boolean {
-  if (!SOCIAL_HOSTS.test(url.hostname)) return false;
-  const segments = url.pathname.split("/").filter(Boolean);
-  return segments.length <= 1 || (segments.length === 2 && PROFILE_PREFIX.test(segments[0]));
-}
-
-/** A locale segment (en, en-us, pt_BR) or Zendesk's "hc", which says nothing about the page. */
-const LOCALE_SEGMENT = /^(?:hc|[a-z]{2}(?:[-_][a-z]{2,4})?)$/i;
-/** Hosts and first segments of a help centre or support site. */
-const HELP_PLACE = /^(?:help|help-?cent(?:er|re)|helpcenter|support|faq|kb|knowledge-?base)$/i;
-/** Pages of a help centre that are documentation, never something to act on. */
-const DOC_PAGE =
-  /^(?:home|articles?|solutions|categories|sections|kb|knowledge-?base|guides?|faqs?|topics)$/i;
-/** Footer hosts that serve only legal pages (privacy.acme.com). */
-const LEGAL_HOST = /^(?:privacy|legal|terms)$/i;
-
-/** The path's segments without locales and "hc". */
-function pageSegments(url: URL): string[] {
-  return url.pathname.split("/").filter((segment) => segment && !LOCALE_SEGMENT.test(segment));
+/**
+ * Whether a link's host or path asks for something (confirm, verify, reset,
+ * sign in): such a link is kept on any host, footer and social ones included
+ * (github.com/login/device, support.acme.com/verify). Only the host and path
+ * count: a campaign tag in the query (`?utm_campaign=password_reset`) is on
+ * every link of a mail, and a label is the sender's to word.
+ */
+function rescued(url: URL): boolean {
+  return ACTION.test(`${url.hostname}${url.pathname}`);
 }
 
 /**
- * A help centre's own documentation: its home, articles, solutions and
- * knowledge base, on a help or support host (help.acme.com/hc/en-us,
- * support.acme.com/hc/en-us/articles/42) or under /help or /support
- * (/support/home, /help/article/42). Tickets and requests on those hosts
- * (support.acme.com/hc/en-us/requests/123, /support/tickets/123) are not.
- * Never kept, whatever its label says ("How to reset 2FA" is an article).
+ * Whether a link is worth listing: never an unsubscribe or preference link;
+ * an action link (rescued) always otherwise; of the rest, not footer or
+ * help pages, open-tracking pixels, or social sites' links unless their
+ * label asks for something.
  */
-function isDocPage(url: URL): boolean {
-  const segments = pageSegments(url);
-  const host = url.hostname.split(".")[0];
-  if (HELP_PLACE.test(host) && (segments.length === 0 || DOC_PAGE.test(segments[0]))) return true;
-  if (segments.length > 0 && HELP_PLACE.test(segments[0])) {
-    return segments.length === 1 || DOC_PAGE.test(segments[1]);
-  }
-  return false;
-}
-
-function isFooterLink(url: URL, label: string | null): boolean {
-  if (label !== null && (FOOTER_LABEL.test(label.trim()) || FOOTER_PHRASE.test(label))) {
-    return true;
-  }
-  const segments = pageSegments(url);
-  if (LEGAL_HOST.test(url.hostname.split(".")[0]) && segments.length === 0) return true;
-  // A footer word as the last segment of a short path with no id in it:
-  // /privacy, /legal/terms, /pages/contact are footers; /orders/1001/contact
-  // ("Contact seller"), /faq/42/edit and /contacts/123/contact/456 are an
-  // app's own pages.
-  if (segments.length === 0 || segments.length > 3) return false;
-  if (segments.some((segment) => /\d/.test(segment))) return false;
-  return FOOTER_WORDS.test(segments[segments.length - 1]);
-}
-
-/**
- * Whether a link is worth listing. Unsubscribe and preference links never
- * are, nor a help centre's documentation (isDocPage). Action links (confirm,
- * verify, reset, sign in) always are otherwise, whatever host they are on
- * (github.com/login/device, support.acme.com/verify). Of the rest, footer
- * pages (privacy, terms, contact), open-tracking pixels and social profiles
- * are dropped.
- */
-function keepLink(url: string, label: string | null, action: boolean): boolean {
+function keepLink(url: string, label: string | null): boolean {
   if (UNSUBSCRIBE.test(url) || (label !== null && UNSUBSCRIBE.test(label))) return false;
   let parsed: URL;
   try {
@@ -333,23 +277,13 @@ function keepLink(url: string, label: string | null, action: boolean): boolean {
   } catch {
     return false;
   }
-  if (isDocPage(parsed)) return false;
-  if (action) return true;
-  return !(
-    PIXEL_PATH.test(parsed.pathname) ||
-    isSocialProfile(parsed) ||
-    isFooterLink(parsed, label)
-  );
-}
-
-/** The URL without its query and fragment. */
-function withoutQuery(url: string): string {
-  try {
-    const parsed = new URL(url);
-    return `${parsed.host}${parsed.pathname}`;
-  } catch {
-    return url;
-  }
+  if (rescued(parsed)) return true;
+  if (DROP.test(url) || (label !== null && DROP.test(label))) return false;
+  if (PIXEL_PATH.test(parsed.pathname)) return false;
+  // A social site's own mail: its action button is often click-tracked
+  // (click.discord.com/ls/click), so there its label may rescue it.
+  if (SOCIAL_HOSTS.test(parsed.hostname)) return label !== null && ACTION.test(label);
+  return true;
 }
 
 function findLinks(text: string | null, html: string | null): ExtractedLink[] {
@@ -357,16 +291,9 @@ function findLinks(text: string | null, html: string | null): ExtractedLink[] {
   const links: ExtractedLink[] = [];
   const add = (rawUrl: string, label: string | null) => {
     const url = cleanUrl(rawUrl);
-    if (!url || seen.has(url)) return;
-    // Ranked as an action by anything in it, the query included (a magic
-    // link's ?token=), but only the label or the host and path rescue a
-    // footer, social or pixel link: `utm_campaign=password_reset` on every
-    // link of a mail must not keep its help, privacy and social links.
-    const action = ACTION.test(url) || (label !== null && ACTION.test(label));
-    const rescues = (label !== null && ACTION.test(label)) || ACTION.test(withoutQuery(url));
-    if (!keepLink(url, label, rescues)) return;
+    if (!url || seen.has(url) || !keepLink(url, label)) return;
     seen.add(url);
-    links.push({ url, label, action });
+    links.push({ url, label, action: ACTION.test(url) || (label !== null && ACTION.test(label)) });
   };
   if (html) {
     for (const anchor of findAnchors(html)) {

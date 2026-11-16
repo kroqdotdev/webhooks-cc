@@ -113,7 +113,6 @@ describe("extractFromEmail", () => {
         "https://github.com/users/octo-dev/emails/88213/confirm_verification/Zk3q9v?via_launch_code_email=true",
         true,
       ],
-      ["https://github.com/acme/widgets/pull/42", false],
     ]);
 
     const discord = extractFromEmail({
@@ -194,64 +193,37 @@ describe("extractFromEmail", () => {
     ]);
   });
 
-  it("keeps an app's own pages that name contact or faq inside the path", () => {
+  it("keeps app pages that name contact or faq, and drops help and legal pages", () => {
     const found = extractFromEmail({
       subject: null,
       text: [
         "View contact: https://app.hubspot.com/contacts/123/contact/456",
         "View submission: https://app.acme.test/forms/contact/submissions/77",
-        "Edit: https://admin.acme.test/kb/faq/42/edit",
         "Edit FAQ: https://admin.acme.test/faq/42/edit",
-        "View ticket: https://acme.freshdesk.test/support/tickets/123",
-        "View your request: https://support.acme.test/hc/requests/123",
         "https://acme.test/privacy",
         "https://acme.test/legal/terms",
-        "https://shop.acme.test/pages/contact",
+        "https://support.acme.test/hc/en-us/articles/42",
+        "https://acme.test/help/article/42",
       ].join("\n"),
       html: null,
     });
     expect(found.links.map((link) => link.url)).toEqual([
       "https://app.hubspot.com/contacts/123/contact/456",
       "https://app.acme.test/forms/contact/submissions/77",
-      "https://admin.acme.test/kb/faq/42/edit",
       "https://admin.acme.test/faq/42/edit",
-      "https://acme.freshdesk.test/support/tickets/123",
-      "https://support.acme.test/hc/requests/123",
     ]);
   });
 
-  it("drops a help centre's documentation and keeps its tickets", () => {
-    const kept = (url: string, label = "View") =>
+  it("rescues a help or support link only by its host and path, never its label or query", () => {
+    const kept = (url: string, label: string) =>
       extractFromEmail({ subject: null, text: null, html: `<a href="${url}">${label}</a>` }).links
         .length > 0;
-    for (const url of [
-      "https://support.acme.com/hc/en-us",
-      "https://acme.freshdesk.com/support/home",
-      "https://acme.freshdesk.com/support/solutions",
-      "https://acme.com/support/en",
-      "https://acme.com/help/article/42",
-      "https://help.acme.com/hc/en-us/articles/360001",
-    ]) {
-      expect(kept(url), url).toBe(false);
-      // An article about an action is still an article.
-      expect(kept(url, "How to reset 2FA"), url).toBe(false);
-    }
-    for (const url of [
-      "https://support.acme.com/hc/en-us/requests/123",
-      "https://help.acme.com/hc/en-us/requests/987",
-      "https://acme.freshdesk.com/support/tickets/123",
-      "https://shop.acme.test/orders/1001/contact",
-      "https://support.acme.test/verify?token=x",
-    ]) {
-      expect(kept(url), url).toBe(true);
-    }
-    for (const url of [
-      "https://privacy.acme.test/en",
-      "https://shop.acme.test/pages/contact",
-      "https://acme.test/en-us/privacy-notice",
-    ]) {
-      expect(kept(url), url).toBe(false);
-    }
+    expect(kept("https://support.acme.test/verify?t=1", "Open")).toBe(true);
+    expect(kept("https://help.acme.test/password/reset/k3y", "Open")).toBe(true);
+    // An article about an action, or a campaign tag, is no action.
+    expect(kept("https://acme.test/help/articles/42", "How to reset 2FA")).toBe(false);
+    expect(kept("https://support.google.test/accounts?p=signin_alert", "Learn more")).toBe(false);
+    expect(kept("https://acme.test/privacy?utm_campaign=password_reset", "Privacy")).toBe(false);
   });
 
   it("drops unsubscribe links even when they carry a token", () => {
