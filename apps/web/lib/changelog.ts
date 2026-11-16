@@ -31,7 +31,7 @@ const RELEASE = release as { version: string | null; entries: ChangelogEntry[] }
 
 export const APP_VERSION: string = RELEASE.version ?? "dev";
 export const CLI_VERSION = "1.20.4";
-export const SDK_VERSION = "1.33.0";
+export const SDK_VERSION = "1.34.0";
 export const PYTHON_SDK_VERSION = "0.12.0";
 export const GO_SDK_VERSION = "0.12.0";
 export const MCP_VERSION = "2.6.1";
@@ -2586,6 +2586,15 @@ export const CHANGELOG: ChangelogEntry[] = [
   },
 
   // ─── SDK ────────────────────────────────────────────────────────────
+  {
+    version: "1.34.0",
+    date: "2026-11-16",
+    title: "Standard Webhooks Checks Over Raw Bytes",
+    track: "sdk",
+    items: [
+      "`verifyStandardWebhookSignature()` takes the body as bytes too (`Uint8Array`, a Node `Buffer` or `ArrayBuffer`), as `verifyForwardedEmail()` already did, so a forwarded SendGrid or Mailgun form carrying a binary file (a PDF, an image) verifies: decoded as text, such a body changes and its signature no longer matches. A string is checked as before",
+    ],
+  },
   {
     version: "1.33.0",
     date: "2026-11-16",

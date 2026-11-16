@@ -124,7 +124,7 @@ type HeadersInput =
   | Iterable<readonly [string, string]>;
 ```
 
-`verifyStandardWebhookSignature(body, headers, secret)` accepts the same `HeadersInput`, including a Fetch `Headers`. It checks the signature only, not the timestamp. See [Signature Verification](/docs/sdk/signatures#forwarded-emails) for a full handler.
+`verifyStandardWebhookSignature(body, headers, secret)` accepts the same `HeadersInput`, including a Fetch `Headers`, and the body as a string or its raw bytes (`Uint8Array` or `ArrayBuffer`). It checks the signature only, not the timestamp. See [Signature Verification](/docs/sdk/signatures#forwarded-emails) for a full handler.
 
 ## Duration Strings
 

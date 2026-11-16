@@ -304,7 +304,7 @@ Standard Webhooks is used by Polar, Svix, Resend, Liveblocks, and Novu. It sends
 
 Secrets can include the `whsec_` prefix (base64-encoded key after the prefix) or be passed as raw base64.
 
-`verifyStandardWebhookSignature(body, headers, secret)` takes the headers as a Fetch `Headers`, a plain object such as Node's `req.headers`, or name and value pairs. It checks the signature only; check `webhook-timestamp` yourself if you need replay protection.
+`verifyStandardWebhookSignature(body, headers, secret)` takes the body as a string or as its raw bytes (`Uint8Array`, a Node `Buffer` or `ArrayBuffer`; pass the bytes when the body may not be UTF-8 text, such as a forwarded SendGrid or Mailgun form with a binary file), and the headers as a Fetch `Headers`, a plain object such as Node's `req.headers`, or name and value pairs. It checks the signature only; check `webhook-timestamp` yourself if you need replay protection.
 
 ```ts
 const result = await verifySignature(request, {

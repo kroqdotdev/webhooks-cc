@@ -542,6 +542,27 @@ describe("signature verification", () => {
     ).resolves.toEqual({ valid: true });
   });
 
+  it("verifies a Standard Webhooks signature over a body that is not UTF-8", async () => {
+    // A forwarded SendGrid form with a PDF part: signed over its exact bytes.
+    const key = Buffer.from("test-secret-bytes");
+    const secret = `whsec_${key.toString("base64")}`;
+    const body = Buffer.concat([
+      Buffer.from('--b\r\nContent-Disposition: form-data; name="attachment1"\r\n\r\n'),
+      Buffer.from([0x25, 0x50, 0x44, 0x46, 0xff, 0xfe, 0x00, 0x80]),
+      Buffer.from("\r\n--b--\r\n"),
+    ]);
+    const headers = { "webhook-id": "msg_1", "webhook-timestamp": "1700000000" };
+    const mac = createHmac("sha256", key).update("msg_1.1700000000.").update(body).digest("base64");
+    const signed = { ...headers, "webhook-signature": `v1,${mac}` };
+
+    expect(await verifyStandardWebhookSignature(body, signed, secret)).toBe(true);
+    expect(await verifyStandardWebhookSignature(new Uint8Array(body), signed, secret)).toBe(true);
+    const copy = new Uint8Array(body).buffer;
+    expect(await verifyStandardWebhookSignature(copy, signed, secret)).toBe(true);
+    // Decoded as text, the PDF's bytes change and the check fails.
+    expect(await verifyStandardWebhookSignature(body.toString("utf8"), signed, secret)).toBe(false);
+  });
+
   it("verifies Standard Webhooks signatures with whsec_ secrets", async () => {
     const secret = `whsec_${Buffer.from("test-secret-bytes").toString("base64")}`;
     const built = await client.buildRequest("https://example.com/webhooks/standard", {

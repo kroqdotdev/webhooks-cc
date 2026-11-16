@@ -134,9 +134,16 @@ async function viaProxy(
     for (const [name, value] of outgoing.headers) {
       if (!PROXY_CONTROL_HEADERS.has(name.toLowerCase())) proxyHeaders[name] = value;
     }
-    // The exact bytes: the Worker posts the body it receives as it is
-    // (request.arrayBuffer()), so a form's binary file part survives.
-    body = outgoing.body ? Uint8Array.from(outgoing.body) : null;
+    // The exact bytes (a view, no copy): the Worker posts the body it
+    // receives as it is (request.arrayBuffer()), so a form's binary file
+    // part survives.
+    body = outgoing.body
+      ? (new Uint8Array(
+          outgoing.body.buffer,
+          outgoing.body.byteOffset,
+          outgoing.body.byteLength
+        ) as Uint8Array<ArrayBuffer>)
+      : null;
   }
   // Set last, so they always win.
   if (outgoing.mode !== "relay") proxyHeaders["x-target-url"] = outgoing.url;

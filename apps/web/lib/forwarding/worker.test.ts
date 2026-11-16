@@ -1,5 +1,9 @@
 import { createHmac } from "node:crypto";
-import { verifyForwardedRequest, verifyRelayedRequest } from "@webhooks-cc/sdk";
+import {
+  verifyForwardedRequest,
+  verifyRelayedRequest,
+  verifyStandardWebhookSignature,
+} from "@webhooks-cc/sdk";
 import { describe, expect, it } from "vitest";
 import type { RequestRecord } from "@/lib/supabase/requests";
 import {
@@ -217,6 +221,17 @@ describe("email shapes and fields", () => {
         expect(headers["webhook-signature"]).toBe(`v1,${expected}`);
       }
     );
+
+    it("verifies with the SDK over the raw bytes, never over the text", async () => {
+      const prepared = outgoingFor(withFiles(), settings({ format: "sendgrid" }));
+      if (!("outgoing" in prepared)) throw new Error(prepared.reason);
+      const body = prepared.outgoing.body!;
+      const headers = Object.fromEntries(prepared.outgoing.headers);
+      expect(await verifyStandardWebhookSignature(body, headers, SECRET)).toBe(true);
+      expect(await verifyStandardWebhookSignature(body.toString("utf8"), headers, SECRET)).toBe(
+        false
+      );
+    });
 
     it("sends the bytes through relay mode with the owner's headers", () => {
       const prepared = outgoingFor(

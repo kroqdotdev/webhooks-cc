@@ -1190,9 +1190,12 @@ export async function verifyDiscordSignature(
 
 /**
  * Verify a Standard Webhooks signature from webhook-id/timestamp/signature headers.
+ * The body is the raw body: a string (as UTF-8), or its bytes, which a body
+ * that is not UTF-8 text needs (a forwarded SendGrid or Mailgun form with a
+ * binary file); decoding such a body as text changes it and fails the check.
  */
 export async function verifyStandardWebhookSignature(
-  body: string | undefined,
+  body: string | Uint8Array | ArrayBuffer | undefined,
   headers: HeadersInput,
   secret: string
 ): Promise<boolean> {
@@ -1207,9 +1210,18 @@ export async function verifyStandardWebhookSignature(
     return false;
   }
 
-  const expected = toBase64(
-    await hmacSignRaw("SHA-256", key, `${messageId}.${timestamp}.${normalizeBody(body)}`)
-  );
+  const prefix = `${messageId}.${timestamp}.`;
+  let signed: string | Uint8Array;
+  if (body === undefined || typeof body === "string") {
+    signed = `${prefix}${normalizeBody(body)}`;
+  } else {
+    const head = new TextEncoder().encode(prefix);
+    const bytes = bodyBytes(body);
+    signed = new Uint8Array(head.length + bytes.length);
+    signed.set(head);
+    signed.set(bytes, head.length);
+  }
+  const expected = toBase64(await hmacSignRaw("SHA-256", key, signed));
   return parseStandardSignatures(signatureHeader).some((signature) =>
     timingSafeEqual(signature, expected)
   );
@@ -1301,7 +1313,7 @@ async function verifySignedForward(
     );
   }
 
-  if (!(await verifyStandardWebhookSignature(text, headers, secret))) {
+  if (!(await verifyStandardWebhookSignature(body, headers, secret))) {
     throw new WebhookVerificationError(
       "invalid_signature",
       "The webhook-signature does not match the body and secret"
