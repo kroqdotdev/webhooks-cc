@@ -23,11 +23,12 @@ pub(crate) const MAX_CELLS_VISITED: u64 = 5_000_000;
 
 /// What calamine may inflate past the entries' declared sizes: a workbook
 /// opens each part once (and the zip crate never inflates past a declared
-/// size), so honest files stay far below it (calamine 0.38 opens each part
-/// once; should it ever read one twice, as with its `picture` feature, an
-/// honest part over this margin would come back truncated), while sheets that make calamine
-/// reopen one part again and again run out of it, however they name the part
-/// and however well it compresses. The parse then stops, marked truncated.
+/// size), so honest files stay far below it. (calamine 0.38 opens each
+/// part once; should it ever read one twice, as with its `picture`
+/// feature, an honest part over this margin would come back truncated.)
+/// Sheets that make calamine reopen one part again and again run out of it,
+/// however they name the part and however well it compresses. The parse
+/// then stops, marked truncated.
 const REREAD_MARGIN: u64 = 1 << 20;
 
 /// The input as calamine reads it. The zip crate opens an entry by seeking to
@@ -613,6 +614,28 @@ mod tests {
         assert!(truncated);
         assert!(sheets.len() <= 2, "read {} times", sheets.len());
         assert!(started.elapsed() < std::time::Duration::from_secs(5));
+    }
+
+    #[test]
+    fn the_meter_charges_the_larger_size_on_a_shared_data_start() {
+        use crate::testutil::{raw_xlsx, with_alias_record};
+        // Behind the zip guard this cannot be reached; the meter holds alone.
+        let book = raw_xlsx(&[br#"<row r="1"><c r="A1"><v>1</v></c></row>"#]);
+        let aliased = with_alias_record(&book, "xl/worksheets/sheet1.xml");
+        let exceeded = std::rc::Rc::new(std::cell::Cell::new(false));
+        let meter = Metered::new(&aliased, exceeded.clone());
+        assert!(!exceeded.get());
+        assert!(meter.sizes.values().any(|size| *size > 0));
+        assert!(
+            meter.sizes.values().all(|size| *size > 0),
+            "no entry is charged 0"
+        );
+        let broken = Metered::new(b"not a zip", exceeded.clone());
+        assert!(
+            exceeded.get(),
+            "an archive the meter cannot read is never read"
+        );
+        drop(broken);
     }
 
     #[test]
