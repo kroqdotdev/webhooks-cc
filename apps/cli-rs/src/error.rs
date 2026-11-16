@@ -7,7 +7,7 @@
 //! | ------ | ----------------------- | ----------------------------------------------- |
 //! | 0      |                         | Success                                         |
 //! | 1      | `error`, `bad_request`, `delivery_failed`, `billing_refused`, `outcome_unknown` | Any other failure, the server refused input, a test delivery was not accepted, a billing change (approved, or made on the agent budget) was refused with nothing changed (the server's code in `reason`), or it may or may not have been made (check billing) |
-//! | 2      | `usage`                 | Bad arguments, or a value the CLI can tell is wrong before asking |
+//! | 2      | `usage`                 | Bad arguments, or a value the CLI can tell is wrong                |
 //! | 3      | `not_logged_in`, `unauthorized`, `connection_revoked`, `login_expired`, `login_denied` | No credentials, or they were refused |
 //! | 4      | `not_found`             | No such endpoint, request, team, share, member, invite or approval |
 //! | 5      | `forbidden`             | Not allowed: the plan, a limit, or a permission  |
@@ -369,8 +369,8 @@ pub fn is_broken_pipe(error: &anyhow::Error) -> bool {
 /// because the pipe it wrote to was closed. Rust ignores SIGPIPE, so a
 /// closed pipe comes back as an error, and the print macros panic on it.
 pub fn is_broken_pipe_panic(message: &str) -> bool {
-    // stdout only: a closed stderr while reporting a failure must keep the
-    // failure's exit status (the panic then ends whk as a panic does).
+    // stdout only: a failure whose report hits a closed stderr is not
+    // turned into a success (main writes that report without panicking).
     let printing = message.starts_with("failed printing to stdout");
     // EPIPE's text on Unix; ERROR_BROKEN_PIPE (109) and ERROR_NO_DATA (232)
     // on Windows.

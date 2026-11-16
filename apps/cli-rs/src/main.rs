@@ -1,3 +1,4 @@
+use std::io::Write;
 use std::process::ExitCode;
 
 use anyhow::Result;
@@ -54,15 +55,18 @@ async fn main() -> ExitCode {
         Err(error) if whk::error::is_broken_pipe(&error) => ExitCode::SUCCESS,
         Err(error) => {
             let c = classify(&error);
+            // Written without panicking: a closed stderr must not change
+            // the failure's exit status.
+            let mut err = std::io::stderr().lock();
             if json {
-                eprintln!("{}", error_json(&error, &c));
+                let _ = writeln!(err, "{}", error_json(&error, &c));
             } else {
-                eprintln!("Error: {error:#}");
+                let _ = writeln!(err, "Error: {error:#}");
                 // A hint the message already gives is not repeated.
                 if let Some(hint) = c.hint.as_deref()
                     && !format!("{error:#}").contains(hint)
                 {
-                    eprintln!("{hint}");
+                    let _ = writeln!(err, "{hint}");
                 }
             }
             ExitCode::from(c.exit as u8)

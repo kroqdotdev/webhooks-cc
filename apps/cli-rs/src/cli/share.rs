@@ -57,7 +57,12 @@ pub async fn run(client: &ApiClient, options: ShareOptions) -> Result<()> {
     result
 }
 
-async fn run_inner(client: &ApiClient, options: ShareOptions) -> Result<()> {
+async fn run_inner(client: &ApiClient, mut options: ShareOptions) -> Result<()> {
+    // An empty --name (a script's unset "$NAME") is no name: a random one,
+    // as before, and as the edge reads it.
+    if options.name.as_deref().is_some_and(|n| n.trim().is_empty()) {
+        options.name = None;
+    }
     // Arguments first: a mistake there is said whether or not this
     // machine is logged in.
     let target = share::parse_share_target(&options.target)?;

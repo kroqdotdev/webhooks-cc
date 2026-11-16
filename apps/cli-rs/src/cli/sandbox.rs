@@ -52,9 +52,13 @@ fn print_json(value: &Value) -> Result<()> {
 }
 
 /// One line of JSON, flushed at once, for a caller reading as it goes.
+/// One NDJSON line. A reader that went away (`| head -1` to take the link)
+/// is not an error here: the command goes on, and its own result (a decline,
+/// an expired code) still decides the exit status.
 fn print_json_line(value: &Value) {
-    println!("{value}");
-    let _ = std::io::stdout().flush();
+    let mut out = std::io::stdout().lock();
+    let _ = writeln!(out, "{value}");
+    let _ = out.flush();
 }
 
 /// The saved sandbox, or an error that says how to get one.

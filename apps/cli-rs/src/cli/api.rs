@@ -59,17 +59,22 @@ pub async fn run(
     }
 
     let mut out = std::io::stdout().lock();
-    out.write_all(&resp.body)?;
-    // The body goes out byte for byte; only a terminal gets a line end, so
-    // the prompt does not land after the JSON.
-    if out.is_terminal() && !resp.body.is_empty() && !resp.body.ends_with(b"\n") {
-        out.write_all(b"\n")?;
-    }
-    out.flush()?;
+    let written = (|| -> std::io::Result<()> {
+        out.write_all(&resp.body)?;
+        // The body goes out byte for byte; only a terminal gets a line end,
+        // so the prompt does not land after the JSON.
+        if out.is_terminal() && !resp.body.is_empty() && !resp.body.ends_with(b"\n") {
+            out.write_all(b"\n")?;
+        }
+        out.flush()
+    })();
 
+    // A failed answer keeps its exit status even when stdout's reader has
+    // gone: the write error must not turn it into a quiet success.
     if failed {
         return Err(api_error(resp.status, &text, retry_after(&resp.headers)).into());
     }
+    written?;
     Ok(())
 }
 

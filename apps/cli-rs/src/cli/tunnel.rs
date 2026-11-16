@@ -190,7 +190,8 @@ pub async fn run(
     let mut held_check = tokio::time::interval(Duration::from_secs(1));
     // --live refused before it was ever up (another relay, a limit, no
     // access): the tunnel ends with that as its error.
-    let mut live_refused: Option<String> = None;
+    // The error itself, so its exit status (usage, not_found, plan) survives.
+    let mut live_refused: Option<anyhow::Error> = None;
 
     // One for the whole run, so a signal that arrives while an arm is busy
     // (forwarding a capture) is still seen.
@@ -301,7 +302,7 @@ pub async fn run(
                 }
                 match ended {
                     Ok(Ok(reason)) => live_stopped(json, &reason),
-                    Ok(Err(e)) => live_refused = Some(format!("{e:#}")),
+                    Ok(Err(e)) => live_refused = Some(e),
                     Err(e) => live_stopped(json, &format!("{e}")),
                 }
                 break;
@@ -346,8 +347,8 @@ pub async fn run(
         }
     }
 
-    if let Some(message) = live_refused {
-        anyhow::bail!(message);
+    if let Some(error) = live_refused {
+        return Err(error);
     }
     if interrupted
         && stream_result.is_ok()
