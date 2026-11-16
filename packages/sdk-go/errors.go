@@ -43,6 +43,8 @@ type Error struct {
 	// code is the "error" of a JSON error body when it is a code (lower case,
 	// digits, underscores: "search_busy", "invalid_cursor"), never a sentence.
 	code string
+	// serverMessage is the server's own sentence on a 429, when it sent one.
+	serverMessage string
 }
 
 // RateLimit is what a 429's X-RateLimit headers said.

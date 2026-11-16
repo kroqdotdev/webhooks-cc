@@ -55,6 +55,7 @@ class RateLimitError(WebhooksCCError):
         remaining: int | None = None,
         reset: int | None = None,
         code: str | None = None,
+        api_message: str | None = None,
     ) -> None:
         message = (
             f"Rate limited, retry after {retry_after}s"
@@ -62,6 +63,8 @@ class RateLimitError(WebhooksCCError):
             else "Rate limited"
         )
         super().__init__(429, message)
+        self.api_message = api_message
+        """The server's own sentence for the limit, when it sent one."""
         self.retry_after = retry_after
         self.limit = limit
         self.remaining = remaining

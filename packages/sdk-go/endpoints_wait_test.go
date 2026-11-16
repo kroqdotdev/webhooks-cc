@@ -78,3 +78,19 @@ func TestAWaitTimeoutSaysWhatItWaitedFor(t *testing.T) {
 		t.Errorf("err = %v\nwant  %s", err, want)
 	}
 }
+
+func TestCreateWaitingPassesOnALimitWithoutRetryAfter(t *testing.T) {
+	api := newFakeAPI(t)
+	var calls atomic.Int32
+	api.handle("POST /api/endpoints", func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		writeJSON(w, 429, map[string]string{"error": "Too many active demo endpoints. Please try again later."})
+	})
+	_, err := api.client().Endpoints.CreateWaiting(context.Background(), webhookscc.CreateEndpointOptions{}, time.Minute)
+	if !errors.Is(err, webhookscc.ErrRateLimited) {
+		t.Fatalf("err = %v, want ErrRateLimited", err)
+	}
+	if !strings.Contains(err.Error(), "Too many active demo endpoints") || calls.Load() != 1 {
+		t.Errorf("err = %q after %d calls, want the server's words after 1", err, calls.Load())
+	}
+}

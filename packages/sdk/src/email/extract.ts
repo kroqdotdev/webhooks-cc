@@ -51,7 +51,7 @@ const UNSUBSCRIBE =
  * action links are dropped for these.
  */
 const FOOTER_WORDS =
-  /^(?:privacy(?:-policy)?|terms(?:-of-(?:service|use))?|tos|legal|help|help-center|helpcenter|support|faq|contact(?:-us)?)$/i;
+  /^(?:privacy(?:-(?:policy|notice|statement))?|cookies|cookie-policy|terms(?:-of-(?:service|use))?|tos|legal|help|help-center|helpcenter|support|faq|contact(?:-us)?)$/i;
 const FOOTER_LABEL =
   /^(?:privacy(?: policy)?|terms(?: of (?:service|use))?|legal|help(?: center)?|support|contact(?: us| support)?|faq|get help|help & support)$/i;
 /** Footer phrases anywhere in a label: "Visit our Help Center", "Privacy Notice". */
@@ -273,16 +273,17 @@ function isFooterLink(url: URL, label: string | null): boolean {
   if (label !== null && (FOOTER_LABEL.test(label.trim()) || FOOTER_PHRASE.test(label))) {
     return true;
   }
-  if (FOOTER_WORDS.test(url.hostname.split(".")[0])) {
-    // help.acme.com or support.acme.com itself, not a page on it that asks for something.
-    return true;
-  }
-  // Only the first or last segment: /privacy, /legal/terms, /pages/contact
-  // are footers; /contacts/123/contact/456 or /forms/contact/submissions/77
-  // are an app's own pages.
   const segments = url.pathname.split("/").filter(Boolean);
-  if (segments.length === 0) return false;
-  return FOOTER_WORDS.test(segments[0]) || FOOTER_WORDS.test(segments[segments.length - 1]);
+  // A help centre host (help.acme.com) is documentation through and through;
+  // a support host only as itself, since tickets live on it
+  // (support.acme.com/hc/requests/123).
+  const host = url.hostname.split(".")[0];
+  if (/^(?:help|help-center|helpcenter|faq)$/i.test(host)) return true;
+  if (FOOTER_WORDS.test(host) && segments.length === 0) return true;
+  // Only the last segment: /privacy, /legal/terms, /pages/contact are footers;
+  // /contacts/123/contact/456, /faq/42/edit or /support/tickets/123 are an
+  // app's own pages.
+  return segments.length > 0 && FOOTER_WORDS.test(segments[segments.length - 1]);
 }
 
 /**

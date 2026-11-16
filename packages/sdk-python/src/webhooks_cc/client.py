@@ -284,6 +284,7 @@ def _map_error(
             remaining=remaining if complete else None,
             reset=reset if complete else None,
             code=_error_code(raw),
+            api_message=None if generic else message,
         )
     return WebhooksCCError(status, message)
 

@@ -95,6 +95,9 @@ func (s *EndpointsService) CreateWaiting(ctx context.Context, opts CreateEndpoin
 		// demo endpoints), whose own message says what happened.
 		wait := apiErr.RetryAfter
 		if wait <= 0 {
+			if apiErr.serverMessage != "" {
+				apiErr.Message = apiErr.serverMessage
+			}
 			return nil, err
 		}
 		if time.Since(started)+wait > maxWait {

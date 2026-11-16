@@ -72,6 +72,22 @@ describe("creating test endpoints under the rate limit", () => {
   });
 });
 
+describe("a 429 without Retry-After", () => {
+  it("is passed on at once with the server's own words", async () => {
+    const limited = new RateLimitError(undefined);
+    limited.apiMessage = "Too many active demo endpoints. Please try again later.";
+    const create = vi.fn().mockRejectedValue(limited);
+    const error = await createTestEndpoint({ endpoints: { create } } as never).catch(
+      (caught: unknown) => caught
+    );
+    expect(error).toBeInstanceOf(RateLimitError);
+    expect((error as Error).message).toBe(
+      "webhooks.cc: Too many active demo endpoints. Please try again later."
+    );
+    expect(create).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe("waitTimeoutMessage", () => {
   it("says what was awaited and what arrived", () => {
     expect(

@@ -653,6 +653,9 @@ func errorFromResponse(response *apiResponse, path string) *Error {
 		if okLimit && okRemaining && okReset {
 			apiErr.RateLimit = &RateLimit{Limit: limit, Remaining: remaining, Reset: reset}
 		}
+		if !generic {
+			apiErr.serverMessage = message
+		}
 		if apiErr.RetryAfter > 0 {
 			apiErr.Message = fmt.Sprintf("rate limited, retry after %s", apiErr.RetryAfter)
 		} else {

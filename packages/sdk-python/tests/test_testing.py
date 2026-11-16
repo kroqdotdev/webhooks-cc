@@ -103,3 +103,26 @@ def test_a_wait_timeout_says_what_it_waited_for() -> None:
     assert str(caught.value) == (
         'Timed out after 50ms waiting for 2 requests on endpoint "acme" (1 arrived)'
     )
+
+
+def test_a_429_without_retry_after_is_passed_on_with_the_server_words(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    slept: list[float] = []
+    monkeypatch.setattr(testing.time, "sleep", slept.append)
+    calls = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        return httpx.Response(
+            429, json={"error": "Too many active demo endpoints. Please try again later."}
+        )
+
+    with pytest.raises(errors.RateLimitError) as raised:
+        testing.create_test_endpoint(make_client(handler), "t")
+    assert str(raised.value) == (
+        "webhooks.cc: Too many active demo endpoints. Please try again later."
+    )
+    assert calls == 1
+    assert slept == []

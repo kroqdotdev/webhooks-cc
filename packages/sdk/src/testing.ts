@@ -126,8 +126,11 @@ export async function createTestEndpoint(
       if (!(error instanceof RateLimitError)) throw error;
       // The per-account limit names when to come back. A 429 without
       // Retry-After is another limit (the site-wide cap on demo endpoints),
-      // whose own message says what happened: passed on as it is.
-      if (error.retryAfter === undefined) throw error;
+      // whose own message says what happened: passed on with it.
+      if (error.retryAfter === undefined) {
+        if (error.apiMessage) error.message = `webhooks.cc: ${error.apiMessage}`;
+        throw error;
+      }
       const waitMs = error.retryAfter * 1000;
       if (Date.now() - startedAt + waitMs > budgetMs) {
         throw endpointRateLimitError(error);

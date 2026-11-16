@@ -50,6 +50,11 @@ def create_test_endpoint(
             # A 429 without Retry-After is another limit (the site-wide cap
             # on demo endpoints), whose own message says what happened.
             if error.retry_after is None:
+                if error.api_message:
+                    passed_on = RateLimitError(None, code=error.code, api_message=error.api_message)
+                    passed_on.message = f"webhooks.cc: {error.api_message}"
+                    passed_on.args = (passed_on.message,)
+                    raise passed_on from None
                 raise
             wait_ms = error.retry_after * 1000
             if (time.monotonic() - started) * 1000 + wait_ms > budget_ms:
