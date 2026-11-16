@@ -76,7 +76,7 @@ Quotas limit how many webhook requests your endpoints can capture within a billi
 }
 ```
 
-The body never names the account. A guest endpoint's requests do not reset, so its `429` has no `resetsAt` and asks senders to wait an hour (`Retry-After: 3600`) before trying again.
+The body never names the account. When the period has ended and the reset has not run yet, there is no `resetsAt` and `Retry-After` is two minutes. A guest endpoint's requests do not reset, so its `429` has no `resetsAt` and asks senders to wait an hour (`Retry-After: 3600`) before trying again.
 
 When it runs out, we email you that webhooks are being rejected, with the endpoints that have rejected any so far: on Free at most once a week, on Pro and Business at most once per billing period, after any [extra requests](#extra-requests) are used up too.
 

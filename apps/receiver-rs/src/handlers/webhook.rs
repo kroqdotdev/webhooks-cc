@@ -1125,6 +1125,11 @@ async fn handle_webhook_inner(
 /// keeps a sender from retrying in a tight loop.
 const QUOTA_BACKOFF_SECS: i64 = 3600;
 
+/// How long an account or team is asked to wait when the database gave no
+/// reset time: its period has ended and the reset job has not run yet, which
+/// is minutes away, not an hour.
+const QUOTA_RESET_PENDING_SECS: i64 = 120;
+
 /// The 429 a sender gets when the quota the capture bills is used up. The
 /// `error` code stays `quota_exceeded` for clients that match on it; the
 /// message says whose requests ran out (by kind only, never naming the
@@ -1156,8 +1161,9 @@ fn quota_exceeded_response(
                        not captured. A guest endpoint's requests do not reset; a free \
                        account at webhooks.cc gets endpoints whose requests reset every day."
             .to_string(),
-        "agent" => "This sandbox endpoint has used all of its requests, so this request was \
-                    not captured. Sandbox requests do not reset."
+        "agent" => "This sandbox endpoint cannot capture more requests: its requests are \
+                    used up, or its agent registration has ended. Sandbox requests do not \
+                    reset."
             .to_string(),
         _ => format!(
             "The account that owns this endpoint has used all of its requests for this \
@@ -1165,8 +1171,13 @@ fn quota_exceeded_response(
              see usage, and upgrade or add requests, at webhooks.cc/account/plan."
         ),
     };
-    // Rounded up, so a sender never comes back before the reset.
-    let retry_after_secs = retry_after_ms.map_or(QUOTA_BACKOFF_SECS, |ms| (ms + 999) / 1000);
+    // Rounded up, plus a second: the database rounds the time left to whole
+    // seconds, so the sum keeps a sender from coming back before the reset.
+    let fallback = match kind {
+        "endpoint" | "agent" => QUOTA_BACKOFF_SECS,
+        _ => QUOTA_RESET_PENDING_SECS,
+    };
+    let retry_after_secs = retry_after_ms.map_or(fallback, |ms| (ms + 999) / 1000 + 1);
     let mut body = serde_json::json!({ "error": "quota_exceeded", "message": message });
     if let Some(at) = resets_at {
         body["resetsAt"] = serde_json::Value::String(at);
@@ -1203,7 +1214,7 @@ mod tests {
             .with_timezone(&Utc);
         let response = quota_exceeded_response(Some("user:abc"), Some(90_500), now);
         assert_eq!(response.status(), StatusCode::TOO_MANY_REQUESTS);
-        assert_eq!(retry_after(&response), Some("91"));
+        assert_eq!(retry_after(&response), Some("92"));
         let body = quota_body(response).await;
         assert_eq!(body["error"], "quota_exceeded");
         assert_eq!(body["resetsAt"], "2026-11-16T10:01:30Z");
@@ -1218,10 +1229,18 @@ mod tests {
     async fn a_team_over_quota_points_at_the_team() {
         let now = Utc::now();
         let response = quota_exceeded_response(Some("team:t1"), Some(5_000), now);
-        assert_eq!(retry_after(&response), Some("5"));
+        assert_eq!(retry_after(&response), Some("6"));
         let body = quota_body(response).await;
         assert!(body["message"].as_str().unwrap().contains("team's owner"));
         assert!(body["resetsAt"].is_string());
+    }
+
+    #[tokio::test]
+    async fn an_account_waiting_for_its_reset_job_retries_in_minutes() {
+        for key in ["user:u1", "team:t1"] {
+            let response = quota_exceeded_response(Some(key), None, Utc::now());
+            assert_eq!(retry_after(&response), Some("120"), "{key}");
+        }
     }
 
     #[tokio::test]

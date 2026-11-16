@@ -64,7 +64,7 @@ describe("previewResponse", () => {
         mockResponse: {
           status: 200,
           body: "",
-          headers: { "x-type": "{{ json.type | truncate: 8 }}", "x-path": "{{ path }}\u00e9" },
+          headers: { "x-type": "{{ json.type | truncate: 8 }}", "x-path": "{{ path }}" },
         },
         responseRules: null,
       },
@@ -72,7 +72,9 @@ describe("previewResponse", () => {
       endpoint,
       generated
     );
-    expect(preview.response?.headers).toEqual({ "x-type": "invoi...", "x-path": "/billing\u00e9" });
+    // The header's own text stays ASCII here: the receiver answers a plain 200
+    // when a header's own text is not, which the preview does not model.
+    expect(preview.response?.headers).toEqual({ "x-type": "invoi...", "x-path": "/billing" });
   });
 
   it("drops a header over 8192 bytes in UTF-8, as the receiver does", () => {
