@@ -1,8 +1,10 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { NotFoundError } from "../errors";
+import { waitTimeoutMessage } from "../client";
+import { NotFoundError, RateLimitError } from "../errors";
 import {
   assertRequest,
   captureDuring,
+  createTestEndpoint,
   withEndpoint,
   withEphemeralEndpoint,
   type AssertRequestExpectation,
@@ -38,6 +40,82 @@ const request = {
 afterEach(() => {
   vi.useRealTimers();
   vi.restoreAllMocks();
+});
+
+describe("creating test endpoints under the rate limit", () => {
+  it("waits as Retry-After asks, then creates the endpoint", async () => {
+    vi.useFakeTimers();
+    const create = vi
+      .fn()
+      .mockRejectedValueOnce(new RateLimitError(2, { limit: 30, remaining: 0, reset: 0 }))
+      .mockResolvedValueOnce(endpoint);
+    const created = createTestEndpoint({ endpoints: { create } } as never, { name: "t" });
+    await vi.advanceTimersByTimeAsync(2000);
+    await expect(created).resolves.toEqual(endpoint);
+    expect(create).toHaveBeenCalledTimes(2);
+    expect(create).toHaveBeenLastCalledWith({ name: "t" });
+  });
+
+  it("fails at once with one line when the wait would run past rateLimitWait", async () => {
+    const create = vi
+      .fn()
+      .mockRejectedValue(new RateLimitError(480, { limit: 30, remaining: 0, reset: 0 }));
+    const error = await createTestEndpoint({ endpoints: { create } } as never).catch(
+      (caught: unknown) => caught
+    );
+    expect(error).toBeInstanceOf(RateLimitError);
+    expect((error as RateLimitError).retryAfter).toBe(480);
+    expect((error as Error).message).toBe(
+      "webhooks.cc: too many new endpoints: the limit is 30 in a rolling window; the next one is free in 480s. Share one endpoint between tests (create it in beforeAll), or run fewer tests that create one."
+    );
+    expect(create).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("a 429 without Retry-After", () => {
+  it("is passed on at once with the server's own words", async () => {
+    const limited = new RateLimitError(undefined);
+    limited.apiMessage = "Too many active demo endpoints. Please try again later.";
+    const create = vi.fn().mockRejectedValue(limited);
+    const error = await createTestEndpoint({ endpoints: { create } } as never).catch(
+      (caught: unknown) => caught
+    );
+    expect(error).toBeInstanceOf(RateLimitError);
+    expect((error as Error).message).toBe(
+      "webhooks.cc: Too many active demo endpoints. Please try again later."
+    );
+    expect(create).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("waitTimeoutMessage", () => {
+  it("says what was awaited and what arrived", () => {
+    expect(
+      waitTimeoutMessage(
+        1000,
+        { noun: "email", slug: "acme", criteria: 'subject "Confirm"' },
+        { wanted: 1, matched: 0, seen: 3, filtered: false }
+      )
+    ).toBe(
+      'Timed out after 1000ms waiting for an email with subject "Confirm" on endpoint "acme" (3 did not match)'
+    );
+    expect(
+      waitTimeoutMessage(
+        500,
+        { noun: "request", slug: "acme" },
+        { wanted: 2, matched: 1, seen: 1, filtered: true }
+      )
+    ).toBe(
+      'Timed out after 500ms waiting for 2 requests accepted by match on endpoint "acme" (1 arrived)'
+    );
+    expect(
+      waitTimeoutMessage(
+        500,
+        { noun: "request", slug: "acme" },
+        { wanted: 1, matched: 0, seen: 0, filtered: false }
+      )
+    ).toBe('Timed out after 500ms waiting for a request on endpoint "acme" (none arrived)');
+  });
 });
 
 describe("testing helpers", () => {

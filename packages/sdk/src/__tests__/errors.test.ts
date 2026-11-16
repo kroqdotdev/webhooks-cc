@@ -6,6 +6,7 @@ import {
   TimeoutError,
   RateLimitError,
 } from "../errors";
+import { notFoundHint } from "../client";
 
 describe("WebhooksCCError", () => {
   it("stores statusCode and message", () => {
@@ -105,5 +106,23 @@ describe("RateLimitError", () => {
     expect(err.limit).toBe(10);
     expect(err.remaining).toBe(0);
     expect(err.reset).toBe(1711613000);
+  });
+});
+
+describe("notFoundHint", () => {
+  it("points each resource at its own list", () => {
+    expect(notFoundHint("/approvals/apr_1")).toMatch(/^Only the key or agent that asked/);
+    expect(notFoundHint("/api-keys/k1")).toBe("Use client.apiKeys.list() to see your API keys.");
+    expect(notFoundHint("/endpoints/acme/destinations/d1")).toBe(
+      "Use client.destinations.list(slug) to see the endpoint's destinations."
+    );
+    expect(notFoundHint("/requests/r1/raw")).toMatch(/^Use client\.requests\.list\(slug\)/);
+    expect(notFoundHint("/teams/t1/members")).toBe("Use client.teams.list() to see your teams.");
+    expect(notFoundHint("/domains/d1")).toBe("Use client.domains.list() to see your domains.");
+    expect(notFoundHint("/billing/checkouts/c1")).toMatch(/createCheckout/);
+    expect(notFoundHint("/endpoints/acme")).toBe(
+      "Use client.endpoints.list() to see available endpoints."
+    );
+    expect(notFoundHint(undefined)).toBe("Use client.endpoints.list() to see available endpoints.");
   });
 });

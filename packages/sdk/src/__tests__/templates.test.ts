@@ -1616,13 +1616,14 @@ describe("tier-3 provider metadata", () => {
     expect(meta.defaultTemplate).toBe("AUTHORISATION");
   });
 
-  it("paypal is listed and stores the webhook ID as the verification secret", () => {
+  it("paypal is listed, verifies with the webhook ID, and needs no secret for templates", () => {
     expect(TEMPLATE_PROVIDERS).toContain("paypal");
     expect(VERIFY_PROVIDERS).toContain("paypal");
 
     const meta = TEMPLATE_METADATA.paypal;
     expect(meta.provider).toBe("paypal");
-    expect(meta.secretRequired).toBe(true);
+    // PayPal signs with its own RSA key; templates carry a placeholder.
+    expect(meta.secretRequired).toBe(false);
     expect(meta.signatureHeader).toBe("paypal-transmission-sig");
     expect(meta.signatureAlgorithm).toBe("rsa-sha256");
     expect(meta.defaultTemplate).toBe("PAYMENT.CAPTURE.COMPLETED");
@@ -1730,6 +1731,24 @@ describe("tier-3 templates produce provider-shaped requests", () => {
     );
     expect(getHeader(result.headers, "paypal-auth-algo")).toBe("SHA256withRSA");
     expect(getHeader(result.headers, "paypal-transmission-sig")).toBeDefined();
+    // The placeholder never carries the secret.
+    expect(
+      Buffer.from(getHeader(result.headers, "paypal-transmission-sig")!, "base64url").toString()
+    ).not.toContain("WEBHOOK_ID");
+  });
+
+  it("paypal templates build without a secret", async () => {
+    const result = await buildTemplateSendOptions(ENDPOINT_URL, { provider: "paypal" });
+    expect(getHeader(result.headers!, "paypal-transmission-sig")).toBeDefined();
+  });
+
+  it("refuses an unknown provider with a clear error", async () => {
+    await expect(
+      buildTemplateSendOptions(ENDPOINT_URL, {
+        provider: "acme" as never,
+        secret: "s",
+      })
+    ).rejects.toThrow(/^Unsupported provider "acme"\. Template providers: stripe, github/);
   });
 
   it("plaid emits Plaid-Verification as a placeholder JWT-shaped header", async () => {

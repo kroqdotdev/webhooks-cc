@@ -216,7 +216,7 @@ func TestEveryTemplateBuilds(t *testing.T) {
 }
 
 func TestSecretlessProvidersBuildWithoutASecret(t *testing.T) {
-	for _, provider := range []string{"sendgrid", "discord", "plaid"} {
+	for _, provider := range []string{"sendgrid", "discord", "plaid", "paypal"} {
 		info, _ := Lookup(provider)
 		if info.SecretRequired {
 			t.Errorf("%s requires a secret", provider)

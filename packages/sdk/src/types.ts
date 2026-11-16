@@ -1149,6 +1149,12 @@ export type VerifySignatureOptions =
       method?: string;
       /** Optional certificate fetcher for PayPal self-verification tests/custom transports */
       fetchCertificate?: (url: string) => Promise<string>;
+      /**
+       * The current time in milliseconds (default `Date.now()`), for checks
+       * that limit a signature's age (HubSpot's expire after five minutes).
+       * Pass a fixed clock to verify a stored request or a test vector.
+       */
+      now?: number;
     }
   | {
       /** Discord interaction verification */
@@ -1903,9 +1909,21 @@ export interface DeletedTeam {
 export interface ApiKey {
   id: string;
   name: string;
+  /** The key's first characters, to recognise it by. */
+  keyPrefix: string;
+  /** When it was made (ISO 8601). */
+  createdAt: string;
+  /** When it stops working (ISO 8601), null if never. */
+  expiresAt: string | null;
+  /** When it was last used (ISO 8601), null if never. */
+  lastUsedAt: string | null;
+  /** @deprecated Use `keyPrefix`. */
   key_prefix: string;
+  /** @deprecated Use `createdAt`. */
   created_at: string;
+  /** @deprecated Use `expiresAt`. */
   expires_at: string | null;
+  /** @deprecated Use `lastUsedAt`. */
   last_used_at: string | null;
 }
 

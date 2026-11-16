@@ -31,9 +31,9 @@ const RELEASE = release as { version: string | null; entries: ChangelogEntry[] }
 
 export const APP_VERSION: string = RELEASE.version ?? "dev";
 export const CLI_VERSION = "1.20.2";
-export const SDK_VERSION = "1.31.3";
-export const PYTHON_SDK_VERSION = "0.10.2";
-export const GO_SDK_VERSION = "0.10.2";
+export const SDK_VERSION = "1.32.0";
+export const PYTHON_SDK_VERSION = "0.11.0";
+export const GO_SDK_VERSION = "0.11.0";
 export const MCP_VERSION = "2.6.0";
 
 export const CHANGELOG: ChangelogEntry[] = [
@@ -2155,7 +2155,7 @@ export const CHANGELOG: ChangelogEntry[] = [
       "`whk sandbox connect` exits by the same table: a declined connection is `approval_denied` (9, was 1), an expired code `approval_expired` (8, was 1) and no saved sandbox `not_found` (4, was 1, and the message no longer starts with `no_sandbox:`)",
       "A reader that stops early (`whk usage | head`, `whk completions bash | head`) ends whk quietly with status 0 instead of a panic; a connection that breaks while whk is sending is still a network error",
       "Output that is not going to a terminal has no colour codes, and the tables in `whk list`, `whk teams`, `whk shares ls`, `whk names ls` and `whk sandbox list` line up whatever the length of a name (long endpoint names are cut)",
-      'API errors read as the SDKs read them: the route\'s own `message`, and a bare code such as `not_found` in words, so `whk requests list <slug>` for an unknown endpoint says "Endpoint not found". An HTML page in place of an API answer is said in one line, and `whk api` with a path that has no route says so instead of printing the page',
+      'API errors read as the SDKs read them: the route\'s own `message`, and a bare code such as `not_found` in words, so `whk requests list <slug>` for an unknown endpoint says "Endpoint not found", and a code the request, search and email routes answer with alone (`invalid_since`, `invalid_cursor` and the like) as a sentence that says what to change. An HTML page in place of an API answer is said in one line, and `whk api` with a path that has no route says so instead of printing the page',
       '`whk share --json` ends a failure with an `error` event that carries `code`, `exit`, `status` and `hint`, like every other command\'s `{"error": ...}`',
       "`whk listen` says it is listening only once the stream is open, so an unknown slug fails without the banner",
       "`whk approvals wait` on an unknown id says there is no such approval instead of asking to try again; a `confirmation_required` failure names `--yes` once; `whk send-email --template` with an unknown id lists the ids there are",
@@ -2565,6 +2565,25 @@ export const CHANGELOG: ChangelogEntry[] = [
   },
 
   // ─── SDK ────────────────────────────────────────────────────────────
+  {
+    version: "1.32.0",
+    date: "2026-11-16",
+    title: "Test Helpers Under The Rate Limit, Clearer Errors",
+    track: "sdk",
+    items: [
+      "`createTestEndpoint()` (and `withEndpoint`, `captureDuring`, `captureEmailDuring`) waits out the limit on new endpoints as the API's Retry-After asks, for up to `rateLimitWait` (default 60 s), then throws one `RateLimitError` line saying what to do",
+      'A wait that runs out says what it waited for: `Timed out after 30000ms waiting for an email with subject "Confirm" on endpoint "acme" (2 did not match)`',
+      "`verifySignature` takes `now` (milliseconds) for HubSpot's five-minute window, so a stored request or a test vector verifies against a fixed clock; all the shared verify vectors pass without patching the clock",
+      "An unknown provider throws an error naming the supported ones in `sendTemplate`, `buildRequest`, `templates.get` and `verifySignature`, instead of a TypeError or `{ valid: false }`",
+      "PayPal templates need no secret (`secretRequired: false`): their placeholder signature no longer carries it. Adyen's key must be hex, and the error says so",
+      "`apiKeys.list()` adds `keyPrefix`, `createdAt`, `expiresAt` and `lastUsedAt`; the snake_case fields stay, deprecated",
+      "A short 404 points at the list for its resource (`client.apiKeys.list()`, `client.destinations.list(slug)`, ...), not always at endpoints",
+      "An answer that is only a code reads as a sentence where the SDK knows it (`Invalid search cursor: start the search again without a cursor`); the shared error vectors carry the table",
+      "Link extraction keeps a link whose host or path asks for something (verify, confirm, sign in) on any host, GitHub, Discord and support sites included, a social site's click-tracked button whose label does, and order tracking links; help, footer and social links are still dropped otherwise, and a campaign tag in the query no longer counts",
+      "The Mailgun and SendGrid shapes of an email with text attachments (CSV, JSON, XML, text) are multipart/form-data with a file part per attachment (`attachment-count` and `attachment-1`..., or `attachments`, `attachment-info` and `attachment1`...), as the providers post them; binary files (a PDF, an image) are left out of those two forms",
+      "The README covers every namespace: destinations, alerts, API keys, billing, approvals, shares, names, share links, domains, Google, agents, AI setup and account",
+    ],
+  },
   {
     version: "1.31.3",
     date: "2026-11-16",
@@ -3080,6 +3099,20 @@ export const CHANGELOG: ChangelogEntry[] = [
 
   // ─── Python SDK ─────────────────────────────────────────────────────
   {
+    version: "0.11.0",
+    date: "2026-11-16",
+    title: "Test Fixtures Under The Rate Limit, Clearer Errors",
+    track: "python",
+    items: [
+      "`webhooks_cc_endpoint` and `temporary_endpoint` wait out the limit on new endpoints as the API's Retry-After asks, for up to a minute (`rate_limit_wait`), then fail the test with one line instead of a traceback; `create_test_endpoint()` does the same outside a `with`",
+      "`webhooks_cc_session_endpoint`: one endpoint for the whole run, for suites with more tests than the limit allows",
+      'A wait that runs out says what it waited for: `Timed out after 30000ms waiting for an email with subject "Confirm" on endpoint "acme" (2 did not match)`',
+      "`destinations.preview(destination={...})` takes the API's camelCase names (`bodyTemplate`) as well as the snake_case ones",
+      "PayPal templates need no secret, and their placeholder signature no longer carries it",
+      "A short 404 points at the list for its resource (destinations, requests, shares, names, checkouts), not always at endpoints, and an answer that is only a known code reads as a sentence, as in the TypeScript SDK",
+    ],
+  },
+  {
     version: "0.10.2",
     date: "2026-11-16",
     title: "Error Codes And Hints Match The TypeScript SDK",
@@ -3242,6 +3275,18 @@ export const CHANGELOG: ChangelogEntry[] = [
   },
 
   // ─── Go SDK ─────────────────────────────────────────────────────────
+  {
+    version: "0.11.0",
+    date: "2026-11-16",
+    title: "Test Helpers Under The Rate Limit, Clearer Errors",
+    track: "go",
+    items: [
+      "`Endpoints.CreateWaiting` waits out the limit on new endpoints as the API's Retry-After asks, up to a limit you give; `whktest.Endpoint` and `WithTemporaryEndpoint` use it for up to a minute (`DefaultRateLimitWait`), then fail with one line saying what to do",
+      'A wait that runs out says what it waited for: `timed out after 30s waiting for an email with subject "Confirm" on endpoint "acme" (2 did not match)`',
+      "PayPal templates need no secret, and their placeholder signature no longer carries it",
+      "A short 404 points at the list for its resource (destinations, requests, shares, names, checkouts), not always at endpoints, and an answer that is only a known code reads as a sentence (`Invalid search cursor: ...`), as in the TypeScript SDK",
+    ],
+  },
   {
     version: "0.10.2",
     date: "2026-11-16",

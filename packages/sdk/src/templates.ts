@@ -183,6 +183,18 @@ export const VERIFY_PROVIDERS = [
   "workos",
 ] as const satisfies readonly Exclude<TemplateProvider, "sendgrid" | "plaid">[];
 
+/**
+ * Throws a clear error for a provider the SDK has no templates for, rather
+ * than failing later on a missing table entry.
+ */
+export function assertTemplateProvider(provider: unknown): asserts provider is TemplateProvider {
+  if (!(TEMPLATE_PROVIDERS as readonly unknown[]).includes(provider)) {
+    throw new Error(
+      `Unsupported provider "${String(provider)}". Template providers: ${TEMPLATE_PROVIDERS.join(", ")}`
+    );
+  }
+}
+
 export const TEMPLATE_METADATA = Object.freeze({
   stripe: Object.freeze({
     provider: "stripe",
@@ -424,7 +436,9 @@ export const TEMPLATE_METADATA = Object.freeze({
     provider: "paypal",
     templates: Object.freeze([...PROVIDER_TEMPLATES.paypal]),
     defaultTemplate: DEFAULT_TEMPLATE_BY_PROVIDER.paypal,
-    secretRequired: true,
+    // PayPal signs with its own RSA key: templates carry a placeholder
+    // signature and need no secret.
+    secretRequired: false,
     signatureHeader: "paypal-transmission-sig",
     signatureAlgorithm: "rsa-sha256",
   }),
@@ -2451,9 +2465,13 @@ export async function calculateAdyenHmac(
   item: AdyenNotificationRequestItem,
   hmacKey: string
 ): Promise<string> {
-  return toBase64(
-    await hmacSignRaw("SHA-256", hexToBytes(hmacKey), buildAdyenNotificationDataToSign(item))
-  );
+  let key: Uint8Array;
+  try {
+    key = hexToBytes(hmacKey);
+  } catch {
+    throw new Error("Adyen's HMAC key must be hex, as Adyen's Customer Area shows it");
+  }
+  return toBase64(await hmacSignRaw("SHA-256", key, buildAdyenNotificationDataToSign(item)));
 }
 
 function toBase64Url(input: string): string {
@@ -2469,6 +2487,7 @@ export async function buildTemplateSendOptions(
   endpointUrl: string,
   options: SendTemplateOptions
 ): Promise<SendOptions> {
+  assertTemplateProvider(options.provider);
   // Secretless providers (secretRequired: false) early-return before the
   // signed paths below, so requireTemplateSecret is only hit when a secret
   // genuinely participates in signature generation.
@@ -2720,7 +2739,8 @@ export async function buildTemplateSendOptions(
 
   // After the early returns, provider is one of the signed template providers
   const provider = options.provider as SignedTemplateProvider;
-  const secret = requireTemplateSecret();
+  // PayPal's placeholder signature takes no secret.
+  const secret = provider === "paypal" ? "" : requireTemplateSecret();
   const method = (options.method ?? "POST").toUpperCase();
   const template = ensureTemplate(provider, options.template);
   const event = options.event ?? defaultEvent(provider, template);
@@ -2967,9 +2987,12 @@ export async function buildTemplateSendOptions(
       `https://api.sandbox.paypal.com/v1/notifications/certs/CERT-${randomHex(16)}`;
     headers["paypal-auth-algo"] = "SHA256withRSA";
     // PayPal signs with PayPal's private key, which template generation cannot
-    // possess. The verifier supports real PayPal signatures; this placeholder
-    // keeps generated payloads provider-shaped for detection and capture tests.
-    headers["paypal-transmission-sig"] = toBase64Url(`mock:${secret}:${built.body}`);
+    // possess. The verifier checks real PayPal signatures against PayPal's
+    // certificate; this placeholder keeps generated requests provider-shaped
+    // for detection and capture tests, and never verifies.
+    headers["paypal-transmission-sig"] = toBase64Url(
+      `mock-paypal-signature:${headers["paypal-transmission-id"]}`
+    );
   }
 
   return {

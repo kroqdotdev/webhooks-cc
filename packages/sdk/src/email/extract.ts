@@ -38,8 +38,30 @@ const URL_IN_TEXT = /\bhttps?:\/\/[^\s<>"'`)\]]+/gi;
 const HREF = /\bhref\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>"']+))/i;
 const ACTION =
   /(confirm|verif|activat|reset|magic|log-?in|sign-?in|signin|login|invit|accept|approve|validat|onboard|set-?up|password|token|auth)/i;
-const DROP =
-  /(unsubscribe|opt-?out|preferences|manage[-_ ]?(?:email|notification|subscription)|privacy|terms|legal|help|support|\/track\/|\/open\/|\/pixel)/i;
+/** Never worth a click in a test, whatever else the link says. */
+const UNSUBSCRIBE =
+  /(unsubscribe|opt-?out|preferences|manage[-_ ]?(?:email|notification|subscription))/i;
+/**
+ * Footer and help pages, anywhere in the URL or the label (see keepLink for
+ * the one rescue). `/track/` is
+ * not here: order tracking is a link a test wants, and open-tracking pixels
+ * are caught by their shape (PIXEL_PATH).
+ */
+const DROP = /(privacy|terms|legal|help|support|\/open\/|\/pixel)/i;
+/**
+ * The shape of an open-tracking pixel's path: a last segment like
+ * `pixel.gif`, `open.gif`, `beacon.png` (an image extension required),
+ * a one-letter `.gif` (`o.gif`), SendGrid's `/wf/open`, or a `/pixel/`
+ * segment anywhere.
+ */
+const PIXEL_PATH =
+  /(?:\/(?:pixel|beacon|spacer|blank|open|opened)\.(?:gif|png|jpe?g|php)$|\/wf\/open\/?$|\/[a-z]\.gif$|\/pixel\/)/i;
+/**
+ * A click tracker's wrapper (Mailchimp's, Mandrill's /track/click/): it
+ * leads to the real link, which the mail often carries too (in its text
+ * part), so it ranks after the mail's direct links.
+ */
+const TRACKER_PATH = /\/track\/(?:click|open)(?:\/|$)/i;
 const SOCIAL_HOSTS =
   /(^|\.)(facebook|twitter|x|linkedin|instagram|youtube|tiktok|github|discord|medium)\.com$/i;
 const MAX_LINKS = 20;
@@ -236,23 +258,68 @@ function cleanUrl(url: string): string | null {
   }
 }
 
-function keepLink(url: string, label: string | null): boolean {
-  if (DROP.test(url) || (label !== null && DROP.test(label))) return false;
+/** The first label of a help centre's or support site's host. */
+const HELP_HOST = /^(?:help|helpcenter|help-?cent(?:er|re)|support|faq|kb)$/i;
+/** A help centre's article or docs path (Zendesk's /hc/, /articles/, /docs/). */
+const ARTICLE_PATH = /\/(?:hc|articles?|docs?)(?:\/|$)/i;
+
+/**
+ * Whether a link is worth listing. Main's rules, with three exceptions:
+ * - an unsubscribe or preference link is never kept, and an open-tracking
+ *   pixel never, whatever else its URL says;
+ * - a link the drop list catches (help, support, legal and similar words)
+ *   is kept only on a help or support host whose path asks for something
+ *   (support.acme.com/verify), and never for an article there;
+ * - a link on a social site is kept when its path or its label asks for
+ *   something (github.com/login/device, Discord's click-tracked Verify Email).
+ * Only the path counts, never the host's other labels or the query: a
+ * login.acme.com/terms footer or a utm tag on every link is no action.
+ */
+function keepLink(url: string, label: string | null): Kept {
+  if (UNSUBSCRIBE.test(url) || (label !== null && UNSUBSCRIBE.test(label))) return false;
+  let parsed: URL;
   try {
-    return !SOCIAL_HOSTS.test(new URL(url).hostname);
+    parsed = new URL(url);
   } catch {
     return false;
   }
+  if (PIXEL_PATH.test(parsed.pathname)) return false;
+  const pathAsks = ACTION.test(parsed.pathname);
+  if (DROP.test(url) || (label !== null && DROP.test(label))) {
+    const rescue =
+      HELP_HOST.test(parsed.hostname.split(".")[0]) &&
+      pathAsks &&
+      !ARTICLE_PATH.test(parsed.pathname);
+    return rescue ? "rescued" : false;
+  }
+  if (SOCIAL_HOSTS.test(parsed.hostname)) {
+    return pathAsks || (label !== null && ACTION.test(label)) ? "rescued" : false;
+  }
+  return "kept";
 }
+
+/**
+ * How a link was kept: by main's rules, or rescued (a help or support host's
+ * action path, a social site's action). Rescues read words in paths and
+ * labels that are often someone's content (a repo, an article or video
+ * title), so a rescued link ranks after every other: it only answers when
+ * the mail has nothing else.
+ */
+type Kept = "kept" | "rescued" | false;
 
 function findLinks(text: string | null, html: string | null): ExtractedLink[] {
   const seen = new Set<string>();
   const links: ExtractedLink[] = [];
+  const rescued: ExtractedLink[] = [];
   const add = (rawUrl: string, label: string | null) => {
     const url = cleanUrl(rawUrl);
-    if (!url || seen.has(url) || !keepLink(url, label)) return;
+    if (!url || seen.has(url)) return;
+    const kept = keepLink(url, label);
+    if (!kept) return;
     seen.add(url);
-    links.push({ url, label, action: ACTION.test(url) || (label !== null && ACTION.test(label)) });
+    const link = { url, label, action: ACTION.test(url) || (label !== null && ACTION.test(label)) };
+    const fallback = kept === "rescued" || TRACKER_PATH.test(new URL(url).pathname);
+    (fallback ? rescued : links).push(link);
   };
   if (html) {
     for (const anchor of findAnchors(html)) {
@@ -264,7 +331,11 @@ function findLinks(text: string | null, html: string | null): ExtractedLink[] {
     if (!source) continue;
     for (const match of source.matchAll(URL_IN_TEXT)) add(match[0], null);
   }
-  const ranked = [...links.filter((link) => link.action), ...links.filter((link) => !link.action)];
+  const ranked = [
+    ...links.filter((link) => link.action),
+    ...links.filter((link) => !link.action),
+    ...rescued,
+  ];
   return ranked.slice(0, MAX_LINKS);
 }
 

@@ -151,13 +151,31 @@ describe("apiKeys and approvals", () => {
   });
 
   it("lists and revokes keys", async () => {
-    const list = [{ id: ID, name: "CI", key_prefix: "whcc_abc", created_at: "x" }];
+    const list = [
+      {
+        id: ID,
+        name: "CI",
+        key_prefix: "whcc_abc",
+        created_at: "2026-11-01T00:00:00Z",
+        expires_at: null,
+        last_used_at: "2026-11-02T00:00:00Z",
+      },
+    ];
     const fetchMock = vi
       .fn()
       .mockResolvedValueOnce(answer(list))
       .mockResolvedValueOnce(answer({ success: true }));
     globalThis.fetch = fetchMock;
-    expect(await client().apiKeys.list()).toEqual(list);
+    // camelCase like every other result, with the API's snake_case kept.
+    expect(await client().apiKeys.list()).toEqual([
+      {
+        ...list[0],
+        keyPrefix: "whcc_abc",
+        createdAt: "2026-11-01T00:00:00Z",
+        expiresAt: null,
+        lastUsedAt: "2026-11-02T00:00:00Z",
+      },
+    ]);
     await client().apiKeys.revoke(ID);
     expect(fetchMock.mock.calls[1][0]).toBe(`${BASE_URL}/api/api-keys?id=${ID}`);
     expect(fetchMock.mock.calls[1][1].method).toBe("DELETE");

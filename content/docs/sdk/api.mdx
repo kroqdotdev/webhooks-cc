@@ -264,7 +264,7 @@ sendTemplate(slug: string, options: SendTemplateOptions): Promise<Response>
 | `slug`      | `string`                 | yes      | Endpoint slug                                                                                                                               |
 | `provider`  | `TemplateProvider`       | yes      | Provider template to generate                                                                                                               |
 | `template`  | `string`                 | no       | Provider-specific template preset                                                                                                           |
-| `secret`    | `string`                 | yes      | Shared secret for signature generation; not needed for unsigned templates (`secretRequired: false`, such as `sendgrid`, `discord`, `plaid`) |
+| `secret`    | `string`                 | yes      | Shared secret for signature generation; not needed for unsigned templates (`secretRequired: false`: `sendgrid`, `discord`, `paypal`, `plaid`) |
 | `event`     | `string`                 | no       | Provider event/topic override                                                                                                               |
 | `method`    | `string`                 | no       | HTTP method override (defaults to POST)                                                                                                     |
 | `timestamp` | `number`                 | no       | Unix timestamp override for signature generation                                                                                            |

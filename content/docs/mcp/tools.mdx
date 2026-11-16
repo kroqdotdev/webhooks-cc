@@ -180,7 +180,7 @@ Send a test webhook to a hosted webhooks.cc endpoint. Supports manual payloads a
 | `provider` | `string` | no                         | Provider template (`stripe`, `github`, `shopify`, `twilio`, `slack`, `paddle`, `linear`, `sendgrid`, `clerk`, `discord`, `vercel`, `gitlab`, `typeform`, `standard-webhooks`, `meta`, `lemonsqueezy`, `coinbase-commerce`, `razorpay`, `cal`, `intercom`, `telegram`, `square`, `hubspot`, `mailgun`, `calendly`, `mux`, `sentry`, `bitbucket`, `docusign`, `adyen`, `paypal`, `plaid`, `resend`, `workos`) |
 | `template` | `string` | no                         | Template name (e.g., `checkout.session.completed` or `form_response`)                                                                                                                                                                                                                                                                                                                   |
 | `event`    | `string` | no                         | Event type override                                                                                                                                                                                                                                                                                                                                                                     |
-| `secret`   | `string` | yes (for signed providers) | Template signing input. Required for signed provider templates; `sendgrid`, `discord`, and `plaid` templates are unsigned and need no secret.                                                                                                                                                                                                                                           |
+| `secret`   | `string` | yes (for signed providers) | Template signing input. Required for signed provider templates; `sendgrid`, `discord`, `paypal`, and `plaid` templates are unsigned and need no secret.                                                                                                                                                                                                                                           |
 
 Example provider-template call:
 
@@ -206,7 +206,7 @@ Send a webhook directly to any URL -- localhost, staging, production. Same signi
 | `provider` | `string` | no                         | Provider for signing                                           |
 | `template` | `string` | no                         | Template name                                                  |
 | `event`    | `string` | no                         | Event type override                                            |
-| `secret`   | `string` | yes (for signed providers) | Signing secret (not needed for `sendgrid`, `discord`, `plaid`) |
+| `secret`   | `string` | yes (for signed providers) | Signing secret (not needed for `sendgrid`, `discord`, `paypal`, `plaid`) |
 
 ### preview_webhook
 
@@ -221,7 +221,7 @@ Build a webhook request without sending it. Returns the computed URL, method, he
 | `provider` | `string` | no                         | Provider for signing                                           |
 | `template` | `string` | no                         | Template name                                                  |
 | `event`    | `string` | no                         | Event type override                                            |
-| `secret`   | `string` | yes (for signed providers) | Signing secret (not needed for `sendgrid`, `discord`, `plaid`) |
+| `secret`   | `string` | yes (for signed providers) | Signing secret (not needed for `sendgrid`, `discord`, `paypal`, `plaid`) |
 
 ### test_webhook_flow
 
@@ -1107,7 +1107,7 @@ The sandbox limits, what needs an account, and how to connect one. No parameters
 
 <Callout type="info">
   For provider templates in `send_webhook` and `send_to`, `secret` is required for every signed
-  provider. Only `sendgrid`, `discord`, and `plaid` templates are unsigned and need no secret. The
+  provider. Only `sendgrid`, `discord`, `paypal`, and `plaid` templates are unsigned and need no secret. The
   MCP server does not inject a default secret.
 </Callout>
 

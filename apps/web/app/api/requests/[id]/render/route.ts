@@ -86,9 +86,18 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
         body: JSON.stringify(json),
       });
     }
+    // With the attachments' contents (up to the inline budget of a
+    // delivery, the rest as links), so the shapes carry the files as the
+    // providers post them.
+    // A storage read that fails renders the email with links instead of
+    // failing the whole answer.
+    const withFiles = await withAttachmentPayloads(captured, "inline").catch((error) => {
+      reportError("Could not read an email's attachments for a render", error);
+      return withAttachmentPayloads(captured, "links").catch(() => captured);
+    });
     const payload = inboundEmailPayload(
       format,
-      { ...captured, email: captured.email },
+      { ...withFiles, email: withFiles.email ?? captured.email },
       {
         raw: captured.bodyRaw ? null : (captured.body ?? null),
         mailgunSigningKey: typeof key === "string" && key ? key : null,

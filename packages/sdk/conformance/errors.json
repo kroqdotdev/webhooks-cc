@@ -1,7 +1,7 @@
 {
   "version": 1,
   "generatedBy": "packages/sdk/src/__tests__/conformance.test.ts",
-  "description": "Error messages made from API answers. A call (GET /api/endpoints/acme) answered with status and body (exactly these characters, as UTF-8) fails with an error whose text before any hint the SDK adds is expected.message: the body's string message, else its string error (a blank one, as JavaScript's trim() sees it, gives way), cut to 1000 characters with ... after it; a message that is only a code (lower-case ASCII letters, digits and underscores, starting with a letter) becomes the status in words, alone when the code only names the status, else with the code in brackets; a body that is not a JSON object with either is kept as it came, cut to 200 characters. Characters are code points, so a cut never splits a surrogate pair. expected.hinted says whether the SDK adds its recovery hint, which only a 401 or 404 message under 30 characters (UTF-16 units) gets; the hint's wording is each SDK's own. On any status but 401, 404 and 429 (whose message is each SDK's rate-limit text) the error's message is expected.message itself. expected.code is the API's error code as the TypeScript SDK reads it: error when it is a code, wherever it sits in the object, else a code field that is a code, else null; a sentence is never a code. A port lists in its test the vectors where it differs, and why.",
+  "description": "Error messages made from API answers. A call (GET /api/endpoints/acme) answered with status and body (exactly these characters, as UTF-8) fails with an error whose text before any hint the SDK adds is expected.message: the body's string message, else its string error (a blank one, as JavaScript's trim() sees it, gives way), cut to 1000 characters with ... after it; a message that is only a code (lower-case ASCII letters, digits and underscores, starting with a letter) becomes the code's sentence when the vectors give it one (the \"reads as a sentence\" cases, and invalid_since and invalid_cursor: a port keeps the same table), else the status in words, alone when the code only names the status, else with the code in brackets; a body that is not a JSON object with either is kept as it came, cut to 200 characters. Characters are code points, so a cut never splits a surrogate pair. expected.hinted says whether the SDK adds its recovery hint, which only a 401 or 404 message under 30 characters (UTF-16 units) gets; the hint's wording is each SDK's own. On any status but 401, 404 and 429 (whose message is each SDK's rate-limit text) the error's message is expected.message itself. expected.code is the API's error code as the TypeScript SDK reads it: error when it is a code, wherever it sits in the object, else a code field that is a code, else null; a sentence is never a code. A port lists in its test the vectors where it differs, and why.",
   "vectors": [
     {
       "name": "404 not_found",
@@ -88,7 +88,7 @@
       "status": 400,
       "body": "{\"error\":\"invalid_since\"}",
       "expected": {
-        "message": "Bad request (invalid_since)",
+        "message": "Invalid since: give a time in milliseconds since 1970, at least 0",
         "code": "invalid_since",
         "hinted": false
       }
@@ -98,7 +98,7 @@
       "status": 400,
       "body": "{\"error\":\"invalid_cursor\"}",
       "expected": {
-        "message": "Bad request (invalid_cursor)",
+        "message": "Invalid search cursor: start the search again without a cursor",
         "code": "invalid_cursor",
         "hinted": false
       }
@@ -680,6 +680,86 @@
       "expected": {
         "message": "😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀",
         "code": null,
+        "hinted": false
+      }
+    },
+    {
+      "name": "400 invalid_limit reads as a sentence",
+      "status": 400,
+      "body": "{\"error\":\"invalid_limit\"}",
+      "expected": {
+        "message": "Invalid limit: give a whole number of at least 1",
+        "code": "invalid_limit",
+        "hinted": false
+      }
+    },
+    {
+      "name": "400 invalid_kind reads as a sentence",
+      "status": 400,
+      "body": "{\"error\":\"invalid_kind\"}",
+      "expected": {
+        "message": "Invalid kind: give \"http\" or \"email\"",
+        "code": "invalid_kind",
+        "hinted": false
+      }
+    },
+    {
+      "name": "400 invalid_extracts reads as a sentence",
+      "status": 400,
+      "body": "{\"error\":\"invalid_extracts\"}",
+      "expected": {
+        "message": "Invalid extracts: give true or false",
+        "code": "invalid_extracts",
+        "hinted": false
+      }
+    },
+    {
+      "name": "400 invalid_from reads as a sentence",
+      "status": 400,
+      "body": "{\"error\":\"invalid_from\"}",
+      "expected": {
+        "message": "Invalid from: give a time in milliseconds or a duration back from now, such as \"1h\"",
+        "code": "invalid_from",
+        "hinted": false
+      }
+    },
+    {
+      "name": "400 invalid_to reads as a sentence",
+      "status": 400,
+      "body": "{\"error\":\"invalid_to\"}",
+      "expected": {
+        "message": "Invalid to: give a time in milliseconds or a duration back from now, such as \"1h\"",
+        "code": "invalid_to",
+        "hinted": false
+      }
+    },
+    {
+      "name": "400 invalid_q reads as a sentence",
+      "status": 400,
+      "body": "{\"error\":\"invalid_q\"}",
+      "expected": {
+        "message": "Invalid search term: at most 1000 characters",
+        "code": "invalid_q",
+        "hinted": false
+      }
+    },
+    {
+      "name": "400 invalid_index reads as a sentence",
+      "status": 400,
+      "body": "{\"error\":\"invalid_index\"}",
+      "expected": {
+        "message": "Invalid attachment index: give a whole number from 0",
+        "code": "invalid_index",
+        "hinted": false
+      }
+    },
+    {
+      "name": "400 not_an_email reads as a sentence",
+      "status": 400,
+      "body": "{\"error\":\"not_an_email\"}",
+      "expected": {
+        "message": "The request is not an email",
+        "code": "not_an_email",
         "hinted": false
       }
     }

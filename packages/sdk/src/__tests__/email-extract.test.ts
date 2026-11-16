@@ -95,6 +95,196 @@ describe("extractFromEmail", () => {
     ]);
   });
 
+  it("keeps verify and sign-in links on GitHub and Discord, and drops their footers", () => {
+    const github = extractFromEmail({
+      subject: "[GitHub] Please verify your device",
+      text: [
+        "Enter the code at https://github.com/login/device",
+        "Or verify your address: https://github.com/users/octo-dev/emails/88213/confirm_verification/Zk3q9v?via_launch_code_email=true",
+        "See what changed: https://github.com/acme/widgets/pull/42",
+        "GitHub: https://github.com/github",
+        "Support: https://support.github.com",
+      ].join("\n"),
+      html: null,
+    });
+    expect(github.links.map((link) => [link.url, link.action])).toEqual([
+      ["https://github.com/login/device", true],
+      [
+        "https://github.com/users/octo-dev/emails/88213/confirm_verification/Zk3q9v?via_launch_code_email=true",
+        true,
+      ],
+    ]);
+
+    const discord = extractFromEmail({
+      subject: "Verify Email Address for Discord",
+      text: null,
+      html: `<p><a href="https://click.discord.com/ls/click?upn=u001.Qw81xk">Verify Email</a></p>
+<p><a href="https://discord.com/">Discord</a> <a href="https://twitter.com/discord">Twitter</a>
+<a href="https://support.discord.com/hc">Help Center</a>
+<a href="https://discord.com/settings/notifications">Notification preferences</a></p>`,
+    });
+    expect(discord.links.map((link) => [link.url, link.label, link.action])).toEqual([
+      ["https://click.discord.com/ls/click?upn=u001.Qw81xk", "Verify Email", true],
+    ]);
+  });
+
+  it("keeps action links on help and support hosts, and order tracking links", () => {
+    const found = extractFromEmail({
+      subject: "Your order has shipped",
+      text: [
+        "Track your order: https://shop.acme.test/orders/1043/track/",
+        "Verify your support account: https://support.acme.test/verify?token=Qw81xk",
+        "Click tracking: https://links.acme.test/track/click?id=9f2",
+        "Need help? https://acme.test/help",
+        "Help center: https://help.acme.test/articles/12",
+        "Privacy: https://acme.test/legal/privacy",
+        "https://mail.acme.test/wf/open?upn=8f3a",
+        "https://mail.acme.test/track/open.php?u=8f3a",
+        "https://mail.acme.test/o.gif",
+        "https://www.linkedin.com/in/jane-doe",
+        "https://www.youtube.com/@acme",
+      ].join("\n"),
+      html: null,
+    });
+    // A rescued link (here a support host's verify page) ranks after the
+    // mail's own links: it only answers when nothing else does.
+    // Click-tracker wrappers rank last with them, after the mail's direct links.
+    expect(found.links.map((link) => [link.url, link.action])).toEqual([
+      ["https://shop.acme.test/orders/1043/track/", false],
+      ["https://support.acme.test/verify?token=Qw81xk", true],
+      ["https://links.acme.test/track/click?id=9f2", false],
+    ]);
+  });
+
+  it("does not let a query string rescue footer, social or help links", () => {
+    // Campaign tags put an action word on every link of a mail.
+    const utm = "?utm_campaign=password_reset";
+    const found = extractFromEmail({
+      subject: "Reset your password",
+      text: null,
+      html: [
+        `<a href="https://acme.test/reset/k3y${utm}">Reset password</a>`,
+        `<a href="https://help.acme.test/${utm}">Help</a>`,
+        `<a href="https://twitter.com/acme${utm}">Twitter</a>`,
+        `<a href="https://acme.test/privacy${utm}">Privacy</a>`,
+        `<a href="https://support.acme.test/?ref=auth">Support</a>`,
+        `<a href="https://acme.test/orders/123">View your order</a>`,
+      ].join(""),
+    });
+    expect(found.links.map((link) => link.url)).toEqual([
+      `https://acme.test/reset/k3y${utm}`,
+      "https://acme.test/orders/123",
+    ]);
+  });
+
+  it("keeps invites, short video links and ticket pages, and drops footer phrases", () => {
+    const found = extractFromEmail({
+      subject: null,
+      text: null,
+      html: [
+        `<a href="https://discord.gg/abcdef">Join the server</a>`,
+        `<a href="https://youtu.be/dQw4w9WgXcQ">Watch the demo</a>`,
+        `<a href="https://acme.zendesk.com/agent/tickets/123/open">View ticket</a>`,
+        `<a href="https://ct.sendgrid.net/ls/click?upn=1">Visit our Help Center</a>`,
+        `<a href="https://ct.sendgrid.net/ls/click?upn=2">Privacy Notice</a>`,
+      ].join(""),
+    });
+    expect(found.links.map((link) => link.url)).toEqual([
+      "https://discord.gg/abcdef",
+      "https://youtu.be/dQw4w9WgXcQ",
+      "https://acme.zendesk.com/agent/tickets/123/open",
+    ]);
+  });
+
+  it("keeps app pages that name contact or faq, and drops help and legal pages", () => {
+    const found = extractFromEmail({
+      subject: null,
+      text: [
+        "View contact: https://app.hubspot.com/contacts/123/contact/456",
+        "View submission: https://app.acme.test/forms/contact/submissions/77",
+        "Edit FAQ: https://admin.acme.test/faq/42/edit",
+        "https://acme.test/privacy",
+        "https://acme.test/legal/terms",
+        "https://support.acme.test/hc/en-us/articles/42",
+        "https://acme.test/help/article/42",
+      ].join("\n"),
+      html: null,
+    });
+    expect(found.links.map((link) => link.url)).toEqual([
+      "https://app.hubspot.com/contacts/123/contact/456",
+      "https://app.acme.test/forms/contact/submissions/77",
+      "https://admin.acme.test/faq/42/edit",
+    ]);
+  });
+
+  it("rescues a help or support link only by its host and path, never its label or query", () => {
+    const kept = (url: string, label: string) =>
+      extractFromEmail({ subject: null, text: null, html: `<a href="${url}">${label}</a>` }).links
+        .length > 0;
+    expect(kept("https://support.acme.test/verify?t=1", "Open")).toBe(true);
+    expect(kept("https://help.acme.test/password/reset/k3y", "Open")).toBe(true);
+    // An article about an action, or a campaign tag, is no action.
+    expect(kept("https://acme.test/help/articles/42", "How to reset 2FA")).toBe(false);
+    expect(kept("https://support.google.test/accounts?p=signin_alert", "Learn more")).toBe(false);
+    expect(kept("https://acme.test/privacy?utm_campaign=password_reset", "Privacy")).toBe(false);
+  });
+
+  it("never lets a footer, help article or pixel win over the mail's own link", () => {
+    const kept = (url: string, label = "Link") =>
+      extractFromEmail({ subject: null, text: null, html: `<a href="${url}">${label}</a>` }).links
+        .length > 0;
+    for (const url of [
+      "https://auth0.com/privacy",
+      "https://login.acme.test/terms",
+      "https://acme.test/legal/acceptable-use",
+      "https://acme.test/support/login",
+      "https://help.acme.test/articles/reset-password",
+      "https://support.acme.test/hc/en-us/articles/password-security",
+      "https://acme.test/manage_notifications_settings",
+      "https://auth.acme.test/open/abc.gif",
+    ]) {
+      expect(kept(url), url).toBe(false);
+    }
+    const receipt = extractFromEmail({
+      subject: "Your receipt",
+      text: null,
+      html: `<a href="https://pay.acme.test/receipts/77">View receipt</a> <a href="https://acme.test/legal/acceptable-use">Acceptable use</a>`,
+    });
+    expect(receipt.links.map((link) => link.url)).toEqual(["https://pay.acme.test/receipts/77"]);
+  });
+
+  it("prefers a direct link to a click tracker's wrapper of it", () => {
+    const found = extractFromEmail({
+      subject: "Verify your email",
+      text: "Verify: https://app.acme.test/verify?token=k3y",
+      html: `<a href="https://mandrillapp.test/track/click/30/app.acme.test?p=x">Verify email</a>`,
+    });
+    expect(found.links[0]?.url).toBe("https://app.acme.test/verify?token=k3y");
+  });
+
+  it("keeps links that only look like pixel names", () => {
+    for (const url of [
+      "https://cdn.acme.test/u/9/a.png",
+      "https://app.acme.test/templates/blank",
+      "https://acme.test/products/beacon/",
+    ]) {
+      expect(
+        extractFromEmail({ subject: null, text: url, html: null }).links.map((l) => l.url)
+      ).toEqual([url]);
+    }
+  });
+
+  it("drops unsubscribe links even when they carry a token", () => {
+    const found = extractFromEmail({
+      subject: null,
+      text: null,
+      html: `<a href="https://acme.test/email/unsubscribe?token=Zk3q9v">Unsubscribe</a>
+<a href="https://acme.test/account?auth=Qw81xk">Manage email preferences</a>
+<a href="https://acme.test/confirm?token=Zk3q9v">Confirm</a>`,
+    });
+    expect(found.links.map((link) => link.url)).toEqual(["https://acme.test/confirm?token=Zk3q9v"]);
+  });
+
   it("does not list a link twice when it is in both parts", () => {
     const found = extractFromEmail({
       subject: null,

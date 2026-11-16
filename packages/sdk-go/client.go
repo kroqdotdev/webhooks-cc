@@ -488,18 +488,27 @@ func headerInt64(header http.Header, name string) (int64, bool) {
 }
 
 // notFoundHint is what to try after a short 404, by the route that
-// answered: shares and names have their own lists, everything else is about
-// endpoints.
+// answered: each resource points at its own list, and endpoints are the
+// default.
 func notFoundHint(path string) string {
 	switch {
+	case destinationsPath.MatchString(path):
+		return "Use Destinations.List to see the endpoint's destinations"
+	case strings.HasPrefix(path, "/requests"):
+		return "Use Requests.List to see an endpoint's requests; requests past retention are gone"
 	case strings.HasPrefix(path, "/shares"):
 		return "Use Shares.List to see your shares"
 	case strings.HasPrefix(path, "/tunnel-names"):
 		return "Use Names.List to see the names you can use"
+	case strings.HasPrefix(path, "/billing/checkouts"):
+		return "Use Billing.CreateCheckout to make a new checkout link"
 	default:
 		return "Use Endpoints.List to see your endpoints"
 	}
 }
+
+// destinationsPath is an endpoint's destinations route.
+var destinationsPath = regexp.MustCompile(`^/endpoints/[^/]+/destinations`)
 
 // maxErrorText caps the text taken from a JSON error body, so one answer
 // cannot make a huge message.
@@ -531,10 +540,32 @@ func statusText(status int) string {
 	return fmt.Sprintf("Request failed with HTTP %d", status)
 }
 
-// codeText is the status in words for a body that names only code: alone
-// when the code just names the status (not_found on a 404), else with the
-// code in brackets, since it says what went wrong ("Bad request (invalid_since)").
+// errorCodeSentences are sentences for the codes the request, search and
+// email routes answer with alone, so a message says what to change rather
+// than naming a code. The same table as the TypeScript SDK's
+// ERROR_CODE_SENTENCES; the shared error vectors check it.
+var errorCodeSentences = map[string]string{
+	"invalid_cursor":   "Invalid search cursor: start the search again without a cursor",
+	"invalid_since":    "Invalid since: give a time in milliseconds since 1970, at least 0",
+	"invalid_limit":    "Invalid limit: give a whole number of at least 1",
+	"invalid_kind":     `Invalid kind: give "http" or "email"`,
+	"invalid_extracts": "Invalid extracts: give true or false",
+	"invalid_from":     `Invalid from: give a time in milliseconds or a duration back from now, such as "1h"`,
+	"invalid_to":       `Invalid to: give a time in milliseconds or a duration back from now, such as "1h"`,
+	"invalid_q":        "Invalid search term: at most 1000 characters",
+	"invalid_index":    "Invalid attachment index: give a whole number from 0",
+	"not_an_email":     "The request is not an email",
+}
+
+// codeText is the text for a body that names only code: the code's
+// sentence when it has one (see errorCodeSentences), else the status in
+// words, alone when the code just names the status (not_found on a 404),
+// else with the code in brackets, since it says what went wrong
+// ("Conflict (slug_exists)").
 func codeText(status int, code string) string {
+	if sentence, ok := errorCodeSentences[code]; ok {
+		return sentence
+	}
 	words := statusText(status)
 	if strings.ReplaceAll(code, "_", " ") == strings.ToLower(words) {
 		return words
@@ -621,6 +652,9 @@ func errorFromResponse(response *apiResponse, path string) *Error {
 		reset, okReset := headerInt64(response.header, "X-RateLimit-Reset")
 		if okLimit && okRemaining && okReset {
 			apiErr.RateLimit = &RateLimit{Limit: limit, Remaining: remaining, Reset: reset}
+		}
+		if !generic {
+			apiErr.serverMessage = message
 		}
 		if apiErr.RetryAfter > 0 {
 			apiErr.Message = fmt.Sprintf("rate limited, retry after %s", apiErr.RetryAfter)

@@ -139,12 +139,25 @@ With `retry`, GET, PUT and DELETE calls are repeated after a network error, a ti
 
 ## API overview
 
-- `client.endpoints`: `create`, `list`, `get`, `update`, `delete`, `favorite`, `unfavorite`, `send`, `sendTemplate`
-- `client.requests`: `list`, `listPaginated`, `get`, `waitFor`, `waitForAll`, `subscribe`, `replay`, `search`, `searchPage`, `count`, `countPage`, `clear`, `export`
-- `client.emails`: `address`, `list`, `get`, `latest`, `waitFor`, `waitForAll`, `sendTest`, `toJson`
-- `client.forwarding`: `configure`, `secret`, `rotateSecret`, `test`, `deliveries`, `summary`, `requestDeliveries`, `redeliver`, `redeliverFailed`
+- `client.endpoints`: `create`, `list`, `get`, `update`, `delete`, `favorite`, `unfavorite`, `redeliver`, `previewLayouts`, `previewEmailFields`, `layoutTemplates`, `addLayoutTemplate`, `previewResponse`, `send`, `sendTemplate`
+- `client.requests`: `list`, `listPaginated`, `get`, `raw`, `attachment`, `redeliver`, `waitFor`, `waitForAll`, `subscribe`, `replay`, `search`, `searchPage`, `count`, `countPage`, `clear`, `export`
+- `client.emails`: `address`, `list`, `get`, `latest`, `waitFor`, `waitForAll`, `sendTest`, `toJson`, `toInbound`, `render`
+- `client.forwarding`: `configure`, `secret`, `rotateSecret`, `test`, `deliveries`, `summary`, `requestDeliveries`, `emailDeliveries`, `redeliver`, `redeliverFailed`
+- `client.destinations`: `list`, `get`, `create`, `update`, `delete`, `reorder`, `secret`, `rotateSecret`, `test`, `preview`
+- `client.alerts`: `get`, `update`
 - `client.templates`: `listProviders`, `get`
-- `client.teams`: `list`, `members`, `share`, `unshare`, `invite`, `invites.list`, `invites.accept`, `invites.decline`
+- `client.teams`: `list`, `members`, `create`, `rename`, `delete`, `removeMember`, `leave`, `share`, `unshare`, `invite`, `withdrawInvite`, `invites.list`, `invites.accept`, `invites.decline`
+- `client.apiKeys`: `list`, `create`, `revoke`
+- `client.billing`: `get`, `capacity`, `quoteTeamPlan`, `quoteTeamSeats`, `changePlan`, `keepPlan`, `setSeats`, `setMonthlyBlocks`, `buyBlocks`, `setOverage`, `cancel`, `resubscribe`, `createCheckout`, `getCheckout`, `waitForCheckout`, `cancelCheckout`, `getBudget`, `setBudget`
+- `client.approvals`: `get`, `wait`
+- `client.shares` (`whk share` previews): `list`, `stop`, `requests`, `start`
+- `client.names` (reserved preview names): `list`, `reserve`, `release`, `setPassword`, `clearPassword`
+- `client.shareLinks` (frozen copies of a request at `/s/{token}`): `list`, `forRequest`, `create`, `revoke`
+- `client.domains` (your own inbound email domains): `list`, `add`, `verify`, `route`, `remove`
+- `client.google` (Google Sheets destinations): `connections`, `connect`, `pick`, `tabs`, `createSpreadsheet`, `disconnect`
+- `client.agents` (connected agents): `list`, `disconnect`
+- `client.ai` (AI setup for email fields and layouts): `status`, `setup`
+- `client.account`: `rename`
 - top-level client methods: `usage()`, `sendTo()`, `buildRequest()`, `flow()`, `describe()`
 
 ## Endpoints
@@ -358,6 +371,16 @@ const link = extractLink(email); // the confirm, verify, reset or sign-in link, 
 - `sendTest(slug, { tag? })`: delivers a sample email with a six-digit code and a link. It counts as
   one request and skips SMTP, so no sender checks run on it
 - `toJson(email, { endpoint?, includeExtracts? })`: the `email.received` JSON forwarding would post
+- `toInbound(email, format, { mailgunSigningKey? })`: the email in an inbound mail provider's shape
+  (`"postmark"`, `"sendgrid"`, `"mailgun"` or `"cloudmailin"`), built locally: post `body` with
+  `contentType` to the handler you wrote for that provider. A Mailgun form is signed when you pass
+  your Mailgun signing key. Attachments go only when the email carries their contents
+- `render(requestId, { format, mailgunSigningKey? })`: the same shapes (or `"json"`), rendered by
+  webhooks.cc with the attachments' contents (up to 1 MB): `{ method, headers, body }` to send.
+  Mailgun and SendGrid post an email with attachments as multipart/form-data with a file part each
+  (`attachment-count` and `attachment-1`..., or `attachments`, `attachment-info` and
+  `attachment1`...), as the providers do; a file that is not UTF-8 text goes base64 with
+  `Content-Transfer-Encoding: base64`
 
 The criteria are `tag` (exact and case-sensitive; `null` matches untagged mail), `subject` (a
 substring or a RegExp), `from` and `to` (an address, compared case-insensitively, or a RegExp tested
@@ -500,9 +523,15 @@ secret or public test key flow) for:
 - `resend`
 - `workos`
 
-`sendgrid`, `discord`, `paypal`, and `plaid` templates are intentionally not shared-secret signed:
-SendGrid uses IP allowlisting, Discord/PayPal signatures require provider-owned private keys, and
-Plaid verification uses Plaid JWT/JWK lookup.
+`sendgrid`, `discord`, `paypal`, and `plaid` templates are intentionally not shared-secret signed
+and need no `secret` (`secretRequired: false`): SendGrid uses IP allowlisting, Discord and PayPal
+sign with their own private keys, and Plaid verification uses Plaid JWT/JWK lookup. Their templates
+carry placeholder signatures that verify nowhere. Real PayPal deliveries verify against PayPal's
+certificate (the `paypal-cert-url` header) with your webhook ID as `secret`:
+`verifySignature(request, { provider: "paypal", secret: webhookId })`.
+
+Adyen's `secret` is your HMAC key in hex, as Adyen's Customer Area shows it; any other text is
+refused. An unknown provider throws an error naming the providers there are.
 
 Inspect the static provider metadata:
 
@@ -617,6 +646,11 @@ const hubspot = await verifySignature(request, {
 });
 ```
 
+HubSpot is the one provider whose signatures expire (after five minutes). Pass `now` (milliseconds)
+to check a stored request or a test vector against a fixed clock:
+`verifySignature(request, { provider: "hubspot", secret, url, method: "POST", now: receivedAt })`.
+An unknown provider throws an error naming the supported ones rather than answering invalid.
+
 Mailgun is the exception with no signature header: it embeds `signature.{timestamp,token,signature}` in the request body, so `verifyMailgunSignature` reads the body directly and never throws on malformed input.
 
 SendGrid uses IP allowlisting rather than cryptographic signature verification.
@@ -702,6 +736,7 @@ console.log(parsed, form, eventType, diff.matches);
 
 `@webhooks-cc/sdk/testing` adds a small test-oriented layer:
 
+- `createTestEndpoint()`
 - `withEndpoint()`
 - `withEphemeralEndpoint()`
 - `captureDuring()`
@@ -758,6 +793,15 @@ console.log(extractCode(email));
 It takes the email criteria (`tag`, `subject`, `from`, `to`), `count` (default 1), `timeout`
 (default 60 s), `pollInterval`, `match`, and the options of `endpoints.create()`.
 
+The API allows 30 new endpoints per account in 10 minutes. When a suite uses them up, the helpers
+that create one (`createTestEndpoint`, `withEndpoint`, `captureDuring`, `captureEmailDuring`) wait
+as the API's Retry-After asks, for up to `rateLimitWait` in all (default 60 s), then throw a
+`RateLimitError` with one line saying so. A suite with more tests than that can share one endpoint:
+create it in `beforeAll` with `createTestEndpoint()`, and tell tests apart with `match` or `since`. Vitest and Jest end a test after 5 s and a hook after 10 s by default, so raise the timeout of a test or hook that creates endpoints (for example `beforeAll(fn, 90_000)`), or lower `rateLimitWait`, so the one-line message arrives instead of a generic timeout.
+
+A wait that runs out says what it waited for: `Timed out after 30000ms waiting for an email with
+subject "Confirm" on endpoint "acme" (2 did not match)`.
+
 ## Flow builder
 
 `client.flow()` composes the common test sequence into one chain: create endpoint, optionally set a mock, send a request, wait for capture, verify the signature, replay the request, and clean up.
@@ -805,6 +849,88 @@ const invites = await client.teams.invites.list();
 await client.teams.invites.accept(invites[0].id);
 ```
 
+## Destinations and alerts
+
+An endpoint sends what it captures to up to 10 destinations, each with its own URL, kinds, filter,
+format, template, secret, throttle and delay. `forwarding.configure()` is the older single-target
+form of the same thing.
+
+```typescript
+const destination = await client.destinations.create(endpoint.slug, {
+  url: "https://hooks.example.com/invoices",
+  email: false,
+  filter: { conditions: [{ field: "body_path", path: "type", op: "eq", value: "invoice.paid" }] },
+  format: "template",
+  bodyTemplate: { invoice: "{{ json.data.object.id }}" },
+});
+
+// A dry run: whether the filter lets a request through, and what would be sent.
+const preview = await client.destinations.preview(endpoint.slug, {
+  destinationId: destination.id,
+});
+console.log(preview.filterPasses, preview.delivery);
+```
+
+`client.alerts.get(slug)` returns the endpoint's alert settings and its alerts, open and resolved;
+`update(slug, settings)` changes them: alerts when emails miss required fields, when no email
+arrives for some hours, or when a delivery fails for good, sent by email or to destinations.
+
+## Account, keys, billing and approvals
+
+Some changes need the account owner's say. Asked with an API key or an agent token, they answer
+with an approval instead of acting: show the person `url` (the page shows `code` to compare), then
+`await approval.wait()` for the result, which is collected once. A browser session acts at once.
+
+```typescript
+const approval = await client.apiKeys.create({ name: "CI", expiresInDays: 90 });
+console.log(`Approve at ${approval.url} (code ${approval.code})`);
+const { key } = await approval.wait(); // shown once, never stored
+```
+
+- `apiKeys.list()` returns `{ id, name, keyPrefix, createdAt, expiresAt, lastUsedAt }` (the
+  snake_case fields the API sends are kept too, and deprecated); `revoke(id)` revokes one
+- `approvals.get(id)` reads an approval's state; `approvals.wait(id)` waits for its result and throws
+  `ApprovalDeniedError` when it is refused and `ApprovalExpiredError` when it runs out
+- `billing.get()` is the plan, subscription and add-ons, and every team's; `changePlan`, `setSeats`,
+  `setMonthlyBlocks`, `buyBlocks`, `setOverage`, `cancel` and `resubscribe` change them (with a
+  quote first from `quoteTeamPlan` and `quoteTeamSeats`); `getBudget` and `setBudget` are the agent
+  budget that lets some of those changes through without asking. `createCheckout(item)` returns a
+  link to hand the person, and `waitForCheckout(id)` waits until it is paid
+- `account.rename(name)` renames the account (an approval)
+- `shareLinks.create(requestId, { expiresInDays, hideSensitive })` makes a link to a frozen copy of
+  a request (an approval); `list()`, `forRequest(requestId)` and `revoke(id)` manage them
+- `domains.add(domain)`, `verify(id)`, `route(id, { catchAllEndpointId, routes })` and
+  `remove(id)` manage your own inbound email domains (Business)
+- `google.connect()` (an approval, finished in the browser), `pick(connectionId)`, `tabs()`,
+  `createSpreadsheet()` and `disconnect()` set up Google Sheets destinations
+- `agents.list()` and `disconnect(id)` manage the agents connected to the account
+- `shares.list()`, `stop(id)`, `requests(id)` and `start(options)` manage `whk share` previews;
+  `names.reserve(name)`, `release`, `setPassword` and `clearPassword` manage reserved preview names
+
+### AI setup
+
+`client.ai.setup(slug, { ask, requestIds })` asks the AI to propose email fields or a layout from 1
+to 5 of the endpoint's emails (`requestIds`). Asked with an API key or agent token it is an
+approval, because the emails go to Anthropic: the page lists them for the person to agree to.
+`ask` is one of:
+
+- `{ kind: "field", name, description }`: one named field, such as
+  `{ kind: "field", name: "total", description: "The invoice total, with its currency" }`
+- `{ kind: "layout", description? }`: a whole layout: its fields and a condition to pick it
+- `{ kind: "repair", field }`: fix a saved field (an `EmailField`) that stopped finding its value
+
+```typescript
+const approval = await client.ai.setup(endpoint.slug, {
+  ask: { kind: "field", name: "total", description: "The invoice total" },
+  requestIds: [email.id],
+});
+const proposal = await approval.wait();
+console.log(proposal.fields); // [{ field, values }], each value as found in each email
+```
+
+Nothing is saved: apply the proposed fields with `endpoints.update(slug, { emailFields })`, or a
+layout with `endpoints.update(slug, { layouts })`. `ai.status(slug)` says whether AI setup is offered and how many assists are left in 30 days.
+
 ## Usage and self-description
 
 Check quota state from code:
@@ -830,6 +956,11 @@ API failures throw typed errors:
 - `NotFoundError`
 - `TimeoutError` (also thrown by `requests.subscribe()` when the idle watchdog trips without `reconnect`)
 - `RateLimitError`
+
+A short 404 adds a hint that points at the list for the resource (`client.apiKeys.list()`,
+`client.destinations.list(slug)` and so on). An answer that is only a code reads as a sentence where
+the SDK knows the code (`Invalid search cursor: start the search again without a cursor`); the code
+itself is on `error.code`.
 
 `verifyForwardedEmail()` throws `WebhookVerificationError`, whose `code` is `missing_headers`,
 `timestamp_out_of_range`, `invalid_signature` or `invalid_payload`.

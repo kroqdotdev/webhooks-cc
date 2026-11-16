@@ -137,7 +137,12 @@ import {
 import type { RateLimitMeta } from "./errors";
 import { parseDuration } from "./utils";
 import { parseSSE, type SSEFrame } from "./sse";
-import { buildTemplateSendOptions, TEMPLATE_METADATA, TEMPLATE_PROVIDERS } from "./templates";
+import {
+  assertTemplateProvider,
+  buildTemplateSendOptions,
+  TEMPLATE_METADATA,
+  TEMPLATE_PROVIDERS,
+} from "./templates";
 import { buildCurlExport, buildHarExport } from "./request-export";
 import { WebhookFlowBuilder } from "./flow";
 import {
@@ -263,13 +268,32 @@ const PROXY_HEADERS = new Set([
 export const ApiError = WebhooksCCError;
 
 /**
- * What to try after a short 404, by the route that answered: shares and
- * names have their own lists, everything else is about endpoints.
+ * What to try after a short 404, by the route that answered: each resource
+ * points at its own list, and endpoints are the default.
  */
 export function notFoundHint(path: string | undefined): string {
-  if (path?.startsWith("/shares")) return "Use client.shares.list() to see your shares.";
-  if (path?.startsWith("/tunnel-names"))
+  const route = path ?? "";
+  if (/^\/endpoints\/[^/]+\/destinations/.test(route))
+    return "Use client.destinations.list(slug) to see the endpoint's destinations.";
+  if (route.startsWith("/requests"))
+    return "Use client.requests.list(slug) to see an endpoint's requests; requests past retention are gone.";
+  if (route.startsWith("/shares")) return "Use client.shares.list() to see your shares.";
+  if (route.startsWith("/tunnel-names"))
     return "Use client.names.list() to see the names you can use.";
+  if (route.startsWith("/approvals"))
+    return "Only the key or agent that asked can read an approval, and its result is collected once; ask again for a new one.";
+  if (route.startsWith("/billing/checkouts"))
+    return "Use client.billing.createCheckout() to make a new checkout link.";
+  if (route.startsWith("/api-keys")) return "Use client.apiKeys.list() to see your API keys.";
+  if (route.startsWith("/invites")) return "Use client.teams.invites.list() to see your invites.";
+  if (route.startsWith("/teams")) return "Use client.teams.list() to see your teams.";
+  if (route.startsWith("/request-shares"))
+    return "Use client.shareLinks.list() to see your share links.";
+  if (route.startsWith("/domains")) return "Use client.domains.list() to see your domains.";
+  if (route.startsWith("/integrations/google"))
+    return "Use client.google.connections() to see your Google connections.";
+  if (route.startsWith("/agent/registrations"))
+    return "Use client.agents.list() to see your connected agents.";
   return "Use client.endpoints.list() to see available endpoints.";
 }
 
@@ -317,11 +341,34 @@ function statusText(status: number): string {
 }
 
 /**
- * The status in words for a body that names only `code`: alone when the
- * code just names the status (`not_found` on a 404), else with the code in
- * brackets, since it says what went wrong (`Bad request (invalid_since)`).
+ * Sentences for the codes the request, search and email routes answer with
+ * alone, so a message says what to change rather than naming a code. The
+ * Python and Go SDKs keep the same table; conformance/errors.json checks it.
+ */
+export const ERROR_CODE_SENTENCES: Readonly<Record<string, string>> = Object.freeze({
+  invalid_cursor: "Invalid search cursor: start the search again without a cursor",
+  invalid_since: "Invalid since: give a time in milliseconds since 1970, at least 0",
+  invalid_limit: "Invalid limit: give a whole number of at least 1",
+  invalid_kind: 'Invalid kind: give "http" or "email"',
+  invalid_extracts: "Invalid extracts: give true or false",
+  invalid_from:
+    'Invalid from: give a time in milliseconds or a duration back from now, such as "1h"',
+  invalid_to: 'Invalid to: give a time in milliseconds or a duration back from now, such as "1h"',
+  invalid_q: "Invalid search term: at most 1000 characters",
+  invalid_index: "Invalid attachment index: give a whole number from 0",
+  not_an_email: "The request is not an email",
+});
+
+/**
+ * The text for a body that names only `code`: the code's sentence when it
+ * has one (see ERROR_CODE_SENTENCES), else the status in words, alone when
+ * the code just names the status (`not_found` on a 404), else with the code
+ * in brackets, since it says what went wrong (`Conflict (slug_exists)`).
  */
 function codeText(status: number, code: string): string {
+  if (Object.prototype.hasOwnProperty.call(ERROR_CODE_SENTENCES, code)) {
+    return ERROR_CODE_SENTENCES[code];
+  }
   const words = statusText(status);
   return code.replace(/_/g, " ") === words.toLowerCase() ? words : `${words} (${code})`;
 }
@@ -886,9 +933,61 @@ export function waitListLimit(count: number): number {
   return Math.min(1000, Math.max(100, normalizeWaitCount(count) * 2));
 }
 
+/** What a wait was for, so its timeout can say so. */
+export interface WaitDescription {
+  /** "request" or "email". */
+  noun: "request" | "email";
+  slug: string;
+  /** The criteria in words, such as `subject "Confirm", tag "run1"`. */
+  criteria?: string;
+  /** Whether a match function chose among arrivals (default: whether the wait has one). */
+  filtered?: boolean;
+}
+
+function quoted(value: string | RegExp): string {
+  return typeof value === "string" ? JSON.stringify(value) : String(value);
+}
+
+/** An email wait's criteria in words: `tag "run1", subject "Confirm"`. */
+export function describeEmailCriteria(criteria: EmailCriteria): string | undefined {
+  const parts: string[] = [];
+  if (criteria.tag !== undefined)
+    parts.push(criteria.tag === null ? "no tag" : `tag ${quoted(criteria.tag)}`);
+  if (criteria.subject !== undefined) parts.push(`subject ${quoted(criteria.subject)}`);
+  if (criteria.from !== undefined) parts.push(`from ${quoted(criteria.from)}`);
+  if (criteria.to !== undefined) parts.push(`to ${quoted(criteria.to)}`);
+  return parts.length > 0 ? parts.join(", ") : undefined;
+}
+
+/**
+ * The timeout of a wait, in words: `Timed out after 30000ms waiting for 2
+ * emails with subject "Confirm" on endpoint "acme" (1 arrived, 3 did not match)`.
+ */
+export function waitTimeoutMessage(
+  timeoutMs: number,
+  waiting: WaitDescription,
+  progress: { wanted: number; matched: number; seen: number; filtered: boolean }
+): string {
+  const { noun } = waiting;
+  const what =
+    progress.wanted === 1
+      ? `${noun === "email" ? "an" : "a"} ${noun}`
+      : `${progress.wanted} ${noun}s`;
+  const criteria =
+    (waiting.criteria ? ` with ${waiting.criteria}` : "") +
+    (progress.filtered ? " accepted by match" : "");
+  const notes: string[] = [];
+  if (progress.matched > 0) notes.push(`${progress.matched} arrived`);
+  const unmatched = progress.seen - progress.matched;
+  if (unmatched > 0) notes.push(`${unmatched} did not match`);
+  if (progress.seen === 0) notes.push(`none arrived`);
+  return `Timed out after ${timeoutMs}ms waiting for ${what}${criteria} on endpoint "${waiting.slug}" (${notes.join(", ")})`;
+}
+
 export async function collectMatchingRequests(
   fetchRequests: (since: number) => Promise<Request[]>,
-  options: WaitForAllOptions
+  options: WaitForAllOptions,
+  waiting?: WaitDescription
 ): Promise<Request[]> {
   const timeout = parseDuration(options.timeout ?? 30000);
   const rawPollInterval = parseDuration(options.pollInterval ?? 500);
@@ -958,7 +1057,17 @@ export async function collectMatchingRequests(
     await sleep(Math.max(0, Math.min(safePollInterval, timeout - (Date.now() - start))));
   }
 
-  throw new TimeoutError(timeout);
+  throw waiting
+    ? new TimeoutError(
+        timeout,
+        waitTimeoutMessage(timeout, waiting, {
+          wanted: desiredCount,
+          matched: collected.length,
+          seen: seenRequestIds.size,
+          filtered: waiting.filtered ?? options.match !== undefined,
+        })
+      )
+    : new TimeoutError(timeout);
 }
 
 /**
@@ -2524,6 +2633,7 @@ export class WebhooksCC {
 
     sendTemplate: async (slug: string, options: SendTemplateOptions): Promise<Response> => {
       validatePathSegment(slug, "slug");
+      assertTemplateProvider(options.provider);
       if (
         TEMPLATE_METADATA[options.provider]?.secretRequired !== false &&
         (!options.secret || typeof options.secret !== "string")
@@ -2545,6 +2655,7 @@ export class WebhooksCC {
     },
 
     get: (provider: TemplateProvider): TemplateProviderInfo => {
+      assertTemplateProvider(provider);
       return TEMPLATE_METADATA[provider];
     },
   };
@@ -2692,7 +2803,18 @@ export class WebhooksCC {
   apiKeys = {
     /** The account's API keys, newest first (agent tokens are not listed). */
     list: async (): Promise<ApiKey[]> => {
-      return this.request<ApiKey[]>("GET", "/api-keys");
+      // The API answers in snake_case; the camelCase fields match every
+      // other result, and the snake_case ones stay for older code.
+      const keys = await this.request<
+        Pick<ApiKey, "id" | "name" | "key_prefix" | "created_at" | "expires_at" | "last_used_at">[]
+      >("GET", "/api-keys");
+      return keys.map((key) => ({
+        ...key,
+        keyPrefix: key.key_prefix,
+        createdAt: key.created_at,
+        expiresAt: key.expires_at,
+        lastUsedAt: key.last_used_at,
+      }));
     },
 
     /**
@@ -3735,6 +3857,12 @@ export class WebhooksCC {
           pollInterval,
           since,
           match: (request) => matches(request) && (!match || match(request as EmailRequest)),
+        },
+        {
+          noun: "email",
+          slug: endpointSlug,
+          criteria: describeEmailCriteria(criteria),
+          filtered: match !== undefined,
         }
       );
       return emails as EmailRequest[];
@@ -3801,6 +3929,8 @@ export class WebhooksCC {
      * Parse, a Mailgun route, CloudMailin JSON), built here without a
      * request. Post `body` with `contentType` to the handler you wrote for
      * that provider. A Mailgun form is signed when you pass your signing key.
+     * Attachments go only when the email carries their contents (`content`);
+     * `render()` has webhooks.cc include them (up to 1 MB of files).
      */
     toInbound: (
       email: EmailRequest,
@@ -4177,6 +4307,7 @@ export class WebhooksCC {
     }
 
     if (options.provider) {
+      assertTemplateProvider(options.provider);
       if (
         TEMPLATE_METADATA[options.provider]?.secretRequired !== false &&
         (!options.secret || typeof options.secret !== "string")
@@ -4257,6 +4388,7 @@ export class WebhooksCC {
     }
 
     if (options.provider) {
+      assertTemplateProvider(options.provider);
       if (
         TEMPLATE_METADATA[options.provider]?.secretRequired !== false &&
         (!options.secret || typeof options.secret !== "string")
@@ -4383,7 +4515,8 @@ export class WebhooksCC {
             since,
             limit: listLimit,
           }),
-        options
+        options,
+        { noun: "request", slug: endpointSlug }
       );
     },
 

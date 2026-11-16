@@ -4273,12 +4273,14 @@ describe("errors from the API", () => {
     expect(error.code).toBe("not_found");
     expect(error.message).toBe("Not found");
     expect(error.hint).toContain("list_requests");
-    // A code that says more than the status is kept.
+    // A code the SDK knows reads as its sentence.
     const since = getRegisteredTools(failingClient(400, '{"error":"invalid_since"}'));
     const refused = parseJsonResult(
       await since.list_requests.handler({ endpointSlug: "acme", limit: 5 })
     );
-    expect(refused.message).toBe("Bad request (invalid_since)");
+    expect(refused.message).toBe(
+      "Invalid since: give a time in milliseconds since 1970, at least 0"
+    );
     expect(refused.code).toBe("validation_error");
   });
 

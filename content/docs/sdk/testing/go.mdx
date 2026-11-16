@@ -276,6 +276,8 @@ jobs:
 
 Pull requests from forks get no secrets, so their webhooks.cc tests are skipped while the handler tests still run. To keep the networked tests out of a quick local run, guard them with `if testing.Short() { t.Skip() }` and run `go test -short ./...`.
 
+An account may create 30 endpoints in 10 minutes. When a suite uses them up, `whktest.Endpoint` waits as the API's Retry-After asks, for up to a minute, then fails the test with one line saying so. A suite with more tests than that can make one endpoint in `TestMain` with `client.WithTemporaryEndpoint` and share it, each test waiting only for what it sent (a `Match`, or a `Since` taken before it acts).
+
 ## Tips
 
 - Keep handler tests on `BuildRequest`: they are fast, need no key, and catch signature and parsing bugs.

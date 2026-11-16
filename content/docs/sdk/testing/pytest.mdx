@@ -207,6 +207,8 @@ jobs:
 
 Pull requests from forks get no secrets, so their webhooks.cc tests are skipped while the handler tests still run. With pytest-xdist (`pytest -n auto`), each worker gets its own client and every test its own endpoint, so parallel tests never see each other's requests.
 
+An account may create 30 endpoints in 10 minutes. When a suite uses them up, `webhooks_cc_endpoint` waits as the API's Retry-After asks, for up to a minute, then fails the test with one line saying so. A suite with more tests than that can ask for `webhooks_cc_session_endpoint` instead: one endpoint for the whole run, shared by its tests, so each test waits only for what it sent (a `match`, or a `since` taken before it acts).
+
 ## Tips
 
 - Keep handler tests on `build_template_request`: they are fast, need no key, and catch signature and parsing bugs.

@@ -72,6 +72,58 @@ func (s *EndpointsService) Create(ctx context.Context, opts CreateEndpointOption
 	return &endpoint, nil
 }
 
+// DefaultRateLimitWait is how long, in all, WithTemporaryEndpoint and
+// whktest.Endpoint wait out the limit on new endpoints.
+const DefaultRateLimitWait = time.Minute
+
+// CreateWaiting creates an endpoint like Create, waiting out the API's
+// limit on new endpoints (30 per account in 10 minutes by default) as its
+// Retry-After asks, for up to maxWait in all. When the next wait would run
+// past maxWait it returns at once with an *Error (errors.Is ErrRateLimited)
+// whose message says what to do. Test helpers use it, since a suite that
+// makes an endpoint per test reaches the limit; for large suites, share one
+// endpoint between tests instead.
+func (s *EndpointsService) CreateWaiting(ctx context.Context, opts CreateEndpointOptions, maxWait time.Duration) (*Endpoint, error) {
+	started := time.Now()
+	for {
+		endpoint, err := s.Create(ctx, opts)
+		var apiErr *Error
+		if err == nil || !errors.As(err, &apiErr) || apiErr.StatusCode != http.StatusTooManyRequests {
+			return endpoint, err
+		}
+		// A 429 without Retry-After is another limit (the site-wide cap on
+		// demo endpoints), whose own message says what happened.
+		wait := apiErr.RetryAfter
+		if wait <= 0 {
+			if apiErr.serverMessage != "" {
+				apiErr.Message = apiErr.serverMessage
+			}
+			return nil, err
+		}
+		if time.Since(started)+wait > maxWait {
+			return nil, endpointRateLimitError(apiErr)
+		}
+		if err := sleep(ctx, wait); err != nil {
+			return nil, err
+		}
+	}
+}
+
+// endpointRateLimitError is the 429 from creating an endpoint, saying what
+// to do about it.
+func endpointRateLimitError(apiErr *Error) *Error {
+	limited := *apiErr
+	limited.Message = "too many new endpoints"
+	if apiErr.RateLimit != nil {
+		limited.Message += fmt.Sprintf(": the limit is %d in a rolling window", apiErr.RateLimit.Limit)
+	}
+	if apiErr.RetryAfter > 0 {
+		limited.Message += fmt.Sprintf("; the next one is free in %s", apiErr.RetryAfter)
+	}
+	limited.Message += ". Share one endpoint between tests (create it in TestMain), or run fewer tests that create one"
+	return &limited
+}
+
 // List returns your endpoints, then those shared with you through teams.
 func (s *EndpointsService) List(ctx context.Context) ([]Endpoint, error) {
 	var response struct {

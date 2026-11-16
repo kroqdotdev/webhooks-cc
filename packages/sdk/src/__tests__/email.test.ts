@@ -268,6 +268,16 @@ describe("client.emails", () => {
     await expect(
       createClient().emails.waitFor("acme", { timeout: 60, pollInterval: 10 })
     ).rejects.toBeInstanceOf(TimeoutError);
+    await expect(
+      createClient().emails.waitFor("acme", {
+        timeout: 60,
+        pollInterval: 10,
+        subject: "Confirm",
+        tag: "run1",
+      })
+    ).rejects.toThrow(
+      'Timed out after 60ms waiting for an email with tag "run1", subject "Confirm" on endpoint "acme" (1 did not match)'
+    );
   });
 
   it("gets one email and refuses HTTP requests", async () => {

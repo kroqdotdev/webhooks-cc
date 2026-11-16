@@ -359,4 +359,100 @@ describe("inbound shapes", () => {
     const unsigned = await renderInboundEmail("mailgun", source(), { token: "t".repeat(50) });
     expect(new URLSearchParams(unsigned.body).get("signature")).toBe("");
   });
+
+  describe("attachments", () => {
+    const csv = "sku,qty\r\nA-1,2\r\n";
+    const pdf = new Uint8Array([0x25, 0x50, 0x44, 0x46, 0xff, 0xfe, 0x00, 0x01]);
+    const withFiles = () =>
+      source({
+        attachments: [
+          {
+            filename: "order.csv",
+            contentType: "text/csv",
+            size: csv.length,
+            inline: false,
+            contentId: null,
+            content: Buffer.from(csv).toString("base64"),
+          },
+          {
+            filename: "invoice.pdf",
+            contentType: "application/pdf",
+            size: pdf.length,
+            inline: false,
+            contentId: null,
+            content: Buffer.from(pdf).toString("base64"),
+          },
+          {
+            filename: "big.zip",
+            contentType: "application/zip",
+            size: 9_000_000,
+            inline: false,
+            contentId: null,
+            url: "https://files.example/big.zip",
+          },
+        ] as EmailCapture["attachments"],
+      });
+
+    it("posts a Mailgun form with attachments as multipart, with attachment-count and the files", async () => {
+      const out = await renderInboundEmail("mailgun", withFiles(), {
+        raw: RAW,
+        mailgunSigningKey: "key-acme-test",
+        now: 1_793_000_000_000,
+        token: "t".repeat(50),
+        boundary: "mgb",
+      });
+      expect(out.contentType).toBe("multipart/form-data; boundary=mgb");
+      const form = await new Response(out.body, {
+        headers: { "content-type": out.contentType },
+      }).formData();
+      expect(form.get("recipient")).toBe("acme-orders+inv@mailhooks.cc");
+      // Only text files are carried (the body is text; see attachmentFiles).
+      expect(form.get("attachment-count")).toBe("1");
+      const file = form.get("attachment-1") as File;
+      expect(file.name).toBe("order.csv");
+      expect(file.type).toBe("text/csv");
+      expect(await file.text()).toBe(csv);
+      expect(form.get("attachment-2")).toBeNull();
+      // The signature covers the timestamp and token only, as Mailgun's does.
+      expect(form.get("signature")).toBe(
+        createHmac("sha256", "key-acme-test")
+          .update(`1793000000${"t".repeat(50)}`)
+          .digest("hex")
+      );
+      // A binary file is left out rather than sent as base64 text.
+      expect(out.body).not.toContain("invoice.pdf");
+      expect(out.body).not.toContain("Content-Transfer-Encoding");
+    });
+
+    it("keeps a Mailgun form without attachment contents url-encoded", async () => {
+      const out = await renderInboundEmail("mailgun", source(), { token: "t".repeat(50) });
+      expect(out.contentType).toBe("application/x-www-form-urlencoded");
+      expect(new URLSearchParams(out.body).get("attachment-count")).toBeNull();
+    });
+
+    it("gives SendGrid the count, attachment-info and the files", async () => {
+      const out = await renderInboundEmail("sendgrid", withFiles(), { raw: RAW, boundary: "sgb" });
+      const form = await new Response(out.body, {
+        headers: { "content-type": out.contentType },
+      }).formData();
+      expect(form.get("attachments")).toBe("1");
+      expect(JSON.parse(form.get("attachment-info") as string)).toEqual({
+        attachment1: { filename: "order.csv", name: "order.csv", type: "text/csv" },
+      });
+      expect(await (form.get("attachment1") as File).text()).toBe(csv);
+    });
+
+    it("puts contents in Postmark's JSON and links in CloudMailin's", async () => {
+      const postmark = JSON.parse((await renderInboundEmail("postmark", withFiles())).body);
+      expect(postmark.Attachments.map((a: { Name: string }) => a.Name)).toEqual([
+        "order.csv",
+        "invoice.pdf",
+      ]);
+      const cloudmailin = JSON.parse((await renderInboundEmail("cloudmailin", withFiles())).body);
+      expect(cloudmailin.attachments[2]).toMatchObject({
+        file_name: "big.zip",
+        url: "https://files.example/big.zip",
+      });
+    });
+  });
 });

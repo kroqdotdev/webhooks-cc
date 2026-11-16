@@ -339,8 +339,13 @@ TEMPLATE_METADATA: Mapping[str, TemplateProviderInfo] = MappingProxyType(
         ),
         # Adyen standard notifications carry additionalData.hmacSignature in the body.
         "adyen": _info("adyen", signature_algorithm="hmac-sha256"),
+        # PayPal signs with its own RSA key: templates carry a placeholder
+        # signature and need no secret.
         "paypal": _info(
-            "paypal", signature_header="paypal-transmission-sig", signature_algorithm="rsa-sha256"
+            "paypal",
+            secret_required=False,
+            signature_header="paypal-transmission-sig",
+            signature_algorithm="rsa-sha256",
         ),
         "plaid": _info(
             "plaid",
@@ -2315,7 +2320,8 @@ def build_template_request(
             body=payload,
         )
 
-    signing_secret = require_secret()
+    # PayPal's placeholder signature takes no secret.
+    signing_secret = "" if provider == "paypal" else require_secret()
     resolved_template = _ensure_template(provider, template)
     resolved_event = event if event is not None else _default_event(provider, resolved_template)
     built = _build_payload(provider, resolved_template, resolved_event, _now_ms(), body)
@@ -2477,7 +2483,10 @@ def build_template_request(
         )
         out["paypal-auth-algo"] = "SHA256withRSA"
         # PayPal signs with its own private key, which a test cannot hold. This
-        # placeholder keeps generated requests provider-shaped for detection.
-        out["paypal-transmission-sig"] = to_base64url(utf8(f"mock:{signing_secret}:{built.body}"))
+        # placeholder keeps generated requests provider-shaped for detection and
+        # never verifies; real PayPal signatures verify against PayPal's certificate.
+        out["paypal-transmission-sig"] = to_base64url(
+            utf8(f"mock-paypal-signature:{out['paypal-transmission-id']}")
+        )
 
     return BuiltRequest(method=resolved_method, url=url, headers={**out, **extra}, body=built.body)
