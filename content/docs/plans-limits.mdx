@@ -76,7 +76,7 @@ Quotas limit how many webhook requests your endpoints can capture within a billi
 }
 ```
 
-The body never names the account. When the period has ended and the reset has not run yet, there is no `resetsAt` and `Retry-After` is two minutes. A guest endpoint's requests do not reset, so its `429` has no `resetsAt` and asks senders to wait an hour (`Retry-After: 3600`) before trying again.
+The body never names the account. When the period has ended and the reset has not run yet, there is no `resetsAt` and `Retry-After` is two minutes. A guest endpoint's (or an agent sandbox's) requests do not reset, so its `429` has no `resetsAt` and asks senders to wait an hour (`Retry-After: 3600`) before trying again.
 
 When it runs out, we email you that webhooks are being rejected, with the endpoints that have rejected any so far: on Free at most once a week, on Pro and Business at most once per billing period, after any [extra requests](#extra-requests) are used up too.
 
@@ -143,13 +143,13 @@ Deleted requests cannot be recovered. Export important requests as JSON or CSV f
 
 Email bodies never count.
 
-| Plan          | Parsed pages                    | Layouts per endpoint               | More pages                |
-| ------------- | ------------------------------- | ---------------------------------- | ------------------------- |
-| Free          | 20 a month                      | 2                                  | No                        |
-| Pro           | 100 a month                     | 2                                  | No                        |
-| Teams         | 100 a month, pooled             | 2 on endpoints shared to the team  | No                        |
-| Business      | 2,000 a month                   | 50                                 | Page blocks, page overage |
-| Team Business | 2,000 a month per seat, pooled  | 50 on endpoints shared to the team | Page blocks, page overage |
+| Plan          | Parsed pages                   | Layouts per endpoint               | More pages                |
+| ------------- | ------------------------------ | ---------------------------------- | ------------------------- |
+| Free          | 20 a month                     | 2                                  | No                        |
+| Pro           | 100 a month                    | 2                                  | No                        |
+| Teams         | 100 a month, pooled            | 2 on endpoints shared to the team  | No                        |
+| Business      | 2,000 a month                  | 50                                 | Page blocks, page overage |
+| Team Business | 2,000 a month per seat, pooled | 50 on endpoints shared to the team | Page blocks, page overage |
 
 Without pages left, emails are still captured and delivered with their attachments as files, unparsed. Free counts a month from the first parse; Pro and Business count with their request period, so on annual Business the pages reset every month too.
 
