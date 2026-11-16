@@ -15,7 +15,11 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ i
   const auth = await authenticateRequestRequireUser(request);
   if (!auth.success) return auth.response;
   const { id } = await params;
-  if (!UUID.test(id)) return Response.json({ error: "not_found" }, { status: 404 });
+  if (!UUID.test(id))
+    return Response.json(
+      { error: "not_found", message: "Connected agent not found" },
+      { status: 404 }
+    );
 
   try {
     const revoked = await revokeConnectedAgent(auth.userId, id);
@@ -27,7 +31,10 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ i
     });
     return revoked
       ? new Response(null, { status: 204 })
-      : Response.json({ error: "not_found" }, { status: 404 });
+      : Response.json(
+          { error: "not_found", message: "Connected agent not found" },
+          { status: 404 }
+        );
   } catch (error) {
     reportError("DELETE /api/agent/registrations/[id] failed", error);
     return Response.json({ error: "Failed to disconnect the agent" }, { status: 500 });

@@ -504,6 +504,43 @@ func notFoundHint(path string) string {
 // cannot make a huge message.
 const maxErrorText = 1000
 
+// bareCode is an error code rather than text: lower case, digits and underscores.
+var bareCode = regexp.MustCompile(`^[a-z][a-z0-9_]*$`)
+
+// statusText is a short plain sentence for an error status, for a body
+// that names only a code.
+func statusText(status int) string {
+	switch status {
+	case http.StatusBadRequest:
+		return "Bad request"
+	case http.StatusUnauthorized:
+		return "Unauthorized"
+	case http.StatusForbidden:
+		return "Forbidden"
+	case http.StatusNotFound:
+		return "Not found"
+	case http.StatusConflict:
+		return "Conflict"
+	case http.StatusTooManyRequests:
+		return "Too many requests"
+	}
+	if status >= 500 {
+		return "Server error"
+	}
+	return fmt.Sprintf("Request failed with HTTP %d", status)
+}
+
+// codeText is the status in words for a body that names only code: alone
+// when the code just names the status (not_found on a 404), else with the
+// code in brackets, since it says what went wrong ("Bad request (invalid_since)").
+func codeText(status int, code string) string {
+	words := statusText(status)
+	if strings.ReplaceAll(code, "_", " ") == strings.ToLower(words) {
+		return words
+	}
+	return words + " (" + code + ")"
+}
+
 // errorText is the plain text of a JSON error body: its string "message",
 // else its string "error"; false when the body is not a JSON object naming
 // either.
@@ -546,6 +583,9 @@ func errorFromResponse(response *apiResponse, path string) *Error {
 		if utf8.RuneCountInString(message) > 200 {
 			message = string([]rune(message)[:200]) + "..."
 		}
+	} else if bareCode.MatchString(message) {
+		// A bare code ({"error": "not_found"}) is no sentence: say the status (see codeText).
+		message = codeText(response.status, message)
 	}
 	generic := len(message) < 30
 	apiErr := &Error{StatusCode: response.status, Message: message}

@@ -1997,6 +1997,6 @@ import {
 
 `WebhooksCCError.code` is the API's own error code when its answer had one, such as `"invalid_cursor"` or `"search_busy"` from `requests.searchPage()`.
 
-`message` is what the API said as plain text (the `message` of a JSON error body, else its `error`), followed by the SDK's recovery hint when the text is short. `apiMessage` is the same text without the hint, and `path` is the API route that answered, after `/api` (such as `/endpoints/acme`); both are set on errors made from an API answer.
+`message` is what the API said as plain text (the `message` of a JSON error body, else its `error`; when that is only a code (`not_found`), the status in words, with the code in brackets when it says more (`Bad request (invalid_since)`), and `code` still holds it when it came from `error`), followed by the SDK's recovery hint when the text is short. `apiMessage` is the same text without the hint, and `path` is the API route that answered, after `/api` (such as `/endpoints/acme`); both are set on errors made from an API answer.
 
 `WebhookVerificationError.code` is `"missing_headers"`, `"timestamp_out_of_range"`, `"invalid_signature"` or `"invalid_payload"`. Answer the first three with 401 and `invalid_payload` with 400.

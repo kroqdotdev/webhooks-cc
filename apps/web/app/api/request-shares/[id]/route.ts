@@ -10,7 +10,8 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ i
   if (!auth.success) return auth.response;
 
   const { id } = await params;
-  if (!isUuid(id)) return Response.json({ error: "not_found" }, { status: 404 });
+  if (!isUuid(id))
+    return Response.json({ error: "not_found", message: "Share link not found" }, { status: 404 });
 
   try {
     const deleted = await deleteRequestShare(auth.userId, id);
@@ -19,7 +20,11 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ i
       status: deleted ? 200 : 404,
       targetId: id,
     });
-    if (!deleted) return Response.json({ error: "not_found" }, { status: 404 });
+    if (!deleted)
+      return Response.json(
+        { error: "not_found", message: "Share link not found" },
+        { status: 404 }
+      );
     return new Response(null, { status: 204 });
   } catch (error) {
     reportError("Failed to revoke request share", error);

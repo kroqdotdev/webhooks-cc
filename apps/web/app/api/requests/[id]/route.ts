@@ -19,7 +19,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
   try {
     const data = await getRequestByIdForUser(auth.userId, id);
     if (!data) {
-      return Response.json({ error: "not_found" }, { status: 404 });
+      return Response.json({ error: "not_found", message: "Request not found" }, { status: 404 });
     }
 
     return Response.json(extracts ? (await withEmailExtracts([data]))[0] : data);

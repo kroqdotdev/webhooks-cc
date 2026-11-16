@@ -205,11 +205,11 @@ describe("billing checkout links", () => {
         retry: { maxAttempts: 1 },
       });
       // A failure that keeps coming back ends the wait with that failure.
-      const busy = vi.fn().mockResolvedValue(answer({ error: "busy" }, 503));
+      const busy = vi.fn().mockResolvedValue(answer({ error: "Server busy" }, 503));
       globalThis.fetch = busy;
       const failed = once.billing.waitForCheckout(ID, { pollInterval: 1_000 }).catch((e) => e);
       await vi.advanceTimersByTimeAsync(20_000);
-      expect(((await failed) as Error).message).toContain("busy");
+      expect(((await failed) as Error).message).toContain("Server busy");
       expect(busy).toHaveBeenCalledTimes(10);
 
       // An answer in between starts the count again.

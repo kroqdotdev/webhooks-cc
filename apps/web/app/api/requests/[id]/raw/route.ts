@@ -20,7 +20,8 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
   const { id } = await params;
   try {
     const record = await getRequestByIdForUser(auth.userId, id);
-    if (!record) return Response.json({ error: "not_found" }, { status: 404 });
+    if (!record)
+      return Response.json({ error: "not_found", message: "Request not found" }, { status: 404 });
     if (record.kind !== "email" || !record.email) {
       return Response.json({ error: "not_an_email" }, { status: 400 });
     }

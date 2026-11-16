@@ -52,11 +52,11 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   if (key !== undefined && key !== null && (typeof key !== "string" || key.length > 200)) {
     return reply({ error: "mailgunSigningKey is text of at most 200 characters." }, 400);
   }
-  if (!isUuid(id)) return reply({ error: "not_found" }, 404);
+  if (!isUuid(id)) return reply({ error: "not_found", message: "Request not found" }, 404);
 
   try {
     const captured = await getRequestByIdForUser(auth.userId, id);
-    if (!captured) return reply({ error: "not_found" }, 404);
+    if (!captured) return reply({ error: "not_found", message: "Request not found" }, 404);
     if (captured.kind !== "email" || !captured.email) {
       return reply({ error: "Only a captured email can be rendered in a provider's shape." }, 400);
     }

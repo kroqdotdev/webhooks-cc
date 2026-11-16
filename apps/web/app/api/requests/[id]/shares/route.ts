@@ -12,12 +12,12 @@ import { isUuid } from "@/lib/uuid";
 // approval, lib/approvals). Listing them takes any key of the account.
 
 const SHARE_ERRORS = {
-  not_found: { status: 404, message: "not_found" },
-  email: { status: 400, message: "Emails cannot be shared" },
-  not_owner: { status: 403, message: "Only the endpoint's owner can share its requests" },
+  not_found: { status: 404, body: { error: "not_found", message: "Request not found" } },
+  email: { status: 400, body: { error: "Emails cannot be shared" } },
+  not_owner: { status: 403, body: { error: "Only the endpoint's owner can share its requests" } },
   limit: {
     status: 409,
-    message: `You can have ${MAX_ACTIVE_SHARES} live share links. Revoke some first.`,
+    body: { error: `You can have ${MAX_ACTIVE_SHARES} live share links. Revoke some first.` },
   },
 } as const;
 
@@ -62,7 +62,9 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   }
   const hideSensitive = body.hideSensitive !== false;
 
-  if (!isUuid(id)) return Response.json({ error: "not_found" }, { status: 404 });
+  if (!isUuid(id)) {
+    return Response.json({ error: "not_found", message: "Request not found" }, { status: 404 });
+  }
 
   // An API key or agent token: the account's owner approves the link first.
   if (auth.keyId) {
@@ -82,14 +84,14 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       hideSensitive,
     });
     if (!result.ok) {
-      const { status, message } = SHARE_ERRORS[result.error];
+      const { status, body: answer } = SHARE_ERRORS[result.error];
       await auditUserAction(request, auth.userId, {
         action: "request.share_created",
         status,
         targetId: id,
         reason: result.error,
       });
-      return Response.json({ error: message }, { status });
+      return Response.json(answer, { status });
     }
 
     await auditUserAction(request, auth.userId, {

@@ -22,10 +22,14 @@ export async function GET(
 
   try {
     const record = await getRequestByIdForUser(auth.userId, id);
-    if (!record) return Response.json({ error: "not_found" }, { status: 404 });
+    if (!record)
+      return Response.json({ error: "not_found", message: "Request not found" }, { status: 404 });
     const attachment = record.email?.attachments[index];
     if (record.kind !== "email" || !attachment) {
-      return Response.json({ error: "not_found" }, { status: 404 });
+      return Response.json(
+        { error: "not_found", message: "Attachment not found" },
+        { status: 404 }
+      );
     }
     if (!record.email?.stored || !isObjectStorageConfigured()) {
       return Response.json(
@@ -34,7 +38,11 @@ export async function GET(
       );
     }
     const object = await getObject(attachmentKey(record.id, index));
-    if (!object?.body) return Response.json({ error: "not_found" }, { status: 404 });
+    if (!object?.body)
+      return Response.json(
+        { error: "not_found", message: "Attachment not found" },
+        { status: 404 }
+      );
     const length = object.headers.get("content-length");
     return new Response(object.body, {
       headers: {

@@ -282,13 +282,48 @@ function mapStatusToError(
   /** The whole body, when `message` was cut short, to find its code in. */
   body?: string
 ): WebhooksCCError {
-  const plain = errorTextOf(body ?? message) ?? message;
+  const text = errorTextOf(body ?? message);
+  // A bare code (`{ "error": "not_found" }`) is no sentence: say the status (see codeText).
+  const plain = text === undefined ? message : BARE_CODE.test(text) ? codeText(status, text) : text;
   const error = statusError(status, plain, response, path);
   error.apiMessage = plain;
   if (path !== undefined) error.path = path;
   const code = errorCodeOf(body ?? message);
   if (code !== undefined) error.code = code;
   return error;
+}
+
+/** An error code rather than text: lower case, digits and underscores. */
+const BARE_CODE = /^[a-z][a-z0-9_]*$/;
+
+/** A short plain sentence for an error status, for a body that names only a code. */
+function statusText(status: number): string {
+  switch (status) {
+    case 400:
+      return "Bad request";
+    case 401:
+      return "Unauthorized";
+    case 403:
+      return "Forbidden";
+    case 404:
+      return "Not found";
+    case 409:
+      return "Conflict";
+    case 429:
+      return "Too many requests";
+    default:
+      return status >= 500 ? "Server error" : `Request failed with HTTP ${status}`;
+  }
+}
+
+/**
+ * The status in words for a body that names only `code`: alone when the
+ * code just names the status (`not_found` on a 404), else with the code in
+ * brackets, since it says what went wrong (`Bad request (invalid_since)`).
+ */
+function codeText(status: number, code: string): string {
+  const words = statusText(status);
+  return code.replace(/_/g, " ") === words.toLowerCase() ? words : `${words} (${code})`;
 }
 
 /** Longest text taken from a JSON error body, so one answer cannot make a huge message. */
@@ -342,7 +377,7 @@ function errorCodeOf(body: string): string | undefined {
   try {
     const parsed = JSON.parse(body) as { code?: unknown } | null;
     const code = parsed && typeof parsed === "object" ? parsed.code : undefined;
-    return typeof code === "string" && /^[a-z][a-z0-9_]*$/.test(code) ? code : undefined;
+    return typeof code === "string" && BARE_CODE.test(code) ? code : undefined;
   } catch {
     return undefined;
   }

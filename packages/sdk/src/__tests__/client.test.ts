@@ -2670,6 +2670,43 @@ describe("WebhooksCC", () => {
       expect(error.code).toBe("invalid_cursor");
     });
 
+    it("says the status in words when the body names only a code", async () => {
+      const error = await failWith(404, '{"error":"not_found"}');
+      expect(error).toBeInstanceOf(NotFoundError);
+      expect(error.apiMessage).toBe("Not found");
+      expect(error.message).toBe(
+        "Not found: Use client.endpoints.list() to see available endpoints."
+      );
+      expect(error.code).toBe("not_found");
+      for (const [status, code, text] of [
+        [401, "unauthorized", "Unauthorized"],
+        [403, "forbidden", "Forbidden"],
+        [409, "conflict", "Conflict"],
+        [429, "too_many_requests", "Too many requests"],
+        [400, "invalid_since", "Bad request (invalid_since)"],
+        [409, "slug_exists", "Conflict (slug_exists)"],
+        [500, "internal_error", "Server error (internal_error)"],
+        [503, "unavailable", "Server error (unavailable)"],
+        [410, "expired", "Request failed with HTTP 410 (expired)"],
+      ] as const) {
+        const coded = await failWith(status, JSON.stringify({ error: code }));
+        expect(coded.apiMessage, String(status)).toBe(text);
+        expect(coded.code, String(status)).toBe(code);
+      }
+      // A message that is only a code keeps it too.
+      const message = await failWith(410, '{"message":"expired"}');
+      expect(message.apiMessage).toBe("Request failed with HTTP 410 (expired)");
+    });
+
+    it("keeps an error that is a sentence, and a message beside a code", async () => {
+      const sentence = await failWith(404, '{"error":"Request not found"}');
+      expect(sentence.apiMessage).toBe("Request not found");
+      expect(sentence.code).toBeUndefined();
+      const both = await failWith(404, '{"error":"not_found","message":"Request not found"}');
+      expect(both.apiMessage).toBe("Request not found");
+      expect(both.code).toBe("not_found");
+    });
+
     it("lets a message only trim() calls blank (U+FEFF) give way to the error", async () => {
       const error = await failWith(400, '{"message":"\\ufeff ","error":"name is too long"}');
       expect(error.apiMessage).toBe("name is too long");
@@ -2682,7 +2719,7 @@ describe("WebhooksCC", () => {
     });
 
     it("reads the whole JSON body even when it is over 200 characters", async () => {
-      const long = "y".repeat(250);
+      const long = "y ".repeat(125);
       const error = await failWith(400, JSON.stringify({ error: "invalid_input", message: long }));
       expect(error.message).toBe(long);
       expect(error.message.startsWith("{")).toBe(false);

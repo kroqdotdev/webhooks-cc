@@ -40,7 +40,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ slug
     });
 
     if (!page) {
-      return Response.json({ error: "not_found" }, { status: 404 });
+      return Response.json({ error: "not_found", message: "Endpoint not found" }, { status: 404 });
     }
 
     return Response.json(extracts ? { ...page, items: await withEmailExtracts(page.items) } : page);

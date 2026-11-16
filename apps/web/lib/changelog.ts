@@ -31,7 +31,7 @@ const RELEASE = release as { version: string | null; entries: ChangelogEntry[] }
 
 export const APP_VERSION: string = RELEASE.version ?? "dev";
 export const CLI_VERSION = "1.20.1";
-export const SDK_VERSION = "1.31.0";
+export const SDK_VERSION = "1.31.1";
 export const PYTHON_SDK_VERSION = "0.10.1";
 export const GO_SDK_VERSION = "0.10.1";
 export const MCP_VERSION = "2.5.0";
@@ -2547,6 +2547,15 @@ export const CHANGELOG: ChangelogEntry[] = [
 
   // ─── SDK ────────────────────────────────────────────────────────────
   {
+    version: "1.31.1",
+    date: "2026-11-16",
+    title: "Readable Errors For Bare Codes",
+    track: "sdk",
+    items: [
+      'An error whose body names only a code (`{ "error": "not_found" }`) reads as the status in words, with its hint, instead of the code alone: "Not found" when the code only names the status, and the code in brackets when it says more ("Bad request (invalid_since)"); the code is still the error\'s `code`',
+    ],
+  },
+  {
     version: "1.31.0",
     date: "2026-11-16",
     title: "Plain Error Messages",
@@ -3041,6 +3050,7 @@ export const CHANGELOG: ChangelogEntry[] = [
     items: [
       "An error's `message` is the API's text, not its JSON: the `message` of a JSON error body, else its `error`, so a long answer is no longer cut into broken JSON",
       "A duration string too long or too large for a float (400 digits, or a huge value with a unit) raises the invalid-duration `ValueError` instead of becoming an endless wait",
+      'An error whose body names only a code (`{"error": "not_found"}`) reads as the status in words instead of the code alone: "Not found" when the code only names the status, and the code in brackets when it says more ("Bad request (invalid_since)"); `InvalidCursorError` and `RateLimitError.code` still read the code',
     ],
   },
   {
@@ -3192,6 +3202,7 @@ export const CHANGELOG: ChangelogEntry[] = [
     track: "go",
     items: [
       'An `Error`\'s `Message` is the API\'s text, not its JSON: the `message` of a JSON error body, else its `error`, so a long answer is no longer cut into broken JSON; a short one gets its hint after ": " (404) or ". " (401), as in the other SDKs, and `errors.Is(err, ErrInvalidCursor)` reads the body\'s code as before',
+      'An error whose body names only a code (`{"error":"not_found"}`) reads as the status in words instead of the code alone: "Not found" when the code only names the status, and the code in brackets when it says more ("Bad request (invalid_since)"); `errors.Is(err, ErrInvalidCursor)` still reads the code',
     ],
   },
   {
@@ -3326,6 +3337,8 @@ export const CHANGELOG: ChangelogEntry[] = [
       "`describe` answers the SDK version and its sections' operation names (about 2.5 KB, from 33 KB); `section` returns one section's parameters and types",
       "The tool list is smaller: conditions of response rules, filters and layouts are described once per list, a rule's response once as `mockResponse`, and input schemas leave out the `$schema` URI (MCP reads JSON Schema 2020-12 without it). The core list is 59.1 KB as sent (from 63.4 KB), the full one 119.3 KB (from 128.1 KB)",
       "On the hosted server, names in `?tools=` that are no group are reported on `describe` and in the instructions, and when none of the names is a group the client's own default applies rather than the core",
+      'An API error that names only a code reads as the status in words ("Not found" for a request id that does not exist, with the `list_requests` hint), keeping the code in brackets when it says more ("Bad request (invalid_since)")',
+      "A refusal because something already exists or is in use (HTTP 409) has the tool error code `conflict`, not `validation_error`",
     ],
   },
   {

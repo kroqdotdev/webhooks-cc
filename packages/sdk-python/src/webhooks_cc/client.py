@@ -291,6 +291,34 @@ def _error_code(message: str) -> str | None:
 _MAX_ERROR_TEXT = 1_000
 
 
+# An error code rather than text: lower case, digits and underscores.
+_BARE_CODE = re.compile(r"[a-z][a-z0-9_]*")
+
+_STATUS_TEXT = {
+    400: "Bad request",
+    401: "Unauthorized",
+    403: "Forbidden",
+    404: "Not found",
+    409: "Conflict",
+    429: "Too many requests",
+}
+
+
+def _status_text(status: int) -> str:
+    """A short plain sentence for an error status, for a body that names only a code."""
+    if status in _STATUS_TEXT:
+        return _STATUS_TEXT[status]
+    return "Server error" if status >= 500 else f"Request failed with HTTP {status}"
+
+
+def _code_text(status: int, code: str) -> str:
+    """The status in words for a body that names only ``code``: alone when the
+    code just names the status (``not_found`` on a 404), else with the code in
+    brackets, since it says what went wrong (``Bad request (invalid_since)``)."""
+    words = _status_text(status)
+    return words if code.replace("_", " ") == words.lower() else f"{words} ({code})"
+
+
 def _error_text(body: str) -> str | None:
     """The plain text of a JSON error body: its string ``message``, else its
     string ``error``; None when the body is not a JSON object naming either."""
@@ -317,6 +345,9 @@ def _error_from_response(response: httpx.Response) -> WebhooksCCError:
     plain = _error_text(text)
     if plain is None:
         plain = text[:200] + "..." if len(text) > 200 else text
+    elif _BARE_CODE.fullmatch(plain):
+        # A bare code ({"error": "not_found"}) is no sentence: say the status (see _code_text).
+        plain = _code_text(response.status_code, plain)
     return _map_error(response.status_code, plain, response.headers, path, text)
 
 

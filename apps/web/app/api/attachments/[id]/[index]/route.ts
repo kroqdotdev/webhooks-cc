@@ -35,7 +35,7 @@ export async function GET(
     return Response.json({ error: "invalid_link" }, { status: 403 });
   }
   if (!isObjectStorageConfigured()) {
-    return Response.json({ error: "not_found" }, { status: 404 });
+    return Response.json({ error: "not_found", message: "Attachment not found" }, { status: 404 });
   }
 
   try {
@@ -55,7 +55,10 @@ export async function GET(
     const attachment = email?.attachments[index];
     // Gone with the email (retention, or deleted), or never stored.
     if (!email?.stored || !attachment) {
-      return Response.json({ error: "not_found" }, { status: 404 });
+      return Response.json(
+        { error: "not_found", message: "Attachment not found" },
+        { status: 404 }
+      );
     }
     const location = await presignGet(
       attachmentKey(id, index),

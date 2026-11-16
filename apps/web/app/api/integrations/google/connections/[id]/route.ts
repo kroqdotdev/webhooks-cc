@@ -15,7 +15,11 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ i
   const { id } = await params;
   try {
     const token = await deleteGoogleConnection(auth.userId, id);
-    if (token === null) return Response.json({ error: "not_found" }, { status: 404 });
+    if (token === null)
+      return Response.json(
+        { error: "not_found", message: "Google connection not found" },
+        { status: 404 }
+      );
     await revokeToken(token);
     await auditUserAction(request, auth.userId, {
       action: "integration.google_disconnected",
