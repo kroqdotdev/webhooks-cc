@@ -132,7 +132,7 @@ pub fn settings_body(fields: &AlertFields) -> Map<String, Value> {
 }
 
 fn print_json(answer: &crate::api::client::Fetched<Value>) -> Result<()> {
-    println!("{}", serde_json::to_string_pretty(&answer.json())?);
+    crate::outln!("{}", serde_json::to_string_pretty(&answer.json())?);
     Ok(())
 }
 
@@ -269,7 +269,7 @@ pub async fn get(client: &ApiClient, slug: &str, json: bool) -> Result<()> {
     }
     let settings = answer.value.get("settings").cloned().unwrap_or(Value::Null);
     for line in settings_lines(&settings) {
-        println!("{line}");
+        crate::outln!("{line}");
     }
     let events = answer
         .value
@@ -277,13 +277,13 @@ pub async fn get(client: &ApiClient, slug: &str, json: bool) -> Result<()> {
         .and_then(Value::as_array)
         .cloned()
         .unwrap_or_default();
-    println!();
+    crate::outln!();
     if events.is_empty() {
-        println!("  {}", dim("No alerts yet."));
+        crate::outln!("  {}", dim("No alerts yet."));
     } else {
-        println!("  {}", bold("Recent alerts"));
+        crate::outln!("  {}", bold("Recent alerts"));
         for line in event_lines(&events) {
-            println!("{line}");
+            crate::outln!("{line}");
         }
     }
     Ok(())
@@ -301,14 +301,14 @@ pub async fn set(client: &ApiClient, slug: &str, fields: &AlertFields, json: boo
     if json {
         return print_json(&answer);
     }
-    println!(
+    crate::outln!(
         "{} Saved the alerts of {}",
         green("✓"),
         bold(&sanitize_line(slug))
     );
     let settings = answer.value.get("settings").cloned().unwrap_or(Value::Null);
     for line in settings_lines(&settings) {
-        println!("{line}");
+        crate::outln!("{line}");
     }
     // The server keeps only destinations that can take a notice.
     let asked = fields
@@ -322,7 +322,7 @@ pub async fn set(client: &ApiClient, slug: &str, fields: &AlertFields, json: boo
         .and_then(Value::as_array)
         .map_or(0, Vec::len);
     if asked > kept {
-        println!(
+        crate::outln!(
             "  {}",
             dim(
                 "Some destinations were left out: they are not this endpoint's, or are a spreadsheet or a file drop, which cannot take alerts."

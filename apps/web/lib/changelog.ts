@@ -30,7 +30,7 @@ export const TRACK_LABELS: Record<ChangelogTrack, string> = {
 const RELEASE = release as { version: string | null; entries: ChangelogEntry[] };
 
 export const APP_VERSION: string = RELEASE.version ?? "dev";
-export const CLI_VERSION = "1.20.2";
+export const CLI_VERSION = "1.20.3";
 export const SDK_VERSION = "1.32.0";
 export const PYTHON_SDK_VERSION = "0.11.0";
 export const GO_SDK_VERSION = "0.11.0";
@@ -2144,6 +2144,17 @@ export const CHANGELOG: ChangelogEntry[] = [
   },
 
   // ─── CLI ────────────────────────────────────────────────────────────
+  {
+    version: "1.20.3",
+    date: "2026-11-16",
+    title: "Live Tunnel Says Why, Closed Pipes Keep The Status",
+    track: "cli",
+    items: [
+      "`whk tunnel --live` names why a sender got a `503` in your app's place on the request's line: the app did not answer in time, nothing answered on the local port, the tunnel was busy, or the app's answer was not passed back. With `--json`, each `relayed` event carries `outcome` (`answered`, `timeout`, `unreachable`, `busy` or `refused`). It needs the tunnel edge that sends it; with an older edge the line is as before",
+      "A reader that stops early no longer hides a failure that comes later: progress lines such as the link `whk billing checkout --wait` prints, or the code `whk auth login` and `whk keys create` show, are dropped quietly when nobody reads them, and the command still exits with the status of how it ended (`timeout` 8 when the wait runs out, for one) instead of 0",
+      "`whk listen | head -1` still stops once its reader has gone",
+    ],
+  },
   {
     version: "1.20.2",
     date: "2026-11-16",

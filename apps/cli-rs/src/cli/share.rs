@@ -384,30 +384,30 @@ pub async fn list(client: &ApiClient, ended: bool, json: bool) -> Result<()> {
         if let (Some(names), Some(object)) = (&names, value.as_object_mut()) {
             object.insert("nameList".to_string(), serde_json::to_value(names)?);
         }
-        println!("{}", serde_json::to_string_pretty(&value)?);
+        crate::outln!("{}", serde_json::to_string_pretty(&value)?);
         return Ok(());
     }
     if result.suspended {
-        println!(
+        crate::outln!(
             "  {} Sharing is suspended on this account.",
             crate::cli::output::red("●")
         );
     }
     if let Some(message) = result.usage.as_ref().and_then(|u| u.message.as_deref()) {
-        println!("  {} {}", dim("●"), sanitize_line(message));
+        crate::outln!("  {} {}", dim("●"), sanitize_line(message));
     }
     print_shares(&result, ended);
     if let Some(limits) = &result.limits {
         let live = result.shares.iter().filter(|s| s.kind != "live").count();
-        println!("  {}", dim(&limits_line(limits, live)));
+        crate::outln!("  {}", dim(&limits_line(limits, live)));
     }
     if let Some(names) = &names
         && let Some(line) = names_line(names)
     {
-        println!("  {}", dim(&line));
+        crate::outln!("  {}", dim(&line));
     }
     for hint in &result.hints {
-        println!("  {}", dim(&sanitize_line(hint)));
+        crate::outln!("  {}", dim(&sanitize_line(hint)));
     }
     Ok(())
 }
@@ -466,9 +466,9 @@ fn names_line(names: &NamesResponse) -> Option<String> {
 fn print_shares(result: &SharesResponse, ended: bool) {
     if result.shares.is_empty() {
         if ended {
-            println!("  No earlier shares.");
+            crate::outln!("  No earlier shares.");
         } else {
-            println!(
+            crate::outln!(
                 "  Nothing is shared right now. Start with {}",
                 bold("whk share 3000")
             );
@@ -509,17 +509,17 @@ fn print_shares(result: &SharesResponse, ended: bool) {
         }
         let mut lines = table_lines("  ", &rows).into_iter();
         if let Some(header) = lines.next() {
-            println!("{header}");
+            crate::outln!("{header}");
         }
         for (line, reason) in lines.zip(reasons) {
-            println!("{line}");
+            crate::outln!("{line}");
             if let Some(reason) = reason {
-                println!("    {}", dim(&format!("ended: {}", sanitize_line(reason))));
+                crate::outln!("    {}", dim(&format!("ended: {}", sanitize_line(reason))));
             }
         }
     }
     if let Some(usage) = &result.usage {
-        println!("\n  {}", dim(&usage_line(usage)));
+        crate::outln!("\n  {}", dim(&usage_line(usage)));
     }
 }
 
@@ -613,12 +613,12 @@ pub async fn stop(client: &ApiClient, needle: &str, json: bool) -> Result<()> {
     };
     client.stop_share(&share.id).await?;
     if json {
-        println!(
+        crate::outln!(
             "{}",
             serde_json::json!({ "stopped": true, "id": share.id, "name": share.name })
         );
     } else {
-        println!(
+        crate::outln!(
             "{} Stopped {}",
             green("✓"),
             bold(&sanitize_line(&share_label(share)))
@@ -634,7 +634,7 @@ pub async fn log(client: &ApiClient, needle: &str, json: bool) -> Result<()> {
     let share = resolve_share(&live.shares, needle)?;
     let result = client.share_requests(&share.id).await?;
     if json {
-        println!("{}", serde_json::to_string_pretty(&result)?);
+        crate::outln!("{}", serde_json::to_string_pretty(&result)?);
         return Ok(());
     }
     print_log(&result);
@@ -643,14 +643,14 @@ pub async fn log(client: &ApiClient, needle: &str, json: bool) -> Result<()> {
 
 fn print_log(result: &ShareRequestsResponse) {
     if !result.available {
-        println!("  The request log can't be read just now. Try again in a moment.");
+        crate::outln!("  The request log can't be read just now. Try again in a moment.");
         return;
     }
     if result.requests.is_empty() {
-        println!("  No visitors yet.");
+        crate::outln!("  No visitors yet.");
         return;
     }
-    println!(
+    crate::outln!(
         "  {}",
         dim(&format!(
             "{:<17} {:<7} {:<40} {:>6} {:>7} {:>9}  {}",
@@ -669,7 +669,7 @@ fn print_log(result: &ShareRequestsResponse) {
             .map(sanitize_line)
             .collect::<Vec<_>>()
             .join(", ");
-        println!(
+        crate::outln!(
             "  {:<17} {:<7} {:<40} {:>6} {:>7} {:>9}  {}{}",
             r.at.as_ref().map(|t| t.display()).unwrap_or_default(),
             printable(&r.method, 7),
@@ -693,14 +693,16 @@ fn print_log(result: &ShareRequestsResponse) {
 pub async fn names(client: &ApiClient, json: bool) -> Result<()> {
     let result = client.list_names().await?;
     if json {
-        println!("{}", serde_json::to_string_pretty(&result)?);
+        crate::outln!("{}", serde_json::to_string_pretty(&result)?);
         return Ok(());
     }
     if result.names.is_empty() {
         if result.limit == Some(0) {
-            println!("  Reserved names come with Pro and Business. Free shares get a random name.");
+            crate::outln!(
+                "  Reserved names come with Pro and Business. Free shares get a random name."
+            );
         } else {
-            println!(
+            crate::outln!(
                 "  No names yet. Keep one with {}",
                 bold("whk names reserve <name>")
             );
@@ -727,13 +729,13 @@ pub async fn names(client: &ApiClient, json: bool) -> Result<()> {
             ]);
         }
         for line in table_lines("  ", &rows) {
-            println!("{line}");
+            crate::outln!("{line}");
         }
     }
     if let (Some(used), Some(limit)) = (result.used, result.limit)
         && limit > 0
     {
-        println!(
+        crate::outln!(
             "\n  {}",
             dim(&format!("{used} of {limit} names on your plan"))
         );
@@ -745,7 +747,7 @@ pub async fn names(client: &ApiClient, json: bool) -> Result<()> {
             } else {
                 " (no subscription: its names wait until it subscribes again)"
             };
-            println!(
+            crate::outln!(
                 "  {}",
                 dim(&format!(
                     "{used} of {limit} names in team {}{lapsed}",
@@ -785,16 +787,16 @@ pub async fn reserve(client: &ApiClient, name: &str, team: Option<&str>, json: b
     };
     let reserved = client.reserve_name(name, team_id.as_deref()).await?;
     if json {
-        println!("{}", serde_json::to_string_pretty(&reserved)?);
+        crate::outln!("{}", serde_json::to_string_pretty(&reserved)?);
     } else {
         let url = reserved.name.url.as_deref().unwrap_or("");
-        println!(
+        crate::outln!(
             "{} Reserved {} {}",
             green("✓"),
             bold(&sanitize_line(&reserved.name.name)),
             dim(&sanitize_line(url))
         );
-        println!(
+        crate::outln!(
             "  {}",
             dim(&format!(
                 "Share under it: whk share 3000 --name {}",
@@ -838,9 +840,9 @@ async fn team_id(client: &ApiClient, wanted: &str) -> Result<String> {
 pub async fn release(client: &ApiClient, name: &str, json: bool) -> Result<()> {
     client.release_name(name).await?;
     if json {
-        println!("{}", serde_json::json!({ "released": true, "name": name }));
+        crate::outln!("{}", serde_json::json!({ "released": true, "name": name }));
     } else {
-        println!("{} Released {}", green("✓"), bold(&sanitize_line(name)));
+        crate::outln!("{} Released {}", green("✓"), bold(&sanitize_line(name)));
     }
     Ok(())
 }
@@ -855,18 +857,18 @@ pub async fn password(client: &ApiClient, name: &str, clear: bool, json: bool) -
     };
     let result = client.set_name_password(name, password.as_deref()).await?;
     if json {
-        println!(
+        crate::outln!(
             "{}",
             serde_json::json!({ "name": name, "password": result.password })
         );
     } else if result.password {
-        println!(
+        crate::outln!(
             "{} Visitors to {} now need the password.",
             green("✓"),
             bold(&sanitize_line(name))
         );
     } else {
-        println!(
+        crate::outln!(
             "{} {} no longer needs a password.",
             green("✓"),
             bold(&sanitize_line(name))
@@ -1143,6 +1145,7 @@ mod tests {
             status: 200,
             ms: 4,
             request_id: None,
+            outcome: None,
         };
         assert!(share_text(request.clone(), "localhost:3000", false).1);
         assert_eq!(

@@ -18,7 +18,7 @@ use crate::error::CliError;
 use crate::util::format::{format_timestamp, parse_duration};
 
 fn print_json(answer: &crate::api::client::Fetched<Value>) -> Result<()> {
-    println!("{}", serde_json::to_string_pretty(&answer.json())?);
+    crate::outln!("{}", serde_json::to_string_pretty(&answer.json())?);
     Ok(())
 }
 
@@ -49,18 +49,18 @@ pub async fn one(client: &ApiClient, request_id: &str, yes: bool, json: bool) ->
         return print_json(&answer);
     }
     if answer.value.get("queued").and_then(Value::as_bool) == Some(true) {
-        println!(
+        crate::outln!(
             "{} Queued {} again",
             green("✓"),
             bold(&sanitize_line(request_id))
         );
-        println!(
+        crate::outln!(
             "  {} whk deliveries ls --request {}",
             dim("See how its deliveries go:"),
             sanitize_line(request_id)
         );
     } else {
-        println!(
+        crate::outln!(
             "  Nothing was queued: no destination of its endpoint takes this kind of request now."
         );
     }
@@ -202,7 +202,7 @@ pub async fn range(
     }
     let count = |field: &str| answer.value.get(field).and_then(Value::as_u64).unwrap_or(0);
     let found = count("requests");
-    println!(
+    crate::outln!(
         "{} Queued {} of {found} request{} of {} again",
         green("✓"),
         count("queued"),
@@ -211,7 +211,7 @@ pub async fn range(
     );
     let limit = count("limit");
     if let Some(next) = answer.value.get("nextSince").and_then(Value::as_u64) {
-        println!(
+        crate::outln!(
             "  {} {}",
             dim(&format!(
                 "That is the most one call takes ({limit}). For the rest:"
@@ -227,7 +227,7 @@ pub async fn range(
         );
     }
     if count("queued") < found {
-        println!(
+        crate::outln!(
             "  {}",
             dim("The rest have no destination that takes their kind now.")
         );

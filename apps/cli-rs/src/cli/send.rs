@@ -52,14 +52,14 @@ pub async fn send_to_endpoint(
     let resp = client.send_webhook(&req).await?;
 
     if json_output {
-        println!("{}", serde_json::to_string_pretty(&resp)?);
+        crate::outln!("{}", serde_json::to_string_pretty(&resp)?);
     } else {
         let status_str = if resp.status < 400 {
             green(&format!("{} {}", resp.status, resp.status_text))
         } else {
             red(&format!("{} {}", resp.status, resp.status_text))
         };
-        println!(
+        crate::outln!(
             "  {} Sent {} to {} -> {}",
             green("✓"),
             bold(method),
@@ -69,7 +69,7 @@ pub async fn send_to_endpoint(
         if let Some(ref body) = resp.body
             && !body.is_empty()
         {
-            println!("\n{}", dim(&body.chars().take(500).collect::<String>()));
+            crate::outln!("\n{}", dim(&body.chars().take(500).collect::<String>()));
         }
     }
 
@@ -110,14 +110,14 @@ pub async fn send_to_url(
         .await?;
 
     if json_output {
-        println!("{}", serde_json::to_string_pretty(&resp)?);
+        crate::outln!("{}", serde_json::to_string_pretty(&resp)?);
     } else {
         let status_str = if resp.status < 400 {
             green(&format!("{} {}", resp.status, resp.status_text))
         } else {
             red(&format!("{} {}", resp.status, resp.status_text))
         };
-        println!(
+        crate::outln!(
             "  {} Sent {} to {} -> {}",
             green("✓"),
             bold(method),
@@ -170,7 +170,7 @@ pub async fn send_test_email(
         Err(error) => return Err(explain_template(client, slug, template, error).await),
     };
     if json_output {
-        println!("{}", serde_json::to_string_pretty(&answer.json())?);
+        crate::outln!("{}", serde_json::to_string_pretty(&answer.json())?);
         return Ok(());
     }
     let to = match tag {
@@ -181,13 +181,13 @@ pub async fn send_test_email(
         .value
         .get("requestId")
         .and_then(serde_json::Value::as_str);
-    println!(
+    crate::outln!(
         "  {} Sent a test email to {}",
         green("✓"),
         bold(&crate::cli::output::sanitize_line(&to))
     );
     if let Some(id) = id {
-        println!(
+        crate::outln!(
             "  {} whk requests get {}",
             dim("See it:"),
             crate::cli::output::sanitize_line(id)

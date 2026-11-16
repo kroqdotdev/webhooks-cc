@@ -47,7 +47,7 @@ fn store_for(client: &ApiClient) -> CredentialStore {
 }
 
 fn print_json(value: &Value) -> Result<()> {
-    println!("{}", serde_json::to_string_pretty(value)?);
+    crate::outln!("{}", serde_json::to_string_pretty(value)?);
     Ok(())
 }
 
@@ -133,8 +133,8 @@ fn text<'a>(value: &'a Value, key: &str) -> &'a str {
 
 fn print_endpoint(endpoint: &Value) {
     let slug = sanitize_line(text(endpoint, "slug"));
-    println!("  {} {}", dim("Slug:"), bold(&slug));
-    println!("  {} {}", dim("URL:"), sanitize_line(text(endpoint, "url")));
+    crate::outln!("  {} {}", dim("Slug:"), bold(&slug));
+    crate::outln!("  {} {}", dim("URL:"), sanitize_line(text(endpoint, "url")));
     let limits = endpoint.get("sandbox").cloned().unwrap_or(Value::Null);
     let per_endpoint = limits
         .get("requestLimit")
@@ -144,9 +144,9 @@ fn print_endpoint(endpoint: &Value) {
         .get("requestCount")
         .and_then(Value::as_u64)
         .unwrap_or(0);
-    println!("  {} {captured} of {per_endpoint}", dim("Captures:"));
+    crate::outln!("  {} {captured} of {per_endpoint}", dim("Captures:"));
     if let Some(budget) = limits.get("budget") {
-        println!(
+        crate::outln!(
             "  {} {} of {} used across this registration",
             dim("Budget:"),
             budget.get("used").and_then(Value::as_u64).unwrap_or(0),
@@ -158,7 +158,7 @@ fn print_endpoint(endpoint: &Value) {
         .or_else(|| limits.get("expiresAt"))
         .and_then(Value::as_i64);
     if let Some(expires) = expires {
-        println!("  {} {}", dim("Expires:"), format_timestamp(expires));
+        crate::outln!("  {} {}", dim("Expires:"), format_timestamp(expires));
     }
 }
 
@@ -195,13 +195,13 @@ pub async fn create(client: &ApiClient, json: bool) -> Result<()> {
         return print_json(&endpoint);
     }
     let slug = sanitize_line(text(&endpoint, "slug"));
-    println!(
+    crate::outln!(
         "\n  {} Created sandbox endpoint {}",
         green("✓"),
         bold(&slug)
     );
     print_endpoint(&endpoint);
-    println!(
+    crate::outln!(
         "\n  {}\n",
         dim(&format!(
             "Read captures with `whk sandbox requests {slug}` or `whk sandbox wait {slug}`."
@@ -216,7 +216,7 @@ pub async fn list(client: &ApiClient, json: bool) -> Result<()> {
         if json {
             return print_json(&json!({ "endpoints": [], "sandbox": null }));
         }
-        println!(
+        crate::outln!(
             "  No sandbox yet. Create an endpoint with {}",
             bold("whk sandbox create")
         );
@@ -238,7 +238,7 @@ pub async fn list(client: &ApiClient, json: bool) -> Result<()> {
         .unwrap_or_default();
     let limits = result.get("sandbox").cloned().unwrap_or(Value::Null);
     if endpoints.is_empty() {
-        println!(
+        crate::outln!(
             "  No sandbox endpoints. Create one with {}",
             bold("whk sandbox create")
         );
@@ -259,7 +259,7 @@ pub async fn list(client: &ApiClient, json: bool) -> Result<()> {
             ]);
         }
         for line in table_lines("  ", &rows) {
-            println!("{line}");
+            crate::outln!("{line}");
         }
     }
     if let Some(budget) = limits.get("budget") {
@@ -278,7 +278,7 @@ pub async fn list(client: &ApiClient, json: bool) -> Result<()> {
                 format_timestamp(expires)
             ));
         }
-        println!("\n  {}", dim(&line));
+        crate::outln!("\n  {}", dim(&line));
     }
     Ok(())
 }
@@ -304,7 +304,7 @@ pub async fn delete(client: &ApiClient, slug: &str, json: bool) -> Result<()> {
     if json {
         return print_json(&json!({ "status": "deleted", "slug": slug }));
     }
-    println!(
+    crate::outln!(
         "  {} Deleted sandbox endpoint {}",
         green("✓"),
         bold(&sanitize_line(slug))
@@ -316,13 +316,13 @@ pub async fn delete(client: &ApiClient, slug: &str, json: bool) -> Result<()> {
 fn print_requests(list: &Value) {
     let items = list.as_array().cloned().unwrap_or_default();
     if items.is_empty() {
-        println!("  No requests captured yet.");
+        crate::outln!("  No requests captured yet.");
         return;
     }
     for item in items {
         match serde_json::from_value::<CapturedRequest>(item) {
             Ok(request) => print_request_line(&request),
-            Err(_) => println!(
+            Err(_) => crate::outln!(
                 "  {}",
                 dim("(a request this version cannot show; use --json)")
             ),
@@ -333,7 +333,7 @@ fn print_requests(list: &Value) {
 fn print_request(value: &Value) {
     match serde_json::from_value::<CapturedRequest>(value.clone()) {
         Ok(request) => print_request_detail(&request),
-        Err(_) => println!(
+        Err(_) => crate::outln!(
             "{}",
             serde_json::to_string_pretty(value).unwrap_or_default()
         ),
@@ -528,26 +528,26 @@ pub async fn status(client: &ApiClient, json: bool) -> Result<()> {
         .path()
         .map(|p| p.display().to_string())
         .unwrap_or_else(|| "none (no home directory; set WHK_AGENT_FILE)".into());
-    println!("  {} {}", dim("API:"), store.issuer());
-    println!("  {} {}", dim("Credential file:"), file);
+    crate::outln!("  {} {}", dim("API:"), store.issuer());
+    crate::outln!("  {} {}", dim("Credential file:"), file);
     match &slots.claimed {
-        Some(slot) => println!(
+        Some(slot) => crate::outln!(
             "  {} Connected to {} (registration {}, until {})",
             green("●"),
             bold(slot.info("email").unwrap_or("an account")),
             slot.registration_id(),
             slot.assertion_expires()
         ),
-        None => println!("  {} No account connection", dim("●")),
+        None => crate::outln!("  {} No account connection", dim("●")),
     }
     match &slots.sandbox {
-        Some(slot) => println!(
+        Some(slot) => crate::outln!(
             "  {} Sandbox registration {} (until {})",
             green("●"),
             slot.registration_id(),
             slot.assertion_expires()
         ),
-        None => println!("  {} No sandbox registration", dim("●")),
+        None => crate::outln!("  {} No sandbox registration", dim("●")),
     }
     let note = match regular {
         "login" => "Regular commands use your `whk auth login` session.",
@@ -556,7 +556,7 @@ pub async fn status(client: &ApiClient, json: bool) -> Result<()> {
         }
         _ => "Regular commands need `whk auth login` or `whk sandbox connect --email <address>`.",
     };
-    println!("\n  {}", dim(note));
+    crate::outln!("\n  {}", dim(note));
     Ok(())
 }
 
@@ -600,7 +600,7 @@ pub async fn connect(
                     bold(email)
                 )
             };
-            println!(
+            crate::outln!(
                 "  {} Already connected to {} (until {}).{advice}",
                 green("●"),
                 bold(saved.unwrap_or("an account")),
@@ -627,17 +627,17 @@ pub async fn connect(
             "email": email,
         }));
     } else {
-        println!(
+        crate::outln!(
             "\n  Ask your human to open this link, sign in (or sign up) as {}, and enter the code:\n",
             bold(email)
         );
-        println!("    {} {}", dim("Code:"), green(&bold(&attempt.user_code)));
-        println!(
+        crate::outln!("    {} {}", dim("Code:"), green(&bold(&attempt.user_code)));
+        crate::outln!(
             "    {} {}\n",
             dim("Link:"),
             sanitize_line(&attempt.verification_uri)
         );
-        println!(
+        crate::outln!(
             "  {}",
             dim(&format!(
                 "The code works until {}. Waiting for the human...",
@@ -694,13 +694,13 @@ pub async fn connect(
                     line["status"] = "claimed".into();
                     print_json_line(&line);
                 } else {
-                    println!(
+                    crate::outln!(
                         "\n  {} Connected to {}'s account. When you are not logged in, regular commands (whk list, whk create, whk requests, ...) act for it.",
                         green("✓"),
                         bold(email)
                     );
                     if auth::is_logged_in() {
-                        println!(
+                        crate::outln!(
                             "  {}",
                             dim("You are logged in with `whk auth login`; that login still wins.")
                         );
@@ -759,16 +759,16 @@ pub async fn forget(client: &ApiClient, claimed: bool, sandbox: bool, json: bool
         return print_json(&json!({ "status": "forgotten", "removed": removed }));
     }
     if removed.is_empty() {
-        println!("  Nothing to forget for {}.", store.issuer());
+        crate::outln!("  Nothing to forget for {}.", store.issuer());
         return Ok(());
     }
-    println!(
+    crate::outln!(
         "  {} Removed {} from the credential file.",
         green("✓"),
         removed.join(" and ")
     );
     if claimed && removed.contains(&"claimed") {
-        println!(
+        crate::outln!(
             "  {}",
             dim(
                 "The connection itself stays until it expires; the human can disconnect it under Account, Connected agents."

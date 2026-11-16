@@ -45,7 +45,7 @@ pub async fn run(client: &ApiClient, json: bool) -> Result<()> {
                 })
                 .collect::<Vec<_>>(),
         )?;
-        println!("{}", serde_json::to_string_pretty(&value)?);
+        crate::outln!("{}", serde_json::to_string_pretty(&value)?);
         return Ok(());
     }
 
@@ -55,9 +55,9 @@ pub async fn run(client: &ApiClient, json: bool) -> Result<()> {
         return Ok(());
     }
 
-    println!("\n{}", bold("Team pools"));
+    crate::outln!("\n{}", bold("Team pools"));
     for team in &teams {
-        println!(
+        crate::outln!(
             "  {} {}/{} ({} remaining, {} seats)",
             bold(&sanitize(&team.name)),
             team.requests_used,
@@ -66,7 +66,7 @@ pub async fn run(client: &ApiClient, json: bool) -> Result<()> {
             team.seats
         );
         if let Some(pe) = team.period_end {
-            println!("    {} {}", dim("Period ends:"), format_timestamp(pe));
+            crate::outln!("    {} {}", dim("Period ends:"), format_timestamp(pe));
         }
     }
 

@@ -88,6 +88,15 @@ pub enum EdgeMessage {
         /// edge carried. Absent for previews and from older edges.
         #[serde(default, rename = "requestId", skip_serializing_if = "Option::is_none")]
         request_id: Option<String>,
+        /// For a live relay: what the edge did with the capture, the word it
+        /// marks its answer to the receiver with (`x-whk-live`, see
+        /// `apps/edge-rs/src/relay.rs`): `answered` (the app's own answer,
+        /// whatever its status), or why the edge answered in its place,
+        /// `timeout`, `unreachable`, `busy` or `refused`, so the CLI can say
+        /// why a sender got a 503. Absent for previews and from older edges;
+        /// older CLIs ignore it.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        outcome: Option<String>,
     },
     /// Something to show as it is.
     Notice { text: String },
@@ -113,6 +122,7 @@ mod tests {
             status: 200,
             ms: 3,
             request_id: Some("abc-1".into()),
+            outcome: None,
         };
         let json = serde_json::to_string(&with).unwrap();
         assert!(json.contains("\"requestId\":\"abc-1\""), "{json}");
@@ -122,6 +132,7 @@ mod tests {
             status: 200,
             ms: 1,
             request_id: None,
+            outcome: None,
         };
         let json = serde_json::to_string(&without).unwrap();
         assert!(!json.contains("requestId"), "{json}");
@@ -134,8 +145,42 @@ mod tests {
             old,
             EdgeMessage::Request {
                 request_id: None,
+                outcome: None,
                 ..
             }
         ));
+    }
+
+    #[test]
+    fn a_live_line_names_its_outcome_and_older_readers_skip_it() {
+        let line = EdgeMessage::Request {
+            method: "POST".into(),
+            path: "/hooks".into(),
+            status: 503,
+            ms: 25_000,
+            request_id: Some("abc-1".into()),
+            outcome: Some("timeout".into()),
+        };
+        let json = serde_json::to_string(&line).unwrap();
+        assert!(json.contains("\"outcome\":\"timeout\""), "{json}");
+        let read: EdgeMessage = serde_json::from_str(&json).unwrap();
+        assert!(matches!(
+            read,
+            EdgeMessage::Request { outcome: Some(ref o), .. } if o == "timeout"
+        ));
+        // What a CLI built before the field reads: the same enum without
+        // it. Serde skips fields it does not know, so the line still reads.
+        #[derive(Deserialize)]
+        #[serde(tag = "type", rename_all = "camelCase")]
+        enum OlderEdgeMessage {
+            Request {
+                status: u16,
+                #[serde(default, rename = "requestId")]
+                request_id: Option<String>,
+            },
+        }
+        let OlderEdgeMessage::Request { status, request_id } = serde_json::from_str(&json).unwrap();
+        assert_eq!(status, 503);
+        assert_eq!(request_id.as_deref(), Some("abc-1"));
     }
 }

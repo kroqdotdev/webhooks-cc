@@ -92,7 +92,7 @@ pub fn print_team_table(teams: &[Team]) {
         ]);
     }
     for line in table_lines("  ", &rows) {
-        println!("{line}");
+        crate::outln!("{line}");
     }
 }
 
@@ -117,7 +117,7 @@ fn print_invite_table(invites: &[TeamInvite], show_team: bool) {
         ]);
     }
     for line in table_lines("  ", &rows) {
-        println!("{line}");
+        crate::outln!("{line}");
     }
 }
 
@@ -125,12 +125,12 @@ pub async fn list(client: &ApiClient, json: bool) -> Result<()> {
     let teams = client.list_teams().await?;
 
     if json {
-        println!("{}", serde_json::to_string_pretty(&teams.json())?);
+        crate::outln!("{}", serde_json::to_string_pretty(&teams.json())?);
         return Ok(());
     }
 
     if teams.is_empty() {
-        println!(
+        crate::outln!(
             "  No teams. Create one at {}",
             bold("https://webhooks.cc/teams")
         );
@@ -146,11 +146,11 @@ pub async fn members(client: &ApiClient, team: &str, json: bool) -> Result<()> {
     let result = client.list_team_members(&team.id).await?;
 
     if json {
-        println!("{}", serde_json::to_string_pretty(&result.json())?);
+        crate::outln!("{}", serde_json::to_string_pretty(&result.json())?);
         return Ok(());
     }
 
-    println!("{} ({})", bold(&sanitize(&team.name)), status_label(&team));
+    crate::outln!("{} ({})", bold(&sanitize(&team.name)), status_label(&team));
     let mut rows = vec![header_row(&["EMAIL", "NAME", "ROLE", "JOINED"], &[])];
     for member in &result.members {
         let joined = member
@@ -168,11 +168,11 @@ pub async fn members(client: &ApiClient, team: &str, json: bool) -> Result<()> {
         ]);
     }
     for line in table_lines("  ", &rows) {
-        println!("{line}");
+        crate::outln!("{line}");
     }
 
     if !result.pending_invites.is_empty() {
-        println!("\n{}", bold("Pending invites"));
+        crate::outln!("\n{}", bold("Pending invites"));
         print_invite_table(&result.pending_invites, false);
     }
 
@@ -184,18 +184,18 @@ pub async fn share(client: &ApiClient, slug: &str, team: &str, json: bool) -> Re
     client.share_endpoint(&team.id, &endpoint.id).await?;
 
     if json {
-        println!(
+        crate::outln!(
             "{}",
             serde_json::json!({ "shared": true, "slug": endpoint.slug, "teamId": team.id, "teamName": team.name })
         );
     } else {
-        println!(
+        crate::outln!(
             "{} Shared {} with {}",
             green("✓"),
             bold(&sanitize(&endpoint.slug)),
             bold(&sanitize(&team.name))
         );
-        println!(
+        crate::outln!(
             "{}",
             dim("Requests on this endpoint now count against the team's pooled quota.")
         );
@@ -208,12 +208,12 @@ pub async fn unshare(client: &ApiClient, slug: &str, team: &str, json: bool) -> 
     client.unshare_endpoint(&team.id, &endpoint.id).await?;
 
     if json {
-        println!(
+        crate::outln!(
             "{}",
             serde_json::json!({ "shared": false, "slug": endpoint.slug, "teamId": team.id, "teamName": team.name })
         );
     } else {
-        println!(
+        crate::outln!(
             "{} Stopped sharing {} with {}",
             green("✓"),
             bold(&sanitize(&endpoint.slug)),
@@ -230,7 +230,7 @@ pub(crate) fn print_invite(invite: &Value, team_name: &str) {
         "" => team_name,
         name => name,
     };
-    println!(
+    crate::outln!(
         "{} Invited {} to {}",
         green("✓"),
         bold(&sanitize(text("invitedEmail"))),
@@ -239,12 +239,12 @@ pub(crate) fn print_invite(invite: &Value, team_name: &str) {
     match invite.get("warning").and_then(Value::as_str) {
         // The route answers with a warning when the invite row exists but
         // the email did not go out; the invitee only finds it in-app.
-        Some(warning) => println!(
+        Some(warning) => crate::outln!(
             "{} {} Tell them to sign up with that address and accept from their Teams page.",
             red("!"),
             sanitize(warning)
         ),
-        None => println!(
+        None => crate::outln!(
             "{}",
             dim("They get an email; accepting claims one of the team's seats.")
         ),
@@ -271,17 +271,17 @@ pub async fn invites(client: &ApiClient, json: bool) -> Result<()> {
     let invites = client.list_invites().await?;
 
     if json {
-        println!("{}", serde_json::to_string_pretty(&invites.json())?);
+        crate::outln!("{}", serde_json::to_string_pretty(&invites.json())?);
         return Ok(());
     }
 
     if invites.is_empty() {
-        println!("  No pending invites.");
+        crate::outln!("  No pending invites.");
         return Ok(());
     }
 
     print_invite_table(&invites, true);
-    println!(
+    crate::outln!(
         "\n  {} whk teams accept <invite-id>   {} whk teams decline <invite-id>",
         dim("Accept:"),
         dim("Decline:")
@@ -292,12 +292,12 @@ pub async fn invites(client: &ApiClient, json: bool) -> Result<()> {
 pub async fn accept(client: &ApiClient, invite_id: &str, json: bool) -> Result<()> {
     client.accept_invite(invite_id).await?;
     if json {
-        println!(
+        crate::outln!(
             "{}",
             serde_json::json!({ "accepted": true, "inviteId": invite_id })
         );
     } else {
-        println!(
+        crate::outln!(
             "{} Invite accepted. Run {} to see the team.",
             green("✓"),
             bold("whk teams list")
@@ -309,12 +309,12 @@ pub async fn accept(client: &ApiClient, invite_id: &str, json: bool) -> Result<(
 pub async fn decline(client: &ApiClient, invite_id: &str, json: bool) -> Result<()> {
     client.decline_invite(invite_id).await?;
     if json {
-        println!(
+        crate::outln!(
             "{}",
             serde_json::json!({ "declined": true, "inviteId": invite_id })
         );
     } else {
-        println!("{} Invite declined.", green("✓"));
+        crate::outln!("{} Invite declined.", green("✓"));
     }
     Ok(())
 }
@@ -372,16 +372,16 @@ pub fn resolve_invite<'a>(invites: &'a [TeamInvite], needle: &str) -> Result<&'a
 pub async fn create(client: &ApiClient, name: &str, json: bool) -> Result<()> {
     let team = client.create_team(name.trim()).await?;
     if json {
-        println!("{}", serde_json::to_string_pretty(&team.json())?);
+        crate::outln!("{}", serde_json::to_string_pretty(&team.json())?);
         return Ok(());
     }
-    println!(
+    crate::outln!(
         "{} Created team {} {}",
         green("✓"),
         bold(&sanitize(&team.name)),
         dim(&team.id)
     );
-    println!(
+    crate::outln!(
         "{}",
         dim(
             "It needs a subscription (Account > Teams in the browser) before endpoints can be shared or members invited."
@@ -395,9 +395,9 @@ pub async fn rename(client: &ApiClient, team: &str, name: &str, json: bool) -> R
     let name = name.trim();
     let answer = client.rename_team(&team.id, name).await?;
     if json {
-        println!("{}", serde_json::to_string_pretty(&answer)?);
+        crate::outln!("{}", serde_json::to_string_pretty(&answer)?);
     } else {
-        println!(
+        crate::outln!(
             "{} Renamed {} to {}",
             green("✓"),
             bold(&sanitize(&team.name)),
@@ -426,7 +426,7 @@ pub async fn delete(
             .get("deleted")
             .and_then(Value::as_str)
             .unwrap_or_default();
-        println!("  {} Deleted team {}", red("✓"), bold(&sanitize(name)));
+        crate::outln!("  {} Deleted team {}", red("✓"), bold(&sanitize(name)));
     })
     .await
 }
@@ -451,18 +451,18 @@ pub async fn remove(
     )?;
     client.remove_team_member(&team.id, &member.user_id).await?;
     if json {
-        println!(
+        crate::outln!(
             "{}",
             json!({ "removed": member.user_id, "email": member.email, "teamId": team.id })
         );
     } else {
-        println!(
+        crate::outln!(
             "{} Removed {} from {}",
             red("✓"),
             bold(&sanitize(&member.email)),
             bold(&sanitize(&team.name))
         );
-        println!("{}", dim("Their seat is free for someone else."));
+        crate::outln!("{}", dim("Their seat is free for someone else."));
     }
     Ok(())
 }
@@ -478,9 +478,9 @@ pub async fn leave(client: &ApiClient, team: &str, yes: bool, json: bool) -> Res
     )?;
     let answer = client.leave_team(&team.id).await?;
     if json {
-        println!("{}", serde_json::to_string_pretty(&answer)?);
+        crate::outln!("{}", serde_json::to_string_pretty(&answer)?);
     } else {
-        println!("{} Left {}", red("✓"), bold(&sanitize(&team.name)));
+        crate::outln!("{} Left {}", red("✓"), bold(&sanitize(&team.name)));
     }
     Ok(())
 }
@@ -505,9 +505,9 @@ pub async fn withdraw(
     )?;
     let answer = client.withdraw_invite(&team.id, &invite.id).await?;
     if json {
-        println!("{}", serde_json::to_string_pretty(&answer)?);
+        crate::outln!("{}", serde_json::to_string_pretty(&answer)?);
     } else {
-        println!(
+        crate::outln!(
             "{} Withdrew the invite for {}",
             red("✓"),
             bold(&sanitize(&invite.invited_email))
@@ -531,18 +531,18 @@ pub async fn quote(client: &ApiClient, team: &str, ask: QuoteAsk, json: bool) ->
         }
     };
     if json {
-        println!("{}", serde_json::to_string_pretty(&quote.json())?);
+        crate::outln!("{}", serde_json::to_string_pretty(&quote.json())?);
         return Ok(());
     }
-    println!("{}", bold(&sanitize(&team.name)));
+    crate::outln!("{}", bold(&sanitize(&team.name)));
     let lines = match ask {
         QuoteAsk::Seats(_) => seat_quote_lines(&quote.value),
         QuoteAsk::Plan { .. } => plan_quote_lines(&quote.value),
     };
     for line in lines {
-        println!("{line}");
+        crate::outln!("{line}");
     }
-    println!(
+    crate::outln!(
         "\n  {}",
         dim("A quote only: seat and plan changes are made in the browser, under the team's Plan.")
     );

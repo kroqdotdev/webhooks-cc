@@ -118,17 +118,17 @@ pub async fn change(
         answer
     };
     if !json && let Some(line) = budget_fallback_line(&answer) {
-        println!("  {}", dim(&line));
+        crate::outln!("  {}", dim(&line));
     }
     ask(client, answer, opts, json, |done| {
         if let Some(url) = done.get("url").and_then(Value::as_str) {
-            println!("  Pay at the checkout to finish: {}", bold(url));
+            crate::outln!("  Pay at the checkout to finish: {}", bold(url));
         } else if done.get("viaBudget").and_then(Value::as_bool) == Some(true) {
             for line in budget_spend_lines(done) {
-                println!("{line}");
+                crate::outln!("{line}");
             }
         } else {
-            println!("  {} Done.", green("✓"));
+            crate::outln!("  {} Done.", green("✓"));
         }
     })
     .await
@@ -346,10 +346,10 @@ pub async fn budget(
     let Some(cents) = cents else {
         let view = client.get_agent_budget(team_id).await?;
         if json {
-            println!("{}", serde_json::to_string_pretty(&view)?);
+            crate::outln!("{}", serde_json::to_string_pretty(&view)?);
         } else {
             for line in budget_lines(&view) {
-                println!("{line}");
+                crate::outln!("{line}");
             }
         }
         return Ok(());
@@ -360,7 +360,7 @@ pub async fn budget(
             .get("budgetCents")
             .and_then(Value::as_u64)
             .unwrap_or(cents as u64);
-        println!(
+        crate::outln!(
             "  {} The agent budget is {} per 30 days.",
             green("✓"),
             dollars(now)
@@ -376,20 +376,20 @@ pub(crate) fn print_outcome(result: &Value, executed: bool) {
         return;
     }
     let change = sanitize(result.get("change").and_then(Value::as_str).unwrap_or(""));
-    println!("\n  {} {change}", green("Approved."));
+    crate::outln!("\n  {} {change}", green("Approved."));
     match result.get("applied").and_then(Value::as_str) {
         // Only the owner's browser gets the checkout; nothing is bought yet.
-        Some("checkout") => println!(
+        Some("checkout") => crate::outln!(
             "  {}",
             dim(
                 "A Polar checkout was opened for the owner; nothing is bought until it is paid there."
             )
         ),
-        Some("renewal") => println!("  {}", dim("It takes effect at the renewal.")),
-        _ => println!("  {}", dim("It took effect at once.")),
+        Some("renewal") => crate::outln!("  {}", dim("It takes effect at the renewal.")),
+        _ => crate::outln!("  {}", dim("It took effect at once.")),
     }
     if let Some(seats) = result.get("seatReductionLost").and_then(Value::as_u64) {
-        println!(
+        crate::outln!(
             "  {}",
             dim(&format!(
                 "The reduction to {seats} seats was dropped with the plan change; set the seats again."
@@ -481,18 +481,18 @@ pub async fn checkout(
         // With --wait the link and its payment are two answers: NDJSON, one
         // compact line each (the open link first, so the person can be handed
         // its URL, and the paid link last), as `keys create` prints approvals.
-        println!("{}", serde_json::to_string(&answer.raw)?);
+        crate::outln!("{}", serde_json::to_string(&answer.raw)?);
     } else if json {
-        println!("{}", serde_json::to_string_pretty(&answer.raw)?);
+        crate::outln!("{}", serde_json::to_string_pretty(&answer.raw)?);
     } else {
-        println!("\n  {}", sanitize(link["summary"].as_str().unwrap_or("")));
-        println!("\n  Hand the person this link to pay with their own card:\n");
-        println!("    {}\n", bold(link["url"].as_str().unwrap_or("")));
+        crate::outln!("\n  {}", sanitize(link["summary"].as_str().unwrap_or("")));
+        crate::outln!("\n  Hand the person this link to pay with their own card:\n");
+        crate::outln!("    {}\n", bold(link["url"].as_str().unwrap_or("")));
         let expires = date(&link["expiresAt"]).unwrap_or_default();
-        println!("  They open it signed in as the account's owner, and nothing is charged");
-        println!("  until they pay on Polar's page. It expires {expires}.");
+        crate::outln!("  They open it signed in as the account's owner, and nothing is charged");
+        crate::outln!("  until they pay on Polar's page. It expires {expires}.");
         if deadline.is_none() {
-            println!(
+            crate::outln!(
                 "  Follow it with {}.",
                 bold(&format!("whk billing checkout-status {id} --wait"))
             );
@@ -501,7 +501,7 @@ pub async fn checkout(
     match deadline {
         Some(deadline) => {
             if !json {
-                println!("\n  Waiting for the payment...");
+                crate::outln!("\n  Waiting for the payment...");
             }
             wait_until_paid(client, &id, deadline, json.then_some(Json::Line)).await
         }
@@ -525,7 +525,7 @@ pub async fn checkout_status(
     }
     let answer = client.get_checkout(id).await?;
     if json {
-        println!("{}", serde_json::to_string_pretty(&answer.raw)?);
+        crate::outln!("{}", serde_json::to_string_pretty(&answer.raw)?);
     } else {
         print_status(&answer.raw["checkout"]);
     }
@@ -536,9 +536,9 @@ pub async fn checkout_status(
 pub async fn checkout_cancel(client: &ApiClient, id: &str, json: bool) -> Result<()> {
     let answer = client.cancel_checkout(id).await?;
     if json {
-        println!("{}", serde_json::to_string_pretty(&answer.raw)?);
+        crate::outln!("{}", serde_json::to_string_pretty(&answer.raw)?);
     } else {
-        println!("{}", cancelled_line(&answer.raw["checkout"]));
+        crate::outln!("{}", cancelled_line(&answer.raw["checkout"]));
     }
     Ok(())
 }
@@ -617,9 +617,9 @@ async fn wait_until_paid(
         match link["status"].as_str() {
             Some("paid") => {
                 match json {
-                    Some(Json::Line) => println!("{}", serde_json::to_string(&answer.raw)?),
+                    Some(Json::Line) => crate::outln!("{}", serde_json::to_string(&answer.raw)?),
                     Some(Json::Pretty) => {
-                        println!("{}", serde_json::to_string_pretty(&answer.raw)?)
+                        crate::outln!("{}", serde_json::to_string_pretty(&answer.raw)?)
                     }
                     None => print_status(link),
                 }
@@ -690,8 +690,8 @@ fn print_status(link: &Value) {
     match link["status"].as_str() {
         Some("paid") => {
             let when = date(&link["paidAt"]).unwrap_or_default();
-            println!("  {} {summary}", green("Paid."));
-            println!(
+            crate::outln!("  {} {summary}", green("Paid."));
+            crate::outln!(
                 "  {}",
                 dim(&format!(
                     "Paid {when}; it is applied to the account within a minute."
@@ -700,15 +700,15 @@ fn print_status(link: &Value) {
             // Only a known mismatch: null is not known yet (a team plan's
             // seats arrive with its subscription, after the order).
             if link["matches"] == Value::Bool(false) {
-                println!(
+                crate::outln!(
                     "  What was bought differs from what the link asked for ({}); check `whk billing`.",
                     bought(&link["bought"])
                 );
             }
         }
         Some("superseded") => {
-            println!("  Undone as a duplicate: {summary}");
-            println!(
+            crate::outln!("  Undone as a duplicate: {summary}");
+            crate::outln!(
                 "  {}",
                 dim(
                     "By the time it was paid, the account already had what it buys (or what it added to had ended), so it was undone: its subscription was ended and a refund of what it charged is under review. Monthly blocks bought twice stay as one-time blocks, and a second overage subscription charged nothing."
@@ -716,8 +716,8 @@ fn print_status(link: &Value) {
             );
         }
         Some("expired") if is_unsettled(link) => {
-            println!("  Expired before Polar confirmed a payment: {summary}");
-            println!(
+            crate::outln!("  Expired before Polar confirmed a payment: {summary}");
+            crate::outln!(
                 "  {}",
                 dim(
                     "If the person paid, it is still applied to the account once Polar confirms it, and webhooks.cc has been alerted. Check `whk billing` before making a new link."
@@ -725,17 +725,17 @@ fn print_status(link: &Value) {
             );
         }
         Some("expired") => {
-            println!("  Expired: {summary}");
-            println!(
+            crate::outln!("  Expired: {summary}");
+            crate::outln!(
                 "  {}",
                 dim("Make a new link with `whk billing checkout` if the person still wants it.")
             );
         }
         _ => {
-            println!("  Open: {summary}");
-            println!("\n    {}\n", bold(link["url"].as_str().unwrap_or("")));
+            crate::outln!("  Open: {summary}");
+            crate::outln!("\n    {}\n", bold(link["url"].as_str().unwrap_or("")));
             let expires = date(&link["expiresAt"]).unwrap_or_default();
-            println!(
+            crate::outln!(
                 "  {}",
                 dim(&format!("Not paid yet; the link expires {expires}."))
             );
@@ -757,11 +757,11 @@ fn bought(value: &Value) -> String {
 pub async fn show(client: &ApiClient, json: bool) -> Result<()> {
     let billing = client.get_billing().await?;
     if json {
-        println!("{}", serde_json::to_string_pretty(&billing.json())?);
+        crate::outln!("{}", serde_json::to_string_pretty(&billing.json())?);
         return Ok(());
     }
     for line in summary_lines(&billing.value) {
-        println!("{line}");
+        crate::outln!("{line}");
     }
     Ok(())
 }

@@ -22,11 +22,11 @@ pub async fn list(
             .list_requests_paginated(slug, Some(limit), Some(c))
             .await?;
         if json {
-            println!("{}", serde_json::to_string_pretty(&result.raw)?);
+            crate::outln!("{}", serde_json::to_string_pretty(&result.raw)?);
             return Ok(());
         }
         if result.requests.is_empty() {
-            println!("  No requests found.");
+            crate::outln!("  No requests found.");
             return Ok(());
         }
         for req in &result.requests {
@@ -35,23 +35,23 @@ pub async fn list(
         if let Some(ref next) = result.next_cursor
             && result.has_more != Some(false)
         {
-            println!("\n  {} --cursor {}", dim("Next page:"), next);
+            crate::outln!("\n  {} --cursor {}", dim("Next page:"), next);
         }
     } else {
         let result = client.list_requests(slug, Some(limit), since).await?;
         if json {
-            println!("{}", serde_json::to_string_pretty(&result.json())?);
+            crate::outln!("{}", serde_json::to_string_pretty(&result.json())?);
             return Ok(());
         }
         if result.requests.is_empty() {
-            println!("  No requests found.");
+            crate::outln!("  No requests found.");
             return Ok(());
         }
         for req in &result.requests {
             print_request_line(req);
         }
         if let Some(count) = result.count {
-            println!(
+            crate::outln!(
                 "\n  {} {count} total",
                 dim(&format!("Showing up to {limit} of"))
             );
@@ -64,7 +64,7 @@ pub async fn get(client: &ApiClient, id: &str, json: bool) -> Result<()> {
     let id = crate::util::request_id(id)?;
     let req = client.get_request(id).await?;
     if json {
-        println!("{}", serde_json::to_string_pretty(&req.json())?);
+        crate::outln!("{}", serde_json::to_string_pretty(&req.json())?);
     } else {
         print_request_detail(&req);
     }
@@ -105,7 +105,7 @@ pub async fn search(
         .flatten();
 
     if json {
-        println!("{}", serde_json::to_string_pretty(&result.raw)?);
+        crate::outln!("{}", serde_json::to_string_pretty(&result.raw)?);
         if !result.complete {
             crate::errln!("{}", search_progress_json(&result, next.as_deref()));
         }
@@ -113,12 +113,12 @@ pub async fn search(
     }
 
     if result.requests.is_empty() {
-        println!("  No matching requests found.");
+        crate::outln!("  No matching requests found.");
     } else {
         for hit in &result.requests {
             print_search_hit(hit);
         }
-        println!("\n  {} {}", dim("Shown:"), result.requests.len());
+        crate::outln!("\n  {} {}", dim("Shown:"), result.requests.len());
     }
     if !result.complete {
         crate::errln!(
@@ -285,13 +285,13 @@ pub async fn count(
         .flatten();
 
     if json {
-        println!("{}", count_json(&result, filters));
+        crate::outln!("{}", count_json(&result, filters));
         if !result.exact {
             crate::errln!("{}", count_progress_json(&result, next.as_deref()));
         }
         return Ok(());
     }
-    println!("  {}", count_line(&result));
+    crate::outln!("  {}", count_line(&result));
     if let Some(next) = next {
         crate::errln!("  Count the rest (add it to this) with: {next}");
     }
@@ -360,9 +360,9 @@ pub async fn clear(
     client.clear_requests(slug, before).await?;
 
     if json {
-        println!("{}", serde_json::json!({ "cleared": true, "slug": slug }));
+        crate::outln!("{}", serde_json::json!({ "cleared": true, "slug": slug }));
     } else {
-        println!("  {} Cleared requests for {}", green("✓"), bold(slug));
+        crate::outln!("  {} Cleared requests for {}", green("✓"), bold(slug));
     }
     Ok(())
 }
@@ -379,7 +379,7 @@ pub async fn export(
     let result = client.list_requests(slug, Some(limit), since).await?;
 
     if result.requests.is_empty() {
-        println!("  No requests to export.");
+        crate::outln!("  No requests to export.");
         return Ok(());
     }
 
@@ -392,14 +392,14 @@ pub async fn export(
     match output {
         Some(path) => {
             std::fs::write(path, &content)?;
-            println!(
+            crate::outln!(
                 "  {} Exported {} requests to {}",
                 green("✓"),
                 result.requests.len(),
                 bold(path)
             );
         }
-        None => print!("{content}"),
+        None => crate::out!("{content}"),
     }
 
     Ok(())

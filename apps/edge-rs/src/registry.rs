@@ -503,6 +503,7 @@ mod tests {
             status: 200,
             ms: 1,
             request_id: Some(id.into()),
+            outcome: None,
         };
         session.notify(&line("dropped"));
         session.notify_soon(&line("kept"));

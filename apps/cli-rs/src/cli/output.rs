@@ -204,11 +204,11 @@ pub fn print_reconnected(json: bool) {
 
 pub fn print_endpoint_table(endpoints: &[Endpoint], webhook_url: &str) {
     if endpoints.is_empty() {
-        println!("  No endpoints found.");
+        crate::outln!("  No endpoints found.");
         return;
     }
     for line in endpoint_table_lines(endpoints, webhook_url) {
-        println!("{line}");
+        crate::outln!("{line}");
     }
 }
 
@@ -256,7 +256,7 @@ pub fn print_search_hit(hit: &SearchHit) {
     let time = format_timestamp(hit.received_at);
     let method = method_color(&hit.method);
     let size = format_bytes(hit.size);
-    println!(
+    crate::outln!(
         "  {} {} {} {} {}",
         dim(&time),
         method,
@@ -271,7 +271,7 @@ pub fn print_request_line(req: &CapturedRequest) {
     let method = method_color(&req.method);
     let size = format_bytes(req.size);
     match req.email.as_ref().filter(|_| req.is_email()) {
-        Some(email) => println!(
+        Some(email) => crate::outln!(
             "  {} {} {} {} {}",
             dim(&time),
             method,
@@ -281,7 +281,7 @@ pub fn print_request_line(req: &CapturedRequest) {
             )),
             dim(&size)
         ),
-        None => println!(
+        None => crate::outln!(
             "  {} {} {} {}",
             dim(&time),
             method,
@@ -296,7 +296,7 @@ const EMAIL_TEXT_PREVIEW: usize = 4000;
 
 fn print_email_detail(req: &CapturedRequest, email: &crate::types::EmailSummary) {
     for line in email_detail_lines(req, email) {
-        println!("{line}");
+        crate::outln!("{line}");
     }
 }
 
@@ -392,63 +392,63 @@ pub fn print_request_detail(req: &CapturedRequest) {
         print_email_detail(req, email);
         return;
     }
-    println!("{}", bold("Request Details"));
-    println!("  {} {}", dim("ID:"), sanitize(&req.id));
-    println!(
+    crate::outln!("{}", bold("Request Details"));
+    crate::outln!("  {} {}", dim("ID:"), sanitize(&req.id));
+    crate::outln!(
         "  {} {} {}",
         dim("Method:"),
         method_color(&req.method),
         sanitize(&req.path)
     );
-    println!("  {} {}", dim("IP:"), sanitize(&req.ip));
-    println!("  {} {}", dim("Size:"), format_bytes(req.size));
-    println!("  {} {}", dim("Time:"), format_timestamp(req.received_at));
+    crate::outln!("  {} {}", dim("IP:"), sanitize(&req.ip));
+    crate::outln!("  {} {}", dim("Size:"), format_bytes(req.size));
+    crate::outln!("  {} {}", dim("Time:"), format_timestamp(req.received_at));
 
     if let Some(ref ct) = req.content_type {
-        println!("  {} {}", dim("Content-Type:"), sanitize(ct));
+        crate::outln!("  {} {}", dim("Content-Type:"), sanitize(ct));
     }
 
     if !req.query_params.is_empty() {
-        println!("\n{}", bold("Query Parameters"));
+        crate::outln!("\n{}", bold("Query Parameters"));
         for (k, v) in &req.query_params {
-            println!("  {} = {}", bold(&sanitize(k)), sanitize(v));
+            crate::outln!("  {} = {}", bold(&sanitize(k)), sanitize(v));
         }
     }
 
     if !req.headers.is_empty() {
-        println!("\n{}", bold("Headers"));
+        crate::outln!("\n{}", bold("Headers"));
         let mut headers: Vec<_> = req.headers.iter().collect();
         headers.sort_by_key(|(k, _)| k.to_lowercase());
         for (k, v) in headers {
-            println!("  {}: {}", bold(&sanitize(k)), sanitize(v));
+            crate::outln!("  {}: {}", bold(&sanitize(k)), sanitize(v));
         }
     }
 
     if let Some(ref body) = req.body {
-        println!("\n{}", bold("Body"));
+        crate::outln!("\n{}", bold("Body"));
         let sanitized_body = sanitize(body);
         if let Ok(val) = serde_json::from_str::<serde_json::Value>(&sanitized_body) {
-            println!(
+            crate::outln!(
                 "{}",
                 serde_json::to_string_pretty(&val).unwrap_or(sanitized_body)
             );
         } else {
-            println!("{sanitized_body}");
+            crate::outln!("{sanitized_body}");
         }
     }
 
     if let Some(ref live) = req.live_response {
-        println!("\n{}", bold("Live Response"));
+        crate::outln!("\n{}", bold("Live Response"));
         for line in crate::util::live::live_response_lines(live) {
-            println!("  {line}");
+            crate::outln!("  {line}");
         }
     }
 }
 
 pub fn print_usage(usage: &UsageInfo) {
-    println!("{}", bold("Usage"));
-    println!("  {} {}", dim("Plan:"), usage.plan);
-    println!(
+    crate::outln!("{}", bold("Usage"));
+    crate::outln!("  {} {}", dim("Plan:"), usage.plan);
+    crate::outln!(
         "  {} {}/{} ({} remaining)",
         dim("Requests:"),
         usage.used,
@@ -456,10 +456,10 @@ pub fn print_usage(usage: &UsageInfo) {
         usage.remaining
     );
     if let Some(pe) = usage.period_end {
-        println!("  {} {}", dim("Period ends:"), format_timestamp(pe));
+        crate::outln!("  {} {}", dim("Period ends:"), format_timestamp(pe));
     }
     for (label, text) in allowance_lines(usage) {
-        println!("  {} {}", dim(label), text);
+        crate::outln!("  {} {}", dim(label), text);
     }
 }
 

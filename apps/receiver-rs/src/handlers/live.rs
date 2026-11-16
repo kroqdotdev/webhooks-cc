@@ -493,11 +493,8 @@ impl LiveRelay {
                 "retry-after",
                 HeaderValue::from_static(BUSY_RETRY_AFTER_SECS),
             );
-            (
-                response,
-                Ok(stand_in(503, "busy", BUSY, started)),
-                Reach::NotTried,
-            )
+            let record = stand_in(&response, "busy", BUSY, started);
+            (response, Ok(record), Reach::NotTried)
         };
         // No waiting: a sender over either cap is asked to retry, and its
         // capture is already stored. The permits ride with the answer's
@@ -524,16 +521,14 @@ impl LiveRelay {
             request.raw_query,
         ) else {
             metrics::live("bad_path");
-            return (
-                (
-                    StatusCode::BAD_REQUEST,
-                    [(axum::http::header::CONTENT_TYPE, "application/json")],
-                    reason_body(BAD_PATH),
-                )
-                    .into_response(),
-                Ok(stand_in(400, "refused", BAD_PATH, started)),
-                Reach::NotTried,
-            );
+            let response = (
+                StatusCode::BAD_REQUEST,
+                [(axum::http::header::CONTENT_TYPE, "application/json")],
+                reason_body(BAD_PATH),
+            )
+                .into_response();
+            let record = stand_in(&response, "refused", BAD_PATH, started);
+            return (response, Ok(record), Reach::NotTried);
         };
         let mut headers = relay_headers(request.headers, request.own_worker);
         forwarded_headers(
@@ -583,19 +578,13 @@ impl LiveRelay {
                 tracing::warn!(timed_out, error = %e, "live relay: edge not reachable");
                 // The edge answers within 25 s itself (a 503 of its own), so
                 // no head at all is the edge gone, a timeout included.
-                return if timed_out {
-                    (
-                        failed(NO_ANSWER),
-                        Ok(stand_in(503, "timeout", NO_ANSWER, started)),
-                        Reach::Down,
-                    )
+                let (outcome, reason) = if timed_out {
+                    ("timeout", NO_ANSWER)
                 } else {
-                    (
-                        failed(UNREACHABLE),
-                        Ok(stand_in(503, "unreachable", UNREACHABLE, started)),
-                        Reach::Down,
-                    )
+                    ("unreachable", UNREACHABLE)
                 };
+                let (response, record) = failed_with_record(outcome, reason, started);
+                return (response, Ok(record), Reach::Down);
             }
         };
 
@@ -607,11 +596,8 @@ impl LiveRelay {
             // 503s about the app's answer, passed on below.)
             metrics::live("refused");
             tracing::error!("live relay: the edge refused the relay (check EDGE_SECRET)");
-            return (
-                failed(UNREACHABLE),
-                Ok(stand_in(503, "unreachable", UNREACHABLE, started)),
-                Reach::Down,
-            );
+            let (response, record) = failed_with_record("unreachable", UNREACHABLE, started);
+            return (response, Ok(record), Reach::Down);
         }
         // No session there for the endpoint: as good as gone for it.
         let reach = if outcome == "offline" {
@@ -656,11 +642,10 @@ impl LiveRelay {
         let body = Body::from_stream(answer_stream(answer, recorder));
         match builder.body(body) {
             Ok(response) => (response, Err(rx), reach),
-            Err(_) => (
-                failed(UNREACHABLE),
-                Ok(stand_in(503, "unreachable", UNREACHABLE, started)),
-                reach,
-            ),
+            Err(_) => {
+                let (response, record) = failed_with_record("unreachable", UNREACHABLE, started);
+                (response, Ok(record), reach)
+            }
         }
     }
 }
@@ -1094,10 +1079,13 @@ const BAD_PATH: &str = "The request path cannot be relayed to the live tunnel.";
 
 /// What the receiver answers in the app's place when the edge cannot: a 503
 /// with the reason, as the edge's own answers are.
-/// The answer when the relay task itself failed: the tunnel could not be
-/// reached, as far as the sender can tell.
-pub(crate) fn relay_failed_response() -> Response {
-    failed(UNREACHABLE)
+/// The answer when the relay task itself failed (it panicked, so it never
+/// recorded anything): the tunnel could not be reached, as far as the
+/// sender can tell, and the row says so as for any other stand-in.
+pub(crate) fn relay_failed(started: Instant) -> (Response, Recorded) {
+    metrics::live("relay_task_failed");
+    let (response, record) = failed_with_record("unreachable", UNREACHABLE, started);
+    (response, recorded_of(Ok(record)))
 }
 
 /// The JSON body every answer that stands in for the app carries.
@@ -1114,11 +1102,29 @@ fn failed(reason: &str) -> Response {
         .into_response()
 }
 
-/// The record of an answer that stood in for the app, with the same body
-/// the sender got, so the stored request shows what was answered.
-fn stand_in(status: u16, outcome: &'static str, reason: &str, started: Instant) -> LiveRecord {
+/// A 503 of ours with the reason, and its record.
+fn failed_with_record(
+    outcome: &'static str,
+    reason: &str,
+    started: Instant,
+) -> (Response, LiveRecord) {
+    let response = failed(reason);
+    let record = stand_in(&response, outcome, reason, started);
+    (response, record)
+}
+
+/// The record of an answer that stood in for the app, with the status,
+/// headers and body the sender got (`reason` is what `response` carries
+/// as JSON), so the stored request shows what was answered.
+fn stand_in(
+    response: &Response,
+    outcome: &'static str,
+    reason: &str,
+    started: Instant,
+) -> LiveRecord {
     LiveRecord {
-        status,
+        status: response.status().as_u16(),
+        headers: recorded_headers(response.headers()),
         ms: elapsed_ms(started),
         outcome,
         ..recorded_body(reason_body(reason).as_bytes())
@@ -1138,14 +1144,28 @@ mod tests {
 
     #[tokio::test]
     async fn a_stand_in_records_the_body_the_sender_got() {
-        let record = stand_in(503, "busy", BUSY, Instant::now());
-        let sent = axum::body::to_bytes(failed(BUSY).into_body(), 4096)
+        let (response, record) = failed_with_record("busy", BUSY, Instant::now());
+        assert_eq!(record.status, 503);
+        assert_eq!(record.headers["content-type"], "application/json");
+        let sent = axum::body::to_bytes(response.into_body(), 4096)
             .await
             .unwrap();
         assert_eq!(record.body.as_bytes(), &sent[..]);
         let parsed: serde_json::Value = serde_json::from_slice(&sent).unwrap();
         assert_eq!(parsed["error"], BUSY);
         assert_eq!(record.body_encoding, "utf8");
+    }
+
+    #[tokio::test]
+    async fn a_failed_relay_task_is_recorded_as_unreachable() {
+        let (response, recorded) = relay_failed(Instant::now());
+        assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+        let record = recorded.await.unwrap();
+        assert_eq!(record.status, 503);
+        assert_eq!(record.outcome, "unreachable");
+        assert_eq!(record.headers["content-type"], "application/json");
+        let parsed: serde_json::Value = serde_json::from_str(&record.body).unwrap();
+        assert_eq!(parsed["error"], UNREACHABLE);
     }
 
     #[test]
@@ -1783,6 +1803,9 @@ mod tests {
         assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
         assert_eq!(answer_headers.get("retry-after").unwrap(), "5");
         assert_eq!(record.outcome, "busy");
+        // The row keeps the headers the sender got from the stand-in.
+        assert_eq!(record.headers["retry-after"], "5");
+        assert_eq!(record.headers["content-type"], "application/json");
 
         // The cap across all accounts: another account is turned away too.
         let shared = std::sync::Arc::new(relay_with(base, 16, 1));

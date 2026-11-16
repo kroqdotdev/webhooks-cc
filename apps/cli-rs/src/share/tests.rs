@@ -332,6 +332,7 @@ async fn fake_edge(
             status: 200,
             ms: 3,
             request_id: None,
+            outcome: None,
         };
         text.send(serde_json::to_string(&request).unwrap()).await;
         let closing = EdgeMessage::Closing {

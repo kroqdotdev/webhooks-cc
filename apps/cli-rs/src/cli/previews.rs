@@ -13,7 +13,7 @@ use crate::error::CliError;
 use crate::types::ParsedEmail;
 
 fn print_json(answer: &crate::api::client::Fetched<Value>) -> Result<()> {
-    println!("{}", serde_json::to_string_pretty(&answer.json())?);
+    crate::outln!("{}", serde_json::to_string_pretty(&answer.json())?);
     Ok(())
 }
 
@@ -157,7 +157,7 @@ pub async fn response(
         return print_json(&answer);
     }
     for line in response_lines(&answer.value) {
-        println!("{line}");
+        crate::outln!("{line}");
     }
     Ok(())
 }
@@ -252,7 +252,7 @@ pub async fn layouts(
         return print_json(&answer);
     }
     for line in layouts_lines(&answer.value) {
-        println!("{line}");
+        crate::outln!("{line}");
     }
     Ok(())
 }

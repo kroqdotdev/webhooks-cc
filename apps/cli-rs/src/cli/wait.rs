@@ -333,7 +333,7 @@ pub async fn run(client: &ApiClient, options: WaitOptions, json: bool) -> Result
         } else {
             Value::Array(values)
         };
-        println!("{}", serde_json::to_string_pretty(&out)?);
+        crate::outln!("{}", serde_json::to_string_pretty(&out)?);
         return Ok(());
     }
     let parsed: Vec<CapturedRequest> = values

@@ -125,6 +125,10 @@ pub enum Update {
         ms: u64,
         /// A relayed capture's id, from an edge that sends it.
         request_id: Option<String>,
+        /// A relayed capture's outcome, from an edge that sends it:
+        /// `answered`, or why the edge answered in the app's place
+        /// (`timeout`, `unreachable`, `busy`, `refused`).
+        outcome: Option<String>,
     },
     /// Something the edge said, as it is.
     Notice(String),
@@ -486,8 +490,8 @@ async fn once(
                             on(Update::Ready { name, url, expires_at, expires_in, notice, password });
                         }
                     }
-                    Ok(EdgeMessage::Request { method, path, status, ms, request_id }) => {
-                        on(Update::Request { method, path, status, ms, request_id });
+                    Ok(EdgeMessage::Request { method, path, status, ms, request_id, outcome }) => {
+                        on(Update::Request { method, path, status, ms, request_id, outcome });
                     }
                     Ok(EdgeMessage::Notice { text }) => on(Update::Notice(text)),
                     Ok(EdgeMessage::Closing { reason }) => return Ok(Ended::Closed(reason)),

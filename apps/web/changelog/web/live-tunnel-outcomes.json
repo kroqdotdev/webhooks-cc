@@ -1,0 +1,8 @@
+{
+  "title": "Live tunnel outcomes and whk 1.20.3",
+  "items": [
+    "A request whose live relay failed before the tunnel was asked (too many live requests at once, the tunnel edge out of reach) now stores the headers its sender got with the 503, as an answer from your app does",
+    "A live relay that failed inside webhooks.cc is stored on the request as `unreachable`, with the 503 its sender got, instead of with no response at all",
+    "The tunnel edge tells `whk tunnel --live` why a sender got a 503 in your app's place, and the changelog lists whk 1.20.3, which shows it"
+  ]
+}

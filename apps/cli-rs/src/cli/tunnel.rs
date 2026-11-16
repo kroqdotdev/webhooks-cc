@@ -727,26 +727,11 @@ fn show_live_update(update: Update, json: bool) {
             status,
             ms,
             request_id,
-        } => {
-            if json {
-                let mut event = serde_json::json!({
-                    "event": "relayed",
-                    "method": method,
-                    "path": path,
-                    "status": status,
-                    "duration_ms": ms,
-                });
-                if let Some(id) = request_id {
-                    event["request_id"] = serde_json::Value::String(id);
-                }
-                crate::outln!("{event}");
-            } else {
-                crate::outln!(
-                    "{}",
-                    crate::cli::share::request_line(&method, &path, status, ms)
-                );
-            }
-        }
+            outcome,
+        } => crate::outln!(
+            "{}",
+            relayed_line(json, &method, &path, status, ms, request_id, outcome)
+        ),
         Update::Notice(text) => {
             if json {
                 crate::outln!("{}", serde_json::json!({ "event": "notice", "text": text }));
@@ -772,6 +757,60 @@ fn show_live_update(update: Update, json: bool) {
             }
         }
     }
+}
+
+/// The line for a capture the edge relayed (or answered in the app's place):
+/// under `--json` a `relayed` event, which carries `outcome` from an edge
+/// that sends it; for a person the request line, with why the sender got
+/// the edge's 503 when the app did not answer.
+fn relayed_line(
+    json: bool,
+    method: &str,
+    path: &str,
+    status: u16,
+    ms: u64,
+    request_id: Option<String>,
+    outcome: Option<String>,
+) -> String {
+    if json {
+        let mut event = serde_json::json!({
+            "event": "relayed",
+            "method": method,
+            "path": path,
+            "status": status,
+            "duration_ms": ms,
+        });
+        if let Some(id) = request_id {
+            event["request_id"] = serde_json::Value::String(id);
+        }
+        if let Some(outcome) = outcome {
+            event["outcome"] = serde_json::Value::String(outcome);
+        }
+        return event.to_string();
+    }
+    let line = crate::cli::share::request_line(method, path, status, ms);
+    match outcome.as_deref().and_then(outcome_note) {
+        Some(note) => format!("{line}  {}", dim(&note)),
+        None => line,
+    }
+}
+
+/// Why the sender got the edge's answer instead of the app's, in words:
+/// nothing for the app's own answer (or an edge that did not say).
+fn outcome_note(outcome: &str) -> Option<String> {
+    let note = match outcome {
+        "answered" => return None,
+        "timeout" => "timed out: the app did not start its answer within 25 s",
+        "unreachable" => {
+            "unreachable: nothing answered on the local port, or the connection closed without an answer"
+        }
+        "busy" => "busy: too many requests in flight, the sender was asked to retry",
+        "refused" => "refused: the app's answer was not passed back to the sender",
+        "offline" => "offline: no live tunnel was connected",
+        // A word a newer edge knows and this CLI does not, as it is.
+        other => return Some(sanitize_line(&other.chars().take(40).collect::<String>())),
+    };
+    Some(note.to_string())
 }
 
 /// Why a live relay ended when its user stopped `whk`.
@@ -948,6 +987,59 @@ mod tests {
         assert!(event.get("kind").is_none() && event.get("format").is_none());
         assert!(event["error"].is_null());
     }
+    #[test]
+    fn a_relayed_line_says_why_the_edge_answered_for_the_app() {
+        crate::cli::output::set_no_color(true);
+        let line = |outcome: Option<&str>| {
+            relayed_line(
+                false,
+                "POST",
+                "/hooks",
+                503,
+                25_000,
+                Some("r1".into()),
+                outcome.map(str::to_string),
+            )
+        };
+        assert!(
+            line(Some("timeout"))
+                .ends_with("25000 ms  timed out: the app did not start its answer within 25 s")
+        );
+        assert!(
+            line(Some("unreachable")).contains("unreachable: nothing answered on the local port")
+        );
+        assert!(line(Some("busy")).contains("busy: "));
+        assert!(line(Some("refused")).contains("refused: "));
+        assert!(line(Some("answered")).ends_with("25000 ms"));
+        // An older edge says nothing more than the status.
+        assert!(line(None).ends_with("25000 ms"));
+        assert!(line(Some("new-word")).ends_with("  new-word"));
+    }
+
+    #[test]
+    fn a_relayed_event_carries_the_outcome_only_when_the_edge_sent_one() {
+        let event = |outcome: Option<&str>| {
+            relayed_line(
+                true,
+                "POST",
+                "/hooks",
+                503,
+                12,
+                Some("r1".into()),
+                outcome.map(str::to_string),
+            )
+        };
+        assert_eq!(
+            event(Some("unreachable")),
+            r#"{"event":"relayed","method":"POST","path":"/hooks","status":503,"duration_ms":12,"request_id":"r1","outcome":"unreachable"}"#
+        );
+        // From an older edge: the event as it always was.
+        assert_eq!(
+            event(None),
+            r#"{"event":"relayed","method":"POST","path":"/hooks","status":503,"duration_ms":12,"request_id":"r1"}"#
+        );
+    }
+
     fn relayed(method: &str, path: &str, id: Option<&str>) -> Update {
         Update::Request {
             method: method.into(),
@@ -955,6 +1047,7 @@ mod tests {
             status: 200,
             ms: 3,
             request_id: id.map(str::to_string),
+            outcome: Some("answered".into()),
         }
     }
 
@@ -1147,6 +1240,7 @@ mod tests {
             status: 503,
             ms: 0,
             request_id: Some("b".into()),
+            outcome: Some("busy".into()),
         });
         assert!(relay.due(now + HELD_FOR).is_empty());
     }
