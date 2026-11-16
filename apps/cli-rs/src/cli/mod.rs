@@ -1728,6 +1728,10 @@ pub enum DeliveriesAction {
     Summary {
         /// The endpoint's slug
         slug: String,
+
+        /// Only one destination's deliveries (its id), as `deliveries ls --destination` lists them
+        #[arg(long, value_parser = parse_destination_id)]
+        destination: Option<String>,
     },
 
     /// Send a captured request again now with the current settings: to every destination that takes its kind, or to one whatever its filter says

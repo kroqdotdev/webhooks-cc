@@ -254,10 +254,24 @@ fn older_command(slug: &str, query: &DeliveryQuery, list: &[Value]) -> Option<St
     Some(command)
 }
 
-pub async fn summary(client: &ApiClient, slug: &str, json: bool) -> Result<()> {
-    let answer = client.delivery_summary(slug).await?;
+pub async fn summary(
+    client: &ApiClient,
+    slug: &str,
+    destination: Option<&str>,
+    json: bool,
+) -> Result<()> {
+    let answer = client
+        .delivery_summary(slug, destination.map(str::trim))
+        .await?;
     if json {
         return print_json(&answer);
+    }
+    if let Some(id) = destination {
+        crate::outln!(
+            "  {} {}",
+            dim(&format!("{:<14}", "Destination")),
+            sanitize_line(id.trim())
+        );
     }
     for line in summary_lines(&answer.value) {
         crate::outln!("{line}");
@@ -529,6 +543,33 @@ mod tests {
         assert_eq!(
             sent.lock().unwrap().clone(),
             Some(json!({ "destinationId": "d1" }))
+        );
+    }
+
+    #[tokio::test]
+    async fn the_summary_counts_one_destination_when_asked() {
+        let seen: std::sync::Arc<std::sync::Mutex<Vec<Option<String>>>> = Default::default();
+        let queries = seen.clone();
+        let app = axum::Router::new().route(
+            "/api/endpoints/{slug}/deliveries/summary",
+            axum::routing::get(
+                move |axum::extract::RawQuery(raw): axum::extract::RawQuery| async move {
+                    queries.lock().unwrap().push(raw);
+                    axum::Json(json!({
+                        "last24h": { "delivered": 1, "failed": 0 }, "pending": 0, "failed": 0, "total": 1
+                    }))
+                },
+            ),
+        );
+        let base = serve(app).await;
+        let id = "0b0e1c2d-3f40-4a5b-8c6d-7e8f90a1b2c3";
+        summary(&client(&base), "acme", Some(id), true)
+            .await
+            .unwrap();
+        summary(&client(&base), "acme", None, true).await.unwrap();
+        assert_eq!(
+            *seen.lock().unwrap(),
+            vec![Some(format!("destination={id}")), None]
         );
     }
 

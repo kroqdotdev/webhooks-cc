@@ -180,7 +180,7 @@ impl Tunnel {
         let start = Instant::now();
         match self.email_request(options, &rendered) {
             Ok(request) => finish(start, self.http.execute(request).await).await,
-            Err(e) => failed(start, e.to_string()),
+            Err(e) => failed(start, format!("{e:#}")),
         }
     }
 
@@ -191,7 +191,8 @@ impl Tunnel {
         &self,
         options: &EmailOptions,
         rendered: &RenderedEmail,
-    ) -> reqwest::Result<reqwest::Request> {
+    ) -> anyhow::Result<reqwest::Request> {
+        let body = rendered.body_bytes()?;
         let method = rendered.method.parse().unwrap_or(reqwest::Method::POST);
         let mut headers = HeaderMap::new();
         for (key, value) in &rendered.headers {
@@ -203,11 +204,12 @@ impl Tunnel {
             insert_header(&mut headers, key, value);
         }
         let url = email_target_url(&self.target_base, options.path.as_deref());
-        self.http
+        Ok(self
+            .http
             .request(method, url)
             .headers(headers)
-            .body(rendered.body.clone())
-            .build()
+            .body(body)
+            .build()?)
     }
 }
 
@@ -472,6 +474,7 @@ mod email_tests {
             method: "POST".into(),
             headers,
             body: body.into(),
+            body_encoding: None,
         }
     }
 
@@ -590,7 +593,7 @@ mod email_live_tests {
         method: String,
         path: String,
         headers: axum::http::HeaderMap,
-        body: String,
+        body: Vec<u8>,
     }
 
     #[derive(Default)]
@@ -629,7 +632,7 @@ mod email_live_tests {
             "sendgrid" => "multipart/form-data; boundary=acme42",
             _ => "application/json",
         };
-        Json(serde_json::json!({
+        let mut answer = serde_json::json!({
             "format": format,
             "method": "POST",
             "headers": {
@@ -637,8 +640,24 @@ mod email_live_tests {
                 "user-agent": "webhooks.cc (+https://webhooks.cc/docs/forwarding)",
             },
             "body": format!("{id} as {format}"),
-        }))
-        .into_response()
+        });
+        // A server that knows bodyEncoding answers the exact bytes, a binary
+        // file part among them; one from before it ("old-*") ignores it.
+        if body["bodyEncoding"] == "base64" && !id.starts_with("old") {
+            use base64::Engine;
+            answer["body"] = base64::engine::general_purpose::STANDARD
+                .encode(binary_form(&id, &format))
+                .into();
+            answer["bodyEncoding"] = "base64".into();
+        }
+        Json(answer).into_response()
+    }
+
+    /// A form whose file part is a PNG header: bytes that are not UTF-8.
+    fn binary_form(id: &str, format: &str) -> Vec<u8> {
+        let mut bytes = format!("{id} as {format}\r\n").into_bytes();
+        bytes.extend_from_slice(b"\x89PNG\r\n\x1a\n\x00\xff\xfe");
+        bytes
     }
 
     async fn local_target(State(seen): State<Shared>, request: Request) -> StatusCode {
@@ -648,7 +667,7 @@ mod email_live_tests {
             method: parts.method.to_string(),
             path: parts.uri.path().to_string(),
             headers: parts.headers,
-            body: String::from_utf8(bytes.to_vec()).unwrap(),
+            body: bytes.to_vec(),
         });
         StatusCode::ACCEPTED
     }
@@ -706,7 +725,7 @@ mod email_live_tests {
         assert_eq!(delivery.path, "/hooks/email");
         assert_eq!(delivery.headers["content-type"], "application/json");
         assert_eq!(delivery.headers["x-acme-env"], "dev");
-        assert_eq!(delivery.body, "e1 as json");
+        assert_eq!(delivery.body, b"e1 as json");
     }
 
     #[tokio::test]
@@ -736,7 +755,9 @@ mod email_live_tests {
         let seen = seen.lock().unwrap();
         assert_eq!(
             seen.renders[0].2,
-            serde_json::json!({ "format": "mailgun", "mailgunSigningKey": "key-acme" })
+            serde_json::json!({
+                "format": "mailgun", "mailgunSigningKey": "key-acme", "bodyEncoding": "base64"
+            })
         );
         assert_eq!(
             seen.renders[1].2,
@@ -747,6 +768,73 @@ mod email_live_tests {
             seen.deliveries[0].headers["content-type"],
             "application/x-www-form-urlencoded"
         );
+    }
+
+    #[tokio::test]
+    async fn a_form_posts_the_exact_bytes_binary_files_included() {
+        let (base, seen) = start_server().await;
+        let options = EmailOptions {
+            format: EmailFormat::Sendgrid,
+            path: None,
+            mailgun_signing_key: None,
+        };
+        let tunnel = Tunnel::new(base.clone(), HashMap::new())
+            .unwrap()
+            .with_emails(client(&base), options);
+        let result = tunnel.forward(&email("e5")).await;
+        assert!(result.success, "{:?}", result.error);
+
+        let seen = seen.lock().unwrap();
+        assert_eq!(
+            seen.renders[0].2,
+            serde_json::json!({ "format": "sendgrid", "bodyEncoding": "base64" })
+        );
+        assert_eq!(seen.deliveries[0].body, binary_form("e5", "sendgrid"));
+        assert_eq!(
+            seen.deliveries[0].headers["content-type"],
+            "multipart/form-data; boundary=acme42"
+        );
+    }
+
+    #[tokio::test]
+    async fn an_older_server_answering_text_is_posted_as_text() {
+        let (base, seen) = start_server().await;
+        let options = EmailOptions {
+            format: EmailFormat::Mailgun,
+            path: None,
+            mailgun_signing_key: None,
+        };
+        let tunnel = Tunnel::new(base.clone(), HashMap::new())
+            .unwrap()
+            .with_emails(client(&base), options);
+        let result = tunnel.forward(&email("old-1")).await;
+        assert!(result.success, "{:?}", result.error);
+
+        let seen = seen.lock().unwrap();
+        assert_eq!(seen.renders[0].2["bodyEncoding"], "base64");
+        assert_eq!(seen.deliveries[0].body, b"old-1 as mailgun");
+    }
+
+    #[tokio::test]
+    async fn json_formats_are_not_asked_for_bytes() {
+        let (base, seen) = start_server().await;
+        let tunnel = Tunnel::new(base.clone(), HashMap::new())
+            .unwrap()
+            .with_emails(
+                client(&base),
+                EmailOptions {
+                    format: EmailFormat::Cloudmailin,
+                    path: None,
+                    mailgun_signing_key: None,
+                },
+            );
+        assert!(tunnel.forward(&email("e6")).await.success);
+        let seen = seen.lock().unwrap();
+        assert_eq!(
+            seen.renders[0].2,
+            serde_json::json!({ "format": "cloudmailin" })
+        );
+        assert_eq!(seen.deliveries[0].body, b"e6 as cloudmailin");
     }
 
     #[tokio::test]

@@ -30,11 +30,11 @@ export const TRACK_LABELS: Record<ChangelogTrack, string> = {
 const RELEASE = release as { version: string | null; entries: ChangelogEntry[] };
 
 export const APP_VERSION: string = RELEASE.version ?? "dev";
-export const CLI_VERSION = "1.20.3";
-export const SDK_VERSION = "1.33.0";
+export const CLI_VERSION = "1.20.4";
+export const SDK_VERSION = "1.34.0";
 export const PYTHON_SDK_VERSION = "0.12.0";
 export const GO_SDK_VERSION = "0.12.0";
-export const MCP_VERSION = "2.6.1";
+export const MCP_VERSION = "2.6.2";
 
 export const CHANGELOG: ChangelogEntry[] = [
   ...RELEASE.entries,
@@ -2145,6 +2145,16 @@ export const CHANGELOG: ChangelogEntry[] = [
 
   // ─── CLI ────────────────────────────────────────────────────────────
   {
+    version: "1.20.4",
+    date: "2026-11-16",
+    title: "Binary Attachments In Tunnelled Forms, One Destination's Counts",
+    track: "cli",
+    items: [
+      "`whk tunnel --email-format sendgrid` and `--email-format mailgun` post the form's exact bytes, so a PDF or an image attached to the email reaches your handler as the file it is, as those providers post it. Against a server from before this, the form is posted as text without binary files, as before",
+      "`whk deliveries summary <slug> --destination <id>` counts only that destination's deliveries, so it agrees with `whk deliveries ls --destination`",
+    ],
+  },
+  {
     version: "1.20.3",
     date: "2026-11-16",
     title: "Live Tunnel Says Why, Closed Pipes Keep The Status",
@@ -2576,6 +2586,16 @@ export const CHANGELOG: ChangelogEntry[] = [
   },
 
   // ─── SDK ────────────────────────────────────────────────────────────
+  {
+    version: "1.34.0",
+    date: "2026-11-16",
+    title: "Standard Webhooks Checks Over Raw Bytes",
+    track: "sdk",
+    items: [
+      "`verifyStandardWebhookSignature()` takes the body as bytes too (`Uint8Array`, a Node `Buffer` or `ArrayBuffer`), as `verifyForwardedEmail()` already did, so a forwarded SendGrid or Mailgun form carrying a binary file (a PDF, an image) verifies: decoded as text, such a body changes and its signature no longer matches. A string is checked as before",
+      "`verifySignature()` with `standard-webhooks` reads a captured request's `bodyRaw` when it has one, so a captured form with a binary file verifies too",
+    ],
+  },
   {
     version: "1.33.0",
     date: "2026-11-16",
@@ -3472,6 +3492,15 @@ export const CHANGELOG: ChangelogEntry[] = [
   },
 
   // ─── MCP ────────────────────────────────────────────────────────────
+  {
+    version: "2.6.2",
+    date: "2026-11-16",
+    title: "Signature Checks On Binary Forms",
+    track: "mcp",
+    items: [
+      "`verify_signature` with `standard-webhooks` checks a captured request whose body is not text (a forwarded SendGrid or Mailgun form carrying a PDF or an image) over its exact bytes, through SDK 1.34.0",
+    ],
+  },
   {
     version: "2.6.1",
     date: "2026-11-16",

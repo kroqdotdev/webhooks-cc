@@ -616,12 +616,13 @@ whk deliveries ls <slug> --status failed --limit 50       # all, pending, failed
 whk deliveries ls <slug> --destination <id>
 whk deliveries ls --request <request-id>                  # one request's deliveries, with each try (no slug)
 whk deliveries summary <slug>                             # last 24 hours, waiting, failed
+whk deliveries summary <slug> --destination <id>          # the same counts for one destination
 whk deliveries redeliver <request-id> --yes               # to every destination that takes its kind
 whk deliveries redeliver <request-id> --destination <id> --yes   # to one, whatever its filter says
 whk deliveries redeliver-failed <slug> --yes              # every request whose latest delivery failed
 ```
 
-`skipped` deliveries are the ones a filter turned down. Each row ends with its request id and destination id (`requestId` and `destination.id` with `--json`). A full page ends with the command for the next one (`--before` and a row's cursor). `redeliver` takes the request id (the REQUEST column), not the delivery's own id, and `--destination` the DESTINATION column, so a failed row is sent again with `whk deliveries redeliver <request-id> --destination <destination-id>`. It sends the request with each destination's current settings, also when it was never forwarded; `redeliver-failed` sends the failed ones oldest first, at most what fits under each destination's pending cap, and `--destination` limits it to one. Both ask first, and need `--yes` without a terminal.
+`skipped` deliveries are the ones a filter turned down. `summary --destination` counts only that destination's deliveries, so it agrees with `ls --destination`. Each row ends with its request id and destination id (`requestId` and `destination.id` with `--json`). A full page ends with the command for the next one (`--before` and a row's cursor). `redeliver` takes the request id (the REQUEST column), not the delivery's own id, and `--destination` the DESTINATION column, so a failed row is sent again with `whk deliveries redeliver <request-id> --destination <destination-id>`. It sends the request with each destination's current settings, also when it was never forwarded; `redeliver-failed` sends the failed ones oldest first, at most what fits under each destination's pending cap, and `--destination` limits it to one. Both ask first, and need `--yes` without a terminal.
 
 ## usage
 

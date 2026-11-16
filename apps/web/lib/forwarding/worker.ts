@@ -2,7 +2,7 @@ import { decryptSigningSecret } from "@/lib/crypto";
 import { createHmac } from "node:crypto";
 import {
   buildEmailJson,
-  inboundEmailPayload,
+  inboundEmailPayloadBytes,
   isInboundEmailFormat,
   type EmailField,
 } from "@webhooks-cc/sdk/email";
@@ -323,7 +323,9 @@ export function outgoingFor(
     if (request.kind !== "email" || !request.email) {
       return { reason: "The email could not be read.", facts };
     }
-    const payload = inboundEmailPayload(
+    // As bytes, so the SendGrid and Mailgun forms carry binary files (a PDF,
+    // an image) as the providers post them; the JSON shapes are their UTF-8.
+    const payload = inboundEmailPayloadBytes(
       format,
       { ...request, email: request.email },
       {
@@ -332,14 +334,16 @@ export function outgoingFor(
         hmacSha256Hex,
       }
     );
-    // Signed like the JSON format too, so a handler can check it came from here.
+    const body = Buffer.from(payload.body.buffer, payload.body.byteOffset, payload.body.byteLength);
+    // Signed like the JSON format too (over the exact bytes), so a handler
+    // can check it came from here.
     const headers: Record<string, string> = {
-      ...forwardHeaders(settings.secret, request.id, payload.body),
+      ...forwardHeaders(settings.secret, request.id, body),
       "content-type": payload.contentType,
     };
     for (const [name, value] of settings.ownerHeaders) headers[name] = value;
     return {
-      outgoing: jsonForward(settings.url, headers, payload.body, {
+      outgoing: jsonForward(settings.url, headers, body, {
         ownerHeaders: settings.ownerHeaders.length > 0,
       }),
       facts,

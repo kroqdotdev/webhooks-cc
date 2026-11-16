@@ -807,12 +807,20 @@ impl EmailFormat {
             EmailFormat::Cloudmailin => "CloudMailin JSON",
         }
     }
+
+    /// A form with file parts (SendGrid, Mailgun): rendered as bytes, so a
+    /// binary attachment arrives as the file it is.
+    pub fn is_form(self) -> bool {
+        matches!(self, EmailFormat::Sendgrid | EmailFormat::Mailgun)
+    }
 }
 
 /// A captured email rendered for a handler: the request to send it with.
-/// `body` is text in every format (JSON, a multipart form or a URL-encoded
-/// form), and `headers` carries its content type, with the multipart
-/// boundary for SendGrid.
+/// `body` is text (JSON, a multipart form or a URL-encoded form), or, when
+/// `body_encoding` is `base64`, the exact bytes in base64 (asked for with
+/// `bodyEncoding: "base64"`; a server from before that option ignores it and
+/// answers text). `headers` carries the content type, with the multipart
+/// boundary for a form with files.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RenderedEmail {
     #[serde(default)]
@@ -822,6 +830,30 @@ pub struct RenderedEmail {
     #[serde(default)]
     pub headers: HashMap<String, String>,
     pub body: String,
+    #[serde(
+        default,
+        rename = "bodyEncoding",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub body_encoding: Option<String>,
+}
+
+impl RenderedEmail {
+    /// The bytes to post: the text as UTF-8, or the decoded base64 when the
+    /// server said it sent base64.
+    pub fn body_bytes(&self) -> anyhow::Result<Vec<u8>> {
+        use base64::Engine;
+        match self.body_encoding.as_deref() {
+            None => Ok(self.body.as_bytes().to_vec()),
+            Some("base64") => base64::engine::general_purpose::STANDARD
+                .decode(self.body.as_bytes())
+                .map_err(|e| anyhow::anyhow!("the rendered body is not valid base64: {e}")),
+            Some(other) => anyhow::bail!(
+                "the server sent the body as {:?}, which this whk cannot read: run `whk update`",
+                crate::cli::output::sanitize_line(other)
+            ),
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -1344,6 +1376,45 @@ mod render_tests {
             Some("multipart/form-data; boundary=xyz")
         );
         assert!(rendered.body.starts_with("--xyz"));
+        assert_eq!(rendered.body_encoding, None);
+        assert_eq!(rendered.body_bytes().unwrap(), b"--xyz\r\n...");
+    }
+
+    #[test]
+    fn a_base64_body_decodes_to_the_exact_bytes() {
+        // A form with a PDF part: bytes that are not UTF-8 survive.
+        let bytes: &[u8] = b"--xyz\r\n%PDF-1.7\xff\xfe\x00\x80\r\n--xyz--\r\n";
+        use base64::Engine;
+        let json = serde_json::json!({
+            "format": "sendgrid", "method": "POST",
+            "headers": { "content-type": "multipart/form-data; boundary=xyz" },
+            "body": base64::engine::general_purpose::STANDARD.encode(bytes),
+            "bodyEncoding": "base64",
+        });
+        let rendered: RenderedEmail = serde_json::from_value(json).unwrap();
+        assert_eq!(rendered.body_bytes().unwrap(), bytes);
+    }
+
+    #[test]
+    fn an_unknown_encoding_is_an_error_not_garbage() {
+        let rendered: RenderedEmail = serde_json::from_value(serde_json::json!({
+            "body": "AAAA", "bodyEncoding": "zstd"
+        }))
+        .unwrap();
+        let error = rendered.body_bytes().unwrap_err().to_string();
+        assert!(error.contains("whk update"), "{error}");
+        let bad: RenderedEmail = serde_json::from_value(serde_json::json!({
+            "body": "not base64!", "bodyEncoding": "base64"
+        }))
+        .unwrap();
+        assert!(bad.body_bytes().is_err());
+    }
+
+    #[test]
+    fn only_the_forms_ask_for_bytes() {
+        assert!(EmailFormat::Sendgrid.is_form() && EmailFormat::Mailgun.is_form());
+        assert!(!EmailFormat::Json.is_form());
+        assert!(!EmailFormat::Postmark.is_form() && !EmailFormat::Cloudmailin.is_form());
     }
 }
 

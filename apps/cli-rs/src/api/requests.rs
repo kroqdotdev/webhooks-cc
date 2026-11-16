@@ -231,6 +231,9 @@ impl ApiClient {
     /// Render a captured email for a handler (`POST /api/requests/{id}/render`):
     /// webhooks.cc's email JSON, or the way an inbound mail provider posts it.
     /// The Mailgun form is signed with `mailgun_signing_key` when one is given.
+    /// The forms (SendGrid, Mailgun) are asked for as bytes in base64, so they
+    /// carry binary attachments; a server from before that option answers
+    /// text without `bodyEncoding`, which `RenderedEmail::body_bytes` reads.
     pub async fn render_email(
         &self,
         request_id: &str,
@@ -241,6 +244,9 @@ impl ApiClient {
         let mut body = serde_json::json!({ "format": format });
         if let Some(key) = mailgun_signing_key {
             body["mailgunSigningKey"] = key.into();
+        }
+        if format.is_form() {
+            body["bodyEncoding"] = "base64".into();
         }
         let resp = self
             .post(

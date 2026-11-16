@@ -22,8 +22,12 @@ import {
   VERIFY_PROVIDERS,
 } from "./templates";
 
-type VerifyableRequest =
-  Pick<CapturedRequest, "body" | "headers"> | Pick<SearchResult, "body" | "headers">;
+type VerifyableRequest = (
+  Pick<CapturedRequest, "body" | "headers"> | Pick<SearchResult, "body" | "headers">
+) & {
+  /** Base64 of the exact bytes, which captures carry when the body is not UTF-8. */
+  bodyRaw?: string;
+};
 
 type PayPalSignatureOptions = {
   fetchCertificate?: (url: string) => Promise<string>;
@@ -1190,9 +1194,12 @@ export async function verifyDiscordSignature(
 
 /**
  * Verify a Standard Webhooks signature from webhook-id/timestamp/signature headers.
+ * The body is the raw body: a string (as UTF-8), or its bytes, which a body
+ * that is not UTF-8 text needs (a forwarded SendGrid or Mailgun form with a
+ * binary file); decoding such a body as text changes it and fails the check.
  */
 export async function verifyStandardWebhookSignature(
-  body: string | undefined,
+  body: string | Uint8Array | ArrayBuffer | undefined,
   headers: HeadersInput,
   secret: string
 ): Promise<boolean> {
@@ -1207,9 +1214,18 @@ export async function verifyStandardWebhookSignature(
     return false;
   }
 
-  const expected = toBase64(
-    await hmacSignRaw("SHA-256", key, `${messageId}.${timestamp}.${normalizeBody(body)}`)
-  );
+  const prefix = `${messageId}.${timestamp}.`;
+  let signed: string | Uint8Array;
+  if (body === undefined || typeof body === "string") {
+    signed = `${prefix}${normalizeBody(body)}`;
+  } else {
+    const head = new TextEncoder().encode(prefix);
+    const bytes = bodyBytes(body);
+    signed = new Uint8Array(head.length + bytes.length);
+    signed.set(head);
+    signed.set(bytes, head.length);
+  }
+  const expected = toBase64(await hmacSignRaw("SHA-256", key, signed));
   return parseStandardSignatures(signatureHeader).some((signature) =>
     timingSafeEqual(signature, expected)
   );
@@ -1259,9 +1275,17 @@ function isRequestReceivedEvent(value: unknown): value is RequestReceivedEvent {
   );
 }
 
+/**
+ * The body's bytes. Views and buffers are told apart without `instanceof`,
+ * which fails for one from another realm (Jest's node environment, a `vm`
+ * sandbox), where `request.arrayBuffer()` gives the host's ArrayBuffer.
+ */
 function bodyBytes(body: string | Uint8Array | ArrayBuffer): Uint8Array {
   if (typeof body === "string") return new TextEncoder().encode(body);
-  return body instanceof ArrayBuffer ? new Uint8Array(body) : body;
+  if (ArrayBuffer.isView(body)) {
+    return new Uint8Array(body.buffer, body.byteOffset, body.byteLength);
+  }
+  return new Uint8Array(body);
 }
 
 function bodyText(body: string | Uint8Array | ArrayBuffer): string {
@@ -1301,7 +1325,7 @@ async function verifySignedForward(
     );
   }
 
-  if (!(await verifyStandardWebhookSignature(text, headers, secret))) {
+  if (!(await verifyStandardWebhookSignature(body, headers, secret))) {
     throw new WebhookVerificationError(
       "invalid_signature",
       "The webhook-signature does not match the body and secret"
@@ -1602,7 +1626,9 @@ export async function verifySignature(
   }
 
   if (options.provider === "standard-webhooks") {
-    valid = await verifyStandardWebhookSignature(request.body, request.headers, options.secret);
+    // A binary body (a forwarded form with a file) is captured only as bodyRaw.
+    const body = request.bodyRaw ? bytesFromBase64(request.bodyRaw) : request.body;
+    valid = await verifyStandardWebhookSignature(body, request.headers, options.secret);
   }
 
   if (options.provider === "meta") {

@@ -931,8 +931,8 @@ async fn run(args: Cli) -> Result<()> {
                 )
                 .await?
             }
-            DeliveriesAction::Summary { slug } => {
-                cli::deliveries::summary(&client, &slug, args.json).await?
+            DeliveriesAction::Summary { slug, destination } => {
+                cli::deliveries::summary(&client, &slug, destination.as_deref(), args.json).await?
             }
             DeliveriesAction::Redeliver {
                 request,

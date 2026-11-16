@@ -2363,7 +2363,7 @@ function isForgivingBase64(value: string): boolean {
 export async function hmacSignRaw(
   algorithm: "SHA-256" | "SHA-1",
   keyBytes: Uint8Array,
-  payload: string
+  payload: string | Uint8Array
 ): Promise<Uint8Array> {
   if (!globalThis.crypto?.subtle) {
     throw new Error("crypto.subtle is required for signature generation");
@@ -2378,7 +2378,11 @@ export async function hmacSignRaw(
   const signature = await globalThis.crypto.subtle.sign(
     "HMAC",
     key,
-    new TextEncoder().encode(payload)
+    (typeof payload === "string"
+      ? new TextEncoder().encode(payload)
+      : payload.buffer instanceof ArrayBuffer
+        ? payload
+        : new Uint8Array(payload)) as Uint8Array<ArrayBuffer>
   );
   return new Uint8Array(signature);
 }
