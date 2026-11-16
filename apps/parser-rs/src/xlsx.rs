@@ -151,25 +151,57 @@ fn sheet_targets(input: &[u8]) -> Option<std::collections::HashMap<String, Strin
             .map(|v| v.into_owned())
     }
 
-    let mut archive = zip::ZipArchive::new(Cursor::new(input)).ok()?;
-    let rels = read(&mut archive, "xl/_rels/workbook.xml.rels")?;
-    let workbook = read(&mut archive, "xl/workbook.xml")?;
-
-    let mut by_id = std::collections::HashMap::new();
-    let mut reader = Reader::from_reader(rels.as_slice());
-    let mut buf = Vec::new();
-    loop {
-        match reader.read_event_into(&mut buf).ok()? {
-            Event::Start(e) | Event::Empty(e) if e.local_name().as_ref() == "Relationship" => {
-                if let (Some(id), Some(target)) = (attr(&e, "Id"), attr(&e, "Target")) {
-                    by_id.insert(id, target.trim_start_matches('/').to_string());
+    // Every Relationship in a rels part, as (Id, Type, Target).
+    fn relationships(xml: &[u8]) -> Option<Vec<(String, String, String)>> {
+        let mut found = Vec::new();
+        let mut reader = Reader::from_reader(xml);
+        let mut buf = Vec::new();
+        loop {
+            match reader.read_event_into(&mut buf).ok()? {
+                Event::Start(e) | Event::Empty(e) if e.local_name().as_ref() == "Relationship" => {
+                    if let (Some(id), Some(target)) = (attr(&e, "Id"), attr(&e, "Target")) {
+                        found.push((id, attr(&e, "Type").unwrap_or_default(), target));
+                    }
                 }
+                Event::Eof => break,
+                _ => {}
             }
-            Event::Eof => break,
-            _ => {}
+            buf.clear();
         }
-        buf.clear();
+        Some(found)
     }
+
+    let mut archive = zip::ZipArchive::new(Cursor::new(input)).ok()?;
+    // The main part as the package names it (_rels/.rels, officeDocument),
+    // as calamine finds it: a workbook saved as xl/book.xml opens too, and
+    // must not slip past this guard.
+    let main = read(&mut archive, "_rels/.rels")
+        .and_then(|xml| relationships(&xml))
+        .and_then(|rels| {
+            rels.into_iter()
+                .find(|(_, typ, _)| typ.ends_with("/officeDocument"))
+                .map(|(_, _, target)| part_path("", &target))
+        })
+        .unwrap_or_else(|| "xl/workbook.xml".to_string());
+    let (dir, file) = match main.rsplit_once('/') {
+        Some((dir, file)) => (dir.to_string(), file.to_string()),
+        None => (String::new(), main.clone()),
+    };
+    let rels_name = if dir.is_empty() {
+        format!("_rels/{file}.rels")
+    } else {
+        format!("{dir}/_rels/{file}.rels")
+    };
+    let rels = read(&mut archive, &rels_name)?;
+    let workbook = read(&mut archive, &main)?;
+
+    // Targets resolved against the main part's folder and normalised, so
+    // "/xl/worksheets/a.xml" and "worksheets/a.xml" are one part.
+    let by_id: std::collections::HashMap<String, String> = relationships(&rels)?
+        .into_iter()
+        .map(|(id, _, target)| (id, part_path(&dir, &target)))
+        .collect();
+    let mut buf = Vec::new();
 
     let mut targets = std::collections::HashMap::new();
     let mut reader = Reader::from_reader(workbook.as_slice());
@@ -187,6 +219,30 @@ fn sheet_targets(input: &[u8]) -> Option<std::collections::HashMap<String, Strin
         buf.clear();
     }
     Some(targets)
+}
+
+/// A relationship target as a part's path in the package: absolute targets
+/// ("/xl/a.xml") from the root, others from `base`, with "." and ".."
+/// resolved, no leading slash.
+fn part_path(base: &str, target: &str) -> String {
+    let joined = if let Some(absolute) = target.strip_prefix('/') {
+        absolute.to_string()
+    } else if base.is_empty() {
+        target.to_string()
+    } else {
+        format!("{base}/{target}")
+    };
+    let mut parts: Vec<&str> = Vec::new();
+    for segment in joined.split('/') {
+        match segment {
+            "" | "." => {}
+            ".." => {
+                parts.pop();
+            }
+            other => parts.push(other),
+        }
+    }
+    parts.join("/")
 }
 
 fn render(value: &DataRef<'_>, is_1904: bool) -> String {
@@ -297,6 +353,55 @@ mod tests {
             sheets[0].rows,
             strings(&[&[], &[], &["", "", "x"], &[], &["1", "", "", "", "2"]])
         );
+    }
+
+    /// A workbook whose main part is xl/book.xml (calamine finds it through
+    /// _rels/.rels), every sheet naming one part, in two spellings.
+    fn renamed_main_part(sheets: usize) -> Vec<u8> {
+        use crate::testutil::zip_entries;
+        let mut workbook = String::from(
+            r#"<?xml version="1.0" encoding="UTF-8"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets>"#,
+        );
+        let mut rels = String::from(
+            r#"<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">"#,
+        );
+        for i in 1..=sheets {
+            workbook.push_str(&format!(
+                r#"<sheet name="S{i}" sheetId="{i}" r:id="rId{i}"/>"#
+            ));
+            let target = if i % 2 == 0 {
+                "/xl/worksheets/one.xml"
+            } else {
+                "worksheets/one.xml"
+            };
+            rels.push_str(&format!(r#"<Relationship Id="rId{i}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="{target}"/>"#));
+        }
+        workbook.push_str("</sheets></workbook>");
+        rels.push_str("</Relationships>");
+        let types = r#"<?xml version="1.0" encoding="UTF-8"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/book.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/one.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/></Types>"#;
+        let root = r#"<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/book.xml"/></Relationships>"#;
+        let sheet = r#"<?xml version="1.0" encoding="UTF-8"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData><row r="1"><c r="A1"><v>1</v></c></row></sheetData></worksheet>"#;
+        zip_entries(
+            &[
+                ("[Content_Types].xml", types.as_bytes()),
+                ("_rels/.rels", root.as_bytes()),
+                ("xl/book.xml", workbook.as_bytes()),
+                ("xl/_rels/book.xml.rels", rels.as_bytes()),
+                ("xl/worksheets/one.xml", sheet.as_bytes()),
+            ],
+            false,
+        )
+    }
+
+    #[test]
+    fn a_renamed_main_part_still_reads_each_part_once() {
+        assert_eq!(
+            part_path("xl", "/xl/worksheets/one.xml"),
+            part_path("xl", "worksheets/./one.xml")
+        );
+        assert_eq!(part_path("xl", "../xl/a.xml"), "xl/a.xml");
+        let (sheets, _, _) = parse(&renamed_main_part(5), 100).unwrap();
+        assert_eq!(sheets.len(), 1, "one part, named five times, is read once");
     }
 
     #[test]
