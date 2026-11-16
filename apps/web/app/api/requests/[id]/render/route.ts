@@ -2,6 +2,7 @@ import { createHmac } from "node:crypto";
 import {
   buildEmailJson,
   inboundEmailPayload,
+  inboundEmailPayloadBytes,
   INBOUND_EMAIL_FORMATS,
   isInboundEmailFormat,
 } from "@webhooks-cc/sdk/email";
@@ -23,6 +24,12 @@ import { isUuid } from "@/lib/uuid";
  * the method, headers and body to send to a handler. The CLI's tunnel and
  * the SDKs in other languages use it, so the shapes are built in one place
  * (packages/sdk/src/email/inbound.ts). Anyone who can read the email may.
+ *
+ * The body is text by default, so SendGrid and Mailgun forms leave binary
+ * attachments out. With `bodyEncoding: "base64"` it is the exact bytes in
+ * base64 (and the answer says `bodyEncoding: "base64"`), and those forms
+ * carry every file with its real contents, as the providers post them.
+ * Older clients never send it, so their answers stay as they were.
  */
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const auth = await authenticateRequestRequireUser(request);
@@ -52,6 +59,11 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   if (key !== undefined && key !== null && (typeof key !== "string" || key.length > 200)) {
     return reply({ error: "mailgunSigningKey is text of at most 200 characters." }, 400);
   }
+  const bodyEncoding = body.bodyEncoding;
+  if (bodyEncoding !== undefined && bodyEncoding !== null && bodyEncoding !== "base64") {
+    return reply({ error: 'bodyEncoding must be "base64" when given.' }, 400);
+  }
+  const base64 = bodyEncoding === "base64";
   if (!isUuid(id)) return reply({ error: "not_found", message: "Request not found" }, 404);
 
   try {
@@ -79,11 +91,14 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
           parsed: captured.parsed ?? null,
         }
       );
+      const text = JSON.stringify(json);
       return reply({
         format,
         method: "POST",
         headers: { "content-type": "application/json", "user-agent": FORWARD_USER_AGENT },
-        body: JSON.stringify(json),
+        ...(base64
+          ? { body: Buffer.from(text, "utf8").toString("base64"), bodyEncoding: "base64" }
+          : { body: text }),
       });
     }
     // With the attachments' contents (up to the inline budget of a
@@ -95,16 +110,24 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       reportError("Could not read an email's attachments for a render", error);
       return withAttachmentPayloads(captured, "links").catch(() => captured);
     });
-    const payload = inboundEmailPayload(
-      format,
-      { ...withFiles, email: withFiles.email ?? captured.email },
-      {
-        raw: captured.bodyRaw ? null : (captured.body ?? null),
-        mailgunSigningKey: typeof key === "string" && key ? key : null,
-        hmacSha256Hex: (secret, message) =>
-          createHmac("sha256", secret).update(message).digest("hex"),
-      }
-    );
+    const source = { ...withFiles, email: withFiles.email ?? captured.email };
+    const options = {
+      raw: captured.bodyRaw ? null : (captured.body ?? null),
+      mailgunSigningKey: typeof key === "string" && key ? key : null,
+      hmacSha256Hex: (secret: string, message: string) =>
+        createHmac("sha256", secret).update(message).digest("hex"),
+    };
+    if (base64) {
+      const payload = inboundEmailPayloadBytes(format, source, options);
+      return reply({
+        format,
+        method: "POST",
+        headers: { "content-type": payload.contentType, "user-agent": FORWARD_USER_AGENT },
+        body: Buffer.from(payload.body).toString("base64"),
+        bodyEncoding: "base64",
+      });
+    }
+    const payload = inboundEmailPayload(format, source, options);
     return reply({
       format,
       method: "POST",

@@ -6,6 +6,7 @@ version of the SDK does not know yet stay reachable.
 
 from __future__ import annotations
 
+import base64
 import json
 from collections.abc import Mapping
 from dataclasses import dataclass, field, fields
@@ -1504,7 +1505,19 @@ class RenderedEmail:
     headers: dict[str, str]
     """The ``content-type`` and ``user-agent`` to send it with."""
     body: str
+    """The body; base64 when ``body_encoding`` is ``"base64"`` (``content`` decodes it)."""
     raw: dict[str, Any] = field(default_factory=dict, repr=False, compare=False)
+    body_encoding: str | None = None
+    """``"base64"`` when it was asked for, else ``None`` (a text body). After ``raw`` so
+    positional construction from before it existed keeps working."""
+
+    @property
+    def content(self) -> bytes:
+        """The body's bytes, to post as they are: decoded from base64 when it came that
+        way, else the text in UTF-8."""
+        if self.body_encoding == "base64":
+            return base64.b64decode(self.body)
+        return self.body.encode("utf-8")
 
     @classmethod
     def from_dict(cls, data: Mapping[str, Any]) -> RenderedEmail:
@@ -1513,6 +1526,7 @@ class RenderedEmail:
             method=str(data.get("method") or "POST"),
             headers=_str_map(data.get("headers")),
             body=_str_or_none(data.get("body")) or "",
+            body_encoding=_str_or_none(data.get("bodyEncoding")),
             raw=dict(data),
         )
 
@@ -1913,6 +1927,8 @@ class TunnelNameList:
 
 CheckoutStatus = Literal["open", "paid", "expired", "superseded"]
 
+CheckoutExpiredReason = Literal["unsettled", "cancelled"]
+
 _CHECKOUT_STATUSES = ("open", "paid", "expired", "superseded")
 
 
@@ -1939,6 +1955,14 @@ class CheckoutBought:
         )
 
 
+def _expired_reason(value: object) -> CheckoutExpiredReason | None:
+    if value == "unsettled":
+        return "unsettled"
+    if value == "cancelled":
+        return "cancelled"
+    return None
+
+
 @dataclass(frozen=True)
 class CheckoutLink:
     """A checkout link from ``billing.create_checkout()``: hand ``url`` to the person,
@@ -1959,7 +1983,8 @@ class CheckoutLink:
     ``opened`` is ``None`` from a server released before it. ``expired_reason`` is
     ``"unsettled"`` for an expired link that may have been paid (Polar was still
     confirming a payment a day later, or could not be read about it): a payment
-    that lands still turns it paid, and webhooks.cc has been alerted.
+    that lands still turns it paid, and webhooks.cc has been alerted; it is
+    ``"cancelled"`` when the asker cancelled the link before it was opened.
     """
 
     id: str
@@ -1975,7 +2000,7 @@ class CheckoutLink:
     bought: CheckoutBought | None = None
     matches: bool | None = None
     opened: bool | None = None
-    expired_reason: Literal["unsettled"] | None = None
+    expired_reason: CheckoutExpiredReason | None = None
     raw: dict[str, Any] = field(default_factory=dict, repr=False, compare=False)
 
     @classmethod
@@ -1999,6 +2024,6 @@ class CheckoutLink:
             bought=CheckoutBought.from_dict(bought) if isinstance(bought, Mapping) else None,
             matches=matches if isinstance(matches, bool) else None,
             opened=opened if isinstance(opened, bool) else None,
-            expired_reason="unsettled" if data.get("expiredReason") == "unsettled" else None,
+            expired_reason=_expired_reason(data.get("expiredReason")),
             raw=dict(data),
         )

@@ -31,10 +31,10 @@ const RELEASE = release as { version: string | null; entries: ChangelogEntry[] }
 
 export const APP_VERSION: string = RELEASE.version ?? "dev";
 export const CLI_VERSION = "1.20.3";
-export const SDK_VERSION = "1.32.0";
-export const PYTHON_SDK_VERSION = "0.11.0";
-export const GO_SDK_VERSION = "0.11.0";
-export const MCP_VERSION = "2.6.0";
+export const SDK_VERSION = "1.33.0";
+export const PYTHON_SDK_VERSION = "0.12.0";
+export const GO_SDK_VERSION = "0.12.0";
+export const MCP_VERSION = "2.6.1";
 
 export const CHANGELOG: ChangelogEntry[] = [
   ...RELEASE.entries,
@@ -2577,6 +2577,20 @@ export const CHANGELOG: ChangelogEntry[] = [
 
   // ─── SDK ────────────────────────────────────────────────────────────
   {
+    version: "1.33.0",
+    date: "2026-11-16",
+    title: "Binary Attachments In Provider Forms, One Destination's Counts",
+    track: "sdk",
+    items: [
+      '`emails.render()` takes `bodyEncoding: "base64"`: the body comes as its exact bytes in base64, and the SendGrid and Mailgun forms carry binary attachments (a PDF, an image) with their real contents, as the providers post them. Without it nothing changes',
+      "`inboundEmailPayloadBytes()` builds the same shapes locally as bytes, binary files included, and `renderInboundEmailBytes()` does so with a Mailgun form signed through Web Crypto, for browsers and edge runtimes",
+      "`forwarding.deliveries()` and `forwarding.summary()` read an empty `destinationId` as no filter, as an omitted one",
+      "`forwarding.summary(slug, { destinationId })` counts one destination's deliveries, matching `forwarding.deliveries()` with the same option",
+      'A checkout link\'s `expiredReason` can be `"cancelled"`, and waiting on a cancelled link throws `CheckoutExpiredError` with that reason and says the link was cancelled',
+      "`CapacityState` types the API's unit names (`unit`, `planUnits`, `blockUnits`, `creditUnits`, `overage.maxUnits`, `overage.usedUnits`) and `noSubscription`, set when the plan allows add-ons but is held without a subscription",
+    ],
+  },
+  {
     version: "1.32.0",
     date: "2026-11-16",
     title: "Test Helpers Under The Rate Limit, Clearer Errors",
@@ -3110,6 +3124,16 @@ export const CHANGELOG: ChangelogEntry[] = [
 
   // ─── Python SDK ─────────────────────────────────────────────────────
   {
+    version: "0.12.0",
+    date: "2026-11-16",
+    title: "Binary Attachments In Provider Forms",
+    track: "python",
+    items: [
+      '`emails.render(..., body_encoding="base64")` returns the body as its exact bytes, so the SendGrid and Mailgun forms carry binary attachments (a PDF, an image) with their real contents; `rendered.content` is the bytes to post either way',
+      'A checkout link\'s `expired_reason` can be `"cancelled"`, and `wait_for_checkout` on a cancelled link raises `CheckoutExpiredError` with that reason',
+    ],
+  },
+  {
     version: "0.11.0",
     date: "2026-11-16",
     title: "Test Fixtures Under The Rate Limit, Clearer Errors",
@@ -3287,6 +3311,16 @@ export const CHANGELOG: ChangelogEntry[] = [
 
   // ─── Go SDK ─────────────────────────────────────────────────────────
   {
+    version: "0.12.0",
+    date: "2026-11-16",
+    title: "Binary Attachments In Provider Forms",
+    track: "go",
+    items: [
+      '`RenderEmailOptions.BodyEncoding = "base64"` returns the body as its exact bytes, so the SendGrid and Mailgun forms carry binary attachments (a PDF, an image) with their real contents; `RenderedEmail.Bytes()` is what to post either way',
+      "Waiting on a checkout link the asker cancelled returns `ErrCheckoutCancelled`, which also matches `ErrCheckoutExpired`",
+    ],
+  },
+  {
     version: "0.11.0",
     date: "2026-11-16",
     title: "Test Helpers Under The Rate Limit, Clearer Errors",
@@ -3438,6 +3472,18 @@ export const CHANGELOG: ChangelogEntry[] = [
   },
 
   // ─── MCP ────────────────────────────────────────────────────────────
+  {
+    version: "2.6.1",
+    date: "2026-11-16",
+    title: "One Destination's Counts, Attachments To Local Handlers",
+    track: "mcp",
+    items: [
+      "`list_deliveries` with `destinationId` returns that destination's counts beside its log, not the whole endpoint's",
+      "`render_email` with a `targetUrl` posts the SendGrid and Mailgun forms with binary attachments (a PDF, an image) as their real bytes",
+      "`list_api_keys` shows each field once, in camelCase",
+      "`send_webhook` names PayPal among the providers whose templates need no secret",
+    ],
+  },
   {
     version: "2.6.0",
     date: "2026-11-16",

@@ -304,6 +304,18 @@ describe("billing checkout links", () => {
     expect((plain as CheckoutExpiredError).reason).toBeNull();
   });
 
+  it("says a cancelled link was cancelled", async () => {
+    globalThis.fetch = vi
+      .fn()
+      .mockResolvedValue(answer(link("expired", { opened: false, expiredReason: "cancelled" })));
+    const error = await client()
+      .billing.waitForCheckout(ID)
+      .catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(CheckoutExpiredError);
+    expect((error as CheckoutExpiredError).reason).toBe("cancelled");
+    expect((error as Error).message).toContain("cancelled before it was opened");
+  });
+
   it("throws when the purchase was undone as a duplicate plan", async () => {
     globalThis.fetch = vi.fn().mockResolvedValue(answer(link("superseded")));
     const error = await client()

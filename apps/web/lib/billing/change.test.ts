@@ -5,12 +5,13 @@ import type { CapacityState } from "@/lib/supabase/capacity-billing";
 /** A capacity state as the route reads it, its unit names filled in from the request ones. */
 type CoreState = Omit<
   CapacityState,
-  "unit" | "planUnits" | "blockUnits" | "creditUnits" | "overage"
+  "unit" | "noSubscription" | "planUnits" | "blockUnits" | "creditUnits" | "overage"
 > & { overage: Omit<CapacityState["overage"], "maxUnits" | "usedUnits"> };
 function withUnits(core: CoreState): CapacityState {
   return {
     ...core,
     unit: "requests",
+    noSubscription: false,
     planUnits: core.planRequests,
     blockUnits: core.blockRequests,
     creditUnits: core.creditRequests,

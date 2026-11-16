@@ -113,10 +113,10 @@ deliveries(endpointSlug: string, options?: ListDeliveriesOptions): Promise<Deliv
 
 <ApiMethod method="GET" path="/endpoints/:slug/deliveries/summary" title="client.forwarding.summary">
 
-Delivered and failed among the last 24 hours, waiting now, and the failed and total counts the log's filters show. Each count stops at 100,000.
+Delivered and failed among the last 24 hours, waiting now, and the failed and total counts the log's filters show. Each count stops at 100,000. With `destinationId`, the counts are that destination's alone, matching `deliveries()` with the same option.
 
 ```ts
-summary(endpointSlug: string): Promise<DeliverySummary>
+summary(endpointSlug: string, options?: { destinationId?: string }): Promise<DeliverySummary>
 // Returns: { last24h: { delivered, failed }, pending, failed, total }
 ```
 

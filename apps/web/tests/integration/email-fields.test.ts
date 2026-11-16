@@ -226,6 +226,43 @@ describe("email fields", () => {
     expect(denied.status).toBe(404);
   });
 
+  it("renders the exact bytes in base64 when asked, and refuses another encoding", async () => {
+    const render = (body: Record<string, unknown>) =>
+      renderEmail(
+        routeRequest(`/api/requests/${requestId}/render`, owner.accessToken, {
+          method: "POST",
+          body: JSON.stringify(body),
+        }),
+        { params: Promise.resolve({ id: requestId }) }
+      );
+    const text = await (await render({ format: "postmark" })).json();
+    expect(text.bodyEncoding).toBeUndefined();
+    for (const format of ["postmark", "sendgrid", "json"]) {
+      const response = await render({ format, bodyEncoding: "base64" });
+      expect(response.status).toBe(200);
+      const rendered = await response.json();
+      expect(rendered.bodyEncoding).toBe("base64");
+      const decoded = Buffer.from(rendered.body, "base64").toString("utf8");
+      if (format === "sendgrid") {
+        const form = await new Response(decoded, {
+          headers: { "content-type": rendered.headers["content-type"] },
+        }).formData();
+        expect(form.get("subject")).toBe("Invoice INV-2041");
+      } else {
+        expect(JSON.parse(decoded)).toBeTruthy();
+      }
+    }
+    expect(
+      JSON.parse(
+        Buffer.from(
+          (await (await render({ format: "postmark", bodyEncoding: "base64" })).json()).body,
+          "base64"
+        ).toString("utf8")
+      )
+    ).toEqual(JSON.parse(text.body));
+    expect((await render({ format: "postmark", bodyEncoding: "hex" })).status).toBe(400);
+  });
+
   it("forwards in a provider's shape, filtered on a field", async () => {
     await createDestination(endpointId, {
       url: `${base}/inbound`,

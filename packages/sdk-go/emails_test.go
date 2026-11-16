@@ -154,6 +154,25 @@ func TestEmailsRenderPostsTheFormat(t *testing.T) {
 	if _, body := api.last(); body != `{"format":"mailgun","mailgunSigningKey":"key-acme-test"}` {
 		t.Errorf("body = %s", body)
 	}
+	if _, err := client.Emails.Render(ctx, "m1", webhookscc.RenderEmailOptions{Format: webhookscc.FormatSendGrid, BodyEncoding: "base64"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, body := api.last(); body != `{"bodyEncoding":"base64","format":"sendgrid"}` {
+		t.Errorf("body = %s", body)
+	}
+	if _, err := client.Emails.Render(ctx, "m1", webhookscc.RenderEmailOptions{Format: webhookscc.FormatSendGrid, BodyEncoding: "hex"}); err == nil {
+		t.Error("an unknown body encoding should be refused")
+	}
+	if got, err := rendered.Bytes(); err != nil || string(got) != `{"Subject":"Hi"}` {
+		t.Errorf("Bytes() = %q, %v", got, err)
+	}
+	var binary webhookscc.RenderedEmail
+	if err := json.Unmarshal([]byte(`{"format":"sendgrid","body":"LS1iDQr/ACU=","bodyEncoding":"base64"}`), &binary); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := binary.Bytes(); err != nil || binary.BodyEncoding != "base64" || string(got) != "--b\r\n\xff\x00%" {
+		t.Errorf("Bytes() = %q, %v", got, err)
+	}
 	for _, opts := range []webhookscc.RenderEmailOptions{{}, {Format: webhookscc.FormatChat}, {Format: "resend"}} {
 		if _, err := client.Emails.Render(ctx, "m1", opts); err == nil || !strings.Contains(err.Error(), "unknown inbound format") {
 			t.Errorf("%q: err = %v", opts.Format, err)
@@ -164,7 +183,7 @@ func TestEmailsRenderPostsTheFormat(t *testing.T) {
 	}
 	api.mu.Lock()
 	defer api.mu.Unlock()
-	if len(api.calls) != 2 {
+	if len(api.calls) != 3 {
 		t.Errorf("%d requests reached the API", len(api.calls))
 	}
 }

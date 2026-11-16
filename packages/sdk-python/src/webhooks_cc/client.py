@@ -65,6 +65,7 @@ from .matchers import Matcher, is_email_request, match_email
 from .models import (
     AttachmentDownload,
     BuiltRequest,
+    CheckoutExpiredReason,
     CheckoutLink,
     CountPage,
     Destination,
@@ -1948,6 +1949,7 @@ class Emails:
         *,
         format: Literal["json", "postmark", "sendgrid", "mailgun", "cloudmailin"],
         mailgun_signing_key: str | None = None,
+        body_encoding: Literal["base64"] | None = None,
     ) -> RenderedEmail:
         """A captured email in an inbound mail provider's shape, rendered by webhooks.cc.
 
@@ -1957,7 +1959,10 @@ class Emails:
         HTTP webhook signing key) or ``"cloudmailin"`` (CloudMailin's JSON
         Normalized format), or ``"json"`` for the ``email.received`` JSON, unsigned,
         with the endpoint's named fields. Post it to the handler you wrote for that
-        provider to test it against real mail:
+        provider to test it against real mail. The body is text, so SendGrid and
+        Mailgun forms leave binary attachments out; with ``body_encoding="base64"``
+        it is the exact bytes, every file included, and ``rendered.content`` is
+        what to post:
 
         .. code-block:: python
 
@@ -1974,6 +1979,10 @@ class Emails:
         body: dict[str, Any] = {"format": format}
         if mailgun_signing_key:
             body["mailgunSigningKey"] = mailgun_signing_key
+        if body_encoding is not None:
+            if body_encoding != "base64":
+                raise ValueError('body_encoding must be "base64" or None')
+            body["bodyEncoding"] = body_encoding
         return RenderedEmail.from_dict(
             self._client._api("POST", f"/requests/{request_id}/render", body=body)
         )
@@ -2222,8 +2231,9 @@ class Billing:
         :class:`CheckoutSupersededError` when its purchase was undone as a duplicate,
         and :class:`TimeoutError` when ``timeout`` passes first (default:
         until it expires). The expired error's ``reason`` is ``"unsettled"`` when
-        the person may have paid. A poll that fails for now (a 5xx, a 429, a
-        network error or a timed-out poll) is tried again until the deadline;
+        the person may have paid, ``"cancelled"`` when the link was cancelled. A
+        poll that fails for now (a 5xx, a 429, a network error or a timed-out
+        poll) is tried again until the deadline;
         without a ``timeout``, the tenth such failure in a row is raised, so a
         wait cannot retry for good. Any other failure is raised at once. Polls at
         least a second apart. ``matches`` ``None`` on the paid link is not known
@@ -2236,7 +2246,7 @@ class Billing:
         # When the link first read expired, while it may still turn paid, and
         # how it read then.
         expired_at: float | None = None
-        reason: Literal["unsettled"] | None = None
+        reason: CheckoutExpiredReason | None = None
         # Polls that failed for now in a row.
         failures = 0
 

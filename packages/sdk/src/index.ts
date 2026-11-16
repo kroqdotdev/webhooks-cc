@@ -314,6 +314,7 @@ export type {
   CheckoutStatus,
   CheckoutBought,
   WaitForCheckoutOptions,
+  CheckoutExpiredReason,
   TeamPlanQuote,
   TeamSeatQuote,
   Approval,

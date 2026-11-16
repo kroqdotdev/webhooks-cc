@@ -13,9 +13,11 @@ import type { EmailAddress, EmailJsonSource } from "./types";
  * contents the source carries (`content`, base64): Postmark and CloudMailin
  * put them in their JSON, and SendGrid and Mailgun post multipart/form-data
  * with a file part per attachment, as they do for mail with attachments.
- * The body is text, so only UTF-8 text files (CSV, JSON, plain text) go as
- * file parts; a binary file (a PDF, an image) is left out of those two forms
- * (see attachmentFiles). Attachments with only a download
+ * `inboundEmailPayload()` returns text, so only UTF-8 text files (CSV, JSON,
+ * plain text) go as file parts there; a binary file (a PDF, an image) is
+ * left out of those two forms (see attachmentFiles).
+ * `inboundEmailPayloadBytes()` returns the body as bytes and carries every
+ * file, binary ones included, as the providers do. Attachments with only a download
  * link (`url`) are left out of every shape but CloudMailin's, which has a
  * field for the link. The text and HTML are those webhooks.cc kept (up to
  * 256 KB each).
@@ -40,6 +42,12 @@ export function isInboundEmailFormat(value: unknown): value is InboundEmailForma
 export interface InboundEmailPayload {
   contentType: string;
   body: string;
+}
+
+/** A rendered body as bytes, binary attachments included, and its content type. */
+export interface InboundEmailBytesPayload {
+  contentType: string;
+  body: Uint8Array;
 }
 
 export interface InboundEmailOptions {
@@ -246,10 +254,16 @@ interface FilePart {
   name: string;
   filename: string;
   contentType: string;
-  /** The file's text (only UTF-8 files are carried; see attachmentFiles). */
-  text: string;
+  /** The file's contents. */
+  bytes: Uint8Array;
   contentId?: string;
 }
+
+/** A body built as text, or as bytes with binary files in it. */
+type BuiltBody = { contentType: string; chunks: (string | Uint8Array)[] };
+
+/** Whether file parts may carry binary contents (a bytes body) or only UTF-8 text. */
+type FileMode = "text" | "bytes";
 
 function base64Bytes(value: string): Uint8Array | null {
   try {
@@ -281,52 +295,90 @@ function multipart(
   fields: [string, string][],
   boundary: string,
   files: FilePart[] = []
-): InboundEmailPayload {
-  const parts = fields.map(
+): BuiltBody {
+  const chunks: (string | Uint8Array)[] = fields.map(
     ([name, value]) =>
       `--${boundary}\r\nContent-Disposition: form-data; name="${name}"\r\n\r\n${value}\r\n`
   );
   for (const file of files) {
-    parts.push(
+    chunks.push(
       `--${boundary}\r\nContent-Disposition: form-data; name="${file.name}"; ` +
         `filename="${dispositionValue(file.filename)}"\r\n` +
-        `Content-Type: ${file.contentType.replace(/[\r\n]+/g, " ")}\r\n\r\n${file.text}\r\n`
+        `Content-Type: ${file.contentType.replace(/[\r\n]+/g, " ")}\r\n\r\n`,
+      file.bytes,
+      "\r\n"
     );
   }
+  chunks.push(`--${boundary}--\r\n`);
+  return { contentType: `multipart/form-data; boundary=${boundary}`, chunks };
+}
+
+/** The body as text: every chunk of a text-mode body decodes as UTF-8 (see attachmentFiles). */
+function asText(built: BuiltBody): InboundEmailPayload {
+  const decoder = new TextDecoder("utf-8");
   return {
-    contentType: `multipart/form-data; boundary=${boundary}`,
-    body: `${parts.join("")}--${boundary}--\r\n`,
+    contentType: built.contentType,
+    body: built.chunks
+      .map((chunk) => (typeof chunk === "string" ? chunk : decoder.decode(chunk)))
+      .join(""),
   };
+}
+
+/** The body as bytes, text encoded as UTF-8. */
+function asBytes(built: BuiltBody): InboundEmailBytesPayload {
+  const encoder = new TextEncoder();
+  const parts = built.chunks.map((chunk) =>
+    typeof chunk === "string" ? encoder.encode(chunk) : chunk
+  );
+  const body = new Uint8Array(parts.reduce((total, part) => total + part.length, 0));
+  let offset = 0;
+  for (const part of parts) {
+    body.set(part, offset);
+    offset += part.length;
+  }
+  return { contentType: built.contentType, body };
+}
+
+function textBody(contentType: string, body: string): BuiltBody {
+  return { contentType, chunks: [body] };
 }
 
 /**
  * The attachments the payload carries as file parts, numbered from 1 as both
- * providers do: those whose contents the source has and that are UTF-8 text
- * (CSV, JSON, XML, plain text). The body is text, so a binary file (a PDF, an
+ * providers do: those whose contents the source has. A text body carries
+ * only UTF-8 text (CSV, JSON, XML, plain text): a binary file (a PDF, an
  * image) could only go as base64 marked with Content-Transfer-Encoding, which
  * RFC 7578 forbids and most form parsers ignore, handing a handler base64 in
- * place of the file. Such files are left out; the email JSON's attachment
- * links still reach them.
+ * place of the file, so such files are left out of it (the email JSON's
+ * attachment links still reach them). A bytes body carries every file.
  */
-function attachmentFiles(source: EmailJsonSource, name: (index: number) => string): FilePart[] {
+function attachmentFiles(
+  source: EmailJsonSource,
+  name: (index: number) => string,
+  mode: FileMode
+): FilePart[] {
   const files: FilePart[] = [];
   for (const attachment of source.email.attachments) {
     if (attachment.content === undefined) continue;
     const bytes = base64Bytes(attachment.content);
-    const text = bytes ? utf8Text(bytes) : null;
-    if (text === null) continue;
+    if (bytes === null) continue;
+    if (mode === "text" && utf8Text(bytes) === null) continue;
     files.push({
       name: name(files.length + 1),
       filename: attachment.filename ?? `attachment-${files.length + 1}`,
       contentType: attachment.contentType || "application/octet-stream",
-      text,
+      bytes,
       ...(attachment.contentId ? { contentId: attachment.contentId } : {}),
     });
   }
   return files;
 }
 
-function sendgrid(source: EmailJsonSource, options: InboundEmailOptions): InboundEmailPayload {
+function sendgrid(
+  source: EmailJsonSource,
+  options: InboundEmailOptions,
+  mode: FileMode
+): BuiltBody {
   const { email } = source;
   const smtp = email.smtp;
   const headerBlock = emailHeaderList(source, options.raw)
@@ -336,7 +388,7 @@ function sendgrid(source: EmailJsonSource, options: InboundEmailOptions): Inboun
     .map((check) => `@${check.domain ?? ""} : ${check.result}`)
     .join(", ");
   const spam = email.spam;
-  const files = attachmentFiles(source, (index) => `attachment${index}`);
+  const files = attachmentFiles(source, (index) => `attachment${index}`, mode);
   const fields: [string, string][] = [
     ["headers", headerBlock],
     ["dkim", dkim ? `{${dkim}}` : "{}"],
@@ -414,7 +466,7 @@ async function hmacSha256Hex(key: string, message: string): Promise<string> {
   );
 }
 
-function mailgun(source: EmailJsonSource, options: InboundSyncOptions): InboundEmailPayload {
+function mailgun(source: EmailJsonSource, options: InboundSyncOptions, mode: FileMode): BuiltBody {
   const { email } = source;
   const reply = parseReply(text(source));
   const timestamp = String(Math.floor((options.now ?? Date.now()) / 1000));
@@ -422,7 +474,9 @@ function mailgun(source: EmailJsonSource, options: InboundSyncOptions): InboundE
   let signature = "";
   if (options.mailgunSigningKey) {
     if (!options.hmacSha256Hex) {
-      throw new Error("inboundEmailPayload: signing a Mailgun form needs hmacSha256Hex");
+      throw new Error(
+        "Signing a Mailgun form needs hmacSha256Hex, or use renderInboundEmail or renderInboundEmailBytes, which sign with Web Crypto"
+      );
     }
     signature = options.hmacSha256Hex(options.mailgunSigningKey, timestamp + token);
   }
@@ -439,9 +493,9 @@ function mailgun(source: EmailJsonSource, options: InboundSyncOptions): InboundE
   params.set("timestamp", timestamp);
   params.set("token", token);
   params.set("signature", signature);
-  const files = attachmentFiles(source, (index) => `attachment-${index}`);
+  const files = attachmentFiles(source, (index) => `attachment-${index}`, mode);
   if (files.length === 0) {
-    return { contentType: "application/x-www-form-urlencoded", body: params.toString() };
+    return textBody("application/x-www-form-urlencoded", params.toString());
   }
   // Mail with attachments comes as multipart/form-data, the files as
   // attachment-1 to attachment-N after attachment-count.
@@ -463,16 +517,55 @@ export function inboundEmailPayload(
   source: EmailJsonSource,
   options: InboundSyncOptions = {}
 ): InboundEmailPayload {
+  return asText(build(format, source, options, "text"));
+}
+
+/**
+ * The email in `format`'s shape as bytes: the same as `inboundEmailPayload()`,
+ * except that SendGrid and Mailgun forms carry binary attachments (a PDF, an
+ * image) as file parts with their real contents, as those providers post
+ * them. The JSON shapes are their UTF-8 text.
+ */
+export function inboundEmailPayloadBytes(
+  format: InboundEmailFormat,
+  source: EmailJsonSource,
+  options: InboundSyncOptions = {}
+): InboundEmailBytesPayload {
+  return asBytes(build(format, source, options, "bytes"));
+}
+
+function build(
+  format: InboundEmailFormat,
+  source: EmailJsonSource,
+  options: InboundSyncOptions,
+  mode: FileMode
+): BuiltBody {
   switch (format) {
-    case "postmark":
-      return postmark(source, options.raw);
-    case "cloudmailin":
-      return cloudmailin(source, options.raw);
+    case "postmark": {
+      const payload = postmark(source, options.raw);
+      return textBody(payload.contentType, payload.body);
+    }
+    case "cloudmailin": {
+      const payload = cloudmailin(source, options.raw);
+      return textBody(payload.contentType, payload.body);
+    }
     case "sendgrid":
-      return sendgrid(source, options);
+      return sendgrid(source, options, mode);
     case "mailgun":
-      return mailgun(source, options);
+      return mailgun(source, options, mode);
   }
+}
+
+/** Options with a Mailgun signature made ahead with Web Crypto, when one is needed. */
+async function signedAhead(
+  format: InboundEmailFormat,
+  options: InboundEmailOptions
+): Promise<InboundSyncOptions> {
+  if (format !== "mailgun" || !options.mailgunSigningKey) return options;
+  const timestamp = String(Math.floor((options.now ?? Date.now()) / 1000));
+  const token = options.token ?? randomString(50);
+  const signature = await hmacSha256Hex(options.mailgunSigningKey, timestamp + token);
+  return { ...options, now: Number(timestamp) * 1000, token, hmacSha256Hex: () => signature };
 }
 
 /** The email in `format`'s shape, a Mailgun form signed with Web Crypto. */
@@ -481,16 +574,17 @@ export async function renderInboundEmail(
   source: EmailJsonSource,
   options: InboundEmailOptions = {}
 ): Promise<InboundEmailPayload> {
-  if (format !== "mailgun" || !options.mailgunSigningKey) {
-    return inboundEmailPayload(format, source, options);
-  }
-  const timestamp = String(Math.floor((options.now ?? Date.now()) / 1000));
-  const token = options.token ?? randomString(50);
-  const signature = await hmacSha256Hex(options.mailgunSigningKey, timestamp + token);
-  return inboundEmailPayload(format, source, {
-    ...options,
-    now: Number(timestamp) * 1000,
-    token,
-    hmacSha256Hex: () => signature,
-  });
+  return inboundEmailPayload(format, source, await signedAhead(format, options));
+}
+
+/**
+ * `inboundEmailPayloadBytes()` with a Mailgun form signed with Web Crypto, for
+ * code without a synchronous HMAC (browsers, edge runtimes).
+ */
+export async function renderInboundEmailBytes(
+  format: InboundEmailFormat,
+  source: EmailJsonSource,
+  options: InboundEmailOptions = {}
+): Promise<InboundEmailBytesPayload> {
+  return inboundEmailPayloadBytes(format, source, await signedAhead(format, options));
 }

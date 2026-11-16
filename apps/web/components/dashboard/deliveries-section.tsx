@@ -89,14 +89,14 @@ export function DeliveriesSection({
   const onScreen = useOnScreen(sectionRef);
   const documentVisible = useDocumentVisible();
   const active = onScreen && documentVisible;
+  const [filter, setFilter] = useState<DeliveryLogFilter>("all");
+  const [destinationId, setDestinationId] = useState("");
   const { summary, refresh: refreshSummary } = useDeliverySummary(
     endpoint.slug,
     endpoint.id,
-    active
+    active,
+    destinationId || null
   );
-
-  const [filter, setFilter] = useState<DeliveryLogFilter>("all");
-  const [destinationId, setDestinationId] = useState("");
   const [destinations, setDestinations] = useState<DashboardDestination[]>([]);
   useEffect(() => {
     if (!accessToken) return;
@@ -209,10 +209,9 @@ export function DeliveriesSection({
   }, [filter, destinationId]);
 
   const showSentColumn = useMemo(() => rows?.some((row) => row.senderAt !== null) ?? false, [rows]);
-  // The endpoint-wide counts do not fit one destination or the filtered-out rows.
-  const total = destinationId
-    ? undefined
-    : filter === "all"
+  // The summary follows the destination picked; it has no count of filtered-out rows.
+  const total =
+    filter === "all"
       ? summary?.total
       : filter === "pending"
         ? summary?.pending
@@ -258,9 +257,14 @@ export function DeliveriesSection({
               {
                 value: "pending",
                 label: "Retrying",
-                count: formatCappedCount(summary?.pending ?? 0),
+                // No count until this filter's summary arrives, never a false 0.
+                count: summary ? formatCappedCount(summary.pending) : undefined,
               },
-              { value: "failed", label: "Failed", count: formatCappedCount(summary?.failed ?? 0) },
+              {
+                value: "failed",
+                label: "Failed",
+                count: summary ? formatCappedCount(summary.failed) : undefined,
+              },
               { value: "skipped", label: "Filtered out" },
             ]}
           />

@@ -46,10 +46,13 @@ export {
   INBOUND_EMAIL_FORMAT_NAMES,
   emailHeaderList,
   inboundEmailPayload,
+  inboundEmailPayloadBytes,
   isInboundEmailFormat,
   renderInboundEmail,
+  renderInboundEmailBytes,
   type InboundEmailFormat,
   type InboundEmailOptions,
+  type InboundEmailBytesPayload,
   type InboundEmailPayload,
   type InboundSyncOptions,
 } from "./inbound";

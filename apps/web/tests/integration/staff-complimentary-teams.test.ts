@@ -211,6 +211,16 @@ describe("a team staff create", () => {
     });
     await expect(getCapacityState({ kind: "team", teamId })).resolves.toMatchObject({
       eligible: false,
+      noSubscription: true,
+    });
+    // Team Business's pages and domains are the team's; only their add-ons are not offered.
+    await expect(getCapacityState({ kind: "team", teamId }, "pages")).resolves.toMatchObject({
+      eligible: false,
+      noSubscription: true,
+    });
+    await expect(getCapacityState({ kind: "team", teamId }, "domains")).resolves.toMatchObject({
+      eligible: false,
+      noSubscription: true,
     });
     expect(polarCalled.count).toBe(0);
   });

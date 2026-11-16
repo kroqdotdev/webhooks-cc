@@ -267,6 +267,24 @@ func TestWaitForCheckoutEndsOnARefusal(t *testing.T) {
 	}
 }
 
+func TestWaitForCheckoutSaysACancelledLinkWasCancelled(t *testing.T) {
+	api := newFakeAPI(t)
+	api.handle("GET /api/billing/checkouts/"+checkoutID, func(w http.ResponseWriter, r *http.Request) {
+		answer := checkoutAnswer("expired")
+		link := answer["checkout"].(map[string]any)
+		link["expiredReason"] = "cancelled"
+		link["opened"] = false
+		writeJSON(w, http.StatusOK, answer)
+	})
+	_, err := api.client().Billing.WaitForCheckout(context.Background(), checkoutID, webhookscc.WaitForCheckoutOptions{})
+	if !errors.Is(err, webhookscc.ErrCheckoutCancelled) || !errors.Is(err, webhookscc.ErrCheckoutExpired) {
+		t.Fatalf("err = %v, want ErrCheckoutCancelled, which is also ErrCheckoutExpired", err)
+	}
+	if !strings.Contains(err.Error(), "cancelled before it was opened") {
+		t.Fatalf("err = %q", err.Error())
+	}
+}
+
 func TestWaitForCheckoutSaysAnUnsettledLinkMayHaveBeenPaid(t *testing.T) {
 	api := newFakeAPI(t)
 	api.handle("GET /api/billing/checkouts/"+checkoutID, func(w http.ResponseWriter, r *http.Request) {

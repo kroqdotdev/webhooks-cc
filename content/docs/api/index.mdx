@@ -462,7 +462,7 @@ curl -X POST https://webhooks.cc/api/requests/REQUEST_ID/render \
   -d '{"format": "postmark"}'
 ```
 
-Returns a captured email the way an inbound mail service posts it, to send to the handler you wrote for that service: `{ "format", "method": "POST", "headers": { "content-type", "user-agent" }, "body" }`. `format` is `postmark`, `sendgrid` (a multipart form; the boundary is in `content-type`), `mailgun` (a form; add `"mailgunSigningKey"` to sign it the way Mailgun does), `cloudmailin`, or `json` for webhooks.cc's own `email.received` JSON, unsigned. See [In a mail provider's shape](/docs/forwarding#in-a-mail-providers-shape) for what each holds. Anyone who can read the email may render it; `400` for an HTTP request.
+Returns a captured email the way an inbound mail service posts it, to send to the handler you wrote for that service: `{ "format", "method": "POST", "headers": { "content-type", "user-agent" }, "body" }`. `format` is `postmark`, `sendgrid` (a multipart form; the boundary is in `content-type`), `mailgun` (a form; add `"mailgunSigningKey"` to sign it the way Mailgun does), `cloudmailin`, or `json` for webhooks.cc's own `email.received` JSON, unsigned. See [In a mail provider's shape](/docs/forwarding#in-a-mail-providers-shape) for what each holds. The body is text, so the `sendgrid` and `mailgun` forms leave binary attachments (a PDF, an image) out; add `"bodyEncoding": "base64"` to get the body as its exact bytes in base64 (the answer then carries `"bodyEncoding": "base64"`), with every file in those forms as the providers post them, and decode it before posting. Anyone who can read the email may render it; `400` for an HTTP request.
 
 ### Try email fields
 
@@ -609,7 +609,7 @@ curl https://webhooks.cc/api/endpoints/abc123/deliveries/summary \
   -H "Authorization: Bearer whcc_..."
 ```
 
-Returns `{ "last24h": { "delivered": 1284, "failed": 0 }, "pending": 3, "failed": 1, "total": 1312 }`: what was delivered and failed among deliveries of the last 24 hours, what is waiting now, and the failed and total counts among the deliveries kept. Each count stops at 100,000.
+Returns `{ "last24h": { "delivered": 1284, "failed": 0 }, "pending": 3, "failed": 1, "total": 1312 }`: what was delivered and failed among deliveries of the last 24 hours, what is waiting now, and the failed and total counts among the deliveries kept. Each count stops at 100,000. Add `?destination=DESTINATION_ID` for one destination's counts, matching the log listed with the same filter.
 
 ### Redeliver all failed
 

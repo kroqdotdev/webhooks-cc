@@ -550,7 +550,14 @@ export function CapacityPanel({
         {!canManage && state.eligible && (
           <p className="text-xs text-muted-foreground">Only the team owner can change these.</p>
         )}
-        {!state.eligible && (
+        {!state.eligible && state.noSubscription && (
+          <p className="text-xs text-muted-foreground">
+            {teamId
+              ? "This team's plan has no subscription (staff own it), so monthly blocks and overage, which are added to a subscription, are not offered."
+              : "Your plan has no subscription (it was given without one), so monthly blocks and overage, which are added to a subscription, are not offered."}
+          </p>
+        )}
+        {!state.eligible && !state.noSubscription && (
           <p className="text-xs text-muted-foreground">
             Monthly blocks and overage come with a paid plan.{" "}
             {teamId ? null : (

@@ -400,6 +400,14 @@ describe("changeMonthlyBlocks", () => {
       code: "plan_required",
     });
   });
+
+  it("reads a free plan as one to upgrade, not one held without a subscription", async () => {
+    tables.users = proAccount({ plan: "free", subscription_status: null });
+    await expect(getCapacityState(USER)).resolves.toMatchObject({
+      eligible: false,
+      noSubscription: false,
+    });
+  });
 });
 
 describe("complimentary (staff) teams", () => {
@@ -437,8 +445,11 @@ describe("complimentary (staff) teams", () => {
     expect(mockFns.subscriptionsUpdate).not.toHaveBeenCalled();
   });
 
-  it("does not offer them", async () => {
-    await expect(getCapacityState(TEAM)).resolves.toMatchObject({ eligible: false });
+  it("does not offer them, and says the plan has no subscription", async () => {
+    await expect(getCapacityState(TEAM)).resolves.toMatchObject({
+      eligible: false,
+      noSubscription: true,
+    });
   });
 
   it("ends add-ons left from a paid plan, as when the plan is gone", async () => {

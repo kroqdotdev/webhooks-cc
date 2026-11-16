@@ -72,6 +72,9 @@ describe("client.forwarding, HTTP requests and the delivery log", () => {
       before: "2026-10-11T04:11:31.183+00:00|0b9e5f3a-6c1d-4f7e-9a2b-3c4d5e6f7a8b",
     });
     await forwarding.summary("acme");
+    await forwarding.summary("acme", { destinationId: "d1" });
+    // An empty id is no filter, never "?destination=" (which the route refuses).
+    await forwarding.summary("acme", { destinationId: "" });
     await forwarding.requestDeliveries("r1");
     await forwarding.redeliver("r1");
     await expect(forwarding.redeliverFailed("acme")).resolves.toEqual({ queued: 3 });
@@ -80,6 +83,8 @@ describe("client.forwarding, HTTP requests and the delivery log", () => {
     expect(calls).toEqual([
       `POST ${BASE_URL}/api/endpoints/acme/forwarding/test`,
       `GET ${BASE_URL}/api/endpoints/acme/deliveries?limit=50&status=failed&before=2026-10-11T04%3A11%3A31.183%2B00%3A00%7C0b9e5f3a-6c1d-4f7e-9a2b-3c4d5e6f7a8b`,
+      `GET ${BASE_URL}/api/endpoints/acme/deliveries/summary`,
+      `GET ${BASE_URL}/api/endpoints/acme/deliveries/summary?destination=d1`,
       `GET ${BASE_URL}/api/endpoints/acme/deliveries/summary`,
       `GET ${BASE_URL}/api/requests/r1/deliveries`,
       `POST ${BASE_URL}/api/requests/r1/deliveries`,

@@ -437,12 +437,15 @@ export async function fetchDeliveryLog(
   return readJson<LogDelivery[]>(response);
 }
 
+/** The endpoint's delivery counts, or with `destinationId` that destination's alone. */
 export async function fetchDeliverySummary(
   accessToken: string,
-  slug: string
+  slug: string,
+  destinationId: string | null = null
 ): Promise<DeliverySummary> {
+  const query = destinationId ? `?destination=${encodeURIComponent(destinationId)}` : "";
   const response = await fetch(
-    `${endpointPath(slug)}/deliveries/summary`,
+    `${endpointPath(slug)}/deliveries/summary${query}`,
     withAuthHeaders(accessToken)
   );
   return readJson<DeliverySummary>(response);

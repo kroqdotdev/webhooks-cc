@@ -172,13 +172,23 @@ toInbound(
 
 <ApiMethod method="POST" path="/requests/:id/render" title="client.emails.render">
 
-The same, rendered by webhooks.cc (what `whk tunnel` and the Python and Go SDKs use), or the `email.received` JSON with `format: "json"`.
+The same, rendered by webhooks.cc (what `whk tunnel` and the Python and Go SDKs use), or the `email.received` JSON with `format: "json"`. The body is text, so SendGrid and Mailgun forms leave binary attachments out; with `bodyEncoding: "base64"` it is the exact bytes in base64, every file included. Decode it with `Buffer.from(rendered.body, "base64")` before posting.
 
 ```ts
 render(
   requestId: string,
-  options: { format: "json" | "postmark" | "sendgrid" | "mailgun" | "cloudmailin"; mailgunSigningKey?: string }
-): Promise<{ format: string; method: "POST"; headers: Record<string, string>; body: string }>
+  options: {
+    format: "json" | "postmark" | "sendgrid" | "mailgun" | "cloudmailin";
+    mailgunSigningKey?: string;
+    bodyEncoding?: "base64";
+  }
+): Promise<{
+  format: string;
+  method: "POST";
+  headers: Record<string, string>;
+  body: string;
+  bodyEncoding?: "base64";
+}>
 ```
 
 </ApiMethod>

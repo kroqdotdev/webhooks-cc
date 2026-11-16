@@ -34,7 +34,8 @@ export function useDocumentVisible(): boolean {
 }
 
 /**
- * The endpoint's delivery counts, re-read every `intervalMs` while `active`,
+ * The endpoint's delivery counts (with `destinationId`, that destination's
+ * alone), re-read every `intervalMs` while `active`,
  * and at once (then again shortly after, when the worker has had its turn)
  * whenever the endpoint's Realtime request signal fires. There is no signal
  * per delivery, so polling is what keeps the numbers live.
@@ -43,24 +44,35 @@ export function useDeliverySummary(
   slug: string,
   endpointId: string,
   active: boolean,
+  destinationId: string | null = null,
   intervalMs = 5000
 ): { summary: DeliverySummary | null; refresh: () => Promise<void> } {
   const { session } = useAuth();
   const accessToken = session?.access_token;
   const [summary, setSummary] = useState<DeliverySummary | null>(null);
-  const inFlight = useRef(false);
+  // The counts on screen belong to this key; a read for another one is dropped.
+  const key = `${slug}\n${destinationId ?? ""}`;
+  const currentKey = useRef(key);
+  const inFlight = useRef<string | null>(null);
+
+  useEffect(() => {
+    currentKey.current = key;
+    // Another destination's counts would read as this one's until the next poll.
+    setSummary(null);
+  }, [key]);
 
   const refresh = useCallback(async () => {
-    if (!accessToken || inFlight.current) return;
-    inFlight.current = true;
+    if (!accessToken || inFlight.current === key) return;
+    inFlight.current = key;
     try {
-      setSummary(await fetchDeliverySummary(accessToken, slug));
+      const fresh = await fetchDeliverySummary(accessToken, slug, destinationId);
+      if (currentKey.current === key) setSummary(fresh);
     } catch {
       // Keep the last counts; the next poll tries again.
     } finally {
-      inFlight.current = false;
+      if (inFlight.current === key) inFlight.current = null;
     }
-  }, [accessToken, slug]);
+  }, [accessToken, slug, destinationId, key]);
 
   useEffect(() => {
     if (!active) return;

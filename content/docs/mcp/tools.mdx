@@ -391,7 +391,7 @@ Deliver a sample email with a 6-digit code and a link, to try the email tools be
 
 ### render_email
 
-A captured email in the shape an inbound mail service posts it, to test the handler you wrote for that service against real mail ([In a mail provider's shape](/docs/forwarding#in-a-mail-providers-shape)). Returns `{ format, method, headers, body }`; with `targetUrl` (your local handler), posts it there and returns the `status` and the start of the answer.
+A captured email in the shape an inbound mail service posts it, to test the handler you wrote for that service against real mail ([In a mail provider's shape](/docs/forwarding#in-a-mail-providers-shape)). Returns `{ format, method, headers, body }`, whose SendGrid and Mailgun forms leave binary attachments out; with `targetUrl` (your local handler), posts it there with every attachment, binary files included, and returns the `status` and the start of the answer.
 
 | Parameter           | Type                                                              | Required | Description                                               |
 | ------------------- | ----------------------------------------------------------------- | -------- | --------------------------------------------------------- |
@@ -517,7 +517,7 @@ With `endpointSlug`, return the endpoint's delivery log with its counts: `{ summ
 | `requestId`     | `string`                                       | no       | Every delivery of this request, with each try                 |
 | `limit`         | `number`                                       | no       | With `endpointSlug`: 1 to 100 (default 20)                    |
 | `status`        | `"all" \| "pending" \| "failed" \| "skipped"`  | no       | With `endpointSlug`: filter (default `all`); `skipped` is filtered out |
-| `destinationId` | `string`                                       | no       | With `endpointSlug`: only this destination                    |
+| `destinationId` | `string`                                       | no       | With `endpointSlug`: only this destination, and its counts    |
 | `before`        | `string`                                       | no       | With `endpointSlug`: `nextCursor`, for older rows             |
 
 ### redeliver

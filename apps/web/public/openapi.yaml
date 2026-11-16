@@ -594,6 +594,14 @@ paths:
                   type: ["string", "null"]
                   maxLength: 200
                   description: Signs a `mailgun` form the way Mailgun does
+                bodyEncoding:
+                  type: ["string", "null"]
+                  enum: [base64, null]
+                  description: |
+                    `base64` returns the body as its exact bytes in base64, and `sendgrid` and
+                    `mailgun` forms then carry binary attachments (a PDF, an image) with their
+                    real contents, as those providers post them. Without it the body is text and
+                    those forms leave binary files out.
             example:
               format: postmark
       responses:
@@ -629,9 +637,15 @@ paths:
                         type: string
                   body:
                     type: string
-                    description: The body as text (JSON, a URL-encoded form or a multipart form)
+                    description: |
+                      The body as text (JSON, a URL-encoded form or a multipart form), or its
+                      bytes in base64 when `bodyEncoding` is `base64`
+                  bodyEncoding:
+                    type: string
+                    const: base64
+                    description: Present when the body is base64, as asked for
         "400":
-          description: An unknown format, or the request is not an email
+          description: An unknown format or body encoding, or the request is not an email
           content:
             application/json:
               schema:
@@ -6064,6 +6078,11 @@ components:
         unit:
           type: string
           enum: [requests, pages, domains]
+        noSubscription:
+          type: boolean
+          description: >-
+            The plan allows these add-ons, but there is no subscription to add them to (a
+            complimentary staff account or team), so none can be bought.
         planUnits:
           type: integer
           description: >-

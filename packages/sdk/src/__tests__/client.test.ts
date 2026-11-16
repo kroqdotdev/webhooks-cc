@@ -376,6 +376,11 @@ describe("WebhooksCC", () => {
         format: "mailgun",
         mailgunSigningKey: "key-x",
       });
+      await client.emails.render("r1", { format: "sendgrid", bodyEncoding: "base64" });
+      expect(JSON.parse(fetchMock.mock.calls[1][1].body)).toEqual({
+        format: "sendgrid",
+        bodyEncoding: "base64",
+      });
       await expect(client.emails.render("r1", { format: "resend" as never })).rejects.toThrow(
         /Unknown inbound format/
       );

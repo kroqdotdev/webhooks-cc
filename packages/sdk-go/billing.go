@@ -22,6 +22,12 @@ var ErrCheckoutExpired = errors.New("webhooks.cc: the checkout link expired befo
 // for a link whose ExpiredReason is "unsettled".
 var ErrCheckoutUnsettled = fmt.Errorf("%w before Polar confirmed a payment: if the person paid, it is still applied once Polar confirms it, and webhooks.cc has been alerted", ErrCheckoutExpired)
 
+// ErrCheckoutCancelled: the asker cancelled the checkout link before it
+// was opened. It also matches ErrCheckoutExpired. Returned by
+// BillingService.WaitForCheckout for a link whose ExpiredReason is
+// "cancelled".
+var ErrCheckoutCancelled = fmt.Errorf("%w: it was cancelled before it was opened", ErrCheckoutExpired)
+
 // ErrCheckoutSuperseded: a checkout link was paid, but the purchase was
 // undone as a duplicate: the account already had that plan or add-on (or
 // what it added to had ended), so its subscription was ended and a refund of
@@ -94,7 +100,8 @@ type CheckoutBought struct {
 // a read marked it paid from Polar before the webhook's duplicate checks
 // undid the purchase. Opened is nil from a server released before it.
 // ExpiredReason is "unsettled" for an expired link that may have been paid
-// (see ErrCheckoutUnsettled), else empty.
+// (see ErrCheckoutUnsettled), "cancelled" for one the asker cancelled
+// before it was opened (ErrCheckoutCancelled), else empty.
 type CheckoutLink struct {
 	ID        string         `json:"id"`
 	Status    string         `json:"status"`
@@ -107,7 +114,8 @@ type CheckoutLink struct {
 	CreatedAt string         `json:"createdAt"`
 	ExpiresAt string         `json:"expiresAt"`
 	PaidAt    string         `json:"paidAt"`
-	// ExpiredReason is "unsettled" when an expired link may have been paid.
+	// ExpiredReason is "unsettled" when an expired link may have been paid,
+	// "cancelled" when the asker cancelled it.
 	ExpiredReason string          `json:"expiredReason"`
 	Bought        *CheckoutBought `json:"bought"`
 	Matches       *bool           `json:"matches"`
@@ -238,14 +246,17 @@ func (s *BillingService) WaitForCheckout(ctx context.Context, id string, opts Wa
 		grace = checkoutExpiredGrace
 	}
 	// When the link first read expired, while it may still turn paid, and
-	// whether it read as one that may have been paid.
+	// why it read as expired.
 	var expiredAt time.Time
-	unsettled := false
+	reason := ""
 	// Polls that failed for now in a row.
 	failures := 0
 	expiredErr := func() error {
-		if unsettled {
+		switch reason {
+		case "unsettled":
 			return ErrCheckoutUnsettled
+		case "cancelled":
+			return ErrCheckoutCancelled
 		}
 		return ErrCheckoutExpired
 	}
@@ -296,7 +307,7 @@ func (s *BillingService) WaitForCheckout(ctx context.Context, id string, opts Wa
 			case "superseded":
 				return nil, ErrCheckoutSuperseded
 			case "expired":
-				unsettled = checkout.ExpiredReason == "unsettled"
+				reason = checkout.ExpiredReason
 				if !mayStillBePaid(checkout) {
 					return nil, expiredErr()
 				}
@@ -308,7 +319,7 @@ func (s *BillingService) WaitForCheckout(ctx context.Context, id string, opts Wa
 				}
 			default:
 				expiredAt = time.Time{}
-				unsettled = false
+				reason = ""
 			}
 		}
 		if !deadline.IsZero() {

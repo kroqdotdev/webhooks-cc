@@ -180,9 +180,13 @@ export function ParsedPagesPanel({
 
       {!state.eligible && state.offered && (
         <p className="text-sm text-muted-foreground">
-          {teamId
-            ? "More parsed pages come with Team Business."
-            : "More parsed pages are part of Business: 2,000 a month included, then blocks of 1,000 or overage."}
+          {state.noSubscription
+            ? teamId
+              ? "This team has Team Business without a subscription (staff own it), so page blocks and overage, which are added to a subscription, are not offered."
+              : "Your plan has no subscription (it was given without one), so page blocks and overage, which are added to a subscription, are not offered."
+            : teamId
+              ? "More parsed pages come with Team Business."
+              : "More parsed pages are part of Business: 2,000 a month included, then blocks of 1,000 or overage."}
         </p>
       )}
 

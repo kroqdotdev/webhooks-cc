@@ -3362,11 +3362,28 @@ describe("email and forwarding tools", () => {
       expect(render).toHaveBeenLastCalledWith("e1", {
         format: "mailgun",
         mailgunSigningKey: "key-test",
+        bodyEncoding: "base64",
       });
       expect(posted[0]).toMatchObject({
         url: "http://localhost:3000/inbound",
         init: { method: "POST", body: '{"Subject":"Hi"}' },
       });
+
+      // A bytes body (binary attachments included) is posted as those bytes.
+      const bytes = Buffer.from([0x2d, 0x2d, 0x62, 0x0d, 0x0a, 0xff, 0x00, 0x25]);
+      render.mockResolvedValueOnce({
+        format: "sendgrid",
+        method: "POST",
+        headers: { "content-type": "multipart/form-data; boundary=b" },
+        body: bytes.toString("base64"),
+        bodyEncoding: "base64",
+      } as never);
+      await tools.render_email.handler({
+        requestId: "e1",
+        format: "sendgrid",
+        targetUrl: "http://localhost:3000/inbound",
+      });
+      expect(Buffer.from(posted[1].init.body as Uint8Array)).toEqual(bytes);
     } finally {
       globalThis.fetch = realFetch;
     }
@@ -3473,6 +3490,21 @@ describe("email and forwarding tools", () => {
       limit: 1,
       status: "failed",
       before: undefined,
+    });
+    expect(forwarding.summary).toHaveBeenLastCalledWith("acme", {});
+    // One destination's log comes with that destination's counts.
+    await tools.list_deliveries.handler({
+      endpointSlug: "acme",
+      limit: 1,
+      status: "all",
+      destinationId: "dest-1",
+    });
+    expect(forwarding.summary).toHaveBeenLastCalledWith("acme", { destinationId: "dest-1" });
+    expect(forwarding.deliveries).toHaveBeenLastCalledWith("acme", {
+      limit: 1,
+      status: "all",
+      before: undefined,
+      destinationId: "dest-1",
     });
     expect((await tools.list_deliveries.handler({ limit: 5, status: "all" })).isError).toBe(true);
     expect(parseJsonResult(await tools.redeliver.handler({ requestId: "e1" }))).toEqual({
@@ -3628,6 +3660,37 @@ describe("API keys and approvals", () => {
     expiresAt: "2026-11-13T12:15:00.000Z",
     wait: vi.fn(),
   };
+
+  it("list_api_keys shows each field once, without the SDK's snake_case copies", async () => {
+    const list = vi.fn().mockResolvedValue([
+      {
+        id: "k_1",
+        name: "CI",
+        keyPrefix: "whcc_ab",
+        createdAt: "2026-11-01T00:00:00Z",
+        expiresAt: null,
+        lastUsedAt: null,
+        key_prefix: "whcc_ab",
+        created_at: "2026-11-01T00:00:00Z",
+        expires_at: null,
+        last_used_at: null,
+      },
+    ]);
+    const client = createMockClient({
+      apiKeys: { list } as unknown as WebhooksCC["apiKeys"],
+    });
+    const tools = getRegisteredTools(client);
+    expect(parseJsonResult(await tools.list_api_keys.handler({}))).toEqual([
+      {
+        id: "k_1",
+        name: "CI",
+        keyPrefix: "whcc_ab",
+        createdAt: "2026-11-01T00:00:00Z",
+        expiresAt: null,
+        lastUsedAt: null,
+      },
+    ]);
+  });
 
   it("create_api_key answers at once with the link, the code and what to call next", async () => {
     const create = vi.fn().mockResolvedValue(pending);

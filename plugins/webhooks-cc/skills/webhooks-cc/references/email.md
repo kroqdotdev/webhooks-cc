@@ -65,8 +65,11 @@ says whether it is offered and how many assists are left. CLI: `whk ai setup`.
 Send real mail to the endpoint (`send_test_email` or the app's own flow),
 then `render_email` with the `requestId`, the provider as `format`, and
 `targetUrl` set to the local handler (local server only). For Mailgun, pass
-the test signing key as `mailgunSigningKey`. `render_email` leaves
-attachments out. For continuous delivery, run
+the test signing key as `mailgunSigningKey`. Posted to `targetUrl`, the
+email carries its attachments with their contents, as the provider sends
+them (files too large to inline are left out); the body it returns without
+`targetUrl` leaves binary files out of SendGrid and Mailgun forms. For
+continuous delivery, run
 `whk tunnel <port> --email-format postmark` (or another provider) or add a
 destination in that provider's format.
 
