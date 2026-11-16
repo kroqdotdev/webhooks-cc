@@ -69,6 +69,11 @@ export const NAV_SECTIONS: NavSection[] = [
     items: [
       { title: "Overview", href: "/docs/sdk" },
       { title: "API reference", href: "/docs/sdk/api" },
+      { title: "Requests", href: "/docs/sdk/api/requests", depth: 1 },
+      { title: "Emails", href: "/docs/sdk/api/emails", depth: 1 },
+      { title: "Forwarding", href: "/docs/sdk/api/forwarding", depth: 1 },
+      { title: "Teams and sharing", href: "/docs/sdk/api/teams-sharing", depth: 1 },
+      { title: "Types, helpers, errors", href: "/docs/sdk/api/types", depth: 1 },
       { title: "Matchers & helpers", href: "/docs/sdk/matchers" },
       { title: "Signature verification", href: "/docs/sdk/signatures" },
       { title: "Python", href: "/docs/sdk/python", isNew: true },

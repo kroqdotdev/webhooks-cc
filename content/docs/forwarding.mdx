@@ -43,6 +43,18 @@ Every delivery is queued the moment the request is captured, sent within a secon
 
 Requests captured before a destination was added or switched on are not sent to it later; use **Deliver now** on one of them in its **Deliveries** tab.
 
+### See a delivery succeed without a server of your own
+
+A destination takes a public `https` URL only. A webhooks.cc capture URL, an `http` address and `localhost` are refused when you save, on purpose (see [Limits](#limits)), so a new user has nowhere to point it. The quickest way to a working destination is a server on your own machine, made public for the test:
+
+```bash
+whk share 3000
+```
+
+It prints a `https://<name>.sharehooks.cc` link that reaches `localhost:3000` (see [Share localhost](/docs/share)). Use the link plus your handler's path, such as `https://<name>.sharehooks.cc/hooks/stripe`, as the destination URL, then send a request to the endpoint: the delivery appears in **Deliveries** with the status your server answered and its timing. Without a handler yet, any dev server that answers 200 will do.
+
+To post what an endpoint captures to localhost without making a destination at all, run [`whk tunnel 3000`](/docs/cli/tunnel): it forwards every request and email from your terminal, so nothing needs to be public, but those are not deliveries and are not logged as such.
+
 ## Formats
 
 The format is picked from the URL, and you can change it:
@@ -480,7 +492,7 @@ Set the agent repository under **Settings**, **Coding agent**, as a GitHub `owne
 
 ## Test an email handler locally
 
-Forwarding needs a public `https` URL, but your handler can be tested on your own machine first. `client.emails.toJson()` builds the JSON forwarding would post for a captured email, and `client.sendTo()` posts it signed with Standard Webhooks headers and your secret, straight from your machine:
+Forwarding needs a public `https` URL (for a server on your machine, [`whk share`](#see-a-delivery-succeed-without-a-server-of-your-own) makes one), but your handler can be tested on your own machine first. `client.emails.toJson()` builds the JSON forwarding would post for a captured email, and `client.sendTo()` posts it signed with Standard Webhooks headers and your secret, straight from your machine:
 
 ```ts
 import { WebhooksCC } from "@webhooks-cc/sdk";
@@ -551,7 +563,7 @@ await client.destinations.update(slug, zap.id, { enabled: false });
 await client.destinations.delete(slug, zap.id);
 ```
 
-`update()` changes only the fields you pass. `client.forwarding.configure()`, `secret()` and `test()` still work on the endpoint's primary destination, the one its `forwardUrl` stands for. In your handler, `verifyRelayedRequest()`, `verifyForwardedRequest()` and `verifyForwardedEmail()` check deliveries ([Forwarded requests](/docs/sdk/signatures#forwarded-requests)); `verifyForwardedJson()` checks a delivery of your own JSON and returns its body. See the [SDK reference](/docs/sdk/api#destinations) for every method and type.
+`update()` changes only the fields you pass. `client.forwarding.configure()`, `secret()` and `test()` still work on the endpoint's primary destination, the one its `forwardUrl` stands for. In your handler, `verifyRelayedRequest()`, `verifyForwardedRequest()` and `verifyForwardedEmail()` check deliveries ([Forwarded requests](/docs/sdk/signatures#forwarded-requests)); `verifyForwardedJson()` checks a delivery of your own JSON and returns its body. See the [SDK reference](/docs/sdk/api/forwarding#destinations) for every method and type.
 
 ## Replay
 

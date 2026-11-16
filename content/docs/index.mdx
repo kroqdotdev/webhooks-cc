@@ -5,7 +5,8 @@ section: getting-started
 order: 1
 lastUpdated: 2026-11-10
 schema: howto
-keywords: ["webhook testing", "webhook capture", "webhook quickstart", "email testing", "inbound email"]
+keywords:
+  ["webhook testing", "webhook capture", "webhook quickstart", "email testing", "inbound email"]
 seo:
   ogTitle: "Webhook and Email Testing Quickstart"
   ogDescription: "Get started in four steps: create an endpoint, send it a webhook and an email, and inspect payloads, headers, codes and links in the dashboard."
@@ -16,18 +17,23 @@ seo:
 <Steps>
 <Step title="Create an endpoint">
 
-Sign in and click **New Endpoint** in the dashboard. Every endpoint has a URL for webhooks and an address for email:
+Open [webhooks.cc](/) and an endpoint is made for you, with no sign-up. Its URL takes webhooks:
 
 ```
 https://go.webhooks.cc/w/<slug>
+```
+
+A guest endpoint keeps up to 25 requests for 12 hours. **Signing up** (free) makes endpoints permanent, lets you add more with **New Endpoint** in the dashboard, gives you an API key for the SDK, CLI and MCP server, and adds email: every endpoint of an account also has an address.
+
+```
 <slug>@mailhooks.cc
 ```
 
 Or create one programmatically with the [SDK](/docs/sdk) (TypeScript, [Python](/docs/sdk/python) or [Go](/docs/sdk/go)), the [CLI](/docs/cli), or the [MCP server](/docs/mcp).
 
 <Callout type="info">
-  Endpoints made without an account (the guest URL on the home page) receive HTTP requests only.
-  Sign in, on any plan, to get the email address.
+  Endpoints made without an account receive HTTP requests only. Sign in, on any plan, to get the
+  email address: mail sent to a guest endpoint would be readable by anyone who knows its slug.
 </Callout>
 
 </Step>

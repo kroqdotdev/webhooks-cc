@@ -1,10 +1,11 @@
 /**
  * Markdown for agents: which requests get a page's markdown twin. The home
  * page's twin is app/index.md, the docs pages' twins are
- * app/docs.md/[[...slug]]. A twin is reached two ways:
+ * app/docs.md/[[...slug]], the /share/<framework> guides' app/share.md/[framework]. A twin is reached two ways:
  *
- * - its own URL: /index.md, /docs.md, and /docs/<slug>.md (next.config.ts
- *   rewrites the last, because a route segment cannot end in ".md");
+ * - its own URL: /index.md, /docs.md, /docs/<slug>.md and
+ *   /share/<framework>.md (next.config.ts rewrites the last two, because a
+ *   route segment cannot end in ".md");
  * - the page's URL with an Accept header that prefers text/markdown:
  *   proxy.ts decides with negotiatesMarkdown() and marks the request with
  *   MARKDOWN_TWIN_HEADER, and a next.config.ts rewrite that matches on that
@@ -88,9 +89,16 @@ export function prefersMarkdown(accept: string | null | undefined): boolean {
   return markdown >= html;
 }
 
-/** Whether a page has a markdown twin: the home page and every docs page. */
+/** A framework guide, /share/<framework>: one segment below /share. */
+const SHARE_GUIDE = /^\/share\/(?!opengraph-image$)[^/]+$/;
+
+/**
+ * Whether a page has a markdown twin: the home page, every docs page and the
+ * /share/<framework> guides (the route answers 404 for a slug that is none).
+ */
 export function hasMarkdownTwin(pathname: string): boolean {
   if (pathname === "/" || pathname === "/docs") return true;
+  if (SHARE_GUIDE.test(pathname)) return !pathname.endsWith(".md");
   return pathname.startsWith("/docs/") && !pathname.endsWith(".md");
 }
 
@@ -109,6 +117,8 @@ export function isMarkdownTwinPath(pathname: string): boolean {
     pathname === "/index.md" ||
     pathname === "/docs.md" ||
     pathname.startsWith("/docs.md/") ||
-    (pathname.startsWith("/docs/") && pathname.endsWith(".md"))
+    (pathname.startsWith("/docs/") && pathname.endsWith(".md")) ||
+    pathname.startsWith("/share.md/") ||
+    (SHARE_GUIDE.test(pathname) && pathname.endsWith(".md"))
   );
 }

@@ -1,0 +1,495 @@
+---
+title: "API Reference: Types, Helpers and Errors"
+description: "TypeScript SDK reference for the exported types, matchers, signature verification, duration strings and error classes."
+section: sdk
+order: 2
+lastUpdated: 2026-11-16
+schema: none
+keywords: ["SDK API", "webhook SDK methods", "TypeScript API reference"]
+seo:
+  ogTitle: "TypeScript SDK API Reference: Types, Helpers and Errors"
+  ogDescription: "TypeScript SDK reference for the exported types, matchers, signature verification, duration strings and error classes."
+---
+
+Part of the [TypeScript SDK API reference](/docs/sdk/api). The constructor, endpoints and direct delivery are on the [first page](/docs/sdk/api).
+
+## Matchers
+
+Composable functions that return `(request) => boolean`. Use with `waitFor` or filter logic.
+
+```ts
+import {
+  matchMethod,
+  matchHeader,
+  matchPath,
+  matchQueryParam,
+  matchBodyPath,
+  matchBodySubset,
+  matchContentType,
+  matchJsonField,
+  matchAll,
+  matchAny,
+  matchEmail,
+  isEmailRequest,
+} from "@webhooks-cc/sdk";
+
+matchMethod("POST"); // match by HTTP method
+matchHeader("x-github-event"); // match header presence
+matchHeader("x-github-event", "push"); // match header value
+matchPath("/webhooks/**"); // match path with glob wildcards
+matchQueryParam("token"); // match query param presence
+matchQueryParam("token", "abc"); // match query param value
+matchBodyPath("data.object.id", "obj_123"); // match nested JSON path
+matchBodySubset({ type: "checkout" }); // match deep partial subset
+matchContentType("application/json"); // match content-type ignoring charset
+matchJsonField("type", "checkout"); // match top-level JSON field
+matchAll(matchMethod("POST"), matchHeader("stripe-signature"));
+matchAny(matchMethod("GET"), matchMethod("POST"));
+matchEmail({ tag: "run-42", subject: "Confirm" }); // match captured emails (see Emails)
+isEmailRequest(request); // true for a captured email with its parsed message
+```
+
+`matchEmail` takes the [email criteria](/docs/sdk/api/emails#emails) and works as the `match` of `requests.waitFor()` and `captureDuring()`. It needs the parsed `email`, so it never matches requests from `subscribe()`; check `request.kind === "email"` there.
+
+## Signature Verification
+
+```ts
+import {
+  verifySignature,
+  verifyStripeSignature,
+  verifyGitHubSignature,
+  verifyShopifySignature,
+  verifyTwilioSignature,
+  verifySlackSignature,
+  verifyPaddleSignature,
+  verifyLinearSignature,
+  verifyDiscordSignature,
+  verifyClerkSignature,
+  verifyVercelSignature,
+  verifyGitLabSignature,
+  verifyTypeformSignature,
+  verifyStandardWebhookSignature,
+  verifyMetaSignature,
+  verifyLemonSqueezySignature,
+  verifyCoinbaseCommerceSignature,
+  verifyRazorpaySignature,
+  verifyCalSignature,
+  verifyIntercomSignature,
+  verifyTelegramSignature,
+  verifySquareSignature,
+  verifyHubSpotSignature,
+  verifyMailgunSignature,
+  verifyCalendlySignature,
+  verifyMuxSignature,
+  verifySentrySignature,
+  verifyBitbucketSignature,
+  verifyDocuSignSignature,
+  verifyAdyenSignature,
+  verifyPayPalSignature,
+  verifyResendSignature,
+  verifyWorkOSSignature,
+  verifyForwardedEmail,
+  verifyForwardedRequest,
+  verifyForwardedJson,
+  verifyRelayedRequest,
+} from "@webhooks-cc/sdk";
+
+// Universal verifier (dispatches by provider)
+const result = await verifySignature(request, {
+  provider: "stripe",
+  secret: "whsec_...",
+});
+console.log(result.valid); // boolean
+
+// Provider-specific verifiers
+const valid = await verifyStripeSignature(body, signatureHeader, secret);
+const valid = await verifyGitHubSignature(body, signatureHeader, secret);
+```
+
+`verifyForwardedEmail` checks an email [forwarded](/docs/forwarding) to your server: the Standard Webhooks signature against the endpoint's `whsec_` secret and a timestamp within five minutes. It returns the typed `email.received` event, or throws `WebhookVerificationError` with a `code`. Pass the raw body (a string, `Uint8Array` or `ArrayBuffer`) before any JSON parsing.
+
+```ts
+verifyForwardedEmail(
+  body: string | Uint8Array | ArrayBuffer,
+  headers: HeadersInput,
+  secret: string,
+  options?: { toleranceSeconds?: number; now?: number } // defaults: 300, Date.now()
+): Promise<EmailReceivedEvent>
+
+// HeadersInput: a Fetch Headers, a plain object (Node and Express req.headers,
+// array values included) or name and value pairs
+type HeadersInput =
+  | Headers
+  | Record<string, string | string[] | undefined>
+  | Iterable<readonly [string, string]>;
+```
+
+`verifyStandardWebhookSignature(body, headers, secret)` accepts the same `HeadersInput`, including a Fetch `Headers`. It checks the signature only, not the timestamp. See [Signature Verification](/docs/sdk/signatures#forwarded-emails) for a full handler.
+
+## Duration Strings
+
+`timeout` and `pollInterval` accept human-readable strings alongside milliseconds.
+
+```
+"500ms"  →    500
+"30s"    →  30000
+"5m"     → 300000
+"1h"     → 3600000
+500      →    500    // numbers passed through
+```
+
+## Types
+
+```ts
+interface Endpoint {
+  id: string;
+  slug: string;
+  name?: string;
+  url?: string;
+  isEphemeral?: boolean;
+  expiresAt?: number;
+  createdAt: number;
+  favorite?: boolean; // your own favourite; present on list() and get()
+  emailAddress?: string | null; // null for guest endpoints, which receive no email
+  showEmailExtracts?: boolean;
+  site?: "webhooks" | "mailhooks" | "both";
+  emailFields?: EmailField[]; // { name, from, header?, pattern }
+  layouts?: Layout[]; // owner only
+  retentionDays?: number | null; // owner only; null keeps the plan's
+  deleteAfterDelivery?: boolean; // owner only
+  agentRepo?: string | null; // GitHub owner/name for fix prompts
+  sharedWith?: TeamShare[]; // { teamId, teamName }; when you own it
+  fromTeams?: TeamShare[]; // when it is shared with you
+  forwardEnabled?: boolean;
+  forwardUrl?: string | null; // only returned to the owner
+  hasForwardSecret?: boolean;
+}
+
+interface Request {
+  id: string;
+  endpointId: string;
+  endpointSlug?: string; // on requests.get() and emails.get()
+  method: string;
+  path: string;
+  headers: Record<string, string>;
+  body?: string;
+  bodyRaw?: string; // base64 raw bytes, only for non-UTF-8 payloads
+  queryParams: Record<string, string>;
+  contentType?: string;
+  ip: string;
+  size: number;
+  receivedAt: number;
+  signatureVerified?: boolean | null;
+  signatureError?: string | null;
+  signingProvider?: string | null;
+  kind?: "http" | "email";
+  email?: EmailCapture | null; // the parsed message, for a captured email
+  parsed?: ParsedEmail | null; // what the endpoint's layouts found, once parsed
+  liveResponse?: LiveResponse | null; // what the local app answered, under whk tunnel --live
+}
+
+// What the local app answered, on a request captured while whk tunnel --live ran
+interface LiveResponse {
+  status: number | null; // what the sender got: the app's status, or the stand-in's
+  headers: Record<string, string>; // as the sender got them (no Set-Cookie)
+  body: string; // the first 64 KB: text, or base64 when bodyEncoding is "base64"
+  bodyTruncated: boolean;
+  bodyEncoding: "utf8" | "base64";
+  ms: number | null;
+  // "refused": not passed back as it was (400 a path outside the endpoint,
+  // 502 a refused answer, or the app's status when cut off past 1 MB)
+  outcome?: "answered" | "offline" | "timeout" | "unreachable" | "busy" | "refused";
+}
+
+// A whk share preview or a whk tunnel --live session
+interface TunnelShare {
+  id: string;
+  kind: "share" | "live";
+  name: string | null; // the preview's name; null for a live tunnel
+  url: string | null; // the preview link, or the capture URL of a live tunnel
+  endpointSlug: string | null; // a live tunnel's endpoint
+  client: string; // what it runs on: "laptop, macOS"
+  startedAt: string;
+  endedAt: string | null;
+  endReason: string | null;
+  expiresAt: string | null; // a Free preview's 2 hours
+  bytes: number;
+  requests: number;
+  password: boolean;
+  mine: boolean; // false for a teammate's run
+  startedBy: { id: string; email: string } | null;
+  notice?: boolean; // visitors see the notice page first
+}
+
+interface TunnelUsage {
+  month: string; // "2026-11", UTC
+  bytes: number;
+  limitBytes: number;
+  over: boolean; // previews pause until resetsAt
+  resetsAt: string;
+  message?: string | null; // why previews are paused, and until when
+}
+
+interface TunnelLimits {
+  plan: string;
+  label?: string; // "Pro", "Team Business"
+  shares: number; // previews at once
+  reservedNames: number;
+  sessionMinutes: number | null;
+  dataGb: number;
+  passwords: boolean;
+  notice: boolean; // visitors see a short notice first
+}
+
+interface TunnelNamesSummary {
+  limit: number; // own names the plan allows
+  used: number; // own names reserved
+  usable: number; // names you may share under now, own and teams'
+}
+
+// TunnelShareList also carries suspended (sharing suspended on the account)
+// and hints: what to do next, as whk commands an agent can run.
+
+interface TunnelVisit {
+  method: string;
+  path: string;
+  status: number;
+  ms: number;
+  bytes: number;
+  at: string;
+  country: string | null;
+  device: "phone" | "tablet" | "computer" | "bot" | "unknown";
+  visitor: number; // 1 for the first visitor seen
+}
+
+interface TunnelName {
+  name: string;
+  url: string | null;
+  team: { id: string; name: string } | null;
+  reservedBy: { id: string; email: string } | null;
+  mine: boolean;
+  password: boolean;
+  live: boolean; // a preview runs under it now
+  usable?: boolean; // false when the plan no longer covers it
+  createdAt: string;
+}
+
+interface TunnelTeamNameCount {
+  id: string;
+  name: string;
+  active?: boolean; // false while the team has no subscription
+  limit: number; // the plan's names per seat times its seats
+  used: number;
+}
+
+// A captured email: method "EMAIL", path is the recipient address, body the raw message
+interface EmailRequest extends Request {
+  kind: "email";
+  email: EmailCapture;
+  emailFields?: Record<string, string | null> | null; // named fields, from emails.get()
+  replyText?: string | null; // the new text of a reply, from emails.get()
+}
+
+interface EmailCapture {
+  subject: string | null;
+  from: EmailAddress[]; // EmailAddress: { name: string | null; address: string | null }
+  to: EmailAddress[];
+  cc: EmailAddress[];
+  replyTo: EmailAddress[];
+  sender: EmailAddress[];
+  date: string | null;
+  messageId: string | null;
+  inReplyTo: string[];
+  tag: string | null; // the +tag of the address it was sent to
+  text: string | null; // up to 256 KB
+  html: string | null; // up to 256 KB
+  textFromHtml: boolean;
+  attachments: {
+    filename: string | null;
+    contentType: string;
+    size: number;
+    contentId: string | null;
+    inline: boolean;
+  }[];
+  auth: EmailAuth | null; // SPF, DKIM, DMARC and reverse DNS results
+  spam?: EmailSpam | null; // the spam score
+  smtp: EmailSmtp | null; // client IP, HELO, TLS, envelope; smtp.test marks sample emails
+  parseError: boolean;
+  stored?: boolean; // the raw message and attachments are kept: requests.raw(), requests.attachment()
+  truncated: {
+    raw: boolean;
+    text: boolean;
+    html: boolean;
+    headers: boolean;
+    addresses: boolean;
+    attachments: boolean;
+  };
+}
+
+// What extractFromEmail() returns
+interface EmailExtracts {
+  codes: string[]; // in order of appearance, subject first; spaces and dashes removed
+  links: { url: string; label: string | null; action: boolean }[]; // action links first
+}
+
+interface EmailCriteria {
+  tag?: string | null;
+  subject?: string | RegExp;
+  from?: string | RegExp;
+  to?: string | RegExp;
+}
+
+interface ListEmailsOptions extends EmailCriteria {
+  limit?: number; // emails fetched before filtering (default: 50)
+  since?: number;
+}
+
+interface WaitForEmailOptions extends EmailCriteria {
+  timeout?: number | string; // default: 60000
+  pollInterval?: number | string; // default: 1000
+  since?: number; // default: five minutes ago
+  match?: (email: EmailRequest) => boolean;
+}
+
+interface WaitForEmailsOptions extends WaitForEmailOptions {
+  count: number;
+}
+
+interface SendTestEmailResult {
+  status: "captured";
+  requestId: string | null;
+}
+
+interface ConfigureForwardingOptions {
+  url?: string | null;
+  enabled?: boolean;
+}
+
+interface ForwardingTestResult {
+  status: number | null; // null when no answer arrived
+  durationMs: number;
+  excerpt: string | null; // the start of your server's response body
+  error: string | null; // timeout, refused connection, TLS problem
+  delivered: boolean; // your server answered 2xx
+  sample: boolean; // no email had arrived, so a sample was sent
+}
+
+interface EmailDelivery {
+  id: string;
+  requestId: string;
+  status: "pending" | "succeeded" | "failed";
+  attempts: number;
+  createdAt: number;
+  finishedAt: number | null;
+  nextAttemptAt: number | null;
+  lastStatus: number | null;
+  lastError: string | null;
+  attemptLog: EmailDeliveryAttempt[];
+}
+
+interface EmailDeliveryAttempt {
+  attemptedAt: number;
+  status: number | null;
+  durationMs: number;
+  error: string | null;
+  responseExcerpt: string | null;
+}
+
+interface RecentEmailDelivery {
+  id: string;
+  requestId: string;
+  status: "pending" | "succeeded" | "failed";
+  attempts: number;
+  createdAt: number;
+  lastStatus: number | null;
+  lastError: string | null;
+  subject: string | null;
+}
+
+// The body forwarding posts; field by field in /docs/forwarding#the-request
+interface EmailReceivedEvent {
+  type: "email.received";
+  timestamp: string;
+  data: EmailReceivedData;
+}
+
+interface MockResponse {
+  status: number; // 100-599
+  body: string;
+  headers: Record<string, string>;
+  delay?: number; // Response delay in ms (0-30000)
+}
+
+interface UsageInfo {
+  used: number;
+  limit: number;
+  remaining: number;
+  plan: "free" | "pro" | "business";
+  periodEnd: number | null;
+}
+
+interface PaginatedResult<T> {
+  items: T[];
+  cursor?: string;
+  hasMore: boolean;
+}
+
+type TemplateProvider =
+  | "stripe"
+  | "github"
+  | "shopify"
+  | "twilio"
+  | "slack"
+  | "paddle"
+  | "linear"
+  | "sendgrid"
+  | "clerk"
+  | "discord"
+  | "vercel"
+  | "gitlab"
+  | "typeform"
+  | "standard-webhooks"
+  | "meta"
+  | "lemonsqueezy"
+  | "coinbase-commerce"
+  | "razorpay"
+  | "cal"
+  | "intercom"
+  | "telegram"
+  | "square"
+  | "hubspot"
+  | "mailgun"
+  | "calendly"
+  | "mux"
+  | "sentry"
+  | "bitbucket"
+  | "docusign"
+  | "adyen"
+  | "paypal"
+  | "plaid"
+  | "resend"
+  | "workos";
+
+type VerifyProvider = TemplateProvider;
+```
+
+## Error Classes
+
+Errors include actionable recovery hints when the server message is generic.
+
+```ts
+import {
+  WebhooksCCError, // Base error (has statusCode, and code when the API named one)
+  UnauthorizedError, // 401: includes link to get API key
+  NotFoundError, // 404: suggests using endpoints.list()
+  RateLimitError, // 429: includes retryAfter seconds
+  TimeoutError, // Request timeout
+  WebhookVerificationError, // Thrown by verifyForwardedEmail(); has a code
+} from "@webhooks-cc/sdk";
+```
+
+`WebhooksCCError.code` is the API's own error code when its answer had one, such as `"invalid_cursor"` or `"search_busy"` from `requests.searchPage()`.
+
+`message` is what the API said as plain text (the `message` of a JSON error body, else its `error`; when that is only a code (`not_found`), the status in words, with the code in brackets when it says more (`Bad request (invalid_since)`), and `code` still holds it when it came from `error`), followed by the SDK's recovery hint when the text is short. `apiMessage` is the same text without the hint, and `path` is the API route that answered, after `/api` (such as `/endpoints/acme`); both are set on errors made from an API answer.
+
+`WebhookVerificationError.code` is `"missing_headers"`, `"timestamp_out_of_range"`, `"invalid_signature"` or `"invalid_payload"`. Answer the first three with 401 and `invalid_payload` with 400.

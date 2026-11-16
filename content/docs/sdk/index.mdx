@@ -120,7 +120,7 @@ const email = await client.emails.waitFor(endpoint.slug, { tag: runId });
 console.log(email.email.subject, extractCode(email)); // "Confirm your email", "482913"
 ```
 
-`waitFor` polls for up to 60 seconds by default. To try it without your app, `client.emails.sendTest(endpoint.slug, { tag: runId })` delivers a sample email with a six-digit code. See [Emails](/docs/sdk/api#emails) for listing and filtering emails, and [forwarding](/docs/sdk/api#forwarding) to post them to your server.
+`waitFor` polls for up to 60 seconds by default. To try it without your app, `client.emails.sendTest(endpoint.slug, { tag: runId })` delivers a sample email with a six-digit code. See [Emails](/docs/sdk/api/emails#emails) for listing and filtering emails, and [forwarding](/docs/sdk/api/forwarding#forwarding) to post them to your server.
 
 ## Stream requests in real-time
 
@@ -151,7 +151,7 @@ console.log(preview.url); // https://sample-preview-1234-free.sharehooks.cc
 await preview.stop();
 ```
 
-`client.shares.list()` shows what runs, with this month's data and your plan's limits, `client.shares.requests(id)` a preview's visitor log, and `client.names` reserves a name that stays the same every time (Pro and Business). Requests captured while [`whk tunnel --live`](/docs/live-tunnel) relays an endpoint to your app carry `liveResponse`, what your app answered. See [Sharing localhost](/docs/sdk/api#sharing-localhost).
+`client.shares.list()` shows what runs, with this month's data and your plan's limits, `client.shares.requests(id)` a preview's visitor log, and `client.names` reserves a name that stays the same every time (Pro and Business). Requests captured while [`whk tunnel --live`](/docs/live-tunnel) relays an endpoint to your app carry `liveResponse`, what your app answered. See [Sharing localhost](/docs/sdk/api/teams-sharing#sharing-localhost).
 
 ## Lifecycle hooks
 

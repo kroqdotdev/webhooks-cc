@@ -38,7 +38,7 @@ describe("prefersMarkdown", () => {
 });
 
 describe("negotiatesMarkdown", () => {
-  it.each(["/", "/docs", "/docs/agents", "/docs/mcp/tools"])(
+  it.each(["/", "/docs", "/docs/agents", "/docs/mcp/tools", "/share/vite"])(
     "answers %s with its twin for an agent",
     (pathname) => {
       expect(hasMarkdownTwin(pathname)).toBe(true);
@@ -57,19 +57,33 @@ describe("negotiatesMarkdown", () => {
     "/index.md",
     "/docs.md/agents",
     "/docs/agents.md",
+    "/share",
+    "/share/vite.md",
+    "/share/opengraph-image",
   ])("leaves %s alone", (pathname) => {
     expect(negotiatesMarkdown(pathname, "text/markdown")).toBe(false);
   });
 });
 
 describe("isMarkdownTwinPath", () => {
-  it.each(["/index.md", "/docs.md", "/docs.md/agents", "/docs/agents.md", "/docs/sdk/api.md"])(
-    "marks %s as a twin",
-    (pathname) => expect(isMarkdownTwinPath(pathname)).toBe(true)
-  );
+  it.each([
+    "/index.md",
+    "/docs.md",
+    "/docs.md/agents",
+    "/docs/agents.md",
+    "/docs/sdk/api.md",
+    "/share.md/vite",
+    "/share/vite.md",
+  ])("marks %s as a twin", (pathname) => expect(isMarkdownTwinPath(pathname)).toBe(true));
 
-  it.each(["/", "/docs", "/docs/agents", "/auth.md", "/llms.txt", "/docs.mdx"])(
-    "does not mark %s",
-    (pathname) => expect(isMarkdownTwinPath(pathname)).toBe(false)
-  );
+  it.each([
+    "/",
+    "/docs",
+    "/docs/agents",
+    "/auth.md",
+    "/llms.txt",
+    "/docs.mdx",
+    "/share",
+    "/share/vite",
+  ])("does not mark %s", (pathname) => expect(isMarkdownTwinPath(pathname)).toBe(false));
 });

@@ -40,7 +40,7 @@ export function DocsBreadcrumbs() {
     <>
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: breadcrumbJson }} />
       <nav aria-label="Breadcrumb" className="mb-6 flex items-center justify-between pl-28 md:pl-0">
-        <ol className="flex items-center gap-1.5 text-sm text-muted-foreground">
+        <ol className="flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1 text-sm text-muted-foreground">
           {crumbs.map((crumb, i) => {
             const isLast = i === crumbs.length - 1;
             return (

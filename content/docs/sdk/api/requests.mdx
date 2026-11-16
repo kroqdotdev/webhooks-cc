@@ -1,0 +1,416 @@
+---
+title: "API Reference: Requests"
+description: "TypeScript SDK reference for requests: list, search, wait, replay and export, plus provider detection, body parsing, payload schemas and request diffing."
+section: sdk
+order: 2
+lastUpdated: 2026-11-16
+schema: none
+keywords: ["SDK API", "webhook SDK methods", "TypeScript API reference"]
+seo:
+  ogTitle: "TypeScript SDK API Reference: Requests"
+  ogDescription: "TypeScript SDK reference for requests: list, search, wait, replay and export, plus provider detection, body parsing, payload schemas and request diffing."
+---
+
+Part of the [TypeScript SDK API reference](/docs/sdk/api). The constructor, endpoints and direct delivery are on the [first page](/docs/sdk/api).
+
+## Requests
+
+<ApiMethod method="GET" path="/endpoints/:slug/requests" title="client.requests.list">
+
+List captured requests for an endpoint.
+
+```ts
+list(endpointSlug: string, options?: ListRequestsOptions): Promise<Request[]>
+```
+
+<ParamTable>
+
+| Param          | Type                | Required | Description                                    |
+| -------------- | ------------------- | -------- | ---------------------------------------------- |
+| `endpointSlug` | `string`            | yes      | Endpoint slug                                  |
+| `limit`        | `number`            | no       | Max results (default: 50)                      |
+| `since`        | `number`            | no       | Only return requests after this timestamp (ms) |
+| `kind`         | `"http" \| "email"` | no       | Only HTTP requests, or only emails             |
+
+</ParamTable>
+</ApiMethod>
+
+<ApiMethod method="GET" path="/endpoints/:slug/requests" title="client.requests.listPaginated">
+
+List captured requests with cursor-based pagination.
+
+```ts
+listPaginated(slug: string, options?: ListPaginatedRequestsOptions): Promise<PaginatedResult<Request>>
+```
+
+<ParamTable>
+
+| Param    | Type                | Required | Description                        |
+| -------- | ------------------- | -------- | ---------------------------------- |
+| `slug`   | `string`            | yes      | Endpoint slug                      |
+| `limit`  | `number`            | no       | Max results per page               |
+| `cursor` | `string`            | no       | Cursor from previous page          |
+| `kind`   | `"http" \| "email"` | no       | Only HTTP requests, or only emails |
+
+</ParamTable>
+</ApiMethod>
+
+<ApiMethod method="GET" path="/requests/:id" title="client.requests.get">
+
+Get a single captured request by ID. For a captured email, `kind` is `"email"` and `email` holds the parsed message; `client.emails.get()` returns the same request typed as an `EmailRequest`.
+
+```ts
+get(requestId: string): Promise<Request>
+```
+
+When the endpoint has [layouts](/docs/layouts), `parsed` holds what they found once the parse is done.
+
+</ApiMethod>
+
+<ApiMethod method="GET" path="/requests/:id/raw" title="client.requests.raw">
+
+A captured email's exact message (RFC 5322 bytes), and `attachment()` one of its attachments by its index in `email.attachments`, from 0 to 99. Both work for emails kept in storage (`email.stored`).
+
+```ts
+raw(requestId: string): Promise<Uint8Array>
+attachment(requestId: string, index: number): Promise<AttachmentDownload> // { bytes, filename, contentType }
+```
+
+</ApiMethod>
+
+<ApiMethod method="POST" path="/requests/:id/replay" title="client.requests.redeliver">
+
+Send a captured request through its endpoint's [destinations](/docs/sdk/api/forwarding#destinations) again, with their current settings. True when at least one delivery was queued. To send it to one destination only, use [`forwarding.redeliver()`](/docs/sdk/api/forwarding#forwarding).
+
+```ts
+redeliver(requestId: string): Promise<boolean>
+```
+
+</ApiMethod>
+
+<ApiMethod method="GET" path="/endpoints/:slug/requests" title="client.requests.waitFor">
+
+Poll for incoming requests until one matches or timeout expires. Accepts human-readable duration strings.
+
+```ts
+waitFor(endpointSlug: string, options?: WaitForOptions): Promise<Request>
+```
+
+<ParamTable>
+
+| Param          | Type                   | Required | Description                                                                |
+| -------------- | ---------------------- | -------- | -------------------------------------------------------------------------- |
+| `endpointSlug` | `string`               | yes      | Endpoint slug to monitor                                                   |
+| `timeout`      | `number \| string`     | no       | Max wait time: ms or `"30s"`, `"5m"`, `"1h"` (default: 30000)              |
+| `pollInterval` | `number \| string`     | no       | Interval between polls (default: 500)                                      |
+| `match`        | `(request) => boolean` | no       | Filter function                                                            |
+| `since`        | `number`               | no       | Only consider requests after this timestamp in ms (default: 5 minutes ago) |
+
+</ParamTable>
+
+The five-minute lookback means a request that arrived just before the call is still found. Pass `since: Date.now()` to wait only for new requests.
+
+</ApiMethod>
+
+<ApiMethod method="GET" path="/endpoints/:slug/requests" title="client.requests.waitForAll">
+
+Wait for multiple matching requests to arrive.
+
+```ts
+waitForAll(slug: string, options: WaitForAllOptions): Promise<Request[]>
+```
+
+<ParamTable>
+
+| Param     | Type                   | Required | Description                                      |
+| --------- | ---------------------- | -------- | ------------------------------------------------ |
+| `slug`    | `string`               | yes      | Endpoint slug                                    |
+| `count`   | `number`               | yes      | Number of requests to collect                    |
+| `timeout` | `number \| string`     | no       | Max wait time                                    |
+| `match`   | `(request) => boolean` | no       | Filter function                                  |
+| `since`   | `number`               | no       | Only consider requests after this timestamp (ms) |
+
+</ParamTable>
+</ApiMethod>
+
+<ApiMethod method="GET" path="/api/stream/:slug" title="client.requests.subscribe">
+
+Stream incoming requests via SSE as an async iterator.
+
+```ts
+subscribe(slug: string, options?: SubscribeOptions): AsyncIterable<Request>
+```
+
+<ParamTable>
+
+| Param                  | Type                | Required | Description                                                                                |
+| ---------------------- | ------------------- | -------- | ------------------------------------------------------------------------------------------ |
+| `slug`                 | `string`            | yes      | Endpoint slug                                                                              |
+| `signal`               | `AbortSignal`       | no       | Signal to cancel the subscription                                                          |
+| `timeout`              | `number \| string`  | no       | Max stream duration                                                                        |
+| `reconnect`            | `boolean`           | no       | Auto-reconnect on disconnect                                                               |
+| `maxReconnectAttempts` | `number`            | no       | Max reconnection attempts (default: 5)                                                     |
+| `reconnectBackoffMs`   | `number \| string`  | no       | Base backoff between reconnects (default: 1000)                                            |
+| `idleTimeout`          | `number \| string`  | no       | Treat the stream as dead after this long without data (default: `"90s"`; `0` turns it off) |
+| `onReconnect`          | `(attempt) => void` | no       | Called before each reconnect attempt                                                       |
+
+</ParamTable>
+
+Streamed requests carry `kind`, so you can tell emails apart, but not the parsed `email`. Read it with `client.emails.get(request.id)`.
+
+</ApiMethod>
+
+<ApiMethod method="POST" path="/requests/:id/replay" title="client.requests.replay">
+
+Replay a captured request to a target URL. Sends the original method, headers, and body. Hop-by-hop headers are stripped. Throws for a captured email, which is not an HTTP request; to post an email to a handler, send `client.emails.toJson(email)` with [`sendTo()`](/docs/forwarding#test-an-email-handler-locally).
+
+```ts
+replay(requestId: string, targetUrl: string): Promise<Response>
+```
+
+<ParamTable>
+
+| Param       | Type     | Required | Description                         |
+| ----------- | -------- | -------- | ----------------------------------- |
+| `requestId` | `string` | yes      | ID of the captured request          |
+| `targetUrl` | `string` | yes      | URL to send the replayed request to |
+
+</ParamTable>
+</ApiMethod>
+
+<ApiMethod method="GET" path="/requests/search" title="client.requests.search">
+
+Search captured requests across endpoints for text.
+
+`q` matches as a case-insensitive substring of the path, the headers or the body (`%` and `_` are literal), and an email also matches on its decoded subject, text and sender and recipient addresses; a request id finds that request first. Each result's `id` is the request's own id, the one `requests.get()` takes.
+
+There is no text index behind search, so the server reads a long history newest first, in pages of about 2 seconds. `search()` follows the cursor for you until it has `limit` matches (50 by default), the whole range was read, or 25 seconds have passed, and returns the matches found by then. A rare term on a very long history can therefore return fewer matches than exist; `searchPage()` says how far a search read and lets you continue it.
+
+```ts
+search(filters?: SearchFilters): Promise<SearchResult[]>
+```
+
+<ParamTable>
+
+| Param    | Type                | Required | Description                        |
+| -------- | ------------------- | -------- | ---------------------------------- |
+| `slug`   | `string`            | no       | Filter by endpoint slug            |
+| `method` | `string`            | no       | Filter by HTTP method              |
+| `kind`   | `"http" \| "email"` | no       | Only HTTP requests, or only emails |
+| `q`      | `string`            | no       | Text to find (substring)           |
+| `from`   | `string \| number`  | no       | Start time (duration or timestamp) |
+| `to`     | `string \| number`  | no       | End time (duration or timestamp)   |
+| `limit`  | `number`            | no       | Max results (default: 50)          |
+| `offset` | `number`            | no       | Matches to skip                    |
+| `order`  | `"asc" \| "desc"`   | no       | Sort order (default: `"desc"`)     |
+
+</ParamTable>
+</ApiMethod>
+
+<ApiMethod method="GET" path="/requests/search" title="client.requests.searchPage">
+
+One page of a search: a single request that reads for about 2 seconds and says how far it got.
+
+```ts
+searchPage(filters?: SearchFilters, options?: { cursor?: string }): Promise<SearchPage>
+
+interface SearchPage {
+  requests: SearchResult[]; // the matches this page found
+  complete: boolean; // whether the whole range was read
+  searchedUntil: number | null; // how far the search read (Unix ms)
+  cursor: string | null; // pass to the next call; null when complete
+}
+```
+
+A page can be short or empty without being the end: read on while `complete` is `false`.
+
+```ts
+const filters = { slug: "abc123", q: "invoice.paid", from: Date.now() - 7 * 86_400_000 };
+let page = await client.requests.searchPage(filters);
+while (!page.complete && page.cursor) {
+  page = await client.requests.searchPage(filters, { cursor: page.cursor });
+}
+```
+
+Pass the same filters with each cursor. A page holds at most 200 matches, `offset` applies to the first page only (the cursor carries what is left of it), and a cursor is opaque: pass it back as given. Give `from` and `to` as timestamps when you continue, since a duration is counted back from each call's own clock.
+
+A cursor the server did not issue for this search (a changed one, or one from a search in the other order) throws a `WebhooksCCError` whose `code` is `"invalid_cursor"`. A page asked for while the account's other searches are still running throws a `RateLimitError` with `code` `"search_busy"` and `retryAfter`; `search()` and `count()` wait that out themselves while it fits in their 25 seconds.
+
+</ApiMethod>
+
+<ApiMethod method="GET" path="/requests/count" title="client.requests.count">
+
+Count captured requests matching the given filters. Without `q` and `method` the count is exact. With either, the server counts a long history in stretches: `count()` adds them up until the count is exact or 25 seconds have passed, and returns the sum, which is then a lower bound. `countPage()` says which.
+
+```ts
+count(filters?: SearchFilters): Promise<number>
+```
+
+</ApiMethod>
+
+<ApiMethod method="GET" path="/requests/count" title="client.requests.countPage">
+
+One count, and whether it is exact. Takes the filters of `search` (without `limit`, `offset` and `order`) and the same `cursor` option.
+
+```ts
+countPage(filters?: SearchFilters, options?: { cursor?: string }): Promise<SearchCountPage>
+
+interface SearchCountPage {
+  count: number; // matches counted by this call
+  exact: boolean; // whether the whole range was counted
+  searchedUntil: number | null; // how far the count read (Unix ms)
+  cursor: string | null; // pass to the next call; null when exact
+}
+```
+
+When `exact` is `false`, `count` covers the requests back to `searchedUntil` only. Calling again with `cursor` and the same filters counts the next stretch, so add the counts up.
+
+</ApiMethod>
+<ApiMethod method="DELETE" path="/endpoints/:slug/requests" title="client.requests.clear">
+
+Delete captured requests for an endpoint without deleting the endpoint itself.
+
+```ts
+clear(slug: string, options?: ClearRequestsOptions): Promise<void>
+```
+
+<ParamTable>
+
+| Param    | Type               | Required | Description                                    |
+| -------- | ------------------ | -------- | ---------------------------------------------- |
+| `slug`   | `string`           | yes      | Endpoint slug                                  |
+| `before` | `string \| number` | no       | Delete requests before this duration/timestamp |
+
+</ParamTable>
+</ApiMethod>
+
+<ApiMethod method="GET" path="/endpoints/:slug/requests/export" title="client.requests.export">
+
+Export captured requests as HAR 1.2 or cURL commands. Emails are skipped: they have no HTTP request to export.
+
+```ts
+export(slug: string, options: ExportRequestsOptions): Promise<RequestsExport>
+```
+
+<ParamTable>
+
+| Param    | Type              | Required | Description                               |
+| -------- | ----------------- | -------- | ----------------------------------------- |
+| `slug`   | `string`          | yes      | Endpoint slug                             |
+| `format` | `"har" \| "curl"` | yes      | Export format                             |
+| `limit`  | `number`          | no       | Max requests to export                    |
+| `since`  | `number`          | no       | Only export requests after this timestamp |
+
+</ParamTable>
+</ApiMethod>
+
+## Provider Detection
+
+Use `detectWebhookInfo` when you want the provider plus an event/topic label, or the `is*Webhook` helpers when you only need a boolean branch.
+
+```ts
+import { detectWebhookInfo, detectWebhookProvider, isTypeformWebhook } from "@webhooks-cc/sdk";
+
+const info = detectWebhookInfo(request);
+console.log(info?.provider, info?.event);
+// "typeform", "form_response"
+
+console.log(detectWebhookProvider(request));
+// "typeform"
+
+if (isTypeformWebhook(request)) {
+  // Handle Typeform-specific fields
+}
+```
+
+`detectWebhookInfo` returns:
+
+```ts
+type DetectedWebhookInfo = {
+  provider:
+    | "stripe"
+    | "github"
+    | "shopify"
+    | "twilio"
+    | "slack"
+    | "paddle"
+    | "linear"
+    | "sendgrid"
+    | "clerk"
+    | "discord"
+    | "vercel"
+    | "gitlab"
+    | "typeform"
+    | "standard-webhooks"
+    | "meta"
+    | "lemonsqueezy"
+    | "coinbase-commerce"
+    | "razorpay"
+    | "cal"
+    | "intercom"
+    | "telegram"
+    | "square"
+    | "hubspot"
+    | "mailgun"
+    | "calendly"
+    | "mux"
+    | "sentry"
+    | "bitbucket"
+    | "docusign"
+    | "adyen"
+    | "paypal"
+    | "plaid"
+    | "resend"
+    | "workos";
+  event: string | null;
+  via: "header" | "body";
+  matchedOn?: string;
+};
+```
+
+## Body Parsing
+
+```ts
+import { parseJsonBody, parseFormBody, parseBody, extractJsonField } from "@webhooks-cc/sdk";
+
+// Parse JSON body safely (returns undefined on failure)
+const json = parseJsonBody(request);
+
+// Parse form-encoded body
+const form = parseFormBody(request);
+
+// Auto-detect and parse by content-type
+const parsed = parseBody(request);
+
+// Extract nested JSON field by dot notation
+const email = extractJsonField<string>(request, "data.customer.email");
+```
+
+## Payload Schemas
+
+Generate types from captured requests: TypeScript interfaces, Zod schemas, Pydantic models, or JSON Schema. One schema is learned from every sample, so pass several requests of the same event to find optional fields (missing from some samples) and nullable ones (sometimes `null`).
+
+```ts
+import { generateRequestSchema, generatePayloadSchema } from "@webhooks-cc/sdk";
+
+const requests = await client.requests.list("acme-stripe", { limit: 20 });
+const { code, samples, skipped } = generateRequestSchema(requests, {
+  format: "zod", // "typescript" (default), "zod", "pydantic", or "json-schema"
+  name: "InvoicePaidEvent",
+});
+
+// From parsed values instead of requests
+const ts = generatePayloadSchema([{ id: "evt_1", amount: 100 }], { name: "Payment" });
+```
+
+`generateRequestSchema()` reads JSON bodies, and form bodies as string fields; it skips emails and other bodies and counts them in `skipped`. `payloadSample(request)` returns the value it would use. Both run without network access, and `@webhooks-cc/sdk/schema` exports them without the client, for browser bundles.
+
+## Request Diffing
+
+```ts
+import { diffRequests } from "@webhooks-cc/sdk";
+
+const diff = diffRequests(requestA, requestB);
+console.log(diff.matches); // boolean
+console.log(diff.differences); // { method?, path?, headers?, body? }
+```
