@@ -1271,9 +1271,17 @@ function isRequestReceivedEvent(value: unknown): value is RequestReceivedEvent {
   );
 }
 
+/**
+ * The body's bytes. Views and buffers are told apart without `instanceof`,
+ * which fails for one from another realm (Jest's node environment, a `vm`
+ * sandbox), where `request.arrayBuffer()` gives the host's ArrayBuffer.
+ */
 function bodyBytes(body: string | Uint8Array | ArrayBuffer): Uint8Array {
   if (typeof body === "string") return new TextEncoder().encode(body);
-  return body instanceof ArrayBuffer ? new Uint8Array(body) : body;
+  if (ArrayBuffer.isView(body)) {
+    return new Uint8Array(body.buffer, body.byteOffset, body.byteLength);
+  }
+  return new Uint8Array(body);
 }
 
 function bodyText(body: string | Uint8Array | ArrayBuffer): string {

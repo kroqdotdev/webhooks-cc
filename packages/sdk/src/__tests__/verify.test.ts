@@ -559,6 +559,13 @@ describe("signature verification", () => {
     expect(await verifyStandardWebhookSignature(new Uint8Array(body), signed, secret)).toBe(true);
     const copy = new Uint8Array(body).buffer;
     expect(await verifyStandardWebhookSignature(copy, signed, secret)).toBe(true);
+    // An ArrayBuffer from another realm (as Jest's node environment hands one out).
+    const { runInNewContext } = await import("node:vm");
+    const foreign = runInNewContext("new Uint8Array(bytes).buffer", {
+      bytes: Array.from(body),
+    }) as ArrayBuffer;
+    expect(foreign instanceof ArrayBuffer).toBe(false);
+    expect(await verifyStandardWebhookSignature(foreign, signed, secret)).toBe(true);
     // Decoded as text, the PDF's bytes change and the check fails.
     expect(await verifyStandardWebhookSignature(body.toString("utf8"), signed, secret)).toBe(false);
   });
