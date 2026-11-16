@@ -599,7 +599,7 @@ function sandboxToolSet(
             ? `${file} (shared with the whk CLI and the SDKs): the sandbox and the connection survive restarts.`
             : "nowhere: this session only.",
           withAnApiKey:
-            "Set WHK_API_KEY to a whcc_ key from the dashboard and restart for the full tools from the start.",
+            "Set WHK_API_KEY to a whcc_ key (Account > API keys, or create_api_key once connected) and restart for the full tools from the start.",
           docs: DOCS_URL,
           protocol: `${session.baseUrl}/auth.md`,
         });

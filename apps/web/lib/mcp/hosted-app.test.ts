@@ -186,6 +186,24 @@ describe("the hosted server", () => {
     );
   });
 
+  it("takes an endpoint's slug under the name the tool does not list", async () => {
+    const fetched: string[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: string | URL | Request) => {
+        const target =
+          typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+        fetched.push(target);
+        return Response.json({ error: "Endpoint not found" }, { status: 404 });
+      })
+    );
+    // get_endpoint lists slug; list_requests lists endpointSlug.
+    await ask("tools/call", { name: "get_endpoint", arguments: { endpointSlug: "acme-one" } });
+    await ask("tools/call", { name: "list_requests", arguments: { slug: "acme-two" } });
+    expect(fetched.some((target) => target.includes("acme-one"))).toBe(true);
+    expect(fetched.some((target) => target.includes("acme-two"))).toBe(true);
+  });
+
   it("drops a targetUrl sent anyway, so nothing is posted there", async () => {
     const fetched: string[] = [];
     vi.stubGlobal(

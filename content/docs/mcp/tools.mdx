@@ -1,6 +1,6 @@
 ---
 title: "Tool Reference"
-description: "Complete reference for all 94 MCP tools available to AI coding agents, plus the sandbox tools for agents without an account. Parameters, return types, and usage examples for endpoint, request, email, forwarding, and webhook operations."
+description: "Complete reference for all 104 MCP tools available to AI coding agents, plus the sandbox tools for agents without an account. Parameters, return types, and usage examples for endpoint, request, email, forwarding, and webhook operations."
 section: mcp
 order: 2
 lastUpdated: 2026-11-10
@@ -8,7 +8,7 @@ schema: none
 keywords: ["MCP tools", "webhook MCP reference", "AI agent webhook tools"]
 seo:
   ogTitle: "MCP Tool Reference"
-  ogDescription: "Complete reference for all 94 MCP tools available to AI coding agents, plus the sandbox tools for agents without an account. Parameters, return types, and usage examples for endpoint, request, email, forwarding, and webhook operations."
+  ogDescription: "Complete reference for all 104 MCP tools available to AI coding agents, plus the sandbox tools for agents without an account. Parameters, return types, and usage examples for endpoint, request, email, forwarding, and webhook operations."
 ---
 
 ## Endpoint management
@@ -92,7 +92,7 @@ Update an endpoint's name, mock response, notification webhook, signing configur
 | `showEmailExtracts` | `boolean` | no       | Pick codes and links out of emails (dashboard and forwarded JSON); owner only |
 | `site`              | `string`  | no       | Which site's dashboard lists it: `webhooks`, `mailhooks` or `both`; owner only |
 | `emailFields`       | `array`   | no       | Named fields to pick out of every email, `{ name, from, header?, pattern }` (RE2), at most 20; replaces the list, `null` or `[]` removes them; owner only. See [Fields you pick out](/docs/email-capture#fields-you-pick-out) |
-| `layouts`           | `array`   | no       | How the endpoint reads each sender's emails: `{ id, name, enabled?, match?, fields?, lineItems?, parseAttachments? }`, the first whose `match` holds applies; replaces the list, `null` or `[]` removes them; owner only. See [Layouts](/docs/layouts) |
+| `layouts`           | `array`   | no       | How the endpoint reads each sender's emails: `{ id, name, enabled?, match?, fields?, lineItems?, parseAttachments? }`, the first whose `match` holds applies, and templates read its `fields` as `{{ parsed.fields.name }}`; replaces the list, `null` or `[]` removes them; owner only. See [Layouts](/docs/layouts) |
 | `agentRepo`         | `string`  | no       | The GitHub repository (`owner/name`) a coding agent fixes failed deliveries in, or `null` to clear it; owner only. See [Fix prompts](/docs/forwarding#fix-prompts) |
 
 ### preview_layouts
@@ -624,7 +624,7 @@ Stop sharing an endpoint you own with a team. Same parameters as `share_endpoint
 
 ### create_team
 
-Create a team you own (`name`, 1 to 100 characters). It is suspended until the person subscribes it in the browser. Returns the team.
+Create a team you own (`name`, 1 to 100 characters). It is suspended until it has a subscription: [`create_checkout`](#create_checkout) with `kind: "team_plan"` and its `teamId` makes the checkout link the person pays. Returns the team.
 
 ### rename_team
 
@@ -685,7 +685,7 @@ Withdraw an invite to a team you own before it is answered.
 
 ### quote_team_change
 
-What changing a team's seats or plan would cost (owner only), read only: give `seats`, or `plan` with an optional `interval`. The change itself is made in the browser.
+What changing a team's seats or plan would cost (owner only), read only: give `seats`, or `plan` with an optional `interval`. To make the change, [`set_seats`](#set_seats) or [`change_plan`](#change_plan) asks the team's owner to approve it.
 
 | Parameter  | Type     | Required | Description                                                  |
 | ---------- | -------- | -------- | ------------------------------------------------------------ |
@@ -782,7 +782,7 @@ The account's API keys: id, name, prefix, when each was made, expires and was la
 
 ### create_api_key
 
-Ask for a new key. Returns the approval's link and code to show the person (the page shows the same code to compare) and its id for `wait_for_approval`.
+Ask for a new key. Returns the approval's link and code to show the person (the page shows the same code to compare) and its id for `wait_for_approval`. A client that can open links (URL elicitation) opens the approval for the person instead, and the call then waits up to 45 seconds for their answer; when the client declines or closes that request, or the wait ends unanswered, the answer carries the link, the code and what is asked, so the agent can show them itself. Every tool that asks for an approval works this way.
 
 | Parameter       | Type     | Required | Description                                      |
 | --------------- | -------- | -------- | ------------------------------------------------ |
@@ -791,7 +791,7 @@ Ask for a new key. Returns the approval's link and code to show the person (the 
 
 ### wait_for_approval
 
-Wait for the person to answer and collect what the approval grants or did: the new key (shown once), the share link, the removed domain, the deleted team, the sent invite or the new name. If they have not answered when the wait ends, it says so; call it again. It also says when the approval was refused or expired.
+Wait for the person to answer and collect what the approval grants or did: the new key (shown once), the share link, the removed domain, the deleted team, the sent invite or the new name. If they have not answered when the wait ends, it says so, with the link and the code to remind them of; call it again. It also says when the approval was refused or expired.
 
 | Parameter | Type     | Required | Description                                         |
 | --------- | -------- | -------- | --------------------------------------------------- |
@@ -928,19 +928,77 @@ Your plan's request usage, remaining quota, and period end; `parsedPages`, `prev
 
 What the account pays for, read only: `plan`, `subscription` (`status`, `interval`, `renewsAt`, `cancelAtPeriodEnd`, `pendingChange`; null on Free), `quotaPeriod`, `addons` for requests, pages and domains, and `teams` with each team's subscription, seats and add-ons. No parameters.
 
-### change_plan, set_seats, change_addons, cancel_subscription, resume_subscription
+### change_plan
 
-Ask for a billing change: `change_plan` (`plan`: `pro` or `business`, or `team` or `team_business` with `teamId`; `interval`; or `keep: true` to drop a change waiting for the renewal), `set_seats` (`teamId`, `seats`), `change_addons` (`action`: `set_monthly_blocks`, `buy_blocks` or `set_overage`; `resource`, `blocks`, `enabled`, `maxBlocks`, `teamId`), `cancel_subscription` and `resume_subscription` (`teamId` for a team). Each is quoted and answers with an approval for the owner, whose page shows what changes, when and what is charged now; `wait_for_approval` then says what was done, or that nothing was changed because the price or the subscription moved, in which case ask again. See [Billing changes](/docs/agents#billing-changes).
+Change the plan or its interval: `pro` or `business` for the account, `team` or `team_business` with `teamId`. A monthly move up a tier (Pro to Business, Teams to Team Business, or a team to annual) applies at once and charges the difference now; anything else waits for the renewal. `keep: true` instead drops a plan change waiting for the renewal. A first plan is a checkout instead: [`create_checkout`](#create_checkout) with `kind: "plan"` (or `team_plan` for a team) makes the link for the person to pay.
 
-With an [agent spend budget](/docs/agents#agent-spend-budget), more seats and a monthly move up a tier are made at once from it instead, and the answer says what was charged and what is left; a change it cannot cover says why, then asks for the approval.
+`change_plan` and the billing changes after it (`set_seats`, `change_addons`, `cancel_subscription`, `resume_subscription`) are each quoted and answer with an approval for the owner (the team's owner for a team), whose page shows what changes, when and what is charged now; `wait_for_approval` then says what was done, or that nothing was changed because the price or the subscription moved, in which case ask again. With an [agent spend budget](/docs/agents#agent-spend-budget), more seats and a monthly move up a tier are made at once from it instead, and the answer says what was charged and what is left; a change it cannot cover says why, then asks for the approval. See [Billing changes](/docs/agents#billing-changes). Only when the person asks for it. In the account group.
 
-### get_agent_budget, set_agent_budget
+| Parameter  | Type      | Required | Description                                                          |
+| ---------- | --------- | -------- | -------------------------------------------------------------------- |
+| `plan`     | `string`  | no       | `pro`, `business`, `team` or `team_business` (team plans need `teamId`) |
+| `interval` | `string`  | no       | `month` (default) or `year`                                          |
+| `keep`     | `boolean` | no       | `true`: keep the current plan, dropping a change waiting for the renewal |
+| `teamId`   | `string`  | no       | A team you own (from `list_teams`); the account's own billing when left out |
 
-`get_agent_budget` (`teamId` for a team you own) reads the agent spend budget: `budgetCents` per 30 days, `spentCents`, `leftCents` and the spends. `set_agent_budget` (`budgetCents`, 0 to 50000, 0 is off; `teamId`) lowers it at once, and a raise answers with an approval for the owner. Each change counts at what it charges now plus how much it raises the next renewal (on a monthly plan always, on an annual plan when the renewal is at most 31 days away); on an annual plan whose renewal is further, at the larger of the two, so the budget then bounds less than both together, and a seat added more than 60 days before that renewal is not bounded at it. Later renewals keep the new price.
+### set_seats
+
+Change a team's seat count: more seats apply at once and are charged pro rata now, fewer take effect at the renewal (and need no more members than seats). [`quote_team_change`](#quote_team_change) prices it first.
+
+| Parameter | Type     | Required | Description                 |
+| --------- | -------- | -------- | --------------------------- |
+| `teamId`  | `string` | yes      | Team id (from `list_teams`) |
+| `seats`   | `number` | yes      | The new seat count, 1 to 1000 |
+
+### change_addons
+
+Change add-ons: `set_monthly_blocks` sets the blocks renewed every period (0 ends them at the renewal; more than now are paid at a checkout the owner is sent to), `buy_blocks` buys one-time blocks at a checkout, `set_overage` turns overage on (with `maxBlocks` a period) or off. A block is 25,000 requests, 1,000 parsed pages (Business) or one extra domain (monthly only).
+
+| Parameter   | Type      | Required | Description                                                                 |
+| ----------- | --------- | -------- | --------------------------------------------------------------------------- |
+| `action`    | `string`  | yes      | `set_monthly_blocks`, `buy_blocks` or `set_overage`                         |
+| `resource`  | `string`  | no       | `requests` (default), `pages` or `domains` (domains take `set_monthly_blocks` only) |
+| `blocks`    | `number`  | no       | Blocks for `set_monthly_blocks` or `buy_blocks`                             |
+| `enabled`   | `boolean` | no       | `set_overage`: on or off                                                    |
+| `maxBlocks` | `number`  | no       | `set_overage`: the most a period may add, in blocks                         |
+| `teamId`    | `string`  | no       | A team you own (from `list_teams`); the account's own billing when left out |
+
+### cancel_subscription
+
+Cancel the plan (or a team's subscription) at the end of the period: it, its monthly add-ons and overage stay until then.
+
+| Parameter | Type     | Required | Description                                                                 |
+| --------- | -------- | -------- | --------------------------------------------------------------------------- |
+| `teamId`  | `string` | no       | A team you own (from `list_teams`); the account's own billing when left out |
+
+### resume_subscription
+
+Undo a cancellation, so the plan (or a team's subscription) renews.
+
+| Parameter | Type     | Required | Description                                                                 |
+| --------- | -------- | -------- | --------------------------------------------------------------------------- |
+| `teamId`  | `string` | no       | A team you own (from `list_teams`); the account's own billing when left out |
+
+### get_agent_budget
+
+Reads the [agent spend budget](/docs/agents#agent-spend-budget) of the account (or a team you own): how much, in cents before tax per 30 days, your keys may charge at once without the owner approving each change (more seats, Pro to Business or Teams to Team Business monthly), as `budgetCents`, with `spentCents`, `leftCents` and the spends. 0 means off: every billing change is an approval. Read only.
+
+| Parameter | Type     | Required | Description                                                                 |
+| --------- | -------- | -------- | --------------------------------------------------------------------------- |
+| `teamId`  | `string` | no       | A team you own (from `list_teams`); the account's own billing when left out |
+
+### set_agent_budget
+
+Sets the agent spend budget, in cents before tax per 30 days. Lowering it, or turning it off, applies at once; a raise lets keys charge the card without asking, so it answers with an approval for the owner. Each change counts at what it charges now plus how much it raises the next renewal (on a monthly plan always, on an annual plan when the renewal is at most 31 days away); on an annual plan whose renewal is further, at the larger of the two, so the budget then bounds less than both together, and a seat added more than 60 days before that renewal is not bounded at it. Later renewals keep the new price. Any change of the budget refuses a raise still waiting: `wait_for_approval` then says the budget changed.
+
+| Parameter     | Type     | Required | Description                                                                 |
+| ------------- | -------- | -------- | --------------------------------------------------------------------------- |
+| `budgetCents` | `number` | yes      | The budget in cents, 0 to 50000 (0 is off)                                  |
+| `teamId`      | `string` | no       | A team you own (from `list_teams`); the account's own billing when left out |
 
 ### create_checkout
 
-A [checkout link](/docs/api#checkout-links) for the person to pay with their own card, when they ask to upgrade or buy: they open it signed in to webhooks.cc as the account's owner (the team's owner for a team), and nothing is charged until they pay on Polar's page, so no approval is asked. A client that can open links (URL elicitation) opens the link for the person, and when the person comes back the call waits up to 45 seconds for the payment: it answers paid, or "Not paid yet" if the payment has not landed by then, in which case call `wait_for_checkout` with the link's id to keep waiting. The call finishing is no confirmation of payment; only a paid answer is. Other clients get the link as text. In the account group. At most 5 links an hour and 3 open at once.
+A [checkout link](/docs/api#checkout-links) for the person to pay with their own card, when they ask to upgrade or buy: they open it signed in to webhooks.cc as the account's owner (the team's owner for a team), and nothing is charged until they pay on Polar's page, so no approval is asked. A client that can open links (URL elicitation) opens the link for the person, and when the person comes back the call waits up to 45 seconds for the payment: it answers paid, or "Not paid yet" with the link if the payment has not landed by then, in which case call `wait_for_checkout` with the link's id to keep waiting. A client that declines or closes the request gets the link back as text to show the person. The call finishing is no confirmation of payment; only a paid answer is. Other clients get the link as text. In the account group. At most 5 links an hour and 3 open at once.
 
 | Parameter  | Type     | Required | Description                                                                          |
 | ---------- | -------- | -------- | ------------------------------------------------------------------------------------ |

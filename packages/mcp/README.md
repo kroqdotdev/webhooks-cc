@@ -36,7 +36,7 @@ For other agents, `npx skills add kroqdotdev/webhooks-cc` installs the same skil
 - **claude.ai and Claude Desktop**: Settings, Connectors, add a custom connector with the URL `https://webhooks.cc/mcp`
 - **ChatGPT**: add it as a custom connector (developer mode)
 
-A client that can send headers may use an API key instead: `Authorization: Bearer whcc_...`. The remote server has 91 tools: `send_to`, `replay_request` and `share_port` are left out, as is `targetUrl` on `render_email` and `test_webhook_flow`, because a hosted server cannot reach your machine, and waits are capped at 50 seconds. It needs an account (no sandbox), and serves tools only, without prompts or resources.
+A client that can send headers may use an API key instead: `Authorization: Bearer whcc_...`. The remote server has 101 tools: `send_to`, `replay_request` and `share_port` are left out, as is `targetUrl` on `render_email` and `test_webhook_flow`, because a hosted server cannot reach your machine, and waits are capped at 50 seconds. It needs an account (no sandbox), and serves tools only, without prompts or resources.
 
 ### One-click
 
@@ -85,7 +85,7 @@ Leave out `env` to start without a key. Get your API key at [webhooks.cc/account
 
 ## What it exposes
 
-With an API key or a saved connection, the server lists the `39` core tools and `enable_tools` by default, and all `94` tools for Claude Code, Codex and ChatGPT (see [Tool groups](#tool-groups)), plus `3` prompts (and, with an API key, `3` resource surfaces). Without either, it lists `11` sandbox tools. The remote server exposes the `36` core tools it can run by default, and `91` with `?tools=all` or for clients that load every group.
+With an API key or a saved connection, the server lists the `39` core tools and `enable_tools` by default, and all `104` tools for Claude Code, Codex and ChatGPT (see [Tool groups](#tool-groups)), plus `3` prompts (and, with an API key, `3` resource surfaces). Without either, it lists `11` sandbox tools. The remote server exposes the `36` core tools it can run by default, and `101` with `?tools=all` or for clients that load every group.
 
 ### Tool groups
 

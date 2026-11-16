@@ -85,8 +85,9 @@ A team shares endpoints between its members under one pooled quota.
 
 - `list_teams`, `list_team_members`; `share_endpoint` and `unshare_endpoint`
   for an endpoint you own. Requests on a shared endpoint bill the team.
-- `create_team` makes it, but it stays suspended until the owner subscribes
-  in the browser (2 seats or more). `quote_team_change` prices a seat or
+- `create_team` makes it, but it stays suspended until it is subscribed:
+  `create_checkout` with `kind: "team_plan"` and its `teamId` makes the link
+  the owner pays (2 seats or more). `quote_team_change` prices a seat or
   plan change without making it; `set_seats` and `change_plan` ask for it.
 - `invite_to_team` emails someone, so it is an approval; `list_invites`,
   `answer_invite`, `withdraw_invite`, `remove_team_member`, `leave_team`,
