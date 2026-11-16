@@ -358,7 +358,18 @@ export async function getDeliverySummary(
     p_since: new Date(now - 24 * 60 * 60 * 1000).toISOString(),
   });
   if (error) throw error;
-  const row = data?.[0];
+  return summaryOf(data?.[0]);
+}
+
+type SummaryRow = {
+  delivered_recent: number;
+  failed_recent: number;
+  pending: number;
+  failed: number;
+  total: number;
+};
+
+function summaryOf(row: SummaryRow | undefined): DeliverySummary {
   return {
     last24h: { delivered: row?.delivered_recent ?? 0, failed: row?.failed_recent ?? 0 },
     pending: row?.pending ?? 0,
@@ -368,39 +379,21 @@ export async function getDeliverySummary(
 }
 
 /**
- * The same counts for one destination of the endpoint, on the index the
- * log's destination filter uses (email_deliveries_destination, 00063).
+ * The same counts for one destination of the endpoint, capped as the
+ * endpoint's are (delivery_summary_for_destination, migration 00110).
  */
 async function destinationSummary(
   endpointId: string,
   destinationId: string,
   now: number
 ): Promise<DeliverySummary> {
-  const admin = createAdminClient();
-  const since = new Date(now - 24 * 60 * 60 * 1000).toISOString();
-  const count = async (filter: {
-    status?: "succeeded" | "failed" | "pending";
-    recent?: boolean;
-  }): Promise<number> => {
-    let query = admin
-      .from("email_deliveries")
-      .select("id", { count: "exact", head: true })
-      .eq("endpoint_id", endpointId)
-      .eq("destination_id", destinationId);
-    if (filter.recent) query = query.gte("created_at", since);
-    if (filter.status) query = query.eq("status", filter.status);
-    const { count: n, error } = await query;
-    if (error) throw error;
-    return n ?? 0;
-  };
-  const [delivered, failedRecent, pending, failed, total] = await Promise.all([
-    count({ recent: true, status: "succeeded" }),
-    count({ recent: true, status: "failed" }),
-    count({ status: "pending" }),
-    count({ status: "failed" }),
-    count({}),
-  ]);
-  return { last24h: { delivered, failed: failedRecent }, pending, failed, total };
+  const { data, error } = await createAdminClient().rpc("delivery_summary_for_destination", {
+    p_endpoint_id: endpointId,
+    p_destination_id: destinationId,
+    p_since: new Date(now - 24 * 60 * 60 * 1000).toISOString(),
+  });
+  if (error) throw error;
+  return summaryOf(data?.[0]);
 }
 
 /**

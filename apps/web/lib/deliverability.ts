@@ -101,8 +101,8 @@ export function iprevUnchecked(result: string | null | undefined): boolean {
   return result === "temperror" || result === "timeout" || result === "error";
 }
 
-/** Public suffixes of two labels under a two-letter country code: co.uk, com.au. */
-const SECOND_LEVEL = /^(?:co|com|net|org|gov|edu|ac|or|ne|go)$/;
+/** Second-level suffixes under a two-letter country code (co.uk, com.au): the same list as the MX host's (SECOND_LEVEL_SUFFIXES in apps/mx-rs/src/sender_setup.rs). */
+const SECOND_LEVEL = /^(?:co|com|org|net|ac|gov|edu|ne)$/;
 
 /**
  * The organizational domain, approximately (no public suffix list here): the

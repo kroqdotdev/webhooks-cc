@@ -533,7 +533,7 @@ function timestampWarning(preset: SignaturePreset, ageSeconds: number | null | u
   if (ageSeconds === null || ageSeconds === undefined) return undefined;
   const limit = TIMESTAMP_TOLERANCE_SECONDS / 60;
   if (ageSeconds > TIMESTAMP_TOLERANCE_SECONDS) {
-    return `Its timestamp is ${age(ageSeconds)} old. ${preset.label}'s own libraries refuse a signature older than about ${limit} minutes as a possible replay, so a server checking it that way would turn this request away, though the signature itself matches.`;
+    return `Its timestamp is ${age(ageSeconds)} old. Many providers' libraries refuse a signature older than a few minutes (often ${limit}) as a possible replay, so a server checking it that way would turn this request away, though the signature itself matches.`;
   }
   if (ageSeconds < -TIMESTAMP_TOLERANCE_SECONDS) {
     return `Its timestamp is ${age(-ageSeconds)} in the future. A server that allows ${limit} minutes either way would turn this request away; check the sender's clock.`;
@@ -558,7 +558,11 @@ export function explainProviderCheck(
   if (result.valid) {
     return {
       outcome: "ok",
-      title: warning ? "Signature valid, timestamp too old" : "Signature valid",
+      title: warning
+        ? (result.ageSeconds ?? 0) < 0
+          ? "Signature valid, timestamp in the future"
+          : "Signature valid, timestamp too old"
+        : "Signature valid",
       detail: `The ${preset.label} signature matches this payload and secret, byte for byte.`,
       ...(warning ? { warning } : {}),
     };

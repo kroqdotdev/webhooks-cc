@@ -195,6 +195,8 @@ describe("request share links", () => {
       .single();
     expect(asked.approval.summary).toContain(` on `);
     expect(asked.approval.summary).toContain(endpointRow!.slug);
+    // Its name is the asker's to set, so it never reads as the page's own words.
+    expect(asked.approval.summary).not.toContain("Share Endpoint");
     // Nothing is published until the owner approves.
     expect(await sharesOf()).toBe(before);
     await admin.from("approvals").delete().eq("id", asked.approval.id);

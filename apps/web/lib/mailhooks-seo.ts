@@ -10,8 +10,12 @@ export function mailhooksUrl(path: string): string {
   return `${mailhooksOrigin() ?? "https://mailhooks.cc"}${path === "/" ? "" : path}`;
 }
 
-/** The share image every mailhooks.cc page names, on its own origin. */
-export const MAILHOOKS_OG_IMAGE = mailhooksUrl("/og-image.jpg");
+/**
+ * The share image every mailhooks.cc page names, on its own origin: the
+ * site's own card (public/mailhooks-og.png, drawn once with ogImageResponse
+ * from lib/og/image.tsx with `site: "mailhooks.cc"`), not webhooks.cc's.
+ */
+export const MAILHOOKS_OG_IMAGE = mailhooksUrl("/mailhooks-og.png");
 
 export function mailhooksMetadata({
   title,

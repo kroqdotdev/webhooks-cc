@@ -341,6 +341,17 @@ describe("forwarding HTTP requests", () => {
       failed: 3,
       total: 3,
     });
+    // The same counts for its one destination, and none for another id.
+    const { data: destinations } = await admin
+      .from("endpoint_destinations")
+      .select("id")
+      .eq("endpoint_id", endpoint.id);
+    const destinationId = destinations?.[0]?.id as string;
+    expect(await getDeliverySummary(endpoint.id, Date.now(), destinationId)).toEqual(summary);
+    expect(
+      (await getDeliverySummary(endpoint.id, Date.now(), "00000000-0000-4000-8000-000000000000"))
+        .total
+    ).toBe(0);
     const page = await listRecentDeliveries(endpoint.id, { limit: 2, status: "failed" });
     expect(page.map((row) => row.requestId)).toEqual([ids[2], ids[1]]);
     const older = await listRecentDeliveries(endpoint.id, {
