@@ -339,9 +339,20 @@ pub async fn run(session: &Session, on: &mut (dyn FnMut(Update) + Send)) -> Resu
             {
                 return Ok(message);
             }
+            // A tunnel address whk cannot even use (WHK_TUNNEL_URL): a
+            // local mistake, not an answer from anywhere.
+            Err(Failure::Refused { status: 0, message }) => {
+                return Err(crate::error::CliError::Usage(message).into());
+            }
             // The edge's status says which exit status this is (a plan
             // that does not allow it, a name nobody can use, a stopped run).
-            Err(Failure::Refused { status, message }) => {
+            Err(Failure::Refused {
+                status,
+                mut message,
+            }) => {
+                if status == 426 && !message.contains("whk update") {
+                    message.push_str(" Run `whk update` for the newest whk.");
+                }
                 return Err(crate::error::ApiError {
                     status,
                     message,

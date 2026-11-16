@@ -2151,7 +2151,8 @@ export const CHANGELOG: ChangelogEntry[] = [
     track: "cli",
     items: [
       "Every failure exits with the status the table in `whk --help` gives it: an unknown share, team, member or invite is `not_found` (4), `whk sandbox wait` running out of time is `timeout` (8), and a value whk can tell is wrong before asking (a mock status outside 100 to 599, a preview name the server would refuse, a port, a request id that is not a UUID, a duration, a header) is `usage` (2)",
-      "A reader that stops early (`whk usage | head`, `whk completions bash | head`) ends whk quietly with status 0 instead of a panic",
+      "`whk sandbox connect` exits by the same table: a declined connection is `approval_denied` (9, was 1), an expired code `approval_expired` (8, was 1) and no saved sandbox `not_found` (4, was 1, and the message no longer starts with `no_sandbox:`)",
+      "A reader that stops early (`whk usage | head`, `whk completions bash | head`) ends whk quietly with status 0 instead of a panic; a connection that breaks while whk is sending is still a network error",
       "Output that is not going to a terminal has no colour codes, and the tables in `whk list`, `whk teams`, `whk shares ls`, `whk names ls` and `whk sandbox list` line up whatever the length of a name (long endpoint names are cut)",
       'API errors read as the SDKs read them: the route\'s own `message`, and a bare code such as `not_found` in words, so `whk requests list <slug>` for an unknown endpoint says "Endpoint not found". An HTML page in place of an API answer is said in one line, and `whk api` with a path that has no route says so instead of printing the page',
       '`whk share --json` ends a failure with an `error` event that carries `code`, `exit`, `status` and `hint`, like every other command\'s `{"error": ...}`',

@@ -720,12 +720,13 @@ pub async fn connect(
             "declined",
             anyhow::Error::new(CliError::ApprovalDenied).context("the human declined the connection"),
         ),
+        // The code's life is the server's, so a longer --timeout would not
+        // help: an expired approval, whose hint is to ask again.
         Outcome::Expired => (
             "expired",
-            CliError::Timeout(
-                "the code expired before it was entered. Run `whk sandbox connect` again for a new one".into(),
-            )
-            .into(),
+            anyhow::Error::new(CliError::ApprovalExpired).context(
+                "the code expired before it was entered. Run `whk sandbox connect` again for a new one",
+            ),
         ),
         Outcome::Timeout => (
             "timeout",

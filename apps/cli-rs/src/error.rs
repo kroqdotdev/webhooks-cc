@@ -346,20 +346,32 @@ pub fn classify(error: &anyhow::Error) -> Classified {
 
 /// Whether a failure is only that whoever read the output stopped reading
 /// (`whk usage | head`): not a failure of the command, so it exits quietly.
+///
+/// A socket that broke while whk was sending (a local server that answers
+/// 413 and closes mid-upload) carries the same EPIPE inside an HTTP or
+/// WebSocket error: that is a network failure, never a quiet exit.
 pub fn is_broken_pipe(error: &anyhow::Error) -> bool {
-    error.chain().any(|cause| {
-        cause
-            .downcast_ref::<std::io::Error>()
-            .is_some_and(|e| e.kind() == std::io::ErrorKind::BrokenPipe)
-    })
+    let from_network = error.chain().any(|cause| {
+        cause.downcast_ref::<reqwest::Error>().is_some()
+            || cause
+                .downcast_ref::<tokio_tungstenite::tungstenite::Error>()
+                .is_some()
+    });
+    !from_network
+        && error.chain().any(|cause| {
+            cause
+                .downcast_ref::<std::io::Error>()
+                .is_some_and(|e| e.kind() == std::io::ErrorKind::BrokenPipe)
+        })
 }
 
 /// Whether a panic's message is `println!` (or `print!`, `eprintln!`) failing
 /// because the pipe it wrote to was closed. Rust ignores SIGPIPE, so a
 /// closed pipe comes back as an error, and the print macros panic on it.
 pub fn is_broken_pipe_panic(message: &str) -> bool {
-    let printing = message.starts_with("failed printing to stdout")
-        || message.starts_with("failed printing to stderr");
+    // stdout only: a closed stderr while reporting a failure must keep the
+    // failure's exit status (the panic then ends whk as a panic does).
+    let printing = message.starts_with("failed printing to stdout");
     // EPIPE's text on Unix; ERROR_BROKEN_PIPE (109) and ERROR_NO_DATA (232)
     // on Windows.
     printing
@@ -608,7 +620,10 @@ mod tests {
             "failed printing to stdout: Broken pipe (os error 32)"
         ));
         assert!(is_broken_pipe_panic(
-            "failed printing to stderr: The pipe is being closed. (os error 232)"
+            "failed printing to stdout: The pipe is being closed. (os error 232)"
+        ));
+        assert!(!is_broken_pipe_panic(
+            "failed printing to stderr: Broken pipe (os error 32)"
         ));
         assert!(!is_broken_pipe_panic(
             "failed printing to stdout: No space left on device (os error 28)"
@@ -618,6 +633,12 @@ mod tests {
             .context("writing the export");
         assert!(is_broken_pipe(&error));
         assert!(!is_broken_pipe(&anyhow::anyhow!("nope")));
+        // A socket that broke mid-send is a network failure, not a closed stdout.
+        let socket = anyhow::Error::new(tokio_tungstenite::tungstenite::Error::Io(
+            std::io::Error::from(std::io::ErrorKind::BrokenPipe),
+        ))
+        .context("sending to the edge");
+        assert!(!is_broken_pipe(&socket));
     }
 
     #[test]
