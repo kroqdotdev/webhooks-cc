@@ -2078,7 +2078,9 @@ async function applyTeamSubscriptionState(
     data.status === "incomplete" ||
     data.status === "incomplete_expired" ||
     data.status === "unpaid";
-  if (team.subscription_status === null && notLive) {
+  // A complimentary staff team is live with no stored id, so the stored id,
+  // not the status, says whether the team holds a Polar subscription.
+  if ((team.subscription_status === null || team.polar_subscription_id === null) && notLive) {
     console.warn("[team-billing] ignoring an ended or unpaid subscription for an inactive team", {
       teamId,
       eventType,
@@ -2087,11 +2089,7 @@ async function applyTeamSubscriptionState(
     return;
   }
 
-  if (
-    team.polar_subscription_id === null &&
-    team.subscription_status === null &&
-    eventType !== "subscription.created"
-  ) {
+  if (team.polar_subscription_id === null && eventType !== "subscription.created") {
     console.warn("[team-billing] ignoring non-created event for unsubscribed team", {
       teamId,
       eventType,

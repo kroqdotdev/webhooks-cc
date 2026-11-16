@@ -440,6 +440,16 @@ describe("complimentary (staff) teams", () => {
   it("does not offer them", async () => {
     await expect(getCapacityState(TEAM)).resolves.toMatchObject({ eligible: false });
   });
+
+  it("ends add-ons left from a paid plan, as when the plan is gone", async () => {
+    // A staff team whose Polar plan was revoked is live again with no
+    // subscription: its add-ons have no plan to renew with.
+    tables.capacity_subscriptions = [blocksRow({ user_id: null, team_id: "team_1" })];
+
+    await reconcileAddonsWithPlan(TEAM);
+
+    expect(mockFns.subscriptionsRevoke).toHaveBeenCalledWith("sub_blocks");
+  });
 });
 
 describe("setOverage: the maximum and the Polar call go together", () => {

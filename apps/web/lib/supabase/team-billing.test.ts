@@ -2755,6 +2755,39 @@ describe("subscription event guards", () => {
     expect(teamsUpdates()).toEqual([]);
   });
 
+  test("a late event for an ended subscription does not bring it back to a complimentary team", async () => {
+    // A staff team whose paid subscription was revoked is live again with
+    // no stored id; only a new subscription (created) may take it over.
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    const complimentary = {
+      data: {
+        polar_subscription_id: null,
+        subscription_status: "active",
+        seats: 10,
+        period_start: "2026-08-01T00:00:00.000Z",
+        business: true,
+        billing_interval: "month",
+      },
+    };
+    mockFns.createAdminClient.mockReturnValue(
+      createFakeAdmin({ "teams:select": [complimentary, complimentary, complimentary] })
+    );
+
+    await applyTeamPolarWebhookEvent(
+      "subscription.updated",
+      "team_1",
+      subscriptionEvent("sub_old")
+    );
+    await applyTeamPolarWebhookEvent("subscription.active", "team_1", subscriptionEvent("sub_old"));
+    await applyTeamPolarWebhookEvent(
+      "subscription.created",
+      "team_1",
+      subscriptionEvent("sub_old", { status: "canceled", ended_at: "2026-08-02T00:00:00Z" })
+    );
+
+    expect(teamsUpdates()).toEqual([]);
+  });
+
   test("a write that lost to another fails, so Polar delivers the event again", async () => {
     mockFns.createAdminClient.mockReturnValue(
       createFakeAdmin({

@@ -198,10 +198,15 @@ language plpgsql
 security definer set search_path = ''
 as $$
 begin
+  -- A removed owner row always counts as a staff team ending: when a staff
+  -- user is deleted, the cascade can remove their staff row before this one,
+  -- and a live team with no owner and no subscription has nothing to keep
+  -- it live anyway (apply_staff_team_plan() leaves subscribed teams alone).
   if tg_op in ('UPDATE', 'DELETE') and old.role = 'owner' then
     perform public.apply_staff_team_plan(
       old.team_id,
-      exists (select 1 from public.staff s where s.user_id = old.user_id)
+      tg_op = 'DELETE'
+        or exists (select 1 from public.staff s where s.user_id = old.user_id)
     );
   end if;
   if tg_op in ('INSERT', 'UPDATE') and new.role = 'owner' then

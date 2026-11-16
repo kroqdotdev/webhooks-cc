@@ -255,6 +255,32 @@ describe("a team staff create", () => {
     await admin.from("teams").delete().eq("id", moved);
   });
 
+  it("is suspended when the staff user it was moved to is deleted", async () => {
+    // The cascade can remove the staff row before the owner row, so the
+    // owner row going away must suspend the team on its own.
+    const staffB = await createUser("staff-b");
+    const { error: staffError } = await admin.from("staff").insert({ user_id: staffB });
+    if (staffError) throw staffError;
+    const moved = await newTeam(otherId, `Moved to staff ${ts}`);
+    expect((await team(moved)).subscription_status).toBeNull();
+    await admin.from("team_members").insert({ team_id: moved, user_id: staffB, role: "member" });
+    await admin
+      .from("team_members")
+      .update({ role: "member" })
+      .eq("team_id", moved)
+      .eq("user_id", otherId);
+    await admin
+      .from("team_members")
+      .update({ role: "owner" })
+      .eq("team_id", moved)
+      .eq("user_id", staffB);
+    expect((await team(moved)).subscription_status).toBe("active");
+    const { error: deleteError } = await admin.auth.admin.deleteUser(staffB);
+    if (deleteError) throw deleteError;
+    expect(await team(moved)).toMatchObject({ subscription_status: null, seats: 0 });
+    await admin.from("teams").delete().eq("id", moved);
+  });
+
   it("can be deleted, with nothing to revoke", async () => {
     polarCalled.count = 0;
     await expect(deleteTeam(staffId, teamId)).resolves.toBe(true);

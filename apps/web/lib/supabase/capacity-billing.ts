@@ -2032,11 +2032,15 @@ export async function reconcileAddonsWithPlan(account: CapacityAccount): Promise
 
   for (const row of rows) {
     // Page and domain add-ons need Business (or Team Business); the rest the plan.
-    const active = PAGE_KINDS.has(row.kind)
-      ? plan.pages_active
-      : DOMAIN_KINDS.has(row.kind)
-        ? plan.domains_active
-        : plan.plan_active;
+    // A complimentary (staff) team has no plan subscription for add-ons to
+    // go with, so its add-ons end as they would with the plan gone.
+    const active =
+      !plan.complimentary &&
+      (PAGE_KINDS.has(row.kind)
+        ? plan.pages_active
+        : DOMAIN_KINDS.has(row.kind)
+          ? plan.domains_active
+          : plan.plan_active);
     const leaving =
       plan.cancel_at_period_end ||
       (PAGE_KINDS.has(row.kind) && pagesLeaving) ||
