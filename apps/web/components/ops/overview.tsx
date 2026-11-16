@@ -332,7 +332,10 @@ export function OpsOverview() {
                   hour of it, never more than 90 minutes.{" "}
                 </>
               ) : (
-                <>and there is none from then yet, so they show a dash. </>
+                <>
+                  and there is none within 90 minutes of then (the first day, or the hourly job was
+                  down), so they show a dash.{" "}
+                </>
               )}
             </>
           )}
