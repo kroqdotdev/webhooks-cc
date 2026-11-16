@@ -84,7 +84,7 @@ fn api_error(error: &anyhow::Error) -> Option<&ApiError> {
 
 /// The 429 that means too many searches run at once (not the rate limit).
 fn is_search_busy(error: &anyhow::Error) -> bool {
-    api_error(error).is_some_and(|e| e.status == 429 && e.message.contains("search_busy"))
+    api_error(error).is_some_and(|e| e.status == 429 && e.code.as_deref() == Some("search_busy"))
 }
 
 /// The search routes answer with bare codes; say what they mean, keeping the
@@ -93,7 +93,7 @@ fn explain_search_error(error: anyhow::Error) -> anyhow::Error {
     let Some(e) = api_error(&error) else {
         return error;
     };
-    let message = match (e.status, e.message.as_str()) {
+    let message = match (e.status, e.code.as_deref().unwrap_or_default()) {
         (400, "invalid_cursor") => {
             "That cursor is not one a search returned, or it was made for the other --order (invalid_cursor)."
         }

@@ -58,7 +58,7 @@ pub struct Cli {
     #[arg(long, env = "WHK_WEBHOOK_URL", global = true)]
     pub webhook_url: Option<String>,
 
-    /// Disable colored output
+    /// Disable colored output (off already when stdout is not a terminal, or NO_COLOR is set)
     #[arg(long, global = true)]
     pub no_color: bool,
 
@@ -75,7 +75,7 @@ Exit status:
      change (approved, or on the agent budget) was refused with nothing changed
      (billing_refused, the server's code in \"reason\"), or it may or may not
      have been made; check billing before asking again (outcome_unknown)
-  2  bad arguments (usage)
+  2  bad arguments, or a value whk can tell is wrong before asking (usage)
   3  not logged in, or the credentials were refused (not_logged_in, unauthorized,
      connection_revoked, login_expired, login_denied)
   4  not found (not_found)
@@ -119,7 +119,7 @@ pub enum Command {
         expires_in: Option<String>,
 
         /// Mock response status code (100-599)
-        #[arg(long)]
+        #[arg(long, value_parser = clap::value_parser!(u16).range(100..=599))]
         mock_status: Option<u16>,
 
         /// Mock response body; {{ json.id }}, {{ headers.x-name }}, {{ uuid }} and other placeholders are filled in from each request
@@ -162,8 +162,8 @@ pub enum Command {
         #[arg(long)]
         name: Option<String>,
 
-        /// Mock response status code
-        #[arg(long)]
+        /// Mock response status code (100-599)
+        #[arg(long, value_parser = clap::value_parser!(u16).range(100..=599))]
         mock_status: Option<u16>,
 
         /// Mock response body; {{ json.id }}, {{ headers.x-name }}, {{ uuid }} and other placeholders are filled in from each request
@@ -259,7 +259,7 @@ pub enum Command {
         /// Local port to share (e.g. "3000" or "localhost:3000")
         target: String,
 
-        /// Share under a name you reserved (`whk names reserve`); a random one otherwise
+        /// Share under this name: one you keep, or a free one, which is reserved for you now (it counts against your plan's names). Your newer share under a name replaces the older one. A random name otherwise
         #[arg(long)]
         name: Option<String>,
 
@@ -367,7 +367,7 @@ deletion) refuse API keys.")]
         /// Request ID to replay
         id: String,
 
-        /// Target URL (default: http://localhost:8080)
+        /// Where to send it: the captured path is added to this URL, so --to http://localhost:3000/api sends a request captured at /stripe to /api/stripe
         #[arg(long, default_value = "http://localhost:8080")]
         to: String,
     },

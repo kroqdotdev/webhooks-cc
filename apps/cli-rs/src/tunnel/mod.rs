@@ -760,7 +760,7 @@ mod email_live_tests {
         assert!(!result.success);
         let error = result.error.unwrap();
         assert!(error.starts_with("could not render the email"), "{error}");
-        assert!(error.contains("not_found"), "{error}");
+        assert!(error.contains("Not found"), "{error}");
         assert!(seen.lock().unwrap().deliveries.is_empty());
     }
 

@@ -3,6 +3,7 @@ use std::collections::HashMap;
 
 use crate::api::ApiClient;
 use crate::cli::output::{bold, dim, green, print_endpoint_table, red, sanitize};
+use crate::error::CliError;
 use crate::types::{CreateEndpointRequest, MockResponse, UpdateEndpointRequest, favorites_first};
 use crate::util::format::parse_duration;
 
@@ -20,7 +21,7 @@ pub async fn create(
     json: bool,
 ) -> Result<()> {
     if signing_secret.is_some() && signing_provider.is_none() {
-        anyhow::bail!("--signing-secret requires --signing-provider");
+        return Err(CliError::Usage("--signing-secret requires --signing-provider".into()).into());
     }
 
     let mock_response = build_mock_response(mock_status, mock_body, mock_headers)?;
@@ -57,13 +58,13 @@ pub async fn create(
         match client.update_endpoint(&endpoint.slug, &update).await {
             Ok(_) => signing_configured = true,
             Err(e) => {
-                eprintln!(
+                crate::errln!(
                     "  {} Endpoint {} was created but signing setup failed: {}",
                     red("⚠"),
                     bold(&endpoint.slug),
                     e
                 );
-                eprintln!("  Update the endpoint manually to configure signing.");
+                crate::errln!("  Update the endpoint manually to configure signing.");
             }
         }
     }
@@ -183,12 +184,9 @@ pub async fn get(client: &ApiClient, slug: &str, json: bool) -> Result<()> {
         println!("  {} yes", dim("Favourite:"));
     }
     if let Some(ref mock) = endpoint.mock_response {
-        println!(
-            "  {} {} ({})",
-            dim("Mock:"),
-            mock.status,
-            mock.body.chars().take(50).collect::<String>()
-        );
+        for line in mock_lines(mock) {
+            println!("{line}");
+        }
     }
     if !endpoint.shared_with.is_empty() {
         let teams: Vec<_> = endpoint
@@ -346,6 +344,31 @@ pub async fn delete(client: &ApiClient, slug: &str, force: bool, json: bool) -> 
     Ok(())
 }
 
+/// The mock response in `whk get`: the status and the start of the body,
+/// then each header and the delay, so nothing set on it is hidden.
+fn mock_lines(mock: &MockResponse) -> Vec<String> {
+    let body = crate::cli::output::sanitize_line(&mock.body);
+    let mut out = vec![format!(
+        "  {} {} ({})",
+        dim("Mock:"),
+        mock.status,
+        crate::cli::output::fit(&body, 60)
+    )];
+    let mut headers: Vec<_> = mock.headers.iter().collect();
+    headers.sort_by_key(|(name, _)| name.to_lowercase());
+    for (name, value) in headers {
+        out.push(format!(
+            "    {} {}",
+            dim(&format!("{}:", crate::cli::output::sanitize_line(name))),
+            crate::cli::output::sanitize_line(value)
+        ));
+    }
+    if let Some(delay) = mock.delay.filter(|d| *d > 0) {
+        out.push(format!("    {} {delay} ms", dim("Delay:")));
+    }
+    out
+}
+
 fn build_mock_response(
     status: Option<u16>,
     body: Option<String>,
@@ -357,14 +380,14 @@ fn build_mock_response(
 
     let status = status.unwrap_or(200);
     if !(100..=599).contains(&status) {
-        anyhow::bail!("mock status must be between 100 and 599");
+        return Err(CliError::Usage("mock status must be between 100 and 599".into()).into());
     }
 
     let mut header_map = HashMap::new();
     for h in headers {
-        let (k, v) = h
-            .split_once(':')
-            .ok_or_else(|| anyhow::anyhow!("invalid header format: {h} (expected Key:Value)"))?;
+        let (k, v) = h.split_once(':').ok_or_else(|| {
+            CliError::Usage(format!("invalid header format: {h} (expected Key:Value)"))
+        })?;
         header_map.insert(k.trim().to_string(), v.trim().to_string());
     }
 
@@ -378,6 +401,27 @@ fn build_mock_response(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn get_shows_the_mock_responses_headers() {
+        let mock: crate::types::MockResponse = serde_json::from_str(
+            r#"{"status":201,"body":"{\"ok\":true}","headers":{"X-Trace":"abc","Content-Type":"application/json"},"delay":250}"#,
+        )
+        .unwrap();
+        let lines: Vec<String> = super::mock_lines(&mock)
+            .iter()
+            .map(|l| l.replace("\x1b[2m", "").replace("\x1b[0m", ""))
+            .collect();
+        assert_eq!(
+            lines,
+            vec![
+                "  Mock: 201 ({\"ok\":true})",
+                "    Content-Type: application/json",
+                "    X-Trace: abc",
+                "    Delay: 250 ms",
+            ]
+        );
+    }
+
     use super::*;
 
     #[test]

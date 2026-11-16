@@ -208,6 +208,7 @@ pub async fn share_links_create(
     opts: ApprovalOptions,
     json: bool,
 ) -> Result<()> {
+    let request_id = crate::util::request_id(request_id)?;
     let answer = client
         .create_share_link(request_id, expires_in_days, !show_signatures)
         .await?;
@@ -522,9 +523,16 @@ mod tests {
                 }),
             );
         let base = serve(app).await;
-        share_links_create(&client(&base), "req-1", 30, false, options(), true)
-            .await
-            .unwrap();
+        share_links_create(
+            &client(&base),
+            "0b0e1c2d-3f40-4a5b-8c6d-7e8f90a1b2c3",
+            30,
+            false,
+            options(),
+            true,
+        )
+        .await
+        .unwrap();
         assert_eq!(
             asked.lock().unwrap().clone().unwrap(),
             json!({ "expiresInDays": 30, "hideSensitive": true })

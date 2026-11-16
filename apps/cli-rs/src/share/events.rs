@@ -31,8 +31,21 @@ pub enum Event<'a> {
     Retrying { message: &'a str, seconds: u64 },
     /// The share ended, and why; the CLI exits next.
     Stopped { reason: &'a str },
-    /// What went wrong; the CLI exits with 1 next.
-    Error { message: &'a str },
+    /// What went wrong, with the same code, exit status and hint as any
+    /// other command's `{"error": ...}` (see `whk --help`); the CLI exits
+    /// with that status next.
+    #[serde(rename_all = "camelCase")]
+    Error {
+        code: &'a str,
+        message: &'a str,
+        exit: i32,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        status: Option<u16>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        hint: Option<&'a str>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        retry_after: Option<u64>,
+    },
 }
 
 impl Event<'_> {
@@ -123,9 +136,24 @@ impl Lines {
     }
 }
 
+/// Set once the share has failed: a closed stdout then no longer ends whk
+/// quietly, so the failure's own exit status stands.
+static FAILING: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Marks the share as failed, before its error is reported.
+pub fn failing() {
+    FAILING.store(true, std::sync::atomic::Ordering::SeqCst);
+}
+
 fn stdout_lines() -> &'static Lines {
     static LINES: std::sync::OnceLock<Lines> = std::sync::OnceLock::new();
-    LINES.get_or_init(|| Lines::new(std::io::stdout(), || std::process::exit(0)))
+    LINES.get_or_init(|| {
+        Lines::new(std::io::stdout(), || {
+            if !FAILING.load(std::sync::atomic::Ordering::SeqCst) {
+                std::process::exit(0);
+            }
+        })
+    })
 }
 
 /// Writes a line (it may hold several) to stdout from the writer thread,
@@ -194,10 +222,27 @@ mod tests {
         );
         assert_eq!(
             Event::Error {
-                message: "Not logged in."
+                code: "not_logged_in",
+                message: "Not logged in.",
+                exit: 3,
+                status: None,
+                hint: Some("Run `whk auth login`."),
+                retry_after: None,
             }
             .line(),
-            r#"{"event":"error","message":"Not logged in."}"#
+            r#"{"event":"error","code":"not_logged_in","message":"Not logged in.","exit":3,"hint":"Run `whk auth login`."}"#
+        );
+        assert_eq!(
+            Event::Error {
+                code: "rate_limited",
+                message: "Slow down.",
+                exit: 6,
+                status: Some(429),
+                hint: None,
+                retry_after: Some(5),
+            }
+            .line(),
+            r#"{"event":"error","code":"rate_limited","message":"Slow down.","exit":6,"status":429,"retryAfter":5}"#
         );
     }
 

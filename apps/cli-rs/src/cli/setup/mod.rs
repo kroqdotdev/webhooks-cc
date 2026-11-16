@@ -3190,17 +3190,22 @@ pub fn run(opts: Options, json: bool) -> Result<()> {
     let mut runner = ProcessRunner { json };
     let mut gate = |plan: &Report, question: &str| -> Result<()> {
         if !json {
+            // The plan is a note: a closed stderr drops it, and the answer
+            // (or confirmation_required) still decides how whk ends.
             let mut err = io::stderr();
-            plan.write_text(&env, &mut err)?;
-            writeln!(err)?;
+            let _ = plan.write_text(&env, &mut err);
+            let _ = writeln!(err);
         }
         confirm::confirm(question, false)
     };
     let report = execute(&opts, &env, &mut runner, &mut gate)?;
+    // Written without failing: a reader that went away must not turn a
+    // failed setup into a success.
     if json {
-        println!("{}", serde_json::to_string_pretty(&report.to_json())?);
+        let text = serde_json::to_string_pretty(&report.to_json())?;
+        crate::outln!("{text}");
     } else {
-        report.write_text(&env, &mut io::stdout())?;
+        let _ = report.write_text(&env, &mut io::stdout());
     }
     if report.failed() {
         let failed: Vec<&str> = report

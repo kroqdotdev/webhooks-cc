@@ -16,7 +16,7 @@ pub mod qr;
 
 use std::time::{Duration, Instant};
 
-use anyhow::{Result, bail};
+use anyhow::Result;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 use tokio_tungstenite::tungstenite::client::IntoClientRequest;
@@ -155,6 +155,46 @@ pub fn instance_id() -> String {
     format!("{:032x}", rand::random::<u128>())
 }
 
+/// A bad argument (exit 2 and `usage`, see `whk --help`).
+fn usage(message: impl Into<String>) -> anyhow::Error {
+    crate::error::CliError::Usage(message.into()).into()
+}
+
+/// What is wrong with a preview name's shape, if anything, as the web app
+/// checks it (`nameShapeProblem` in apps/web/lib/tunnels/name-rules.ts),
+/// after the trimming and lowercasing the server does too. Whether the name
+/// is free, or one the service keeps, only the server can say.
+pub fn name_shape_problem(name: &str) -> Option<&'static str> {
+    let name = name.trim().to_lowercase();
+    let bytes = name.as_bytes();
+    let allowed = |b: &u8| b.is_ascii_lowercase() || b.is_ascii_digit() || *b == b'-';
+    let edge = |b: Option<&u8>| b.is_some_and(|b| b.is_ascii_lowercase() || b.is_ascii_digit());
+    if !(3..=40).contains(&bytes.len())
+        || !bytes.iter().all(allowed)
+        || !edge(bytes.first())
+        || !edge(bytes.last())
+    {
+        return Some(
+            "Names are 3 to 40 lowercase letters, digits and hyphens, starting and ending with a letter or digit.",
+        );
+    }
+    if name.contains("--") {
+        return Some("Names cannot have two hyphens in a row.");
+    }
+    if name.ends_with("-free") {
+        return Some("Names ending in -free are kept for free previews.");
+    }
+    None
+}
+
+/// Refuses a name whose shape the server would refuse, before asking it.
+pub fn check_name(name: &str) -> Result<()> {
+    match name_shape_problem(name) {
+        Some(problem) => Err(usage(problem)),
+        None => Ok(()),
+    }
+}
+
 /// The password for `--password`: `WHK_SHARE_PASSWORD`, for scripts and
 /// agents, or typed twice at a terminal without being shown.
 pub fn read_password() -> Result<String> {
@@ -163,17 +203,19 @@ pub fn read_password() -> Result<String> {
         Ok(p) if !p.is_empty() => p,
         _ => {
             if !std::io::stdin().is_terminal() {
-                bail!("Type the password at a terminal, or set WHK_SHARE_PASSWORD.");
+                return Err(usage(
+                    "Type the password at a terminal, or set WHK_SHARE_PASSWORD.",
+                ));
             }
             let first = rpassword::prompt_password("Password for visitors: ")?;
             let again = rpassword::prompt_password("Once more: ")?;
             if first != again {
-                bail!("The two passwords differ. Run it again.");
+                return Err(usage("The two passwords differ. Run it again."));
             }
             first
         }
     };
-    password_problem(&password).map_or(Ok(password), |problem| bail!(problem))
+    password_problem(&password).map_or(Ok(password), |problem| Err(usage(problem)))
 }
 
 /// What is wrong with a password for visitors, if anything (the web app
@@ -297,7 +339,28 @@ pub async fn run(session: &Session, on: &mut (dyn FnMut(Update) + Send)) -> Resu
             {
                 return Ok(message);
             }
-            Err(Failure::Refused { message, .. }) => bail!(message),
+            // A tunnel address whk cannot even use (WHK_TUNNEL_URL): a
+            // local mistake, not an answer from anywhere.
+            Err(Failure::Refused { status: 0, message }) => {
+                return Err(crate::error::CliError::Usage(message).into());
+            }
+            // The edge's status says which exit status this is (a plan
+            // that does not allow it, a name nobody can use, a stopped run).
+            Err(Failure::Refused {
+                status,
+                mut message,
+            }) => {
+                if status == 426 && !message.contains("whk update") {
+                    message.push_str(" Run `whk update` for the newest whk.");
+                }
+                return Err(crate::error::ApiError {
+                    status,
+                    message,
+                    retry_after: None,
+                    code: None,
+                }
+                .into());
+            }
             Err(Failure::Transient(message)) => {
                 on(Update::Retrying {
                     message,
@@ -753,16 +816,16 @@ pub fn parse_local_target(target: &str) -> Result<(LocalTarget, String)> {
     let target = target.trim();
     let lower = target.to_ascii_lowercase();
     if lower.starts_with("https://") {
-        bail!(
-            "Local HTTPS servers aren't supported: whk talks plain HTTP to your app. Serve it over HTTP (most dev servers do by default) and give that port, such as 3000."
-        );
+        return Err(usage(
+            "Local HTTPS servers aren't supported: whk talks plain HTTP to your app. Serve it over HTTP (most dev servers do by default) and give that port, such as 3000.",
+        ));
     }
     if let Some((scheme, _)) = lower.split_once("://")
         && scheme != "http"
     {
-        bail!(
+        return Err(usage(format!(
             "{scheme}:// isn't something whk can forward to: it speaks plain HTTP to a local web server. Give that server's port, such as 3000, or http://localhost:3000."
-        );
+        )));
     }
     let rest = if lower.starts_with("http://") {
         &target["http://".len()..]
@@ -789,10 +852,16 @@ pub fn parse_local_target(target: &str) -> Result<(LocalTarget, String)> {
         "" | "localhost" | "0.0.0.0" => LocalHost::Localhost,
         "127.0.0.1" => LocalHost::V4,
         "::1" => LocalHost::V6,
-        _ => bail!("Only this machine can be reached: give a local port, such as 3000."),
+        _ => {
+            return Err(usage(
+                "Only this machine can be reached: give a local port, such as 3000.",
+            ));
+        }
     };
     match port.parse::<u16>() {
-        Ok(0) | Err(_) => bail!("Give the local port, such as 3000 or localhost:3000."),
+        Ok(0) | Err(_) => Err(usage(
+            "Give the local port (1 to 65535), such as 3000 or localhost:3000.",
+        )),
         Ok(port) => Ok((LocalTarget { host, port }, path.to_string())),
     }
 }
@@ -804,10 +873,10 @@ pub fn parse_share_target(target: &str) -> Result<LocalTarget> {
     let (local, path) = parse_local_target(target)?;
     let path = path.trim_end_matches('/');
     if !path.is_empty() {
-        bail!(
+        return Err(usage(format!(
             "whk share shares a whole port, not a path: run `whk share {}` and open {path} on the link.",
             local.port
-        );
+        )));
     }
     Ok(local)
 }

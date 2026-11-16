@@ -10,13 +10,21 @@ use crate::cli::output::{sanitize, sanitize_line};
 use crate::types::{CapturedRequest, SseEvent};
 use crate::util::format::format_bytes;
 
+/// Said once the server has opened the stream, so a slug that does not
+/// exist (or is not yours) fails without saying it is listening first.
+fn print_banner(client: &ApiClient, slug: &str) {
+    let url = client.webhook_url_for(slug);
+    println!(
+        "\n  {} Listening on {}",
+        green("●"),
+        bold(&sanitize_line(slug))
+    );
+    println!("  {} {}", dim("Webhook URL:"), sanitize_line(&url));
+    println!("  {}\n", dim("Press Ctrl+C to stop."));
+}
+
 pub async fn run(client: &ApiClient, slug: &str, json: bool) -> Result<()> {
-    if !json {
-        let url = client.webhook_url_for(slug);
-        println!("\n  {} Listening on {}", green("●"), bold(slug));
-        println!("  {} {}", dim("Webhook URL:"), url);
-        println!("  {}\n", dim("Press Ctrl+C to stop."));
-    }
+    let mut announced = json;
 
     // SSE stream (reconnects on its own; see ApiClient::stream_requests)
     let (tx, mut rx) = mpsc::channel(64);
@@ -34,6 +42,10 @@ pub async fn run(client: &ApiClient, slug: &str, json: bool) -> Result<()> {
         tokio::select! {
             event = rx.recv() => {
                 let Some(event) = event else { break };
+                if !announced && matches!(event, SseEvent::Connected | SseEvent::Request(_)) {
+                    announced = true;
+                    print_banner(client, slug);
+                }
                 match event {
                     SseEvent::Request(req) => {
                         if json {

@@ -1176,11 +1176,15 @@ pub async fn test(
         .await?;
     // The result goes to stdout either way; a failed delivery then exits
     // non-zero with `delivery_failed` on stderr.
+    // Written without failing on a closed stdout, so a failed delivery still
+    // exits with delivery_failed.
     if json {
-        print_json(&answer)?;
+        let text = format!("{}\n", serde_json::to_string_pretty(&answer.json())?);
+        let _ = std::io::Write::write_all(&mut std::io::stdout().lock(), text.as_bytes());
     } else {
+        let mut out = std::io::stdout().lock();
         for line in test_lines(&answer.value) {
-            println!("{line}");
+            let _ = std::io::Write::write_all(&mut out, format!("{line}\n").as_bytes());
         }
     }
     match test_failure(id, &answer.value) {
@@ -1315,7 +1319,7 @@ pub async fn secret(
     // Only the secret on stdout, so `$(whk destinations secret ...)` works.
     println!("{}", text(&answer.value, "secret"));
     if rotate {
-        eprintln!(
+        crate::errln!(
             "{}",
             dim("Replaced: deliveries are signed with this secret from now on.")
         );

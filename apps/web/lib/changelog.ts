@@ -30,7 +30,7 @@ export const TRACK_LABELS: Record<ChangelogTrack, string> = {
 const RELEASE = release as { version: string | null; entries: ChangelogEntry[] };
 
 export const APP_VERSION: string = RELEASE.version ?? "dev";
-export const CLI_VERSION = "1.20.1";
+export const CLI_VERSION = "1.20.2";
 export const SDK_VERSION = "1.31.3";
 export const PYTHON_SDK_VERSION = "0.10.2";
 export const GO_SDK_VERSION = "0.10.2";
@@ -2144,6 +2144,25 @@ export const CHANGELOG: ChangelogEntry[] = [
   },
 
   // ─── CLI ────────────────────────────────────────────────────────────
+  {
+    version: "1.20.2",
+    date: "2026-11-16",
+    title: "Exit Statuses, Pipes And Plain Output",
+    track: "cli",
+    items: [
+      "Every failure exits with the status the table in `whk --help` gives it: an unknown share, team, member or invite is `not_found` (4), `whk sandbox wait` running out of time is `timeout` (8), and a value whk can tell is wrong before asking (a mock status outside 100 to 599, a preview name the server would refuse, a port, a request id that is not a UUID, a duration, a header) is `usage` (2)",
+      '`whk tunnel --live` refused before its session opens exits by the same table (`forbidden` 5, `not_found` 4, `usage` 2 for a tunnel address it cannot use) instead of 1, and right away instead of after the next capture, and a tunnel whose output is no longer read keeps relaying until it is stopped; a 426 from the edge adds a hint to run `whk update`; `whk share --name ""` (an unset variable) shares under a random name as before',
+      "`whk sandbox connect` exits by the same table: a declined connection is `approval_denied` (9, was 1), an expired code `approval_expired` (8, was 1) and no saved sandbox `not_found` (4, was 1, and the message no longer starts with `no_sandbox:`)",
+      "A reader that stops early (`whk usage | head`, `whk completions bash | head`) ends whk quietly with status 0 instead of a panic; a connection that breaks while whk is sending is still a network error",
+      "Output that is not going to a terminal has no colour codes, and the tables in `whk list`, `whk teams`, `whk shares ls`, `whk names ls` and `whk sandbox list` line up whatever the length of a name (long endpoint names are cut)",
+      'API errors read as the SDKs read them: the route\'s own `message`, and a bare code such as `not_found` in words, so `whk requests list <slug>` for an unknown endpoint says "Endpoint not found". An HTML page in place of an API answer is said in one line, and `whk api` with a path that has no route says so instead of printing the page',
+      '`whk share --json` ends a failure with an `error` event that carries `code`, `exit`, `status` and `hint`, like every other command\'s `{"error": ...}`',
+      "`whk listen` says it is listening only once the stream is open, so an unknown slug fails without the banner",
+      "`whk approvals wait` on an unknown id says there is no such approval instead of asking to try again; a `confirmation_required` failure names `--yes` once; `whk send-email --template` with an unknown id lists the ids there are",
+      "`whk get` shows a mock response's headers and delay; `whk replay --json` has the URL it sent to and the answer's headers and body, and `--help` says the captured path is added to `--to`",
+      "`whk share --help` says `--name` also reserves a name nobody holds, and that a new share under one of your names replaces your older one",
+    ],
+  },
   {
     version: "1.20.1",
     date: "2026-11-15",

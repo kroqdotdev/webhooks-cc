@@ -34,27 +34,49 @@ pub async fn run(
     let resp = client.send_raw(method, &path, body, &headers).await?;
 
     if include {
+        // Notes on stderr: a closed stderr drops them, and the answer's own
+        // status still decides how whk ends.
         let mut err = std::io::stderr().lock();
-        writeln!(err, "HTTP {}", resp.status)?;
+        let _ = writeln!(err, "HTTP {}", resp.status);
         for (name, value) in &resp.headers {
-            writeln!(err, "{name}: {}", value.to_str().unwrap_or("<binary>"))?;
+            let _ = writeln!(err, "{name}: {}", value.to_str().unwrap_or("<binary>"));
         }
-        writeln!(err)?;
+        let _ = writeln!(err);
+    }
+
+    let failed = resp.status.is_client_error() || resp.status.is_server_error();
+    let text = String::from_utf8_lossy(&resp.body);
+    // An HTML page where an answer from the API was expected (a path with no
+    // API route, or a proxy's error page) is said in one line on stderr,
+    // never poured onto stdout.
+    if failed && crate::api::html_summary(resp.status.as_u16(), &text).is_some() {
+        let mut error = api_error(resp.status, &text, retry_after(&resp.headers));
+        if resp.status == reqwest::StatusCode::NOT_FOUND {
+            error.message = format!(
+                "No API route at {}: the server answered 404 with a web page. The routes are listed at https://webhooks.cc/docs/api",
+                path.split('?').next().unwrap_or(&path)
+            );
+        }
+        return Err(error.into());
     }
 
     let mut out = std::io::stdout().lock();
-    out.write_all(&resp.body)?;
-    // The body goes out byte for byte; only a terminal gets a line end, so
-    // the prompt does not land after the JSON.
-    if out.is_terminal() && !resp.body.is_empty() && !resp.body.ends_with(b"\n") {
-        out.write_all(b"\n")?;
-    }
-    out.flush()?;
+    let written = (|| -> std::io::Result<()> {
+        out.write_all(&resp.body)?;
+        // The body goes out byte for byte; only a terminal gets a line end,
+        // so the prompt does not land after the JSON.
+        if out.is_terminal() && !resp.body.is_empty() && !resp.body.ends_with(b"\n") {
+            out.write_all(b"\n")?;
+        }
+        out.flush()
+    })();
 
-    if resp.status.is_client_error() || resp.status.is_server_error() {
-        let text = String::from_utf8_lossy(&resp.body);
+    // A failed answer keeps its exit status even when stdout's reader has
+    // gone: the write error must not turn it into a quiet success.
+    if failed {
         return Err(api_error(resp.status, &text, retry_after(&resp.headers)).into());
     }
+    written?;
     Ok(())
 }
 

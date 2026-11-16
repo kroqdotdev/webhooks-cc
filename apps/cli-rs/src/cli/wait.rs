@@ -225,7 +225,7 @@ pub async fn run(client: &ApiClient, options: WaitOptions, json: bool) -> Result
         } else {
             format!("{count} requests")
         };
-        eprintln!(
+        crate::errln!(
             "  {}",
             dim(&format!(
                 "Waiting up to {} for {what} at {slug}...",
@@ -251,7 +251,7 @@ pub async fn run(client: &ApiClient, options: WaitOptions, json: bool) -> Result
             Ok(event) => event,
             Err(_) => {
                 break Err(CliError::Timeout(format!(
-                    "{} of {count} matching request(s) arrived at {slug} within {}",
+                    "{} of {count} matching request(s) arrived at {slug} within {}. Check that the sender ran.",
                     matched.len(),
                     options.timeout
                 ))
@@ -284,7 +284,7 @@ pub async fn run(client: &ApiClient, options: WaitOptions, json: bool) -> Result
                 attempt, reason, ..
             }) => {
                 if !json {
-                    eprintln!(
+                    crate::errln!(
                         "  {}",
                         dim(&format!("Reconnecting (attempt {attempt}): {reason}"))
                     );
@@ -318,7 +318,7 @@ pub async fn run(client: &ApiClient, options: WaitOptions, json: bool) -> Result
             Ok(full) => values.push(full.json()),
             Err(error) => {
                 if !json {
-                    eprintln!(
+                    crate::errln!(
                         "  {}",
                         dim(&format!("Showing the streamed copy of {id}: {error:#}"))
                     );

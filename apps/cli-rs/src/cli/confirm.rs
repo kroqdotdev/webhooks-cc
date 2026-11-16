@@ -17,8 +17,9 @@ pub fn confirm(question: &str, yes: bool) -> Result<()> {
     }
     decide(question, interactive(), || {
         // The question goes to stderr, so stdout stays clean for --json.
-        eprint!("  {question} [y/N] ");
-        io::stderr().flush()?;
+        let mut err = io::stderr();
+        let _ = write!(err, "  {question} [y/N] ");
+        let _ = err.flush();
         let mut input = String::new();
         io::stdin().lock().read_line(&mut input)?;
         Ok(input)
@@ -39,7 +40,7 @@ pub(crate) fn decide(
 ) -> Result<()> {
     if !interactive {
         return Err(CliError::ConfirmationRequired(format!(
-            "{question} Not asked, because no terminal is attached: pass --yes to go ahead."
+            "{question} Not asked, because no terminal is attached."
         ))
         .into());
     }
@@ -64,7 +65,9 @@ mod tests {
         .unwrap_err();
         let c = classify(&error);
         assert_eq!((c.code, c.exit), ("confirmation_required", 9));
-        assert!(error.to_string().contains("--yes"));
+        // The hint says to pass --yes, once: the message does not repeat it.
+        assert!(c.hint.unwrap().contains("--yes"));
+        assert!(!error.to_string().contains("--yes"));
     }
 
     #[test]

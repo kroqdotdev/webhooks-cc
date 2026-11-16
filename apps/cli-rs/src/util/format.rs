@@ -135,15 +135,20 @@ pub fn format_iso(ts_ms: i64) -> String {
         .unwrap_or_else(|| "unknown".to_string())
 }
 
+/// A duration that cannot be read is a bad argument (exit 2).
+fn usage(message: String) -> anyhow::Error {
+    crate::error::CliError::Usage(message).into()
+}
+
 /// Parse a duration string like "30s", "5m", "1h", "7d" into milliseconds.
 pub fn parse_duration(input: &str) -> anyhow::Result<i64> {
     let input = input.trim();
     if input.is_empty() {
-        anyhow::bail!("empty duration");
+        return Err(usage("empty duration".to_string()));
     }
     if let Ok(ms) = input.parse::<i64>() {
         if ms < 0 {
-            anyhow::bail!("duration must be positive");
+            return Err(usage("duration must be positive".to_string()));
         }
         return Ok(ms);
     }
@@ -155,19 +160,21 @@ pub fn parse_duration(input: &str) -> anyhow::Result<i64> {
         let mut chars = input.char_indices();
         let (last_idx, last_char) = chars
             .next_back()
-            .ok_or_else(|| anyhow::anyhow!("invalid duration: {input}"))?;
+            .ok_or_else(|| usage(format!("invalid duration: {input}")))?;
         if !last_char.is_ascii_alphabetic() {
-            anyhow::bail!("invalid duration unit in: {input}");
+            return Err(usage(format!("invalid duration unit in: {input}")));
         }
         (&input[..last_idx], &input[last_idx..])
     };
 
     let num: f64 = num_str
         .parse()
-        .map_err(|_| anyhow::anyhow!("invalid duration: {input}"))?;
+        .map_err(|_| usage(format!("invalid duration: {input}")))?;
 
     if !num.is_finite() || num < 0.0 {
-        anyhow::bail!("duration must be a positive finite number");
+        return Err(usage(
+            "duration must be a positive finite number".to_string(),
+        ));
     }
 
     let ms = match unit {
@@ -176,11 +183,15 @@ pub fn parse_duration(input: &str) -> anyhow::Result<i64> {
         "m" => num * 60_000.0,
         "h" => num * 3_600_000.0,
         "d" => num * 86_400_000.0,
-        _ => anyhow::bail!("unknown duration unit: {unit} (use ms, s, m, h, or d)"),
+        _ => {
+            return Err(usage(format!(
+                "unknown duration unit: {unit} (use ms, s, m, h, or d)"
+            )));
+        }
     };
 
     if ms < 0.0 {
-        anyhow::bail!("duration must be positive");
+        return Err(usage("duration must be positive".to_string()));
     }
     Ok(ms as i64)
 }

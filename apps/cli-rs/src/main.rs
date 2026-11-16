@@ -1,3 +1,4 @@
+use std::io::Write;
 use std::process::ExitCode;
 
 use anyhow::Result;
@@ -12,28 +13,64 @@ use whk::cli::{
 };
 use whk::error::{classify, error_json};
 
+/// A closed pipe (`whk usage | head`) ends whk quietly with status 0: the
+/// reader has what it wanted. Rust ignores SIGPIPE, so writing to the closed
+/// pipe fails instead, and `println!` panics on that; every other panic is
+/// reported as usual.
+fn exit_quietly_on_a_closed_pipe() {
+    let report = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        let payload = info.payload();
+        let message = payload
+            .downcast_ref::<String>()
+            .map(String::as_str)
+            .or_else(|| payload.downcast_ref::<&str>().copied())
+            .unwrap_or("");
+        if whk::error::is_broken_pipe_panic(message) {
+            std::process::exit(0);
+        }
+        report(info);
+    }));
+}
+
 #[tokio::main]
 async fn main() -> ExitCode {
+    exit_quietly_on_a_closed_pipe();
     let args = match Cli::try_parse() {
         Ok(args) => args,
         Err(error) => return argument_error(error),
     };
     let json = args.json;
-    cli::output::set_no_color(args.no_color || std::env::var("NO_COLOR").is_ok());
+    // Colour only for a terminal: piped or redirected output gets plain text.
+    cli::output::set_no_color(
+        args.no_color
+            || std::env::var("NO_COLOR").is_ok()
+            || !std::io::IsTerminal::is_terminal(&std::io::stdout()),
+    );
 
     match run(args).await {
         Ok(()) => ExitCode::SUCCESS,
+        // A write to a pipe whose reader has gone, through `write!` rather
+        // than `println!`: the same quiet exit.
+        // Only when stdout itself is the closed pipe: a broken stderr must not
+        // turn a failure into a success.
+        Err(error) if whk::error::is_broken_pipe(&error) && whk::error::stdout_closed() => {
+            ExitCode::SUCCESS
+        }
         Err(error) => {
             let c = classify(&error);
+            // Written without panicking: a closed stderr must not change
+            // the failure's exit status.
+            let mut err = std::io::stderr().lock();
             if json {
-                eprintln!("{}", error_json(&error, &c));
+                let _ = writeln!(err, "{}", error_json(&error, &c));
             } else {
-                eprintln!("Error: {error:#}");
+                let _ = writeln!(err, "Error: {error:#}");
                 // A hint the message already gives is not repeated.
                 if let Some(hint) = c.hint.as_deref()
                     && !format!("{error:#}").contains(hint)
                 {
-                    eprintln!("{hint}");
+                    let _ = writeln!(err, "{hint}");
                 }
             }
             ExitCode::from(c.exit as u8)
@@ -68,7 +105,8 @@ fn argument_error(error: clap::Error) -> ExitCode {
         .join(" ")
         .trim_start_matches("error: ")
         .to_string();
-    eprintln!(
+    let _ = writeln!(
+        std::io::stderr().lock(),
         "{}",
         serde_json::json!({
             "error": {
@@ -1030,7 +1068,14 @@ async fn run(args: Cli) -> Result<()> {
 
         Some(Command::Completions { shell }) => {
             use clap::CommandFactory;
-            clap_complete::generate(shell, &mut Cli::command(), "whk", &mut std::io::stdout());
+            // Written whole, so a closed pipe (`whk completions bash | head`)
+            // is an error to exit quietly on, not a panic inside clap_complete.
+            let mut script = Vec::new();
+            clap_complete::generate(shell, &mut Cli::command(), "whk", &mut script);
+            use std::io::Write;
+            let mut stdout = std::io::stdout().lock();
+            stdout.write_all(&script)?;
+            stdout.flush()?;
         }
     }
 

@@ -100,7 +100,7 @@ whk names release acme
 
 Names use lowercase letters, digits and hyphens. Names that imitate well-known brands or sign-in pages are refused, and names ending in `-free` are kept for free previews, so a paid link can never pass for a free one or the other way round.
 
-A name reserved inside a team belongs to the team: every member can share under it, one share at a time. If a teammate is already sharing under the name, the CLI says who; stop that share first or pick another name.
+Sharing again under one of your own names replaces your older share under it: the older one stops ("replaced by a newer share under the same name"), so a link always reaches your latest run. A name reserved inside a team belongs to the team: every member can share under it, one share at a time. If a teammate is already sharing under the name, the CLI says who; stop that share first or pick another name.
 
 ```bash
 whk names reserve acme --team "Acme Studio"   # a team's id or name
@@ -191,7 +191,7 @@ whk shares stop acme     # by name or id
 {"event":"stopped","reason":"you stopped it on webhooks.cc"}
 ```
 
-Other events are `reconnected`, `retrying` and `notice` (something the edge wants you to know). A share that ends for any reason after it was live (Ctrl-C, `SIGTERM`, a stop on webhooks.cc, the plan's time limit, a plan change, or a reconnect refused because the month's data is used up) prints `stopped` and exits with status 0. A share refused before it ever opened (a name that is taken, the plan's limit, a bad key) prints `error` and exits with status 1. Trouble that passes (the tunnel out of reach, a rate limit, a proxy's error page) is retried, never taken as the end.
+Other events are `reconnected`, `retrying` and `notice` (something the edge wants you to know). A share that ends for any reason after it was live (Ctrl-C, `SIGTERM`, a stop on webhooks.cc, the plan's time limit, a plan change, or a reconnect refused because the month's data is used up) prints `stopped` and exits with status 0. A share refused before it ever opened (a name that is taken, the plan's limit, a bad key) prints `error` with the same `code`, `exit`, `status` and `hint` fields as any other command's failure, and exits with that status (see [exit statuses](/docs/cli#scripts-ci-and-ai-agents)): `{"event":"error","code":"forbidden","message":"...","exit":5,"status":403}`. Trouble that passes (the tunnel out of reach, a rate limit, a proxy's error page) is retried, never taken as the end.
 
 The events go out without holding up visitors: when the program reading them falls behind, `request` lines are dropped first, and the other events still arrive in order.
 

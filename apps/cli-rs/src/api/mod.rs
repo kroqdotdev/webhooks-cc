@@ -23,7 +23,6 @@ use std::time::Duration;
 
 use crate::agent::{AgentSession, CredentialStore, SlotKind};
 use crate::auth;
-use crate::types::ApiErrorBody;
 
 const DEFAULT_BASE_URL: &str = "https://webhooks.cc";
 const DEFAULT_WEBHOOK_URL: &str = "https://go.webhooks.cc";
@@ -341,25 +340,162 @@ impl ApiClient {
 /// gave some (they are written for people, so no status code is added),
 /// else the status and the start of the body.
 pub fn api_error_message(status: reqwest::StatusCode, body: &str) -> String {
-    if let Ok(err) = serde_json::from_str::<ApiErrorBody>(body)
-        && !err.error.is_empty()
-    {
-        return err.error;
+    let code = status.as_u16();
+    if let Some(text) = error_text_of(body) {
+        // A bare code (`{"error":"not_found"}`) is no sentence: say the status.
+        return if is_bare_code(&text) {
+            code_text(code, &text)
+        } else {
+            text
+        };
     }
-    let preview: String = body.chars().take(200).collect();
-    format!("HTTP {status}: {preview}")
+    if let Some(summary) = html_summary(code, body) {
+        return summary;
+    }
+    if body.trim().is_empty() {
+        return format!("{} (HTTP {code})", status_text(code));
+    }
+    cut_text(body, ERROR_BODY_CUT)
+}
+
+/// Longest text taken from a JSON error body (`MAX_ERROR_TEXT` in the SDK).
+const MAX_ERROR_TEXT: usize = 1_000;
+
+/// How much of an error body that is not JSON goes into the message.
+const ERROR_BODY_CUT: usize = 200;
+
+/// An error code rather than text: lower-case ASCII letters, digits and
+/// underscores, starting with a letter (`BARE_CODE` in the SDK).
+pub fn is_bare_code(text: &str) -> bool {
+    let mut chars = text.chars();
+    chars.next().is_some_and(|c| c.is_ascii_lowercase())
+        && chars.all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_')
+}
+
+/// Whitespace as JavaScript's `trim()` sees it, which the SDK's rules use.
+fn js_blank(text: &str) -> bool {
+    text.chars().all(|c| c.is_whitespace() || c == '\u{feff}')
+}
+
+/// A JSON error body's string `message`, else its string `error` (a blank
+/// one gives way), cut short; None when the body is not a JSON object naming
+/// either. The rules are the SDK's (packages/sdk/conformance/errors.json).
+fn error_text_of(body: &str) -> Option<String> {
+    let parsed: serde_json::Value = serde_json::from_str(body).ok()?;
+    let object = parsed.as_object()?;
+    let text = |key: &str| {
+        object
+            .get(key)
+            .and_then(|v| v.as_str())
+            .filter(|t| !js_blank(t))
+    };
+    text("message")
+        .or_else(|| text("error"))
+        .map(|t| cut_text(t, MAX_ERROR_TEXT))
+}
+
+/// The API's error code in a JSON error body: `error` when it is a code,
+/// wherever it sits in the object, else a `code` field that is one; never a
+/// sentence. A body that is not valid JSON (cut short by a proxy) still
+/// gives a leading `{"error":"<code>"`.
+pub fn error_code_of(body: &str) -> Option<String> {
+    match serde_json::from_str::<serde_json::Value>(body) {
+        Ok(parsed) => {
+            let object = parsed.as_object()?;
+            let code = |key: &str| {
+                object
+                    .get(key)
+                    .and_then(|v| v.as_str())
+                    .filter(|t| is_bare_code(t))
+                    .map(str::to_string)
+            };
+            code("error").or_else(|| code("code"))
+        }
+        Err(_) => {
+            let rest = body.strip_prefix('{')?.trim_start();
+            let rest = rest.strip_prefix("\"error\"")?.trim_start();
+            let rest = rest.strip_prefix(':')?.trim_start();
+            let rest = rest.strip_prefix('"')?;
+            let end = rest.find('"')?;
+            Some(rest[..end].to_string()).filter(|c| is_bare_code(c))
+        }
+    }
+}
+
+/// A short plain sentence for an error status (`statusText` in the SDK).
+fn status_text(status: u16) -> String {
+    match status {
+        400 => "Bad request".into(),
+        401 => "Unauthorized".into(),
+        403 => "Forbidden".into(),
+        404 => "Not found".into(),
+        409 => "Conflict".into(),
+        429 => "Too many requests".into(),
+        s if s >= 500 => "Server error".into(),
+        s => format!("Request failed with HTTP {s}"),
+    }
+}
+
+/// The status in words for a body that names only `code`: alone when the
+/// code just names the status, else with the code in brackets.
+fn code_text(status: u16, code: &str) -> String {
+    let words = status_text(status);
+    if code.replace('_', " ") == words.to_lowercase() {
+        words
+    } else {
+        format!("{words} ({code})")
+    }
+}
+
+/// `text` cut to `max` characters with "..." after it, or whole.
+fn cut_text(text: &str, max: usize) -> String {
+    match text.char_indices().nth(max) {
+        Some((end, _)) => format!("{}...", &text[..end]),
+        None => text.to_string(),
+    }
+}
+
+/// An HTML page in place of an API answer (a proxy's error page, or a web
+/// page at a path with no API route) said in one line: the status and the
+/// page's title, never the markup. None when the body is not HTML.
+pub fn html_summary(status: u16, body: &str) -> Option<String> {
+    let start: String = body.trim_start().chars().take(15).collect();
+    let start = start.to_ascii_lowercase();
+    if !(start.starts_with("<!doctype html") || start.starts_with("<html")) {
+        return None;
+    }
+    let lower = body.to_ascii_lowercase();
+    let title = lower
+        .find("<title")
+        .and_then(|at| Some(at + lower[at..].find('>')? + 1))
+        .and_then(|from| Some((from, from + lower[from..].find("</title")?)))
+        .map(|(from, to)| {
+            body[from..to]
+                .split_whitespace()
+                .collect::<Vec<_>>()
+                .join(" ")
+        })
+        .map(|t| crate::cli::output::sanitize_line(&t))
+        .filter(|t| !t.is_empty())
+        .map(|t| cut_text(&t, 80));
+    let words = status_text(status);
+    Some(match title {
+        Some(title) => format!(
+            "{words} (HTTP {status}): the server answered with a web page, \"{title}\", not the API"
+        ),
+        None => {
+            format!("{words} (HTTP {status}): the server answered with a web page, not the API")
+        }
+    })
 }
 
 /// Extract an error message from an API error response body, with the
 /// status (the event stream reports it alongside).
 pub fn extract_error(status: reqwest::StatusCode, body: &str) -> String {
-    if let Ok(err) = serde_json::from_str::<ApiErrorBody>(body)
-        && !err.error.is_empty()
-    {
-        return format!("{} ({})", err.error, status);
+    match error_text_of(body) {
+        Some(text) => format!("{text} ({status})"),
+        None => api_error_message(status, body),
     }
-    let preview: String = body.chars().take(200).collect();
-    format!("HTTP {status}: {preview}")
 }
 
 #[cfg(test)]
@@ -432,6 +568,53 @@ mod tests {
         assert_eq!(client.base_url(), dev);
     }
 
+    /// The SDK's error-message vectors (packages/sdk/conformance/errors.json):
+    /// the CLI words an API error as the SDKs do and reads the same code,
+    /// apart from the vectors below, where it differs on purpose.
+    #[test]
+    fn api_errors_follow_the_sdks_vectors() {
+        // HTML is said in one line, never printed; an empty body says the
+        // status, since "Error: " alone tells a person nothing.
+        const DIFFERS: &[&str] = &["503 HTML", "404 an empty body"];
+        let path = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../packages/sdk/conformance/errors.json"
+        );
+        // A Rust string cannot hold a lone surrogate, which one expected
+        // message is (JSON allows it): that vector is skipped. An HTTP body
+        // is UTF-8, so a CLI never meets one.
+        const LONE: &str = "404 a lone surrogate counts as one character";
+        let text = std::fs::read_to_string(path)
+            .expect("read errors.json")
+            .replace("\"message\": \"\\ud800\"", "\"message\": \"(skipped)\"");
+        let vectors: serde_json::Value = serde_json::from_str(&text).expect("errors.json is JSON");
+        let cases = vectors["vectors"].as_array().expect("vectors");
+        assert!(cases.len() > 50, "read too few cases");
+        let mut differed = Vec::new();
+        for case in cases {
+            let name = case["name"].as_str().unwrap();
+            if name == LONE {
+                assert_eq!(case["expected"]["message"], "(skipped)");
+                continue;
+            }
+            let status =
+                reqwest::StatusCode::from_u16(case["status"].as_u64().unwrap() as u16).unwrap();
+            let body = case["body"].as_str().unwrap();
+            let message = api_error_message(status, body);
+            let code = error_code_of(body);
+            let expected = &case["expected"];
+            let same = message == expected["message"].as_str().unwrap()
+                && code.as_deref() == expected["code"].as_str();
+            if DIFFERS.contains(&name) {
+                assert!(!same, "{name} no longer differs: take it off the list");
+                differed.push(name);
+            } else {
+                assert!(same, "{name}: {message:?} {code:?}, expected {expected}");
+            }
+        }
+        assert_eq!(differed.len(), DIFFERS.len(), "a listed vector is gone");
+    }
+
     #[test]
     fn api_errors_read_as_the_servers_words() {
         let status = reqwest::StatusCode::FORBIDDEN;
@@ -441,8 +624,16 @@ mod tests {
         );
         assert_eq!(
             api_error_message(status, "<html>nope</html>"),
-            "HTTP 403 Forbidden: <html>nope</html>"
+            "Forbidden (HTTP 403): the server answered with a web page, not the API"
         );
+        assert_eq!(
+            api_error_message(
+                reqwest::StatusCode::NOT_FOUND,
+                "<!DOCTYPE html><html><head><title>404: This page\n could not be found</title></head><body>...</body></html>"
+            ),
+            "Not found (HTTP 404): the server answered with a web page, \"404: This page could not be found\", not the API"
+        );
+        assert_eq!(api_error_message(status, ""), "Forbidden (HTTP 403)");
         assert_eq!(
             extract_error(status, r#"{"error":"x"}"#),
             "x (403 Forbidden)"

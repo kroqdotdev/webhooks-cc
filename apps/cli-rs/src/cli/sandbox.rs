@@ -19,8 +19,10 @@ use crate::agent::sandbox::{Sandbox, registration_gone};
 use crate::api::ApiClient;
 use crate::auth;
 use crate::cli::output::{
-    bold, dim, green, print_request_detail, print_request_line, red, sanitize_line,
+    Cell, bold, dim, green, header_row, print_request_detail, print_request_line, red,
+    sanitize_line, table_lines,
 };
+use crate::error::CliError;
 use crate::types::CapturedRequest;
 use crate::util::format::{format_timestamp, parse_duration};
 
@@ -50,19 +52,24 @@ fn print_json(value: &Value) -> Result<()> {
 }
 
 /// One line of JSON, flushed at once, for a caller reading as it goes.
+/// One NDJSON line. A reader that went away (`| head -1` to take the link)
+/// is not an error here: the command goes on, and its own result (a decline,
+/// an expired code) still decides the exit status.
 fn print_json_line(value: &Value) {
-    println!("{value}");
-    let _ = std::io::stdout().flush();
+    let mut out = std::io::stdout().lock();
+    let _ = writeln!(out, "{value}");
+    let _ = out.flush();
 }
 
 /// The saved sandbox, or an error that says how to get one.
 fn require_sandbox(client: &ApiClient, store: &CredentialStore) -> Result<Sandbox> {
     match Sandbox::existing(&client.agent_http, &client.base_url, store) {
         Some(sandbox) => Ok(sandbox),
-        None => bail!(
-            "no_sandbox: no live sandbox registration is saved for {}. Run `whk sandbox create` first.",
+        None => Err(CliError::NotFound(format!(
+            "No live sandbox registration is saved for {}. Run `whk sandbox create` first.",
             store.issuer()
-        ),
+        ))
+        .into()),
     }
 }
 
@@ -81,7 +88,7 @@ fn explain_gone(error: anyhow::Error) -> anyhow::Error {
 async fn register(client: &ApiClient, store: &CredentialStore, json: bool) -> Result<Sandbox> {
     let on_solve = |challenge: &PowChallenge| {
         if !json {
-            eprintln!(
+            crate::errln!(
                 "  {}",
                 dim(&format!(
                     "Registering an anonymous sandbox: solving a proof of work ({} x 2^{} hashes, a few seconds)...",
@@ -93,7 +100,7 @@ async fn register(client: &ApiClient, store: &CredentialStore, json: bool) -> Re
     let (sandbox, full) =
         Sandbox::register(&client.agent_http, &client.base_url, store, &on_solve).await?;
     if full {
-        eprintln!(
+        crate::errln!(
             "  {} The shared sandbox is full right now; creating an endpoint may answer sandbox_full.",
             red("!")
         );
@@ -158,7 +165,7 @@ fn print_endpoint(endpoint: &Value) {
 pub async fn create(client: &ApiClient, json: bool) -> Result<()> {
     let store = store_for(client);
     if !json && store.load().claimed.is_some() {
-        eprintln!(
+        crate::errln!(
             "  {}",
             dim(
                 "This agent is connected to an account: `whk create` makes a regular endpoint there."
@@ -171,7 +178,7 @@ pub async fn create(client: &ApiClient, json: bool) -> Result<()> {
     };
     let endpoint = match sandbox.create_endpoint().await {
         Err(error) if reused && registration_gone(&error) => {
-            eprintln!(
+            crate::errln!(
                 "  {} The saved sandbox registration is gone ({}); registering a new one.",
                 red("!"),
                 protocol::error_code(&error).unwrap_or("gone")
@@ -236,23 +243,23 @@ pub async fn list(client: &ApiClient, json: bool) -> Result<()> {
             bold("whk sandbox create")
         );
     } else {
-        println!(
-            "  {:<20} {:<10} {}",
-            dim("SLUG"),
-            dim("CAPTURES"),
-            dim("URL")
-        );
+        let mut rows = vec![header_row(&["SLUG", "CAPTURES", "URL"], &[])];
         for endpoint in &endpoints {
             let captured = endpoint
                 .get("requestCount")
                 .and_then(Value::as_u64)
                 .unwrap_or(0);
-            println!(
-                "  {:<20} {:<10} {}",
-                bold(&sanitize_line(text(endpoint, "slug"))),
-                format!("{captured}/{SANDBOX_REQUESTS_PER_ENDPOINT}"),
-                dim(&sanitize_line(text(endpoint, "url")))
-            );
+            rows.push(vec![
+                (sanitize_line(text(endpoint, "slug")), Cell::Bold),
+                (
+                    format!("{captured}/{SANDBOX_REQUESTS_PER_ENDPOINT}"),
+                    Cell::Plain,
+                ),
+                (sanitize_line(text(endpoint, "url")), Cell::Dim),
+            ]);
+        }
+        for line in table_lines("  ", &rows) {
+            println!("{line}");
         }
     }
     if let Some(budget) = limits.get("budget") {
@@ -354,6 +361,7 @@ pub async fn requests(
 }
 
 pub async fn request(client: &ApiClient, id: &str, json: bool) -> Result<()> {
+    let id = crate::util::request_id(id)?;
     let store = store_for(client);
     let sandbox = require_sandbox(client, &store)?;
     let value = sandbox.get_request(id).await.map_err(explain_gone)?;
@@ -409,7 +417,7 @@ pub async fn wait(
     let mut seen = HashSet::new();
     let mut collected: Vec<Value> = Vec::new();
     if !json {
-        eprintln!(
+        crate::errln!(
             "  {}",
             dim(&format!(
                 "Waiting up to {timeout} for {count} request(s) at {slug}..."
@@ -454,10 +462,11 @@ pub async fn wait(
         }
         let left = deadline.saturating_duration_since(Instant::now());
         if left.is_zero() {
-            bail!(
-                "timeout: {} of {count} request(s) arrived at {slug} within {timeout}",
+            return Err(CliError::Timeout(format!(
+                "{} of {count} request(s) arrived at {slug} within {timeout}. Check that the sender ran.",
                 collected.len()
-            );
+            ))
+            .into());
         }
         tokio::time::sleep(left.min(pause)).await;
     }
@@ -568,7 +577,9 @@ pub async fn connect(
     // Sent, stored and compared as the server keeps it, like the SDKs do.
     let email = normalize_email(email);
     if email.is_empty() {
-        bail!("invalid_request: --email needs the address the human signs in with");
+        return Err(
+            CliError::Usage("--email needs the address the human signs in with".into()).into(),
+        );
     }
     let email = email.as_str();
     let store = store_for(client);
@@ -706,19 +717,24 @@ pub async fn connect(
         }
     };
 
-    let (status, message) = match outcome {
+    // Each ending has its code and exit status from the table in `whk --help`.
+    let (status, error): (&str, anyhow::Error) = match outcome {
         Outcome::Claimed => return Ok(()),
         Outcome::Declined => (
             "declined",
-            "access_denied: the human declined the connection",
+            anyhow::Error::new(CliError::ApprovalDenied).context("the human declined the connection"),
         ),
+        // The code's life is the server's, so a longer --timeout would not
+        // help: an expired approval, whose hint is to ask again.
         Outcome::Expired => (
             "expired",
-            "expired_token: the code expired before it was entered. Run `whk sandbox connect` again for a new one",
+            anyhow::Error::new(CliError::ApprovalExpired).context(
+                "the code expired before it was entered. Run `whk sandbox connect` again for a new one",
+            ),
         ),
         Outcome::Timeout => (
             "timeout",
-            "timeout: the human did not connect the agent in time",
+            CliError::Timeout("the human did not connect the agent in time".into()).into(),
         ),
     };
     if json {
@@ -726,7 +742,7 @@ pub async fn connect(
             &json!({ "status": status, "registration_id": registration.registration_id }),
         );
     }
-    bail!("{message}")
+    Err(error)
 }
 
 pub async fn forget(client: &ApiClient, claimed: bool, sandbox: bool, json: bool) -> Result<()> {

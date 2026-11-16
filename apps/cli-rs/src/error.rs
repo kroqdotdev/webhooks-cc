@@ -7,9 +7,9 @@
 //! | ------ | ----------------------- | ----------------------------------------------- |
 //! | 0      |                         | Success                                         |
 //! | 1      | `error`, `bad_request`, `delivery_failed`, `billing_refused`, `outcome_unknown` | Any other failure, the server refused input, a test delivery was not accepted, a billing change (approved, or made on the agent budget) was refused with nothing changed (the server's code in `reason`), or it may or may not have been made (check billing) |
-//! | 2      | `usage`                 | Bad arguments (clap answers these itself)        |
+//! | 2      | `usage`                 | Bad arguments, or a value the CLI can tell is wrong                |
 //! | 3      | `not_logged_in`, `unauthorized`, `connection_revoked`, `login_expired`, `login_denied` | No credentials, or they were refused |
-//! | 4      | `not_found`             | No such endpoint, request, team or share         |
+//! | 4      | `not_found`             | No such endpoint, request, team, share, member, invite or approval |
 //! | 5      | `forbidden`             | Not allowed: the plan, a limit, or a permission  |
 //! | 6      | `rate_limited`          | Too many requests; wait and retry                |
 //! | 7      | `server_error`, `network_error`, `request_timeout` | Our side or the network failed; retry |
@@ -69,8 +69,12 @@ pub enum CliError {
     /// (the account already had it, or what it added to had ended): its
     /// subscription was ended and a refund is under review.
     CheckoutSuperseded,
-    /// Arguments that parse but make no sense together.
+    /// Arguments that parse but make no sense together, or a value the
+    /// CLI can tell is wrong before asking the server.
     Usage(String),
+    /// Nothing by that name or id: a team, share, member or invite the CLI
+    /// looked up in a list the server gave it.
+    NotFound(String),
     /// A test delivery reached its destination's server (or tried to) and
     /// was not accepted: the destination's fault, so no retry of ours helps.
     DeliveryFailed(String),
@@ -93,6 +97,7 @@ impl std::fmt::Display for CliError {
             | CliError::ConfirmationRequired(m)
             | CliError::Timeout(m)
             | CliError::Usage(m)
+            | CliError::NotFound(m)
             | CliError::DeliveryFailed(m)
             | CliError::QuoteChanged(m)
             | CliError::OutcomeUnknown(m) => f.write_str(m),
@@ -241,8 +246,9 @@ pub fn classify(error: &anyhow::Error) -> Classified {
                 CliError::ConfirmationRequired(_) => Classified::new("confirmation_required", 9)
                     .hint("Pass --yes to go ahead without being asked."),
                 CliError::Cancelled => Classified::new("cancelled", 9),
-                CliError::Timeout(_) => Classified::new("timeout", 8)
-                    .hint("Run it again with a longer --timeout, or check that the sender ran."),
+                CliError::Timeout(_) => {
+                    Classified::new("timeout", 8).hint("Run it again with a longer --timeout.")
+                }
                 CliError::LoginExpired => {
                     Classified::new("login_expired", 3).hint("Run `whk auth login` again.")
                 }
@@ -262,6 +268,7 @@ pub fn classify(error: &anyhow::Error) -> Classified {
                     "Someone chose \"This wasn't me\". Run `whk auth login` again if it was you.",
                 ),
                 CliError::Usage(_) => Classified::new("usage", 2),
+                CliError::NotFound(_) => Classified::new("not_found", 4),
                 CliError::DeliveryFailed(_) => Classified::new("delivery_failed", 1).hint(
                     "Fix the destination (its URL, headers or server), then run the test again.",
                 ),
@@ -337,6 +344,72 @@ pub fn classify(error: &anyhow::Error) -> Classified {
     Classified::new("error", 1)
 }
 
+/// Whether a failure is only that whoever read the output stopped reading
+/// (`whk usage | head`): not a failure of the command, so it exits quietly.
+///
+/// A socket that broke while whk was sending (a local server that answers
+/// 413 and closes mid-upload) carries the same EPIPE inside an HTTP or
+/// WebSocket error: that is a network failure, never a quiet exit.
+pub fn is_broken_pipe(error: &anyhow::Error) -> bool {
+    let from_network = error.chain().any(|cause| {
+        cause.downcast_ref::<reqwest::Error>().is_some()
+            || cause
+                .downcast_ref::<tokio_tungstenite::tungstenite::Error>()
+                .is_some()
+    });
+    !from_network
+        && error.chain().any(|cause| {
+            cause
+                .downcast_ref::<std::io::Error>()
+                .is_some_and(|e| e.kind() == std::io::ErrorKind::BrokenPipe)
+        })
+}
+
+/// Whether stdout's reader has gone (a pipe whose other end closed), so a
+/// broken pipe in a command's error came from stdout and not from a note on
+/// stderr or a socket. Where it cannot be told, assumes it has.
+pub fn stdout_closed() -> bool {
+    #[cfg(unix)]
+    {
+        fd_closed(libc::STDOUT_FILENO)
+    }
+    #[cfg(not(unix))]
+    {
+        true
+    }
+}
+
+/// Whether the reader of the pipe or socket `fd` writes to has gone (a
+/// zero-wait poll reports POLLERR or POLLHUP). A failed poll counts as not
+/// closed.
+#[cfg(unix)]
+fn fd_closed(fd: libc::c_int) -> bool {
+    let mut poll = libc::pollfd {
+        fd,
+        events: libc::POLLOUT,
+        revents: 0,
+    };
+    // SAFETY: one valid pollfd, no wait.
+    let ready = unsafe { libc::poll(&mut poll, 1, 0) };
+    ready > 0 && poll.revents & (libc::POLLERR | libc::POLLHUP) != 0
+}
+
+/// Whether a panic's message is `println!` (or `print!`) failing
+/// because the pipe it wrote to was closed. Rust ignores SIGPIPE, so a
+/// closed pipe comes back as an error, and the print macros panic on it.
+pub fn is_broken_pipe_panic(message: &str) -> bool {
+    // stdout only: notes on stderr go through errln!, which never panics, so
+    // a stderr panic is a bug, never a reason to call a failure a success.
+    let printing = message.starts_with("failed printing to stdout");
+    // EPIPE's text on Unix; ERROR_BROKEN_PIPE (109) and ERROR_NO_DATA (232)
+    // on Windows.
+    printing
+        && (message.contains("Broken pipe")
+            || message.contains("os error 32)")
+            || message.contains("os error 109)")
+            || message.contains("os error 232)"))
+}
+
 /// The JSON a failed command writes to stderr under `--json`.
 pub fn error_json(error: &anyhow::Error, c: &Classified) -> Value {
     let mut body = json!({
@@ -361,6 +434,18 @@ pub fn error_json(error: &anyhow::Error, c: &Classified) -> Value {
 
 #[cfg(test)]
 mod tests {
+
+    #[cfg(unix)]
+    #[test]
+    fn a_pipe_whose_reader_closed_reads_as_closed() {
+        let mut fds = [0 as libc::c_int; 2];
+        // SAFETY: a fresh pipe, both ends closed below.
+        assert_eq!(unsafe { libc::pipe(fds.as_mut_ptr()) }, 0);
+        assert!(!fd_closed(fds[1]), "a reader is still there");
+        unsafe { libc::close(fds[0]) };
+        assert!(fd_closed(fds[1]), "the reader has gone");
+        unsafe { libc::close(fds[1]) };
+    }
     use super::*;
 
     fn api(status: u16) -> anyhow::Error {
@@ -568,6 +653,33 @@ mod tests {
             missing.is_empty(),
             "BEFORE_POLAR codes missing from BILLING_REFUSALS: {missing:?}"
         );
+    }
+
+    #[test]
+    fn a_closed_pipe_is_told_apart() {
+        assert!(is_broken_pipe_panic(
+            "failed printing to stdout: Broken pipe (os error 32)"
+        ));
+        assert!(is_broken_pipe_panic(
+            "failed printing to stdout: The pipe is being closed. (os error 232)"
+        ));
+        assert!(!is_broken_pipe_panic(
+            "failed printing to stderr: Broken pipe (os error 32)"
+        ));
+        assert!(!is_broken_pipe_panic(
+            "failed printing to stdout: No space left on device (os error 28)"
+        ));
+        assert!(!is_broken_pipe_panic("Broken pipe somewhere else"));
+        let error = anyhow::Error::new(std::io::Error::from(std::io::ErrorKind::BrokenPipe))
+            .context("writing the export");
+        assert!(is_broken_pipe(&error));
+        assert!(!is_broken_pipe(&anyhow::anyhow!("nope")));
+        // A socket that broke mid-send is a network failure, not a closed stdout.
+        let socket = anyhow::Error::new(tokio_tungstenite::tungstenite::Error::Io(
+            std::io::Error::from(std::io::ErrorKind::BrokenPipe),
+        ))
+        .context("sending to the edge");
+        assert!(!is_broken_pipe(&socket));
     }
 
     #[test]

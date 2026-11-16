@@ -16,7 +16,7 @@ pub async fn run(client: &ApiClient, json: bool) -> Result<()> {
         Ok(teams) => teams.value.into_iter().filter(|t| !t.suspended).collect(),
         Err(e) => {
             if !json {
-                eprintln!("  {} {}", dim("Could not load team pools:"), e);
+                crate::errln!("  {} {}", dim("Could not load team pools:"), e);
             }
             teams_error = Some(e.to_string());
             Vec::new()

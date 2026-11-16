@@ -165,7 +165,7 @@ fn explain(error: anyhow::Error, request_id: &str, what: Download) -> anyhow::Er
         Err(error) => return error,
     };
     let id = sanitize_line(request_id);
-    match api.message.as_str() {
+    match api.code.as_deref().unwrap_or_default() {
         "not_found" => {
             api.message = match what {
                 Download::Raw => format!("No captured request {id} you can read."),
@@ -371,14 +371,7 @@ pub async fn run(
     json: bool,
 ) -> Result<()> {
     let sink = sink(output, json, std::io::stdout().is_terminal(), stdout_id())?;
-    let request_id = request_id.trim();
-    if !crate::util::is_uuid(request_id) {
-        return Err(CliError::Usage(format!(
-            "{} is not a request id: `whk requests list <slug>` shows them",
-            sanitize_line(request_id)
-        ))
-        .into());
-    }
+    let request_id = crate::util::request_id(request_id)?;
     let answer = match what {
         Download::Raw => client.download_raw(request_id).await,
         Download::Attachment(index) => client.download_attachment(request_id, index).await,
@@ -417,7 +410,7 @@ pub async fn run(
     // Beside bytes sent to a device the status line goes to stderr: that
     // device's reader may be stdout's too.
     let say = |line: String| match wrote {
-        Wrote::Device => eprintln!("{line}"),
+        Wrote::Device => crate::errln!("{line}"),
         Wrote::File => println!("{line}"),
     };
     say(format!(
@@ -857,12 +850,13 @@ mod tests {
 
     #[test]
     fn bare_codes_are_put_in_words() {
+        // As the client reads them: a bare code is the error's code.
         let api = |message: &str, status| {
             anyhow::Error::new(crate::error::ApiError {
                 status,
                 message: message.into(),
                 retry_after: None,
-                code: None,
+                code: crate::api::is_bare_code(message).then(|| message.to_string()),
             })
         };
         let error = explain(api("not_found", 404), "r1", Download::Attachment(3));

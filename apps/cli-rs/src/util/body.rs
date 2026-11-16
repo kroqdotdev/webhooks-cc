@@ -9,7 +9,9 @@ pub fn resolve_body(body_raw: Option<&str>, body: Option<&str>) -> Option<Vec<u8
         match base64::engine::general_purpose::STANDARD.decode(raw) {
             Ok(bytes) => return Some(bytes),
             Err(e) => {
-                eprintln!("warn: body_raw base64 decode failed: {e}, falling back to text body");
+                crate::errln!(
+                    "warn: body_raw base64 decode failed: {e}, falling back to text body"
+                );
             }
         }
     }

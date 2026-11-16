@@ -51,9 +51,9 @@ pub async fn run(
 
     let mut extra_headers = HashMap::new();
     for h in &headers {
-        let (k, v) = h
-            .split_once(':')
-            .ok_or_else(|| anyhow::anyhow!("invalid header: {h} (expected Key:Value)"))?;
+        let (k, v) = h.split_once(':').ok_or_else(|| {
+            crate::error::CliError::Usage(format!("invalid header: {h} (expected Key:Value)"))
+        })?;
         extra_headers.insert(k.trim().to_string(), v.trim().to_string());
     }
 
@@ -90,7 +90,7 @@ pub async fn run(
     let email_format = emails.as_ref().map(|options| options.format);
 
     if json {
-        println!(
+        crate::outln!(
             "{}",
             serde_json::json!({
                 "event": "started",
@@ -104,11 +104,11 @@ pub async fn run(
             })
         );
     } else {
-        println!("\n  {} Tunnel active", green("●"));
-        println!("  {} {}", dim("Webhook URL:"), bold(&webhook_url));
-        println!("  {} {}", dim("Forwarding to:"), bold(&target_url));
+        crate::outln!("\n  {} Tunnel active", green("●"));
+        crate::outln!("  {} {}", dim("Webhook URL:"), bold(&webhook_url));
+        crate::outln!("  {} {}", dim("Forwarding to:"), bold(&target_url));
         if live {
-            println!(
+            crate::outln!(
                 "  {} {}",
                 dim("Live:"),
                 dim("senders get your app's answer while whk runs")
@@ -117,18 +117,18 @@ pub async fn run(
         match (&emails, &email_url) {
             (Some(options), Some(url)) => {
                 if let Some(ref address) = email_address {
-                    println!("  {} {}", dim("Email address:"), bold(address));
+                    crate::outln!("  {} {}", dim("Email address:"), bold(address));
                 }
-                println!(
+                crate::outln!(
                     "  {} {} {}",
                     dim("Emails to:"),
                     bold(url),
                     dim(&email_shape(options))
                 );
             }
-            _ => println!("  {} {}", dim("Emails:"), dim(EMAIL_SKIPPED)),
+            _ => crate::outln!("  {} {}", dim("Emails:"), dim(EMAIL_SKIPPED)),
         }
-        println!("  {}\n", dim("Press Ctrl+C to stop."));
+        crate::outln!("  {}\n", dim("Press Ctrl+C to stop."));
     }
 
     // --live: the edge relays each HTTP capture down this session while the
@@ -190,7 +190,8 @@ pub async fn run(
     let mut held_check = tokio::time::interval(Duration::from_secs(1));
     // --live refused before it was ever up (another relay, a limit, no
     // access): the tunnel ends with that as its error.
-    let mut live_refused: Option<String> = None;
+    // The error itself, so its exit status (usage, not_found, plan) survives.
+    let mut live_refused: Option<anyhow::Error> = None;
 
     // One for the whole run, so a signal that arrives while an arm is busy
     // (forwarding a capture) is still seen.
@@ -213,12 +214,12 @@ pub async fn run(
                             if relay.announce() {
                                 drop(relay);
                                 if json {
-                                    println!(
+                                    crate::outln!(
                                         "{}",
                                         serde_json::json!({ "event": "live_fallback" })
                                     );
                                 } else {
-                                    println!(
+                                    crate::outln!(
                                         "  {} {}",
                                         dim("●"),
                                         dim(LIVE_FALLBACK)
@@ -232,7 +233,7 @@ pub async fn run(
                         // --no-email: the email is listed, not posted.
                         if req.is_email() && email_format.is_none() {
                             if json {
-                                println!(
+                                crate::outln!(
                                     "{}",
                                     serde_json::json!({
                                         "event": "skipped",
@@ -243,7 +244,7 @@ pub async fn run(
                                     })
                                 );
                             } else {
-                                println!("{}", request_line(&req, &dim(EMAIL_SKIPPED)));
+                                crate::outln!("{}", request_line(&req, &dim(EMAIL_SKIPPED)));
                             }
                             continue;
                         }
@@ -251,9 +252,9 @@ pub async fn run(
                     }
                     SseEvent::EndpointDeleted => {
                         if json {
-                            println!("{}", serde_json::json!({ "event": "endpoint_deleted" }));
+                            crate::outln!("{}", serde_json::json!({ "event": "endpoint_deleted" }));
                         } else {
-                            println!("\n  {} Endpoint was deleted.", red("●"));
+                            crate::outln!("\n  {} Endpoint was deleted.", red("●"));
                         }
                         break;
                     }
@@ -287,7 +288,7 @@ pub async fn run(
                 }
                 let due = if due.is_empty() { due } else { undelivered(client, due).await };
                 if !due.is_empty() && !json {
-                    println!("  {} {}", dim("●"), dim(&not_relayed(due.len())));
+                    crate::outln!("  {} {}", dim("●"), dim(&not_relayed(due.len())));
                 }
                 for req in due {
                     deliver(&tunnel, &req, json, email_format).await;
@@ -301,7 +302,7 @@ pub async fn run(
                 }
                 match ended {
                     Ok(Ok(reason)) => live_stopped(json, &reason),
-                    Ok(Err(e)) => live_refused = Some(format!("{e:#}")),
+                    Ok(Err(e)) => live_refused = Some(e),
                     Err(e) => live_stopped(json, &format!("{e}")),
                 }
                 break;
@@ -323,37 +324,40 @@ pub async fn run(
 
     // Make any in-flight send in the stream task fail fast, then collect its result.
     drop(rx);
-    let stream_result = join_stream(stream_handle, interrupted).await;
+    // A refused live session ends the run: the stream is stopped as on an
+    // interrupt, so whk does not wait for its next capture (keepalives hold
+    // it open for up to 30 minutes) before saying why.
+    let stream_result = join_stream(stream_handle, interrupted || live_refused.is_some()).await;
 
     // Cleanup: only endpoints we created, and only when asked to (--ephemeral).
     if created {
         if ephemeral {
             if let Err(e) = client.delete_endpoint(&slug).await {
-                eprintln!("  {} Could not delete endpoint {slug}: {e:#}", dim("●"));
+                crate::errln!("  {} Could not delete endpoint {slug}: {e:#}", dim("●"));
             }
         } else if json {
-            println!(
+            crate::outln!(
                 "{}",
                 serde_json::json!({ "event": "endpoint_kept", "slug": slug })
             );
         } else {
-            println!("\n  {} Endpoint kept: {}", dim("●"), bold(&slug));
-            println!(
+            crate::outln!("\n  {} Endpoint kept: {}", dim("●"), bold(&slug));
+            crate::outln!(
                 "    {} whk tunnel {target} --endpoint {slug}",
                 dim("Reuse: ")
             );
-            println!("    {} whk delete {slug}", dim("Delete:"));
+            crate::outln!("    {} whk delete {slug}", dim("Delete:"));
         }
     }
 
-    if let Some(message) = live_refused {
-        anyhow::bail!(message);
+    if let Some(error) = live_refused {
+        return Err(error);
     }
     if interrupted
         && stream_result.is_ok()
         && let Some(hint) = crate::util::star::take(json)
     {
-        println!("{hint}");
+        crate::outln!("{hint}");
     }
     stream_result
 }
@@ -376,14 +380,14 @@ async fn deliver(
 ) {
     let result = tunnel.forward(req).await;
     if json {
-        println!("{}", forwarded_event(req, &result, email_format));
+        crate::outln!("{}", forwarded_event(req, &result, email_format));
     } else {
         let status = if result.success {
             green(&result.to_string())
         } else {
             red(&result.to_string())
         };
-        println!("{}", request_line(req, &status));
+        crate::outln!("{}", request_line(req, &status));
     }
 }
 
@@ -705,14 +709,14 @@ fn show_live_update(update: Update, json: bool) {
     match update {
         Update::Ready { .. } => {
             if json {
-                println!("{}", serde_json::json!({ "event": "live_connected" }));
+                crate::outln!("{}", serde_json::json!({ "event": "live_connected" }));
             } else {
-                println!("  {} {}", green("●"), dim("Live relay connected"));
+                crate::outln!("  {} {}", green("●"), dim("Live relay connected"));
             }
         }
         Update::Reconnected => {
             if json {
-                println!("{}", serde_json::json!({ "event": "live_reconnected" }));
+                crate::outln!("{}", serde_json::json!({ "event": "live_reconnected" }));
             } else {
                 print_reconnected(false);
             }
@@ -735,9 +739,9 @@ fn show_live_update(update: Update, json: bool) {
                 if let Some(id) = request_id {
                     event["request_id"] = serde_json::Value::String(id);
                 }
-                println!("{event}");
+                crate::outln!("{event}");
             } else {
-                println!(
+                crate::outln!(
                     "{}",
                     crate::cli::share::request_line(&method, &path, status, ms)
                 );
@@ -745,19 +749,19 @@ fn show_live_update(update: Update, json: bool) {
         }
         Update::Notice(text) => {
             if json {
-                println!("{}", serde_json::json!({ "event": "notice", "text": text }));
+                crate::outln!("{}", serde_json::json!({ "event": "notice", "text": text }));
             } else {
-                println!("  {} {}", dim("●"), sanitize(&text));
+                crate::outln!("  {} {}", dim("●"), sanitize(&text));
             }
         }
         Update::Retrying { message, seconds } => {
             if json {
-                println!(
+                crate::outln!(
                     "{}",
                     serde_json::json!({ "event": "live_retrying", "message": message, "seconds": seconds })
                 );
             } else {
-                println!(
+                crate::outln!(
                     "  {} {}",
                     dim("●"),
                     dim(&format!(
@@ -774,7 +778,7 @@ fn show_live_update(update: Update, json: bool) {
 const STOPPED_HERE: &str = "you stopped it on this computer";
 
 fn live_stopped(json: bool, reason: &str) {
-    println!("{}", live_stopped_line(json, reason));
+    crate::outln!("{}", live_stopped_line(json, reason));
 }
 
 fn live_stopped_line(json: bool, reason: &str) -> String {

@@ -82,10 +82,99 @@ pub fn method_color(method: &str) -> String {
     }
 }
 
+/// How a table cell is drawn: its colour, and which side it is padded on.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum Cell {
+    Plain,
+    Bold,
+    Dim,
+    /// Right-aligned (numbers), plain.
+    Right,
+    /// Right-aligned and dim: the header over a [`Cell::Right`] column.
+    DimRight,
+}
+
+/// The width a terminal gives text: wide characters count two columns.
+pub fn display_width(s: &str) -> usize {
+    unicode_width::UnicodeWidthStr::width(s)
+}
+
+/// Text cut to `max` columns, ending in "..." when it was longer.
+pub fn fit(s: &str, max: usize) -> String {
+    if display_width(s) <= max {
+        return s.to_string();
+    }
+    let mut out = String::new();
+    let mut width = 0;
+    for c in s.chars() {
+        let w = unicode_width::UnicodeWidthChar::width(c).unwrap_or(0);
+        if width + w + 3 > max {
+            break;
+        }
+        width += w;
+        out.push(c);
+    }
+    out.push_str("...");
+    out
+}
+
+/// Rows as aligned lines: each column as wide as its widest cell, padded by
+/// display width before any colour is added, so escape codes and wide
+/// characters never shift a column. The last column is not padded. The
+/// first row is usually the header, drawn dim.
+pub fn table_lines(indent: &str, rows: &[Vec<(String, Cell)>]) -> Vec<String> {
+    let columns = rows.iter().map(Vec::len).max().unwrap_or(0);
+    let mut widths = vec![0; columns];
+    for row in rows {
+        for (i, (text, _)) in row.iter().enumerate() {
+            widths[i] = widths[i].max(display_width(text));
+        }
+    }
+    rows.iter()
+        .map(|row| {
+            let cells: Vec<String> = row
+                .iter()
+                .enumerate()
+                .map(|(i, (text, cell))| {
+                    let gap = " ".repeat(widths[i].saturating_sub(display_width(text)));
+                    let last = i + 1 == row.len();
+                    let padded = match cell {
+                        Cell::Right | Cell::DimRight => format!("{gap}{text}"),
+                        _ if last => text.clone(),
+                        _ => format!("{text}{gap}"),
+                    };
+                    match cell {
+                        Cell::Bold => bold(&padded),
+                        Cell::Dim | Cell::DimRight => dim(&padded),
+                        Cell::Plain | Cell::Right => padded,
+                    }
+                })
+                .collect();
+            format!("{indent}{}", cells.join(" "))
+        })
+        .collect()
+}
+
+/// A dim header row for [`table_lines`], right-aligned where `right` says.
+pub fn header_row(names: &[&str], right: &[usize]) -> Vec<(String, Cell)> {
+    names
+        .iter()
+        .enumerate()
+        .map(|(i, name)| {
+            let cell = if right.contains(&i) {
+                Cell::DimRight
+            } else {
+                Cell::Dim
+            };
+            (name.to_string(), cell)
+        })
+        .collect()
+}
+
 /// Announce a stream reconnect (emitted by `ApiClient::stream_requests`).
 pub fn print_reconnecting(json: bool, attempt: u32, delay_ms: u64, reason: &str) {
     if json {
-        println!(
+        crate::outln!(
             "{}",
             serde_json::json!({
                 "event": "reconnecting",
@@ -100,16 +189,16 @@ pub fn print_reconnecting(json: bool, attempt: u32, delay_ms: u64, reason: &str)
             "Reconnecting in {secs}s (attempt {attempt}): {}",
             sanitize(reason)
         );
-        println!("  {} {}", dim("●"), dim(&line));
+        crate::outln!("  {} {}", dim("●"), dim(&line));
     }
 }
 
 /// Announce that a stream reconnect succeeded.
 pub fn print_reconnected(json: bool) {
     if json {
-        println!("{}", serde_json::json!({ "event": "reconnected" }));
+        crate::outln!("{}", serde_json::json!({ "event": "reconnected" }));
     } else {
-        println!("  {} {}", green("●"), dim("Reconnected"));
+        crate::outln!("  {} {}", green("●"), dim("Reconnected"));
     }
 }
 
@@ -123,28 +212,26 @@ pub fn print_endpoint_table(endpoints: &[Endpoint], webhook_url: &str) {
     }
 }
 
+/// The widest an endpoint's name or team column grows in `whk list`; longer
+/// ones are cut, so one long name cannot push every URL off the screen.
+const LIST_COLUMN_MAX: usize = 32;
+
 /// What `whk list` prints, line by line: a header, then one row per
 /// endpoint, a favourite marked with a star in the first column.
 fn endpoint_table_lines(endpoints: &[Endpoint], webhook_url: &str) -> Vec<String> {
-    let mut out = vec![format!(
-        "    {:<20} {:<20} {:<16} {}",
-        dim("SLUG"),
-        dim("NAME"),
-        dim("TEAM"),
-        dim("URL"),
-    )];
+    let mut rows = vec![header_row(&["", "SLUG", "NAME", "TEAM", "URL"], &[])];
     for ep in endpoints {
-        let name = sanitize(ep.name.as_deref().unwrap_or("-"));
-        let slug = sanitize(&ep.slug);
+        let name = sanitize_line(ep.name.as_deref().unwrap_or("-"));
+        let slug = sanitize_line(&ep.slug);
         let url = format!("{}/w/{}", webhook_url, slug);
         let team = if let Some(ref from) = ep.from_team {
-            format!("[-> {}]", sanitize(&from.team_name))
+            format!("[-> {}]", sanitize_line(&from.team_name))
         } else if !ep.shared_with.is_empty() {
             format!(
                 "[{}]",
                 ep.shared_with
                     .iter()
-                    .map(|t| sanitize(&t.team_name))
+                    .map(|t| sanitize_line(&t.team_name))
                     .collect::<Vec<_>>()
                     .join(", ")
             )
@@ -152,16 +239,15 @@ fn endpoint_table_lines(endpoints: &[Endpoint], webhook_url: &str) -> Vec<String
             String::new()
         };
         let star = if ep.is_favorite() { "\u{2605}" } else { " " };
-        out.push(format!(
-            "  {} {:<20} {:<20} {:<16} {}",
-            star,
-            bold(&slug),
-            dim(&name),
-            dim(&team),
-            dim(&url)
-        ));
+        rows.push(vec![
+            (star.to_string(), Cell::Plain),
+            (slug, Cell::Bold),
+            (fit(&name, LIST_COLUMN_MAX), Cell::Dim),
+            (fit(&team, LIST_COLUMN_MAX), Cell::Dim),
+            (url, Cell::Dim),
+        ]);
     }
-    out
+    table_lines("  ", &rows)
 }
 
 /// One search row: like `print_request_line`, plus the endpoint slug because
@@ -504,10 +590,50 @@ mod tests {
             .collect();
         assert_eq!(lines.len(), 4);
         assert!(lines[0].starts_with("    SLUG"), "{lines:#?}");
+        // Every URL starts in the same column.
+        let column = |line: &str, text: &str| line.find(text).map(|i| display_width(&line[..i]));
+        let url_at = column(&lines[1], "http");
+        assert!(url_at.is_some(), "{lines:#?}");
+        for line in &lines[2..] {
+            assert_eq!(column(line, "http"), url_at, "{lines:#?}");
+        }
+        assert_eq!(column(&lines[0], "URL"), url_at, "{lines:#?}");
         assert!(lines[1].starts_with("  \u{2605} acme-orders"), "{lines:#?}");
         assert!(lines[2].starts_with("    acme-refunds"), "{lines:#?}");
         assert!(lines[3].starts_with("    acme-new"), "{lines:#?}");
         assert!(lines[1].ends_with("https://go.example.test/w/acme-orders"));
+    }
+
+    #[test]
+    fn tables_line_up_whatever_the_colour_and_the_width_of_the_text() {
+        let rows = vec![
+            header_row(&["NAME", "COUNT", "ID"], &[1]),
+            vec![
+                ("a very long endpoint name".into(), Cell::Bold),
+                ("7".into(), Cell::Right),
+                ("x1".into(), Cell::Dim),
+            ],
+            vec![
+                ("\u{65e5}\u{672c}".into(), Cell::Bold),
+                ("1200".into(), Cell::Right),
+                ("x2".into(), Cell::Dim),
+            ],
+        ];
+        // Whether colour is on or not (the escape codes are taken out).
+        let lines: Vec<String> = table_lines("  ", &rows)
+            .iter()
+            .map(|line| strip_ansi(line))
+            .collect();
+        assert_eq!(
+            lines,
+            vec![
+                "  NAME                      COUNT ID",
+                "  a very long endpoint name     7 x1",
+                "  \u{65e5}\u{672c}                       1200 x2",
+            ]
+        );
+        assert_eq!(fit("abcdefghij", 8), "abcde...");
+        assert_eq!(fit("abc", 8), "abc");
     }
 
     #[test]
