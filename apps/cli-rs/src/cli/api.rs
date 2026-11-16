@@ -34,12 +34,14 @@ pub async fn run(
     let resp = client.send_raw(method, &path, body, &headers).await?;
 
     if include {
+        // Notes on stderr: a closed stderr drops them, and the answer's own
+        // status still decides how whk ends.
         let mut err = std::io::stderr().lock();
-        writeln!(err, "HTTP {}", resp.status)?;
+        let _ = writeln!(err, "HTTP {}", resp.status);
         for (name, value) in &resp.headers {
-            writeln!(err, "{name}: {}", value.to_str().unwrap_or("<binary>"))?;
+            let _ = writeln!(err, "{name}: {}", value.to_str().unwrap_or("<binary>"));
         }
-        writeln!(err)?;
+        let _ = writeln!(err);
     }
 
     let failed = resp.status.is_client_error() || resp.status.is_server_error();

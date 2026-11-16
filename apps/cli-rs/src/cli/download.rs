@@ -687,7 +687,7 @@ mod tests {
         // would be.
         let master = unsafe { libc::posix_openpt(libc::O_RDWR | libc::O_NOCTTY) };
         if master < 0 {
-            crate::errln!("no pseudo-terminals here; skipped");
+            eprintln!("no pseudo-terminals here; skipped");
             return;
         }
         let name = unsafe {
@@ -715,7 +715,7 @@ mod tests {
     fn a_file_in_a_directory_that_takes_no_new_file_is_written_in_place() {
         use std::os::unix::fs::{MetadataExt, PermissionsExt};
         if unsafe { libc::geteuid() } == 0 {
-            crate::errln!("root writes anywhere; skipped");
+            eprintln!("root writes anywhere; skipped");
             return;
         }
         let dir = scratch("in-place");

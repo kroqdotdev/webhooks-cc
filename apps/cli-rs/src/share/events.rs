@@ -136,9 +136,24 @@ impl Lines {
     }
 }
 
+/// Set once the share has failed: a closed stdout then no longer ends whk
+/// quietly, so the failure's own exit status stands.
+static FAILING: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Marks the share as failed, before its error is reported.
+pub fn failing() {
+    FAILING.store(true, std::sync::atomic::Ordering::SeqCst);
+}
+
 fn stdout_lines() -> &'static Lines {
     static LINES: std::sync::OnceLock<Lines> = std::sync::OnceLock::new();
-    LINES.get_or_init(|| Lines::new(std::io::stdout(), || std::process::exit(0)))
+    LINES.get_or_init(|| {
+        Lines::new(std::io::stdout(), || {
+            if !FAILING.load(std::sync::atomic::Ordering::SeqCst) {
+                std::process::exit(0);
+            }
+        })
+    })
 }
 
 /// Writes a line (it may hold several) to stdout from the writer thread,

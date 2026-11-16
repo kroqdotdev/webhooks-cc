@@ -692,7 +692,7 @@ mod tests {
         match fs::read_to_string(VECTORS) {
             Ok(text) => Some(serde_json::from_str(&text).expect("vectors are JSON")),
             Err(_) => {
-                crate::errln!("SKIPPING: {VECTORS} does not exist yet");
+                eprintln!("SKIPPING: {VECTORS} does not exist yet");
                 None
             }
         }

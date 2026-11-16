@@ -101,7 +101,8 @@ fn argument_error(error: clap::Error) -> ExitCode {
         .join(" ")
         .trim_start_matches("error: ")
         .to_string();
-    eprintln!(
+    let _ = writeln!(
+        std::io::stderr().lock(),
         "{}",
         serde_json::json!({
             "error": {

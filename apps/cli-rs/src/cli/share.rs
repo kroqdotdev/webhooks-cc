@@ -31,6 +31,11 @@ pub struct ShareOptions {
 pub async fn run(client: &ApiClient, options: ShareOptions) -> Result<()> {
     let json = options.json;
     let result = run_inner(client, options).await;
+    if result.is_err() {
+        // From here a reader that went away does not end whk quietly: the
+        // failure decides the exit status.
+        events::failing();
+    }
     if json && let Err(e) = &result {
         let c = crate::error::classify(e);
         // The message keeps the hint too, as before: the SDK's share helper

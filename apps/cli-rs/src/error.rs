@@ -365,7 +365,7 @@ pub fn is_broken_pipe(error: &anyhow::Error) -> bool {
         })
 }
 
-/// Whether a panic's message is `println!` (or `print!`, `eprintln!`) failing
+/// Whether a panic's message is `println!` (or `print!`) failing
 /// because the pipe it wrote to was closed. Rust ignores SIGPIPE, so a
 /// closed pipe comes back as an error, and the print macros panic on it.
 pub fn is_broken_pipe_panic(message: &str) -> bool {
