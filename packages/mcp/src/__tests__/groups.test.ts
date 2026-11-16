@@ -119,6 +119,21 @@ describe("tool groups on the local server", () => {
     expect(log).not.toHaveBeenCalled();
   });
 
+  it("gives the client's default for a WHK_MCP_TOOLS of unknown names only, and warns", async () => {
+    const warn = vi.spyOn(console, "error").mockImplementation(() => {});
+    vi.stubEnv("WHK_MCP_TOOLS", "teamz");
+    try {
+      // A typo alone is no choice: Claude Code still gets every tool, Cursor the core.
+      const everything = await legacyClient("claude-code");
+      expect(await everything.names()).toEqual(sorted(ALL));
+      const core = await legacyClient("cursor-vscode");
+      expect(await core.names()).toEqual(sorted([...CORE, ENABLE_TOOLS]));
+      expect(warn.mock.calls.flat().join(" ")).toContain("teamz");
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
   it("lists only the tools that change nothing in read-only mode", async () => {
     vi.stubEnv("WHK_MCP_READ_ONLY", "1");
     try {

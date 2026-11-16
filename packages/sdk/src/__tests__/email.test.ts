@@ -277,7 +277,13 @@ describe("client.emails", () => {
       .mockResolvedValueOnce(jsonResponse(httpRequest));
     const client = createClient();
     expect((await client.emails.get("e1")).email.subject).toContain("Confirm");
-    await expect(client.emails.get("http_1")).rejects.toBeInstanceOf(NotFoundError);
+    const refused = await client.emails.get("http_1").catch((error: unknown) => error);
+    expect(refused).toBeInstanceOf(NotFoundError);
+    // It names the route that answered, so the MCP server's hint can point at the requests.
+    expect(refused).toMatchObject({
+      path: "/requests/http_1",
+      apiMessage: "Request http_1 is not a captured email",
+    });
   });
 
   it("returns the newest matching email or null", async () => {

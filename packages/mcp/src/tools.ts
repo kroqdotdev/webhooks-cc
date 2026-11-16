@@ -1212,7 +1212,16 @@ const NOT_FOUND_HINTS: ReadonlyArray<readonly [RegExp, string]> = [
   [under("/stream"), "list_endpoints lists your endpoints and their slugs."],
   [under("/shares"), "list_shares lists your previews and live tunnels."],
   [under("/tunnel-names"), "list_names lists the names you can share under."],
+  [
+    /^\/teams\/[^/?]+\/billing(?:[/?]|$)/,
+    "get_billing lists every team's subscription and its team id.",
+  ],
+  [
+    /^\/teams\/[^/?]+\/(?:invites|members)(?:[/?]|$)/,
+    "list_team_members lists the team's members and pending invites; list_teams checks the team id.",
+  ],
   [under("/teams"), "list_teams lists your teams and their ids."],
+  [under("/send-test-email"), "list_endpoints lists your endpoints and their slugs."],
   [under("/domains"), "list_domains lists your inbound domains."],
   [under("/request-shares"), "list_share_links lists your share links and their ids."],
   [under("/invites"), "list_invites lists the invites waiting for you and their ids."],
@@ -1971,6 +1980,36 @@ export function describeSection(
 }
 
 /**
+ * The error create_endpoint answers when signing could not be saved on the
+ * endpoint it made: the signing error itself, which keeps its class, code
+ * and retryAfter, with what became of the endpoint (`removed`: deleted, or
+ * already gone). A plain error is answered by a new one with the original
+ * as its `cause`.
+ */
+export function signingFailure(err: unknown, slug: string, removed: boolean): Error {
+  // A 4xx is the options' fault, except a refused key (401), a vanished
+  // endpoint (404) and a rate limit (429); anything else may pass on a retry.
+  const optionsAtFault =
+    err instanceof WebhooksCCError &&
+    err.statusCode >= 400 &&
+    err.statusCode < 500 &&
+    ![401, 404, 429].includes(err.statusCode);
+  const outcome = !removed
+    ? `The endpoint "${slug}" could not be deleted: it exists without signing. Fix it with update_endpoint, or delete it with delete_endpoint.`
+    : optionsAtFault
+      ? "The endpoint was deleted, so nothing was created: fix the signing options and call create_endpoint again."
+      : "The endpoint was deleted, so nothing was created: call create_endpoint again.";
+  if (err instanceof WebhooksCCError) {
+    err.apiMessage = `${err.apiMessage ?? err.message} ${outcome}`;
+    return err;
+  }
+  if (err instanceof Error) {
+    return Object.assign(new Error(`${err.message} ${outcome}`), { cause: err });
+  }
+  return new Error(`${String(err)} ${outcome}`);
+}
+
+/**
  * Registers the webhooks.cc tools for an account client. Returns their
  * handles, so a caller can swap the tool set later.
  */
@@ -2053,33 +2092,15 @@ export function registerTools(
             );
           } catch (err) {
             // An endpoint that verifies nothing is not what was asked for:
-            // take it back, and say so in the error itself, which keeps
-            // its class, code and retryAfter.
+            // take it back, and say so in the error.
             let removed = true;
             try {
               await client.endpoints.delete(endpoint.slug);
-            } catch {
-              removed = false;
+            } catch (deleteError) {
+              // Already gone is gone: only a delete that failed otherwise leaves it.
+              removed = deleteError instanceof NotFoundError;
             }
-            // A 4xx other than 429 is the options' fault; anything else may pass on a retry.
-            const optionsAtFault =
-              err instanceof WebhooksCCError &&
-              err.statusCode >= 400 &&
-              err.statusCode < 500 &&
-              err.statusCode !== 429;
-            const outcome = !removed
-              ? `The endpoint "${endpoint.slug}" could not be deleted: it exists without signing. Fix it with update_endpoint, or delete it with delete_endpoint.`
-              : optionsAtFault
-                ? "The endpoint was deleted, so nothing was created: fix the signing options and call create_endpoint again."
-                : "The endpoint was deleted, so nothing was created: call create_endpoint again.";
-            if (err instanceof WebhooksCCError) {
-              err.apiMessage = `${err.apiMessage ?? err.message} ${outcome}`;
-            } else if (err instanceof Error) {
-              throw Object.assign(new Error(`${err.message} ${outcome}`), { cause: err });
-            } else {
-              throw new Error(`${String(err)} ${outcome}`);
-            }
-            throw err;
+            throw signingFailure(err, endpoint.slug, removed);
           }
         }
         return jsonContent(endpoint);

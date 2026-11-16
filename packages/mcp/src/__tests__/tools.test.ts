@@ -16,7 +16,13 @@ import {
   type Request,
 } from "@webhooks-cc/sdk";
 import { registerResources } from "../resources";
-import { registerTools, summarizeResponse, toolWords, type ToolServer } from "../tools";
+import {
+  registerTools,
+  signingFailure,
+  summarizeResponse,
+  toolWords,
+  type ToolServer,
+} from "../tools";
 
 const EXPECTED_TOOLS = [
   "create_endpoint",
@@ -1557,6 +1563,12 @@ describe("registerTools", () => {
     await tools.create_endpoint.handler({ signingProvider: "stripe", signingSecret: "abc" });
     // The thrown error is a new one; the original keeps its own message.
     expect(original.message).toBe("socket hang up");
+    const answered = signingFailure(original, "acme-5", true);
+    expect(answered).not.toBe(original);
+    expect((answered as Error & { cause?: unknown }).cause).toBe(original);
+    expect(answered.message).toBe(
+      "socket hang up The endpoint was deleted, so nothing was created: call create_endpoint again."
+    );
   });
 
   it("names the endpoint left without signing when it cannot be deleted either", async () => {
@@ -1582,6 +1594,31 @@ describe("registerTools", () => {
       'Invalid signing secret The endpoint "acme-3" could not be deleted: it exists without signing. Fix it with update_endpoint, or delete it with delete_endpoint.'
     );
     expect(error).not.toHaveProperty("warning");
+  });
+
+  it("counts an endpoint already gone as deleted, and blames the options only for their own 4xx", async () => {
+    const create = vi
+      .fn()
+      .mockResolvedValue({ slug: "acme-7", url: "https://go.webhooks.cc/w/acme-7" });
+    const update = vi.fn().mockRejectedValue(new WebhooksCCError(400, "Invalid signing secret"));
+    const remove = vi.fn().mockRejectedValue(new NotFoundError("Endpoint not found"));
+    const tools = getRegisteredTools(
+      createMockClient({
+        endpoints: { create, update, delete: remove } as unknown as WebhooksCC["endpoints"],
+      })
+    );
+    const gone = parseJsonResult(
+      await tools.create_endpoint.handler({ signingProvider: "stripe", signingSecret: "abc" })
+    );
+    expect(gone.message).toBe(
+      "Invalid signing secret The endpoint was deleted, so nothing was created: fix the signing options and call create_endpoint again."
+    );
+    for (const status of [401, 404]) {
+      const answered = signingFailure(new WebhooksCCError(status, "x"), "acme-7", true);
+      expect((answered as WebhooksCCError).apiMessage, String(status)).toBe(
+        "x The endpoint was deleted, so nothing was created: call create_endpoint again."
+      );
+    }
   });
 
   it("keeps a rate limit's retryAfter when the endpoint cannot be deleted either", async () => {
@@ -4269,7 +4306,11 @@ describe("errors from the API", () => {
       ["/stream/acme", "list_endpoints"],
       ["/shares/s_1/stop", "list_shares"],
       ["/tunnel-names/acme", "list_names"],
-      ["/teams/t_1/members", "list_teams"],
+      ["/teams/t_1", "list_teams"],
+      ["/teams/t_1/members/u_1", "list_team_members"],
+      ["/teams/t_1/invites/i_1", "list_team_members"],
+      ["/teams/t_1/billing/seats", "get_billing"],
+      ["/send-test-email", "list_endpoints"],
       ["/domains/acme.test", "list_domains"],
       ["/request-shares/rs_1", "list_share_links"],
       ["/invites/i_1/accept", "list_invites"],

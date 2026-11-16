@@ -524,8 +524,13 @@ func errorText(body []byte) (string, bool) {
 	return "", false
 }
 
-// withHint adds a recovery hint to a short message as the TypeScript and
-// Python SDKs do: "Not found: Use Endpoints.List ...".
+// withHint adds a recovery hint to a short message: "Not found: Use
+// Endpoints.List ...", with the separators the TypeScript and Python SDKs
+// use. Unlike them, Go trims the message (as JavaScript's trim() does)
+// before it adds the hint, and errorFromResponse calls a message short
+// when it is under 30 bytes, where they count characters (UTF-16 units in
+// TypeScript, code points in Python), so a short message with non-ASCII
+// text can get no hint here and one there.
 func withHint(message, separator, hint string) string {
 	message = webtext.JSTrim(message)
 	if message == "" {

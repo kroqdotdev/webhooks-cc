@@ -3646,7 +3646,11 @@ export class WebhooksCC {
       validatePathSegment(requestId, "requestId");
       const request = await this.request<Request>("GET", `/requests/${requestId}?extracts=true`);
       if (!isEmailRequest(request)) {
-        throw new NotFoundError(`Request ${requestId} is not a captured email`);
+        const error = new NotFoundError(`Request ${requestId} is not a captured email`);
+        error.apiMessage = error.message;
+        // The route that answered, so a caller's hint points at the endpoint's requests.
+        error.path = `/requests/${requestId}`;
+        throw error;
       }
       // The codes and links come from extractCode()/extractLink(); only the fields are kept.
       const email = { ...request } as EmailRequest & { extracts?: unknown };

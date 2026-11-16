@@ -88,7 +88,9 @@ export function toolSelection(options: ToolSelectionOptions = {}): ToolSelection
   }
   const readOnly =
     options.readOnly ?? /^(1|true|yes|on)$/i.test((process.env.WHK_MCP_READ_ONLY ?? "").trim());
-  return { groups: parsed?.groups ?? null, readOnly };
+  // Only unknown names (a typo): the client's default, as on the hosted
+  // server, rather than the core alone.
+  return { groups: parsed?.named ? parsed.groups : null, readOnly };
 }
 
 /** The groups past core, which enable_tools takes. */
