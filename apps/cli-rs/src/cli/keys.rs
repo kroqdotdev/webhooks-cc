@@ -26,15 +26,15 @@ const POLL_EVERY: Duration = if cfg!(test) {
 pub async fn list(client: &ApiClient, json: bool) -> Result<()> {
     let keys = client.list_api_keys().await?;
     if json {
-        println!("{}", serde_json::to_string_pretty(&keys.json())?);
+        crate::outln!("{}", serde_json::to_string_pretty(&keys.json())?);
         return Ok(());
     }
     if keys.is_empty() {
-        println!("  No API keys. Create one with `whk keys create <name>`.");
+        crate::outln!("  No API keys. Create one with `whk keys create <name>`.");
         return Ok(());
     }
     for key in keys.iter() {
-        println!("  {}  {}", bold(&sanitize(&key.name)), dim(&key.key_prefix));
+        crate::outln!("  {}  {}", bold(&sanitize(&key.name)), dim(&key.key_prefix));
         let expires = key
             .expires_at
             .as_deref()
@@ -45,7 +45,7 @@ pub async fn list(client: &ApiClient, json: bool) -> Result<()> {
             .as_deref()
             .map(format_timestamp_str)
             .unwrap_or_else(|| "never".into());
-        println!(
+        crate::outln!(
             "    {}",
             dim(&format!(
                 "id {}  created {}  expires {}  last used {}",
@@ -88,7 +88,7 @@ pub async fn create(client: &ApiClient, name: &str, opts: CreateOptions, json: b
     show_approval(&approval, raw_approval, opts.remote, opts.no_browser, json);
     if opts.no_wait {
         if !json {
-            println!(
+            crate::outln!(
                 "\n  When it is approved, run {} to collect the key.",
                 bold(&format!("whk approvals wait {}", approval.id))
             );
@@ -96,7 +96,7 @@ pub async fn create(client: &ApiClient, name: &str, opts: CreateOptions, json: b
         return Ok(());
     }
     if !json {
-        println!("\n  Waiting for approval...");
+        crate::outln!("\n  Waiting for approval...");
     }
     collect(client, &approval.id, deadline, json).await
 }
@@ -113,9 +113,9 @@ pub async fn revoke(client: &ApiClient, id: &str, yes: bool, json: bool) -> Resu
     )?;
     client.revoke_api_key(id).await?;
     if json {
-        println!("{}", json!({ "revoked": id }));
+        crate::outln!("{}", json!({ "revoked": id }));
     } else {
-        println!("  {} Revoked API key {}", red("✓"), bold(id));
+        crate::outln!("  {} Revoked API key {}", red("✓"), bold(id));
     }
     Ok(())
 }
@@ -137,18 +137,18 @@ pub(crate) fn show_approval(
 ) {
     let remote = remote || remote_session(|name| std::env::var(name).ok());
     if json {
-        println!("{}", json!({ "status": "pending", "approval": raw }));
+        crate::outln!("{}", json!({ "status": "pending", "approval": raw }));
         return;
     }
-    println!("\n  {}", sanitize(&approval.summary));
-    println!("\n  Open this link to approve it:\n");
-    println!("    {}\n", bold(&approval.url));
-    println!(
+    crate::outln!("\n  {}", sanitize(&approval.summary));
+    crate::outln!("\n  Open this link to approve it:\n");
+    crate::outln!("    {}\n", bold(&approval.url));
+    crate::outln!(
         "  The page shows the code {}: approve only if it matches.",
         green(&approval.code)
     );
     if remote {
-        println!(
+        crate::outln!(
             "  {}",
             dim("This looks like another machine: open the link in your own browser.")
         );
@@ -230,9 +230,9 @@ fn print_result(result: &Value, approval: Option<&Value>, json: bool) {
                     .join(", ")
             })
             .unwrap_or_default();
-        println!("\n  {} Spreadsheet chosen:\n", green("Approved."));
-        println!("    {}", bold(text("url")));
-        println!(
+        crate::outln!("\n  {} Spreadsheet chosen:\n", green("Approved."));
+        crate::outln!("    {}", bold(text("url")));
+        crate::outln!(
             "\n  {}",
             dim(&format!(
                 "id {}  connection {}  tabs: {}",
@@ -244,25 +244,25 @@ fn print_result(result: &Value, approval: Option<&Value>, json: bool) {
     } else if let Some(executed) = result.get("executed") {
         crate::cli::billing::print_outcome(result, executed.as_bool() == Some(true));
     } else if result.get("fields").is_some() {
-        println!(
+        crate::outln!(
             "\n  {} AI setup proposed (nothing is saved until you apply it):\n",
             green("Approved.")
         );
-        println!(
+        crate::outln!(
             "{}",
             sanitize(&serde_json::to_string_pretty(result).unwrap_or_default())
         );
     } else if result.get("connectionId").is_some() {
-        println!(
+        crate::outln!(
             "\n  {} Google account {} connected (connection {}).",
             green("Approved."),
             bold(&sanitize(text("email"))),
             text("connectionId")
         );
     } else if result.get("url").is_some() {
-        println!("\n  {} Share link:\n", green("Approved."));
-        println!("    {}\n", bold(text("url")));
-        println!(
+        crate::outln!("\n  {} Share link:\n", green("Approved."));
+        crate::outln!("    {}\n", bold(text("url")));
+        crate::outln!(
             "  {}",
             dim(&format!(
                 "Anyone with the link can read the copy until {}.",
@@ -270,46 +270,46 @@ fn print_result(result: &Value, approval: Option<&Value>, json: bool) {
             ))
         );
     } else if result.get("invitedEmail").is_some() {
-        println!(
+        crate::outln!(
             "\n  {} Invited {} to {}.",
             green("Approved."),
             bold(&sanitize(text("invitedEmail"))),
             bold(&sanitize(text("teamName")))
         );
         match result.get("warning").and_then(Value::as_str) {
-            Some(warning) => println!(
+            Some(warning) => crate::outln!(
                 "  {} {} Tell them to sign up with that address and accept from their Teams page.",
                 red("!"),
                 sanitize(warning)
             ),
-            None => println!(
+            None => crate::outln!(
                 "  {}",
                 dim("They get an email; accepting claims one of the team's seats.")
             ),
         }
     } else if result.get("deleted").is_some() && result.get("teamId").is_some() {
-        println!(
+        crate::outln!(
             "\n  {} Deleted team {}.",
             green("Approved."),
             bold(&sanitize(text("deleted")))
         );
     } else if result.get("removed").is_some() {
-        println!(
+        crate::outln!(
             "\n  {} Removed the domain {}; mail to it is refused now.",
             green("Approved."),
             bold(&sanitize(text("removed")))
         );
     } else if let Some(name) = result.get("name") {
         match name.as_str() {
-            Some(name) => println!(
+            Some(name) => crate::outln!(
                 "\n  {} The display name is now {}.",
                 green("Approved."),
                 bold(&sanitize(name))
             ),
-            None => println!("\n  {} The display name was cleared.", green("Approved.")),
+            None => crate::outln!("\n  {} The display name was cleared.", green("Approved.")),
         }
     } else {
-        println!(
+        crate::outln!(
             "\n  {} {}",
             green("Approved."),
             sanitize(&result.to_string())
@@ -324,7 +324,7 @@ fn print_key(result: &Value, approval: Option<&Value>, json: bool) {
         if let Some(approval) = approval {
             line["approval"] = approval.clone();
         }
-        println!("{line}");
+        crate::outln!("{line}");
         return;
     }
     let key = result.get("key").and_then(Value::as_str).unwrap_or("");
@@ -334,18 +334,18 @@ fn print_key(result: &Value, approval: Option<&Value>, json: bool) {
         .and_then(Value::as_str)
         .map(format_timestamp_str)
         .unwrap_or_default();
-    println!(
+    crate::outln!(
         "\n  {} API key {}",
         green("Approved."),
         bold(&sanitize(name))
     );
-    println!("\n    {}\n", bold(key));
-    println!(
+    crate::outln!("\n    {}\n", bold(key));
+    crate::outln!(
         "  {}",
         dim("This is the only time it is shown: store it now, for example as a CI secret.")
     );
     if !expires.is_empty() {
-        println!("  {}", dim(&format!("It works until {expires}.")));
+        crate::outln!("  {}", dim(&format!("It works until {expires}.")));
     }
 }
 

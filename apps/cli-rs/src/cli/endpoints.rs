@@ -70,21 +70,21 @@ pub async fn create(
     }
 
     if json {
-        println!("{}", serde_json::to_string_pretty(&endpoint.json())?);
+        crate::outln!("{}", serde_json::to_string_pretty(&endpoint.json())?);
     } else {
         let url = client.webhook_url_for(&endpoint.slug);
-        println!(
+        crate::outln!(
             "\n  {} Created endpoint {}",
             green("✓"),
             bold(&endpoint.slug)
         );
-        println!("  {} {}", dim("URL:"), url);
+        crate::outln!("  {} {}", dim("URL:"), url);
         if let Some(ref address) = endpoint.email_address {
-            println!("  {} {}", dim("Email:"), address);
+            crate::outln!("  {} {}", dim("Email:"), address);
         }
-        println!();
+        crate::outln!();
         if signing_configured {
-            println!("  {} Signature verification configured\n", green("✓"));
+            crate::outln!("  {} Signature verification configured\n", green("✓"));
         }
     }
 
@@ -129,19 +129,19 @@ pub async fn list(client: &ApiClient, team: Option<&str>, json: bool) -> Result<
     }
 
     if json {
-        println!("{}", serde_json::to_string_pretty(&list.json())?);
+        crate::outln!("{}", serde_json::to_string_pretty(&list.json())?);
         return Ok(());
     }
 
     let mut all: Vec<_> = list.owned.iter().chain(list.shared.iter()).collect();
     if all.is_empty() {
         match &team {
-            Some(team) => println!(
+            Some(team) => crate::outln!(
                 "  No endpoints tied to team {}. Share one with {}",
                 bold(&team.name),
                 bold("whk teams share <slug> --team <team>")
             ),
-            None => println!(
+            None => crate::outln!(
                 "  No endpoints found. Create one with {}",
                 bold("whk create")
             ),
@@ -161,31 +161,31 @@ pub async fn get(client: &ApiClient, slug: &str, json: bool) -> Result<()> {
     let endpoint = client.get_endpoint(slug).await?;
 
     if json {
-        println!("{}", serde_json::to_string_pretty(&endpoint.json())?);
+        crate::outln!("{}", serde_json::to_string_pretty(&endpoint.json())?);
         return Ok(());
     }
 
     let url = client.webhook_url_for(&endpoint.slug);
-    println!("{}", bold(&endpoint.slug));
-    println!("  {} {}", dim("URL:"), url);
+    crate::outln!("{}", bold(&endpoint.slug));
+    crate::outln!("  {} {}", dim("URL:"), url);
     if let Some(ref address) = endpoint.email_address {
-        println!("  {} {}", dim("Email:"), address);
+        crate::outln!("  {} {}", dim("Email:"), address);
     }
     if let Some(ref name) = endpoint.name {
-        println!("  {} {}", dim("Name:"), name);
+        crate::outln!("  {} {}", dim("Name:"), name);
     }
     if let Some(count) = endpoint.request_count {
-        println!("  {} {}", dim("Requests:"), count);
+        crate::outln!("  {} {}", dim("Requests:"), count);
     }
     if endpoint.is_ephemeral {
-        println!("  {} true", dim("Ephemeral:"));
+        crate::outln!("  {} true", dim("Ephemeral:"));
     }
     if endpoint.is_favorite() {
-        println!("  {} yes", dim("Favourite:"));
+        crate::outln!("  {} yes", dim("Favourite:"));
     }
     if let Some(ref mock) = endpoint.mock_response {
         for line in mock_lines(mock) {
-            println!("{line}");
+            crate::outln!("{line}");
         }
     }
     if !endpoint.shared_with.is_empty() {
@@ -194,7 +194,7 @@ pub async fn get(client: &ApiClient, slug: &str, json: bool) -> Result<()> {
             .iter()
             .map(|t| t.team_name.as_str())
             .collect();
-        println!("  {} {}", dim("Shared with:"), teams.join(", "));
+        crate::outln!("  {} {}", dim("Shared with:"), teams.join(", "));
     }
 
     Ok(())
@@ -287,9 +287,9 @@ pub async fn update_endpoint(
     let endpoint = client.update_endpoint(slug, &req).await?;
 
     if json {
-        println!("{}", serde_json::to_string_pretty(&endpoint.json())?);
+        crate::outln!("{}", serde_json::to_string_pretty(&endpoint.json())?);
     } else {
-        println!("  {} Updated endpoint {}", green("✓"), bold(&endpoint.slug));
+        crate::outln!("  {} Updated endpoint {}", green("✓"), bold(&endpoint.slug));
     }
 
     Ok(())
@@ -306,18 +306,18 @@ pub async fn set_favorite(
     let state = client.set_endpoint_favorite(slug, favorite).await?;
 
     if json {
-        println!(
+        crate::outln!(
             "{}",
             serde_json::json!({ "slug": slug, "favorite": state.favorite })
         );
     } else if state.favorite {
-        println!(
+        crate::outln!(
             "  {} Marked {} as a favourite",
             green("★"),
             bold(&sanitize(slug))
         );
     } else {
-        println!(
+        crate::outln!(
             "  {} Removed {} from your favourites",
             green("✓"),
             bold(&sanitize(slug))
@@ -336,9 +336,9 @@ pub async fn delete(client: &ApiClient, slug: &str, force: bool, json: bool) -> 
     client.delete_endpoint(slug).await?;
 
     if json {
-        println!("{}", serde_json::json!({ "deleted": slug }));
+        crate::outln!("{}", serde_json::json!({ "deleted": slug }));
     } else {
-        println!("  {} Deleted endpoint {}", red("✓"), bold(slug));
+        crate::outln!("  {} Deleted endpoint {}", red("✓"), bold(slug));
     }
 
     Ok(())

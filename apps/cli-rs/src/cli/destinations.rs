@@ -654,7 +654,7 @@ fn add_mailgun_key(body: &mut Map<String, Value>, secrets: &DestinationSecrets) 
 }
 
 fn print_json(answer: &crate::api::client::Fetched<Value>) -> Result<()> {
-    println!("{}", serde_json::to_string_pretty(&answer.json())?);
+    crate::outln!("{}", serde_json::to_string_pretty(&answer.json())?);
     Ok(())
 }
 
@@ -852,11 +852,11 @@ pub async fn list(client: &ApiClient, slug: &str, summary: bool, json: bool) -> 
     }
     let list = answer.value.as_array().cloned().unwrap_or_default();
     if list.is_empty() {
-        println!("  No destinations. Add one with `whk destinations add {slug} --url <url>`.");
+        crate::outln!("  No destinations. Add one with `whk destinations add {slug} --url <url>`.");
         return Ok(());
     }
     for line in table_lines(&list) {
-        println!("{line}");
+        crate::outln!("{line}");
     }
     Ok(())
 }
@@ -867,7 +867,7 @@ pub async fn get(client: &ApiClient, slug: &str, id: &str, json: bool) -> Result
         return print_json(&answer);
     }
     for line in detail_lines(&answer.value) {
-        println!("{line}");
+        crate::outln!("{line}");
     }
     Ok(())
 }
@@ -900,14 +900,14 @@ pub async fn add(
     if json {
         return print_json(&answer);
     }
-    println!(
+    crate::outln!(
         "{} Added destination {} to {}",
         green("✓"),
         bold(text(&answer.value, "id")),
         bold(&sanitize_line(slug))
     );
     for line in detail_lines(&answer.value) {
-        println!("{line}");
+        crate::outln!("{line}");
     }
     Ok(())
 }
@@ -967,13 +967,13 @@ pub async fn update(
     if json {
         return print_json(&answer);
     }
-    println!(
+    crate::outln!(
         "{} Updated destination {}",
         green("✓"),
         bold(text(&answer.value, "id"))
     );
     for line in detail_lines(&answer.value) {
-        println!("{line}");
+        crate::outln!("{line}");
     }
     Ok(())
 }
@@ -990,7 +990,7 @@ pub async fn remove(client: &ApiClient, slug: &str, id: &str, yes: bool, json: b
     if json {
         return print_json(&answer);
     }
-    println!("{} Removed destination {}", red("✓"), bold(id));
+    crate::outln!("{} Removed destination {}", red("✓"), bold(id));
     Ok(())
 }
 
@@ -1000,14 +1000,14 @@ pub async fn reorder(client: &ApiClient, slug: &str, ids: &[String], json: bool)
     if json {
         return print_json(&answer);
     }
-    println!(
+    crate::outln!(
         "{} New order for {}",
         green("✓"),
         bold(&sanitize_line(slug))
     );
     let list = answer.value.as_array().cloned().unwrap_or_default();
     for line in table_lines(&list) {
-        println!("{line}");
+        crate::outln!("{line}");
     }
     Ok(())
 }
@@ -1052,7 +1052,7 @@ pub async fn preview(
         return print_json(&answer);
     }
     for line in preview_lines(&answer.value) {
-        println!("{line}");
+        crate::outln!("{line}");
     }
     Ok(())
 }
@@ -1176,15 +1176,13 @@ pub async fn test(
         .await?;
     // The result goes to stdout either way; a failed delivery then exits
     // non-zero with `delivery_failed` on stderr.
-    // Written without failing on a closed stdout, so a failed delivery still
-    // exits with delivery_failed.
+    // A closed stdout is no failure, so a failed delivery still exits with
+    // delivery_failed; any other failed write (a full disk) still fails.
     if json {
-        let text = format!("{}\n", serde_json::to_string_pretty(&answer.json())?);
-        let _ = std::io::Write::write_all(&mut std::io::stdout().lock(), text.as_bytes());
+        crate::outln!("{}", serde_json::to_string_pretty(&answer.json())?);
     } else {
-        let mut out = std::io::stdout().lock();
         for line in test_lines(&answer.value) {
-            let _ = std::io::Write::write_all(&mut out, format!("{line}\n").as_bytes());
+            crate::outln!("{line}");
         }
     }
     match test_failure(id, &answer.value) {
@@ -1317,7 +1315,7 @@ pub async fn secret(
         return print_json(&answer);
     }
     // Only the secret on stdout, so `$(whk destinations secret ...)` works.
-    println!("{}", text(&answer.value, "secret"));
+    crate::outln!("{}", text(&answer.value, "secret"));
     if rotate {
         crate::errln!(
             "{}",

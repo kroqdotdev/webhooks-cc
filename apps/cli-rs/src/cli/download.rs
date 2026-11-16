@@ -392,7 +392,7 @@ pub async fn run(
     };
     let wrote = write_whole(&path, &answer.body)?;
     if json {
-        println!(
+        crate::outln!(
             "{}",
             serde_json::to_string_pretty(&json!({
                 "path": path,
@@ -411,7 +411,7 @@ pub async fn run(
     // device's reader may be stdout's too.
     let say = |line: String| match wrote {
         Wrote::Device => crate::errln!("{line}"),
-        Wrote::File => println!("{line}"),
+        Wrote::File => crate::outln!("{line}"),
     };
     say(format!(
         "{} Saved {label} ({}) to {}",

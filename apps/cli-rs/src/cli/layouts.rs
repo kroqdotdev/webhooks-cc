@@ -13,7 +13,7 @@ use crate::error::CliError;
 pub async fn templates(client: &ApiClient, slug: &str, json: bool) -> Result<()> {
     let answer = client.layout_templates(slug).await?;
     if json {
-        println!("{}", serde_json::to_string_pretty(&answer.json())?);
+        crate::outln!("{}", serde_json::to_string_pretty(&answer.json())?);
         return Ok(());
     }
     let list = answer
@@ -23,15 +23,15 @@ pub async fn templates(client: &ApiClient, slug: &str, json: bool) -> Result<()>
         .cloned()
         .unwrap_or_default();
     if list.is_empty() {
-        println!("  No ready-made layouts.");
+        crate::outln!("  No ready-made layouts.");
         return Ok(());
     }
     for template in &list {
         for line in template_lines(template) {
-            println!("{line}");
+            crate::outln!("{line}");
         }
     }
-    println!(
+    crate::outln!(
         "\n  {} whk layouts add-template {} <id>",
         dim("Add one:"),
         sanitize(slug)
@@ -78,7 +78,7 @@ pub async fn add_template(
 ) -> Result<()> {
     let answer = client.add_layout_template(slug, template.trim()).await?;
     if json {
-        println!("{}", serde_json::to_string_pretty(&answer.json())?);
+        crate::outln!("{}", serde_json::to_string_pretty(&answer.json())?);
         return Ok(());
     }
     let id = answer
@@ -86,13 +86,13 @@ pub async fn add_template(
         .get("layoutId")
         .and_then(Value::as_str)
         .unwrap_or("");
-    println!(
+    crate::outln!(
         "{} Added layout {} to {}",
         green("✓"),
         bold(&sanitize(id)),
         bold(&sanitize(slug))
     );
-    println!(
+    crate::outln!(
         "{}",
         dim(
             "Emails it matches are parsed from the next one on; it sits after the endpoint's other layouts."
@@ -148,11 +148,11 @@ pub async fn preview(
     let body = preview_body(request, fields)?;
     let answer = client.preview_email_fields(slug, &body).await?;
     if json {
-        println!("{}", serde_json::to_string_pretty(&answer.json())?);
+        crate::outln!("{}", serde_json::to_string_pretty(&answer.json())?);
         return Ok(());
     }
     for line in preview_lines(&answer.value) {
-        println!("{line}");
+        crate::outln!("{line}");
     }
     Ok(())
 }

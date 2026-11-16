@@ -33,13 +33,13 @@ pub async fn login(
     if auth::is_logged_in() {
         let token = auth::load_token()?.unwrap();
         if json {
-            println!(
+            crate::outln!(
                 "{}",
                 serde_json::json!({ "status": "already_logged_in", "email": token.email })
             );
         } else {
-            println!("Already logged in as {}", bold(&token.email));
-            println!("{}", dim("Run `whk auth logout` first to switch accounts."));
+            crate::outln!("Already logged in as {}", bold(&token.email));
+            crate::outln!("{}", dim("Run `whk auth logout` first to switch accounts."));
         }
         return Ok(());
     }
@@ -58,7 +58,7 @@ pub async fn login(
     if json {
         // One line per step (NDJSON), so an agent can show the human the
         // link while this keeps polling.
-        println!(
+        crate::outln!(
             "{}",
             serde_json::json!({
                 "status": "pending",
@@ -75,14 +75,14 @@ pub async fn login(
             })
         );
     } else {
-        println!("\n  Open this link to approve the login:\n");
-        println!("    {}\n", bold(&link));
-        println!(
+        crate::outln!("\n  Open this link to approve the login:\n");
+        crate::outln!("    {}\n", bold(&link));
+        crate::outln!(
             "  The page shows the code {}: approve only if it matches.",
             green(&device.user_code)
         );
         if remote {
-            println!(
+            crate::outln!(
                 "  {}",
                 dim("This looks like another machine: open the link in your own browser.")
             );
@@ -96,7 +96,7 @@ pub async fn login(
     }
 
     if !json {
-        println!("\n  Waiting for approval...");
+        crate::outln!("\n  Waiting for approval...");
     }
 
     // Step 2: Poll until authorized or expired
@@ -125,12 +125,12 @@ pub async fn login(
     client.set_token(claim.api_key);
 
     if json {
-        println!(
+        crate::outln!(
             "{}",
             serde_json::json!({ "status": "success", "email": claim.email })
         );
     } else {
-        println!(
+        crate::outln!(
             "\n  {} Logged in as {}",
             green("Success!"),
             bold(&claim.email)
@@ -144,18 +144,18 @@ pub async fn status(client: &ApiClient, json: bool) -> Result<()> {
     // WHK_AUTH=key: the key in WHK_API_KEY acts, whatever the saved login.
     if matches!(client.auth_source(), AuthSource::EnvKey) {
         if json {
-            println!(
+            crate::outln!(
                 "{}",
                 serde_json::json!({ "logged_in": true, "via": "api_key_env" })
             );
         } else {
-            println!(
+            crate::outln!(
                 "  {} Using the API key in {} ({})",
                 green("●"),
                 bold("WHK_API_KEY"),
                 dim("WHK_AUTH=key")
             );
-            println!(
+            crate::outln!(
                 "  {}",
                 dim("Unset WHK_AUTH to use this machine's login (whk auth login) instead.")
             );
@@ -165,7 +165,7 @@ pub async fn status(client: &ApiClient, json: bool) -> Result<()> {
     match auth::load_token()? {
         Some(token) => {
             if json {
-                println!(
+                crate::outln!(
                     "{}",
                     serde_json::json!({
                         "logged_in": true,
@@ -175,7 +175,7 @@ pub async fn status(client: &ApiClient, json: bool) -> Result<()> {
                     })
                 );
             } else {
-                println!("  {} Logged in as {}", green("●"), bold(&token.email));
+                crate::outln!("  {} Logged in as {}", green("●"), bold(&token.email));
             }
         }
         None => match client.auth_source() {
@@ -188,7 +188,7 @@ pub async fn status(client: &ApiClient, json: bool) -> Result<()> {
                     .and_then(|s| s.info("email").map(String::from));
                 let expires = slot.as_ref().map(|s| s.assertion_expires().to_string());
                 if json {
-                    println!(
+                    crate::outln!(
                         "{}",
                         serde_json::json!({
                             "logged_in": true,
@@ -200,12 +200,12 @@ pub async fn status(client: &ApiClient, json: bool) -> Result<()> {
                         })
                     );
                 } else {
-                    println!(
+                    crate::outln!(
                         "  {} Acting through an agent connection to {}",
                         green("●"),
                         bold(email.as_deref().unwrap_or("an account"))
                     );
-                    println!(
+                    crate::outln!(
                         "  {}",
                         dim(
                             "Not logged in with `whk auth login`; `whk sandbox status` shows the connection."
@@ -216,15 +216,15 @@ pub async fn status(client: &ApiClient, json: bool) -> Result<()> {
             _ => {
                 let hint = crate::api::ignored_key_hint();
                 if json {
-                    println!(
+                    crate::outln!(
                         "{}",
                         serde_json::json!({ "logged_in": false, "hint": hint })
                     );
                 } else {
-                    println!("  {} Not logged in", red("●"));
+                    crate::outln!("  {} Not logged in", red("●"));
                     match hint {
-                        Some(hint) => println!("  {}", dim(hint)),
-                        None => println!("  Run {} to authenticate.", bold("whk auth login")),
+                        Some(hint) => crate::outln!("  {}", dim(hint)),
+                        None => crate::outln!("  Run {} to authenticate.", bold("whk auth login")),
                     }
                 }
             }
@@ -236,16 +236,16 @@ pub async fn status(client: &ApiClient, json: bool) -> Result<()> {
 pub async fn logout(client: &ApiClient, json: bool) -> Result<()> {
     auth::clear_token()?;
     if json {
-        println!("{}", serde_json::json!({ "status": "logged_out" }));
+        crate::outln!("{}", serde_json::json!({ "status": "logged_out" }));
     } else {
-        println!("  Logged out.");
+        crate::outln!("  Logged out.");
         // The commands would go on acting through a saved agent connection.
         if CredentialStore::locate(&client.base_url)
             .load()
             .claimed
             .is_some()
         {
-            println!(
+            crate::outln!(
                 "  {}",
                 dim(
                     "An agent's account connection is still saved; `whk sandbox forget --claimed` removes it."

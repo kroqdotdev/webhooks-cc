@@ -71,7 +71,7 @@ pub fn mail_ingest(outcome: &'static str) {
 /// Record one live relay outcome (`whk tunnel --live`): `answered`,
 /// `offline`, `timeout`, `unreachable` or `busy` as the edge marked it, or
 /// `receiver_busy`, `edge_unreachable`, `edge_timeout`, `refused`,
-/// `body_failed`, `record_failed`.
+/// `body_failed`, `record_failed`, `relay_task_failed`.
 pub fn live(outcome: &'static str) {
     add("live", outcome);
 }

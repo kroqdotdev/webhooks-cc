@@ -12,15 +12,15 @@ use crate::util::format::format_bytes;
 
 /// Said once the server has opened the stream, so a slug that does not
 /// exist (or is not yours) fails without saying it is listening first.
-fn print_banner(client: &ApiClient, slug: &str) {
+fn print_banner(client: &ApiClient, slug: &str) -> std::io::Result<()> {
     let url = client.webhook_url_for(slug);
-    println!(
+    crate::try_outln!(
         "\n  {} Listening on {}",
         green("●"),
         bold(&sanitize_line(slug))
-    );
-    println!("  {} {}", dim("Webhook URL:"), sanitize_line(&url));
-    println!("  {}\n", dim("Press Ctrl+C to stop."));
+    )?;
+    crate::try_outln!("  {} {}", dim("Webhook URL:"), sanitize_line(&url))?;
+    crate::try_outln!("  {}\n", dim("Press Ctrl+C to stop."))
 }
 
 pub async fn run(client: &ApiClient, slug: &str, json: bool) -> Result<()> {
@@ -36,6 +36,11 @@ pub async fn run(client: &ApiClient, slug: &str, json: bool) -> Result<()> {
 
     let mut reconnecting = false;
     let mut interrupted = false;
+    // A reader that went away (`whk listen | head -1`) stops the stream as
+    // Ctrl+C does: nobody reads what comes next. Output goes through
+    // `try_outln!`, so a failed write ends the loop instead of panicking, and
+    // main reads the error (a closed stdout is a quiet exit 0).
+    let mut write_error: Option<std::io::Error> = None;
 
     // Process events until Ctrl+C, endpoint deletion, or a terminal stream error
     loop {
@@ -44,21 +49,24 @@ pub async fn run(client: &ApiClient, slug: &str, json: bool) -> Result<()> {
                 let Some(event) = event else { break };
                 if !announced && matches!(event, SseEvent::Connected | SseEvent::Request(_)) {
                     announced = true;
-                    print_banner(client, slug);
+                    write_error = print_banner(client, slug).err();
                 }
                 match event {
                     SseEvent::Request(req) => {
-                        if json {
-                            println!("{}", serde_json::to_string(&req.json()).unwrap_or_default());
+                        let written = if json {
+                            crate::try_outln!("{}", serde_json::to_string(&req.json()).unwrap_or_default())
                         } else {
-                            println!("{}", listen_line(&req));
+                            crate::try_outln!("{}", listen_line(&req))
+                        };
+                        if let Err(error) = written {
+                            write_error = Some(error);
                         }
                     }
                     SseEvent::EndpointDeleted => {
                         if json {
-                            println!("{}", serde_json::json!({ "event": "endpoint_deleted" }));
+                            crate::outln!("{}", serde_json::json!({ "event": "endpoint_deleted" }));
                         } else {
-                            println!("\n  {} Endpoint was deleted.", red("●"));
+                            crate::outln!("\n  {} Endpoint was deleted.", red("●"));
                         }
                         break;
                     }
@@ -76,6 +84,9 @@ pub async fn run(client: &ApiClient, slug: &str, json: bool) -> Result<()> {
                     // stream layer reconnects transparently.
                     SseEvent::Timeout => {}
                 }
+                if write_error.is_some() {
+                    break;
+                }
             }
             _ = tokio::signal::ctrl_c() => {
                 interrupted = true;
@@ -86,6 +97,10 @@ pub async fn run(client: &ApiClient, slug: &str, json: bool) -> Result<()> {
 
     // Make any in-flight send in the stream task fail fast, then collect its result.
     drop(rx);
+    if let Some(error) = write_error {
+        stream_handle.abort();
+        return Err(error.into());
+    }
     join_stream(stream_handle, interrupted).await
 }
 

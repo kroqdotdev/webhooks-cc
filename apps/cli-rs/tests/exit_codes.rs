@@ -10,6 +10,7 @@ use axum::Router;
 use axum::http::StatusCode;
 use axum::response::{Html, IntoResponse};
 use axum::routing::get;
+use futures::StreamExt as _;
 use serde_json::{Value, json};
 use std::path::PathBuf;
 use std::process::Stdio;
@@ -66,11 +67,36 @@ async fn server() -> String {
         )
         .route(
             "/api/stream/{slug}",
-            get(|| async {
-                (
-                    StatusCode::NOT_FOUND,
-                    Json(json!({ "error": "Endpoint not found" })),
+            get(|axum::extract::Path(slug): axum::extract::Path<String>| async move {
+                if slug != "live" {
+                    return (
+                        StatusCode::NOT_FOUND,
+                        Json(json!({ "error": "Endpoint not found" })),
+                    )
+                        .into_response();
+                }
+                // One capture, then a stream that stays open, as a quiet
+                // endpoint's does.
+                let frames = [
+                    "event: connected\ndata: {\"slug\":\"live\"}\n\n".to_string(),
+                    format!(
+                        "event: request\ndata: {}\n\n",
+                        json!({
+                            "_id": "r1", "endpointId": "ep", "method": "POST", "path": "/",
+                            "headers": {}, "queryParams": {}, "ip": "203.0.113.1",
+                            "size": 0, "receivedAt": 1
+                        })
+                    ),
+                ];
+                let chunks = futures::stream::iter(
+                    frames.map(|f| Ok::<_, std::convert::Infallible>(axum::body::Bytes::from(f))),
                 )
+                .chain(futures::stream::pending());
+                (
+                    [("content-type", "text/event-stream")],
+                    axum::body::Body::from_stream(chunks),
+                )
+                    .into_response()
             }),
         )
         .route(
@@ -330,6 +356,9 @@ async fn a_closed_pipe_is_no_failure() {
         &["api", "big"],
         &["completions", "bash"],
         &["--json", "list"],
+        // A stream that would run until stopped: the closed pipe stops it.
+        &["listen", "live"],
+        &["--json", "listen", "live"],
     ] {
         let mut child = home
             .command(&base, args)
@@ -339,7 +368,11 @@ async fn a_closed_pipe_is_no_failure() {
             .unwrap();
         // Close the reading end before whk writes anything.
         drop(child.stdout.take());
-        let output = child.wait_with_output().await.unwrap();
+        let output =
+            tokio::time::timeout(std::time::Duration::from_secs(20), child.wait_with_output())
+                .await
+                .unwrap_or_else(|_| panic!("whk {args:?} kept running with nobody reading"))
+                .unwrap();
         let stderr = String::from_utf8_lossy(&output.stderr);
         assert_eq!(output.status.code(), Some(0), "whk {args:?}: {stderr}");
         assert!(!stderr.contains("panicked"), "whk {args:?}: {stderr}");

@@ -32,6 +32,10 @@
 //!   request without the secret.)
 //! - `answered`: on the app's own answer, whatever its status, so the
 //!   receiver can tell the app's 503 from the edge's.
+//!
+//! The CLI's line for each capture ([`EdgeMessage::Request`]) carries the
+//! same word as its `outcome` (all but `offline`, which has no session to
+//! tell), so `whk tunnel --live` can say why a sender got a 503.
 
 use std::convert::Infallible;
 use std::net::SocketAddr;
@@ -273,9 +277,9 @@ fn said(status: StatusCode, live: &'static str, message: &str) -> Response<Body>
 /// answer that is not passed back, and the CLI told once why.
 fn debugger_refused(
     session: &crate::registry::Session,
-    unreachable: &impl Fn(&crate::registry::Session, u16),
+    stood_in: &impl Fn(&crate::registry::Session, &'static str),
 ) -> Response<Body> {
-    unreachable(session, FAILED.as_u16());
+    stood_in(session, "refused");
     if session.limits.should_warn_debugger() {
         session.notify(&EdgeMessage::Notice {
             text: crate::debugger::LIVE_NOTICE.into(),
@@ -319,19 +323,23 @@ async fn handle(state: State, req: Request<Incoming>) -> Response<Body> {
     // The captured request's id, from the receiver, so the CLI knows which
     // captures this relay carried (and forwards none of them twice).
     let request_id = request_id_of(req.headers());
-    let unreachable = |session: &crate::registry::Session, status: u16| {
+    // The CLI's line for a capture the edge answered in the app's place
+    // (always [`FAILED`]), with the word the receiver gets in
+    // [`LIVE_HEADER`], so `whk tunnel --live` can say why.
+    let stood_in = |session: &crate::registry::Session, outcome: &'static str| {
         session.notify_soon(&EdgeMessage::Request {
             method: method.clone(),
             path: rest.clone(),
-            status,
+            status: FAILED.as_u16(),
             ms: started.elapsed().as_millis() as u64,
             request_id: request_id.clone(),
+            outcome: Some(outcome.into()),
         });
     };
     let Some(_hold) = session.door.live_streams.enter(LIVE_STREAMS) else {
         // The sender is told to retry; the CLI hears the capture was this
         // relay's, so it does not forward it as well.
-        unreachable(&session, FAILED.as_u16());
+        stood_in(&session, "busy");
         return said(
             FAILED,
             "busy",
@@ -343,19 +351,19 @@ async fn handle(state: State, req: Request<Incoming>) -> Response<Body> {
     // capture is kept; only the app never sees it.
     let target: http::Uri = rest.parse().unwrap_or_else(|_| http::Uri::from_static("/"));
     if crate::debugger::asks_for_debugger(target.query()) {
-        return debugger_refused(&session, &unreachable);
+        return debugger_refused(&session, &stood_in);
     }
     // Where Werkzeug's console page would be.
     let console = crate::debugger::may_be_console(target.path());
     let Ok(stream) = session.opener.open().await else {
-        unreachable(&session, FAILED.as_u16());
+        stood_in(&session, "unreachable");
         return said(FAILED, "unreachable", "The live tunnel dropped.");
     };
     let Ok((mut sender, connection)) = hyper::client::conn::http1::Builder::new()
         .handshake(TokioIo::new(stream))
         .await
     else {
-        unreachable(&session, FAILED.as_u16());
+        stood_in(&session, "unreachable");
         return said(FAILED, "unreachable", "The live tunnel dropped.");
     };
     tokio::spawn(async move {
@@ -392,7 +400,7 @@ async fn handle(state: State, req: Request<Incoming>) -> Response<Body> {
     {
         Ok(Ok(response)) => response,
         Ok(Err(_)) => {
-            unreachable(&session, FAILED.as_u16());
+            stood_in(&session, "unreachable");
             return said(
                 FAILED,
                 "unreachable",
@@ -400,13 +408,13 @@ async fn handle(state: State, req: Request<Incoming>) -> Response<Body> {
             );
         }
         Err(_) => {
-            unreachable(&session, FAILED.as_u16());
+            stood_in(&session, "timeout");
             return said(FAILED, "timeout", "The app did not answer in time.");
         }
     };
     let status = response.status();
     if response.headers().contains_key(HEADER_NOTHING_LISTENING) {
-        unreachable(&session, FAILED.as_u16());
+        stood_in(&session, "unreachable");
         return said(
             FAILED,
             "unreachable",
@@ -421,7 +429,7 @@ async fn handle(state: State, req: Request<Incoming>) -> Response<Body> {
     // short is read whole, then passed on if it is the app's.
     let body: Body = if console && crate::debugger::could_be_console_page(status, &parts.headers) {
         let Ok(page) = body.collect().await.map(|b| b.to_bytes()) else {
-            unreachable(&session, FAILED.as_u16());
+            stood_in(&session, "unreachable");
             return said(
                 FAILED,
                 "unreachable",
@@ -429,7 +437,7 @@ async fn handle(state: State, req: Request<Incoming>) -> Response<Body> {
             );
         };
         if crate::debugger::is_console_page(&page) {
-            return debugger_refused(&session, &unreachable);
+            return debugger_refused(&session, &stood_in);
         }
         pages::full(page)
     } else {
@@ -441,7 +449,7 @@ async fn handle(state: State, req: Request<Incoming>) -> Response<Body> {
     let pass = match check(status, &parts.headers) {
         Ok(pass) => pass,
         Err(refusal) => {
-            unreachable(&session, FAILED.as_u16());
+            stood_in(&session, "refused");
             if session.limits.should_warn_blocked(Instant::now()) {
                 session.notify(&EdgeMessage::Notice {
                 text: format!(
@@ -461,6 +469,7 @@ async fn handle(state: State, req: Request<Incoming>) -> Response<Body> {
         status: status.as_u16(),
         ms: started.elapsed().as_millis() as u64,
         request_id: request_id.clone(),
+        outcome: Some("answered".into()),
     });
     parts
         .headers
@@ -1021,6 +1030,117 @@ mod tests {
         assert_eq!(busy.headers()["retry-after"], "5");
         drop(live);
         assert_eq!(send().await.unwrap().status(), 200);
+    }
+
+    /// A live session on `port`, as [`live_session`], with the CLI's end of
+    /// the text messages to read.
+    async fn heard_session(
+        state: &State,
+        endpoint: &str,
+        port: u16,
+    ) -> WebSocketStream<tokio::io::DuplexStream> {
+        let (edge_io, cli_io) = tokio::io::duplex(1 << 20);
+        let (opener, inbound, _task) = mux::spawn(edge_io, yamux::Mode::Client);
+        drop(inbound);
+        let (_cli_opener, mut streams, _cli_task) = mux::spawn(cli_io, yamux::Mode::Server);
+        tokio::spawn(async move {
+            while let Some(mut stream) = streams.recv().await {
+                tokio::spawn(async move {
+                    if let Ok(mut local) = tokio::net::TcpStream::connect(("127.0.0.1", port)).await
+                    {
+                        let _ = tokio::io::copy_bidirectional(&mut stream, &mut local).await;
+                    }
+                });
+            }
+        });
+        let (text_io, cli_text) = tokio::io::duplex(1 << 16);
+        let socket = WebSocketStream::from_raw_socket(text_io, Role::Server, None).await;
+        let (_bytes, text) = ws::split(socket);
+        std::mem::forget(_bytes);
+        let session = Arc::new(Session::new(
+            Opening {
+                share_id: format!("share-{endpoint}"),
+                user_id: "user-1".into(),
+                name: "acme-hooks".into(),
+                port,
+                endpoint_id: Some(endpoint.into()),
+                notice: false,
+                gate: None,
+                run: format!("run-{endpoint}"),
+            },
+            opener,
+            text.sender(),
+            state.registry.account("user-1"),
+        ));
+        std::mem::forget(text);
+        state.registry.insert(session);
+        WebSocketStream::from_raw_socket(cli_text, Role::Client, None).await
+    }
+
+    /// The next request line the CLI hears: its status and outcome.
+    async fn next_line(
+        cli: &mut WebSocketStream<tokio::io::DuplexStream>,
+    ) -> (u16, Option<String>) {
+        use futures::StreamExt;
+        tokio::time::timeout(Duration::from_secs(5), async {
+            while let Some(Ok(message)) = cli.next().await {
+                if let Ok(text) = message.into_text()
+                    && let Ok(EdgeMessage::Request {
+                        status, outcome, ..
+                    }) = serde_json::from_str::<EdgeMessage>(&text)
+                {
+                    return (status, outcome);
+                }
+            }
+            panic!("the session ended without a request line");
+        })
+        .await
+        .expect("no request line within 5 s")
+    }
+
+    #[tokio::test]
+    async fn the_cli_hears_why_the_edge_answered_in_the_apps_place() {
+        let state = state();
+        let port = app(|req: Request<Incoming>| async move {
+            if req.uri().path() == "/slow" {
+                tokio::time::sleep(Duration::from_secs(30)).await;
+            }
+            Response::new(Full::new(Bytes::from_static(b"{}")))
+        })
+        .await;
+        let mut cli = heard_session(&state, "ep-heard", port).await;
+        // Nothing listens on this one: bound, then let go.
+        let closed = TcpListener::bind("127.0.0.1:0")
+            .await
+            .unwrap()
+            .local_addr()
+            .unwrap()
+            .port();
+        let mut cli_closed = heard_session(&state, "ep-closed", closed).await;
+        let base = relay(&state).await;
+        let client = reqwest::Client::new();
+        let post = |path: &str| {
+            client
+                .post(format!("{base}/v1/live/{path}"))
+                .header(AUTH_HEADER, "s")
+                .header(header::CONTENT_TYPE, "application/json")
+                .send()
+        };
+
+        let answered = post("ep-heard/hooks").await.unwrap();
+        assert_eq!(answered.status(), 200);
+        assert_eq!(next_line(&mut cli).await, (200, Some("answered".into())));
+
+        let slow = post("ep-heard/slow").await.unwrap();
+        assert_eq!(slow.headers()[LIVE_HEADER], "timeout");
+        assert_eq!(next_line(&mut cli).await, (503, Some("timeout".into())));
+
+        let nobody = post("ep-closed/hooks").await.unwrap();
+        assert_eq!(nobody.headers()[LIVE_HEADER], "unreachable");
+        assert_eq!(
+            next_line(&mut cli_closed).await,
+            (503, Some("unreachable".into()))
+        );
     }
 
     #[tokio::test]

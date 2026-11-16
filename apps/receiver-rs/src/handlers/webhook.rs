@@ -1030,6 +1030,9 @@ async fn handle_webhook_inner(
                         // does not stop the row getting the app's answer.
                         let pool = state.pool.clone();
                         let request_id = capture.request_id.clone();
+                        // For a relay task that fails before it records.
+                        let failed_record = (state.pool.clone(), request_id.clone());
+                        let relay_started = std::time::Instant::now();
                         let relayed = super::live::spawn_relay(
                             live.clone(),
                             super::live::OwnedLiveRequest {
@@ -1057,9 +1060,15 @@ async fn handle_webhook_inner(
                             Ok(None) => {}
                             Err(e) => {
                                 tracing::error!(error = %e, "live relay task failed");
-                                // A 503 with the reason, as every live stand-in:
-                                // Cloudflare replaces a 502 with its own page.
-                                return crate::handlers::live::relay_failed_response();
+                                // A 503 with the reason, as every live stand-in
+                                // (Cloudflare replaces a 502 with its own page),
+                                // recorded on the row, since the task never did.
+                                let (response, record) = super::live::relay_failed(relay_started);
+                                let (pool, request_id) = failed_record;
+                                if let Some(request_id) = request_id {
+                                    super::live::record(&pool, &request_id, record);
+                                }
+                                return response;
                             }
                         }
                     }

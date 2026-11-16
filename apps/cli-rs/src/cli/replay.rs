@@ -89,7 +89,7 @@ pub async fn run(client: &ApiClient, request_id: &str, target_url: &str, json: b
     let body = resp.text().await.unwrap_or_default();
 
     if json {
-        println!(
+        crate::outln!(
             "{}",
             serde_json::json!({
                 "url": url,
@@ -107,7 +107,7 @@ pub async fn run(client: &ApiClient, request_id: &str, target_url: &str, json: b
         } else {
             red(&status.to_string())
         };
-        println!(
+        crate::outln!(
             "  {} Replayed {} {} -> {} ({:.0?})",
             green("✓"),
             bold(&sanitize_line(&req.method)),
@@ -116,7 +116,7 @@ pub async fn run(client: &ApiClient, request_id: &str, target_url: &str, json: b
             duration,
         );
         if !body.is_empty() {
-            println!(
+            crate::outln!(
                 "\n{}",
                 dim(&sanitize(&body.chars().take(500).collect::<String>()))
             );

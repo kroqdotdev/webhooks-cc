@@ -181,3 +181,40 @@ async fn help_says_wait_with_json_prints_ndjson() {
     );
     assert!(stdout.contains("and one when it settles"), "{stdout}");
 }
+
+/// A reader that goes away after the link is printed (`| head -1`) never
+/// turns a wait that fails into a success: the progress lines are dropped
+/// quietly and the wait's own status decides how whk ends.
+#[tokio::test]
+async fn a_closed_stdout_keeps_the_failed_wait_status() {
+    let base = server(vec!["open"], Duration::ZERO).await;
+    let home = Home::new();
+    for json in [false, true] {
+        let mut args = vec![
+            "billing",
+            "checkout",
+            "plan",
+            "--plan",
+            "pro",
+            "--wait",
+            "--timeout",
+            "1s",
+        ];
+        if json {
+            args.push("--json");
+        }
+        let mut child = home
+            .command(&base, &args)
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn()
+            .unwrap();
+        // Close the reading end before whk writes anything.
+        drop(child.stdout.take());
+        let output = child.wait_with_output().await.unwrap();
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        // 8 is `timeout` in the exit status table.
+        assert_eq!(output.status.code(), Some(8), "json {json}: {stderr}");
+        assert!(!stderr.contains("panicked"), "json {json}: {stderr}");
+    }
+}

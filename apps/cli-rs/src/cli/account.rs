@@ -47,7 +47,7 @@ pub(crate) async fn ask(
     let deadline = deadline(&opts.timeout)?;
     let Some(raw) = answer.get("approval").cloned() else {
         if json {
-            println!("{}", json!({ "status": "completed", "result": answer }));
+            crate::outln!("{}", json!({ "status": "completed", "result": answer }));
         } else {
             done(&answer);
         }
@@ -57,7 +57,7 @@ pub(crate) async fn ask(
     show_approval(&approval, &raw, opts.remote, opts.no_browser, json);
     if opts.no_wait {
         if !json {
-            println!(
+            crate::outln!(
                 "\n  When it is approved, run {} to see the result.",
                 bold(&format!("whk approvals wait {}", approval.id))
             );
@@ -65,7 +65,7 @@ pub(crate) async fn ask(
         return Ok(());
     }
     if !json {
-        println!("\n  Waiting for approval...");
+        crate::outln!("\n  Waiting for approval...");
     }
     collect(client, &approval.id, deadline, json).await
 }
@@ -85,7 +85,7 @@ pub(crate) fn when(value: &Value, field: &str) -> String {
 }
 
 pub(crate) fn print_json(value: &Value) -> Result<()> {
-    println!("{}", serde_json::to_string_pretty(value)?);
+    crate::outln!("{}", serde_json::to_string_pretty(value)?);
     Ok(())
 }
 
@@ -100,13 +100,13 @@ pub async fn rename(
     let answer = client.rename_account(name).await?;
     ask(client, answer, opts, json, |done| match done.get("name") {
         Some(Value::String(name)) => {
-            println!(
+            crate::outln!(
                 "  {} The display name is now {}",
                 green("✓"),
                 bold(&sanitize(name))
             )
         }
-        _ => println!("  {} The display name was cleared", green("✓")),
+        _ => crate::outln!("  {} The display name was cleared", green("✓")),
     })
     .await
 }
@@ -120,7 +120,7 @@ pub async fn agents_list(client: &ApiClient, json: bool) -> Result<()> {
     }
     let list = agents.as_array().cloned().unwrap_or_default();
     if list.is_empty() {
-        println!("  No connected agents.");
+        crate::outln!("  No connected agents.");
         return Ok(());
     }
     for agent in &list {
@@ -128,8 +128,8 @@ pub async fn agents_list(client: &ApiClient, json: bool) -> Result<()> {
             .get("clientName")
             .and_then(Value::as_str)
             .unwrap_or("Unnamed agent");
-        println!("  {}  {}", bold(&sanitize(name)), dim(text(agent, "kind")));
-        println!(
+        crate::outln!("  {}  {}", bold(&sanitize(name)), dim(text(agent, "kind")));
+        crate::outln!(
             "    {}",
             dim(&format!(
                 "id {}  connected {}  last used {}",
@@ -149,9 +149,9 @@ pub async fn agents_disconnect(client: &ApiClient, id: &str, yes: bool, json: bo
     )?;
     client.disconnect_agent(id).await?;
     if json {
-        println!("{}", json!({ "disconnected": id }));
+        crate::outln!("{}", json!({ "disconnected": id }));
     } else {
-        println!("  {} Disconnected agent {}", red("✓"), bold(id));
+        crate::outln!("  {} Disconnected agent {}", red("✓"), bold(id));
     }
     Ok(())
 }
@@ -169,14 +169,14 @@ pub async fn share_links_list(
     }
     let list = links.as_array().cloned().unwrap_or_default();
     if list.is_empty() {
-        println!("  No live share links.");
+        crate::outln!("  No live share links.");
         return Ok(());
     }
     for link in &list {
         let url = format!("{}/s/{}", client.base_url, text(link, "token"));
         if link.get("method").is_some() {
             let slug = text(link, "endpointSlug");
-            println!(
+            crate::outln!(
                 "  {} {}  {}",
                 bold(text(link, "method")),
                 sanitize(text(link, "path")),
@@ -187,8 +187,8 @@ pub async fn share_links_list(
                 })
             );
         }
-        println!("    {}", url);
-        println!(
+        crate::outln!("    {}", url);
+        crate::outln!(
             "    {}",
             dim(&format!(
                 "id {}  expires {}",
@@ -214,8 +214,8 @@ pub async fn share_links_create(
         .await?;
     let base = client.base_url.clone();
     ask(client, answer, opts, json, move |done| {
-        println!("  {} Share link:", green("✓"));
-        println!("    {}/s/{}", base, text(done, "token"));
+        crate::outln!("  {} Share link:", green("✓"));
+        crate::outln!("    {}/s/{}", base, text(done, "token"));
     })
     .await
 }
@@ -227,9 +227,9 @@ pub async fn share_links_revoke(client: &ApiClient, id: &str, yes: bool, json: b
     )?;
     client.revoke_share_link(id).await?;
     if json {
-        println!("{}", json!({ "revoked": id }));
+        crate::outln!("{}", json!({ "revoked": id }));
     } else {
-        println!("  {} Revoked share link {}", red("✓"), bold(id));
+        crate::outln!("  {} Revoked share link {}", red("✓"), bold(id));
     }
     Ok(())
 }
@@ -242,17 +242,17 @@ fn print_domain(domain: &Value) {
         .get("active")
         .and_then(Value::as_bool)
         .unwrap_or(false);
-    println!(
+    crate::outln!(
         "  {}  {}{}",
         bold(&sanitize(text(domain, "domain"))),
         status,
         if active { "" } else { " (not receiving mail)" }
     );
-    println!("    {}", dim(&format!("id {}", text(domain, "id"))));
+    crate::outln!("    {}", dim(&format!("id {}", text(domain, "id"))));
     if let Some(records) = domain.get("records") {
         for kind in ["txt", "mx"] {
             if let Some(record) = records.get(kind) {
-                println!(
+                crate::outln!(
                     "    {}",
                     dim(&format!(
                         "{} {}  {}",
@@ -270,7 +270,7 @@ fn print_domain(domain: &Value) {
         .cloned()
         .unwrap_or_default();
     for route in &routes {
-        println!(
+        crate::outln!(
             "    {}",
             dim(&format!(
                 "{}@ -> endpoint {}",
@@ -280,7 +280,7 @@ fn print_domain(domain: &Value) {
         );
     }
     if let Some(Value::String(id)) = domain.get("catchAllEndpointId") {
-        println!("    {}", dim(&format!("everything else -> endpoint {id}")));
+        crate::outln!("    {}", dim(&format!("everything else -> endpoint {id}")));
     }
 }
 
@@ -295,7 +295,7 @@ pub async fn domains_list(client: &ApiClient, team: Option<&str>, json: bool) ->
         .cloned()
         .unwrap_or_default();
     if list.is_empty() {
-        println!("  No custom domains. Add one with `whk domains add <domain>`.");
+        crate::outln!("  No custom domains. Add one with `whk domains add <domain>`.");
     }
     for domain in &list {
         print_domain(domain);
@@ -314,7 +314,7 @@ pub async fn domains_add(
         return print_json(&answer);
     }
     let added = answer.get("domain").cloned().unwrap_or(Value::Null);
-    println!(
+    crate::outln!(
         "  {} Added. Publish these DNS records, then run `whk domains verify {}`:",
         green("✓"),
         text(&added, "id")
@@ -341,7 +341,7 @@ pub async fn domains_verify(
             .unwrap_or(false)
     };
     let mark = |ok: bool| if ok { green("found") } else { red("missing") };
-    println!("  TXT {}  MX {}", mark(found("txt")), mark(found("mx")));
+    crate::outln!("  TXT {}  MX {}", mark(found("txt")), mark(found("mx")));
     if let Some(domain) = answer.get("domain") {
         print_domain(domain);
     }
@@ -418,7 +418,7 @@ pub async fn domains_route(
     if json {
         return print_json(&answer);
     }
-    println!("  {} Routing saved", green("✓"));
+    crate::outln!("  {} Routing saved", green("✓"));
     if let Some(domain) = answer.get("domain") {
         print_domain(domain);
     }
@@ -435,7 +435,7 @@ pub async fn domains_remove(
     let answer = client.remove_domain(id, team).await?;
     let id = id.to_string();
     ask(client, answer, opts, json, move |_| {
-        println!("  {} Removed domain {}", red("✓"), bold(&id));
+        crate::outln!("  {} Removed domain {}", red("✓"), bold(&id));
     })
     .await
 }

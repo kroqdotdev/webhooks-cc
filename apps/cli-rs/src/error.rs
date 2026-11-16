@@ -401,13 +401,12 @@ pub fn is_broken_pipe_panic(message: &str) -> bool {
     // stdout only: notes on stderr go through errln!, which never panics, so
     // a stderr panic is a bug, never a reason to call a failure a success.
     let printing = message.starts_with("failed printing to stdout");
-    // EPIPE's text on Unix; ERROR_BROKEN_PIPE (109) and ERROR_NO_DATA (232)
-    // on Windows.
-    printing
-        && (message.contains("Broken pipe")
-            || message.contains("os error 32)")
-            || message.contains("os error 109)")
-            || message.contains("os error 232)"))
+    // EPIPE (32) on Unix; ERROR_BROKEN_PIPE (109) and ERROR_NO_DATA (232)
+    // on Windows, where 32 is a sharing violation, never a closed pipe.
+    let os_pipe = (cfg!(unix) && message.contains("os error 32)"))
+        || message.contains("os error 109)")
+        || message.contains("os error 232)");
+    printing && (message.contains("Broken pipe") || os_pipe)
 }
 
 /// The JSON a failed command writes to stderr under `--json`.

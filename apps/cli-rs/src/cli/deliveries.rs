@@ -16,7 +16,7 @@ fn text<'a>(value: &'a Value, field: &str) -> &'a str {
 }
 
 fn print_json(answer: &crate::api::client::Fetched<Value>) -> Result<()> {
-    println!("{}", serde_json::to_string_pretty(&answer.json())?);
+    crate::outln!("{}", serde_json::to_string_pretty(&answer.json())?);
     Ok(())
 }
 
@@ -205,11 +205,11 @@ pub async fn list(
         }
         let list = answer.value.as_array().cloned().unwrap_or_default();
         if list.is_empty() {
-            println!("  No deliveries of this request.");
+            crate::outln!("  No deliveries of this request.");
             return Ok(());
         }
         for line in request_lines(&list) {
-            println!("{line}");
+            crate::outln!("{line}");
         }
         return Ok(());
     }
@@ -220,14 +220,14 @@ pub async fn list(
     }
     let list = answer.value.as_array().cloned().unwrap_or_default();
     if list.is_empty() {
-        println!("  No deliveries.");
+        crate::outln!("  No deliveries.");
         return Ok(());
     }
     for line in log_lines(&list) {
-        println!("{line}");
+        crate::outln!("{line}");
     }
     if let Some(next) = older_command(slug, query, &list) {
-        println!("\n  {} {next}", dim("Older:"));
+        crate::outln!("\n  {} {next}", dim("Older:"));
     }
     Ok(())
 }
@@ -260,7 +260,7 @@ pub async fn summary(client: &ApiClient, slug: &str, json: bool) -> Result<()> {
         return print_json(&answer);
     }
     for line in summary_lines(&answer.value) {
-        println!("{line}");
+        crate::outln!("{line}");
     }
     Ok(())
 }
@@ -314,13 +314,13 @@ pub async fn redeliver(
     if json {
         return print_json(&answer);
     }
-    println!(
+    crate::outln!(
         "{} Queued {} {}",
         green("✓"),
         bold(request_id),
         dim(&format!("(delivery {})", text(&answer.value, "id")))
     );
-    println!(
+    crate::outln!(
         "  {}",
         dim(
             "It goes with each destination's current settings; `whk deliveries ls --request <id>` shows how it went."
@@ -368,7 +368,7 @@ pub async fn redeliver_failed(
         .get("queued")
         .and_then(Value::as_u64)
         .unwrap_or(0);
-    println!(
+    crate::outln!(
         "{} Queued {queued} deliver{} again",
         green("✓"),
         if queued == 1 { "y" } else { "ies" }

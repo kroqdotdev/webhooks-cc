@@ -25,7 +25,7 @@ A plain [`whk tunnel`](/docs/cli/tunnel) captures each webhook, answers the send
 whk tunnel 3000 --live
 ```
 
-The tunnel creates an endpoint (or uses `--endpoint <slug>`), prints its URL, and says **Live relay connected** once the sender's requests can reach your app. Each relayed request is listed with your app's status and how long it took.
+The tunnel creates an endpoint (or uses `--endpoint <slug>`), prints its URL, and says **Live relay connected** once the sender's requests can reach your app. Each relayed request is listed with your app's status and how long it took, and when the sender got a `503` in your app's place, why: the app did not answer in time, nothing answered on the port, the tunnel was busy, or the app's answer was not passed back.
 
 Every request is still captured first, so the dashboard, CLI, SDKs and MCP server show it as usual, now with **your app's response** next to it.
 
@@ -64,7 +64,7 @@ Every `503` that stands in for your app carries the reason as JSON, so the sende
 { "error": "Nothing is running on port 3000 on the computer running whk." }
 ```
 
-It is a `503` rather than a `502` or `504` because webhooks.cc sits behind Cloudflare, which replaces a `502` or `504` from the server behind it with its own page (`error code: 502`), and the reason would be lost. The request's stored `outcome` tells the cases apart: `offline`, `unreachable` or `timeout`.
+It is a `503` rather than a `502` or `504` because webhooks.cc sits behind Cloudflare, which replaces a `502` or `504` from the server behind it with its own page (`error code: 502`), and the reason would be lost. The request's stored `outcome` tells the cases apart: `offline`, `unreachable`, `timeout`, `busy` (the tunnel had too many requests in flight) or `refused`, and `whk` names the reason on the request's line as it happens (a capture made while `whk` was offline reaches it later, from the stream).
 
 Senders that retry on `5xx` will try again later, the way they would if your real server were down, and you see each failure in the request list. The 2-minute grace covers reconnects: a sender that hits the gap gets an error and retries, instead of a success your app never saw. Once the grace is over, the endpoint answers as a plain endpoint again.
 
@@ -99,7 +99,7 @@ The path after the endpoint's URL goes to your app: a request to `https://go.web
 
 ## JSON events
 
-With `--json`, the tunnel prints `live_connected` when the live session opens, `relayed` for each request (`method`, `path`, `status`, `duration_ms`, and `request_id`, the capture's id, as in the dashboard and the API), `live_reconnected` and `live_retrying` around network trouble, `live_fallback` once when it starts forwarding captures from the stream while the relay is down (those arrive as `forwarded` events, as do captures from while the computer was offline; a capture the relay already carried, matched by its id, is never sent twice), `notice`, and `live_stopped` when it ends, Ctrl-C and `SIGTERM` included ("you stopped it on this computer", status 0). Emails keep the plain tunnel's `forwarded` events.
+With `--json`, the tunnel prints `live_connected` when the live session opens, `relayed` for each request (`method`, `path`, `status`, `duration_ms`, `request_id`, the capture's id, as in the dashboard and the API, and `outcome`: `answered` for your app's own answer, or `timeout`, `unreachable`, `busy` or `refused` when the sender got a `503` in its place; from whk 1.20.3), `live_reconnected` and `live_retrying` around network trouble, `live_fallback` once when it starts forwarding captures from the stream while the relay is down (those arrive as `forwarded` events, as do captures from while the computer was offline; a capture the relay already carried, matched by its id, is never sent twice), `notice`, and `live_stopped` when it ends, Ctrl-C and `SIGTERM` included ("you stopped it on this computer", status 0). Emails keep the plain tunnel's `forwarded` events.
 
 When the live session is refused before it ever opens (the account's live tunnels are all in use, or the endpoint is not yours), `whk` prints why and exits with the status its reason has in the [exit status table](/docs/cli#scripts-ci-and-ai-agents): `5` when the plan has no live tunnel left, `4` when the endpoint is not yours, `2` for a tunnel address it cannot use. Starting a second `whk tunnel --live` on the same endpoint takes the relay over: the first one is told it was replaced and ends. A session that was live and is then ended (stopped on webhooks.cc, replaced, the endpoint unshared) ends with `live_stopped` and status 0. Refusals that do not come from webhooks.cc itself (a proxy or firewall page, a rate limit) are retried, not taken as the end.
 
