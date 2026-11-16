@@ -128,7 +128,10 @@ export async function createTestEndpoint(
       // Retry-After is another limit (the site-wide cap on demo endpoints),
       // whose own message says what happened: passed on with it.
       if (error.retryAfter === undefined) {
-        if (error.apiMessage) error.message = `webhooks.cc: ${error.apiMessage}`;
+        // A sentence only, as Python and Go read it (a bare code is no news).
+        if (error.apiMessage && error.apiMessage.length >= 30) {
+          error.message = `webhooks.cc: ${error.apiMessage}`;
+        }
         throw error;
       }
       const waitMs = error.retryAfter * 1000;

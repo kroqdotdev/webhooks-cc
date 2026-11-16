@@ -220,6 +220,40 @@ describe("extractFromEmail", () => {
     ]);
   });
 
+  it("drops a help centre's documentation and keeps its tickets", () => {
+    const kept = (url: string, label = "View") =>
+      extractFromEmail({ subject: null, text: null, html: `<a href="${url}">${label}</a>` }).links
+        .length > 0;
+    for (const url of [
+      "https://support.acme.com/hc/en-us",
+      "https://acme.freshdesk.com/support/home",
+      "https://acme.freshdesk.com/support/solutions",
+      "https://acme.com/support/en",
+      "https://acme.com/help/article/42",
+      "https://help.acme.com/hc/en-us/articles/360001",
+    ]) {
+      expect(kept(url), url).toBe(false);
+      // An article about an action is still an article.
+      expect(kept(url, "How to reset 2FA"), url).toBe(false);
+    }
+    for (const url of [
+      "https://support.acme.com/hc/en-us/requests/123",
+      "https://help.acme.com/hc/en-us/requests/987",
+      "https://acme.freshdesk.com/support/tickets/123",
+      "https://shop.acme.test/orders/1001/contact",
+      "https://support.acme.test/verify?token=x",
+    ]) {
+      expect(kept(url), url).toBe(true);
+    }
+    for (const url of [
+      "https://privacy.acme.test/en",
+      "https://shop.acme.test/pages/contact",
+      "https://acme.test/en-us/privacy-notice",
+    ]) {
+      expect(kept(url), url).toBe(false);
+    }
+  });
+
   it("drops unsubscribe links even when they carry a token", () => {
     const found = extractFromEmail({
       subject: null,

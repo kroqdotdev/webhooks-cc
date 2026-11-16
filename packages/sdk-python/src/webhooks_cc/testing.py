@@ -51,7 +51,14 @@ def create_test_endpoint(
             # on demo endpoints), whose own message says what happened.
             if error.retry_after is None:
                 if error.api_message:
-                    passed_on = RateLimitError(None, code=error.code, api_message=error.api_message)
+                    passed_on = RateLimitError(
+                        None,
+                        limit=error.limit,
+                        remaining=error.remaining,
+                        reset=error.reset,
+                        code=error.code,
+                        api_message=error.api_message,
+                    )
                     passed_on.message = f"webhooks.cc: {error.api_message}"
                     passed_on.args = (passed_on.message,)
                     raise passed_on from None

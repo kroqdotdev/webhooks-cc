@@ -269,39 +269,72 @@ function isSocialProfile(url: URL): boolean {
   return segments.length <= 1 || (segments.length === 2 && PROFILE_PREFIX.test(segments[0]));
 }
 
+/** A locale segment (en, en-us, pt_BR) or Zendesk's "hc", which says nothing about the page. */
+const LOCALE_SEGMENT = /^(?:hc|[a-z]{2}(?:[-_][a-z]{2,4})?)$/i;
+/** Hosts and first segments of a help centre or support site. */
+const HELP_PLACE = /^(?:help|help-?cent(?:er|re)|helpcenter|support|faq|kb|knowledge-?base)$/i;
+/** Pages of a help centre that are documentation, never something to act on. */
+const DOC_PAGE =
+  /^(?:home|articles?|solutions|categories|sections|kb|knowledge-?base|guides?|faqs?|topics)$/i;
+/** Footer hosts that serve only legal pages (privacy.acme.com). */
+const LEGAL_HOST = /^(?:privacy|legal|terms)$/i;
+
+/** The path's segments without locales and "hc". */
+function pageSegments(url: URL): string[] {
+  return url.pathname.split("/").filter((segment) => segment && !LOCALE_SEGMENT.test(segment));
+}
+
+/**
+ * A help centre's own documentation: its home, articles, solutions and
+ * knowledge base, on a help or support host (help.acme.com/hc/en-us,
+ * support.acme.com/hc/en-us/articles/42) or under /help or /support
+ * (/support/home, /help/article/42). Tickets and requests on those hosts
+ * (support.acme.com/hc/en-us/requests/123, /support/tickets/123) are not.
+ * Never kept, whatever its label says ("How to reset 2FA" is an article).
+ */
+function isDocPage(url: URL): boolean {
+  const segments = pageSegments(url);
+  const host = url.hostname.split(".")[0];
+  if (HELP_PLACE.test(host) && (segments.length === 0 || DOC_PAGE.test(segments[0]))) return true;
+  if (segments.length > 0 && HELP_PLACE.test(segments[0])) {
+    return segments.length === 1 || DOC_PAGE.test(segments[1]);
+  }
+  return false;
+}
+
 function isFooterLink(url: URL, label: string | null): boolean {
   if (label !== null && (FOOTER_LABEL.test(label.trim()) || FOOTER_PHRASE.test(label))) {
     return true;
   }
-  const segments = url.pathname.split("/").filter(Boolean);
-  // A help centre host (help.acme.com) is documentation through and through;
-  // a support host only as itself, since tickets live on it
-  // (support.acme.com/hc/requests/123).
-  const host = url.hostname.split(".")[0];
-  if (/^(?:help|help-center|helpcenter|faq)$/i.test(host)) return true;
-  if (FOOTER_WORDS.test(host) && segments.length === 0) return true;
-  // Only the last segment: /privacy, /legal/terms, /pages/contact are footers;
-  // /contacts/123/contact/456, /faq/42/edit or /support/tickets/123 are an
+  const segments = pageSegments(url);
+  if (LEGAL_HOST.test(url.hostname.split(".")[0]) && segments.length === 0) return true;
+  // A footer word as the last segment of a short path with no id in it:
+  // /privacy, /legal/terms, /pages/contact are footers; /orders/1001/contact
+  // ("Contact seller"), /faq/42/edit and /contacts/123/contact/456 are an
   // app's own pages.
-  return segments.length > 0 && FOOTER_WORDS.test(segments[segments.length - 1]);
+  if (segments.length === 0 || segments.length > 3) return false;
+  if (segments.some((segment) => /\d/.test(segment))) return false;
+  return FOOTER_WORDS.test(segments[segments.length - 1]);
 }
 
 /**
  * Whether a link is worth listing. Unsubscribe and preference links never
- * are. Action links (confirm, verify, reset, sign in) always are otherwise,
- * whatever host they are on (github.com/login/device, support.acme.com/verify).
- * Of the rest, footer pages (help, support, privacy, terms), open-tracking
- * pixels and social profiles are dropped.
+ * are, nor a help centre's documentation (isDocPage). Action links (confirm,
+ * verify, reset, sign in) always are otherwise, whatever host they are on
+ * (github.com/login/device, support.acme.com/verify). Of the rest, footer
+ * pages (privacy, terms, contact), open-tracking pixels and social profiles
+ * are dropped.
  */
 function keepLink(url: string, label: string | null, action: boolean): boolean {
   if (UNSUBSCRIBE.test(url) || (label !== null && UNSUBSCRIBE.test(label))) return false;
-  if (action) return true;
   let parsed: URL;
   try {
     parsed = new URL(url);
   } catch {
     return false;
   }
+  if (isDocPage(parsed)) return false;
+  if (action) return true;
   return !(
     PIXEL_PATH.test(parsed.pathname) ||
     isSocialProfile(parsed) ||
