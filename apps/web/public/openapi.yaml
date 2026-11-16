@@ -6078,6 +6078,11 @@ components:
         unit:
           type: string
           enum: [requests, pages, domains]
+        noSubscription:
+          type: boolean
+          description: >-
+            The plan allows these add-ons, but there is no subscription to add them to (a
+            complimentary staff account or team), so none can be bought.
         planUnits:
           type: integer
           description: >-
