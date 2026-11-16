@@ -57,8 +57,7 @@ fn print_json(value: &Value) -> Result<()> {
 /// an expired code) still decides the exit status.
 fn print_json_line(value: &Value) {
     let mut out = std::io::stdout().lock();
-    let _ = writeln!(out, "{value}");
-    let _ = out.flush();
+    crate::stdout_written(writeln!(out, "{value}").and_then(|()| out.flush()));
 }
 
 /// The saved sandbox, or an error that says how to get one.

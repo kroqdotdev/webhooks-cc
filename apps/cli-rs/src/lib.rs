@@ -25,6 +25,7 @@ macro_rules! out {
 /// is ignored, anything else panics with `println!`'s own message, which
 /// the panic handler reports as a failure (only a broken pipe reads as 0).
 #[doc(hidden)]
+#[track_caller]
 pub fn stdout_written(result: std::io::Result<()>) {
     if let Err(error) = result
         && error.kind() != std::io::ErrorKind::BrokenPipe

@@ -64,7 +64,7 @@ Every `503` that stands in for your app carries the reason as JSON, so the sende
 { "error": "Nothing is running on port 3000 on the computer running whk." }
 ```
 
-It is a `503` rather than a `502` or `504` because webhooks.cc sits behind Cloudflare, which replaces a `502` or `504` from the server behind it with its own page (`error code: 502`), and the reason would be lost. The request's stored `outcome` tells the cases apart: `offline`, `unreachable` or `timeout`, and `whk` names the reason on the request's line as it happens (a capture made while `whk` was offline reaches it later, from the stream).
+It is a `503` rather than a `502` or `504` because webhooks.cc sits behind Cloudflare, which replaces a `502` or `504` from the server behind it with its own page (`error code: 502`), and the reason would be lost. The request's stored `outcome` tells the cases apart: `offline`, `unreachable`, `timeout`, `busy` (the tunnel had too many requests in flight) or `refused`, and `whk` names the reason on the request's line as it happens (a capture made while `whk` was offline reaches it later, from the stream).
 
 Senders that retry on `5xx` will try again later, the way they would if your real server were down, and you see each failure in the request list. The 2-minute grace covers reconnects: a sender that hits the gap gets an error and retries, instead of a success your app never saw. Once the grace is over, the endpoint answers as a plain endpoint again.
 
