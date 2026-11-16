@@ -87,8 +87,8 @@ importers:
         specifier: ^2.4.0
         version: 2.4.0
       '@polar-sh/sdk':
-        specifier: ^1.0.2
-        version: 1.0.2
+        specifier: ^1.1.0
+        version: 1.1.0(@opentelemetry/api@1.10.0)(ioredis@6.0.0)
       '@statoss/sdk':
         specifier: ^0.4.0
         version: 0.4.0
@@ -1036,9 +1036,29 @@ packages:
     engines: {node: '>=20'}
     hasBin: true
 
-  '@polar-sh/sdk@1.0.2':
-    resolution: {integrity: sha512-c3jdqYloVfcejKsAqYfYcW4bG7KkXj5bXkgdsdx4GHlJPzHFV5tysfeZGf9V7dJReLBirAluchsuHWiAIBco8w==}
-    engines: {node: '>=22'}
+  '@polar-sh/sdk@1.1.0':
+    resolution: {integrity: sha512-Nv999RRY7sE5XdBggCctVv8rYJQWwFk4Hq7yEtaRG6FQCzEyWYxn1Ksi9VGevZSEF7edwZSyOiYuJ9VaYAdpCw==}
+    engines: {node: '>=24'}
+    peerDependencies:
+      '@opentelemetry/api': ^1.9.1
+      '@opentelemetry/otlp-transformer': ^0.223.0
+      '@opentelemetry/resources': ^2.12.0
+      '@opentelemetry/sdk-metrics': ^2.12.0
+      '@opentelemetry/sdk-trace': ^2.12.0
+      ioredis: ^5.11.0
+    peerDependenciesMeta:
+      '@opentelemetry/api':
+        optional: true
+      '@opentelemetry/otlp-transformer':
+        optional: true
+      '@opentelemetry/resources':
+        optional: true
+      '@opentelemetry/sdk-metrics':
+        optional: true
+      '@opentelemetry/sdk-trace':
+        optional: true
+      ioredis:
+        optional: true
 
   '@posthog/browser-common@0.10.8':
     resolution: {integrity: sha512-TQmqLVNFoKaL4dDV5Q8AScX2dIwdq8By2cj2KU1hMGe88tn7Usbf3U/hv5okhobEojntqJeslPIRBrG79Su+vg==}
@@ -3006,6 +3026,7 @@ packages:
 
   node-abort-controller@3.1.1:
     resolution: {integrity: sha512-AGK2yQKIjRuqnc6VkX2Xj5d+QW8xZ87pa1UK6yA6ouUyuxfHuMP6umE5QK7UmTeOAymo+Zx1Fxiuw9rVx8taHQ==}
+    deprecated: This package is no longer needed on supported Node.js versions. Node.js 16+ includes AbortController and AbortSignal as built-in globals. All Node.js versions requiring this polyfill are end-of-life. Use the built-in globals instead.
 
   node-exports-info@1.6.2:
     resolution: {integrity: sha512-kXs9Go0cah0qHVV2v389IXQLdLCeE1xfFtjOAF+iobu0OIoG1pje8At2vMHyaPMiPMnG/LWP50twML21eMcAag==}
@@ -4610,7 +4631,10 @@ snapshots:
     dependencies:
       playwright: 1.65.0
 
-  '@polar-sh/sdk@1.0.2': {}
+  '@polar-sh/sdk@1.1.0(@opentelemetry/api@1.10.0)(ioredis@6.0.0)':
+    optionalDependencies:
+      '@opentelemetry/api': 1.10.0
+      ioredis: 6.0.0
 
   '@posthog/browser-common@0.10.8':
     dependencies:
