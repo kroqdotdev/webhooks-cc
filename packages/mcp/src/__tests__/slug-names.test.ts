@@ -115,6 +115,23 @@ describe("an endpoint's slug under either name", () => {
     }
   });
 
+  it("takes the other name when the tool's own is null or empty", async () => {
+    const client = await connect();
+    try {
+      for (const own of [null, ""]) {
+        paths.length = 0;
+        const result = (await client.callTool({
+          name: "get_endpoint",
+          arguments: { slug: own, endpointSlug: "acme-five" },
+        })) as { content: Array<{ text?: string }> };
+        expect(result.content[0].text).not.toContain("name different endpoints");
+        expect(paths.some((path) => path.includes("acme-five"))).toBe(true);
+      }
+    } finally {
+      await client.close();
+    }
+  });
+
   it("ignores null or an empty string under the other name", async () => {
     const client = await connect();
     try {

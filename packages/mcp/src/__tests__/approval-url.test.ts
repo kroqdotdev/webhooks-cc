@@ -85,7 +85,7 @@ describe("approvals opened by the client (URL elicitation)", () => {
         { urlElicitation: true, requestState: ID, urlAnswer }
       );
       const text = closed.content[0].text;
-      expect(get).toHaveBeenCalledWith(ID);
+      expect(get).toHaveBeenCalledWith(ID, { timeout: 5_000 });
       expect(text).toContain(pending.url);
       expect(text).toContain("ABCD-EFGH");
       expect(text).toContain(pending.summary);

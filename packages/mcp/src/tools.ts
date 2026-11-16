@@ -883,7 +883,9 @@ async function waitForApprovalText(client: WebhooksCC, id: string, ms: number): 
 async function approvalLinkText(client: WebhooksCC, id: string, lead: string): Promise<string> {
   let read: { approval: Approval; result?: Record<string, unknown> };
   try {
-    read = await client.approvals.get<Record<string, unknown>>(id);
+    // Kept short: this read may collect what an approval granted (a new API
+    // key, handed over once), so it must answer while the caller still waits.
+    read = await client.approvals.get<Record<string, unknown>>(id, { timeout: 5_000 });
   } catch (error) {
     if (error instanceof NotFoundError) {
       // Only the key or agent that asked can read it, and answered
@@ -968,7 +970,10 @@ async function checkoutLinkText(client: WebhooksCC, id: string, lead: string): P
   let link: Awaited<ReturnType<WebhooksCC["billing"]["getCheckout"]>>;
   try {
     link = await client.billing.getCheckout(id);
-  } catch {
+  } catch (error) {
+    if (error instanceof NotFoundError) {
+      return `${lead} Checkout link ${id} was not found for this account. Make a new one with create_checkout if the person still wants to buy.`;
+    }
     return `${lead} The checkout link could not be read just now; call wait_for_checkout with id ${id} again for the link.`;
   }
   if (link.status === "open" && link.url) {
