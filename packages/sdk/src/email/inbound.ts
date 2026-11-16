@@ -474,7 +474,9 @@ function mailgun(source: EmailJsonSource, options: InboundSyncOptions, mode: Fil
   let signature = "";
   if (options.mailgunSigningKey) {
     if (!options.hmacSha256Hex) {
-      throw new Error("inboundEmailPayload: signing a Mailgun form needs hmacSha256Hex");
+      throw new Error(
+        "Signing a Mailgun form needs hmacSha256Hex, or use renderInboundEmail or renderInboundEmailBytes, which sign with Web Crypto"
+      );
     }
     signature = options.hmacSha256Hex(options.mailgunSigningKey, timestamp + token);
   }
@@ -554,22 +556,35 @@ function build(
   }
 }
 
+/** Options with a Mailgun signature made ahead with Web Crypto, when one is needed. */
+async function signedAhead(
+  format: InboundEmailFormat,
+  options: InboundEmailOptions
+): Promise<InboundSyncOptions> {
+  if (format !== "mailgun" || !options.mailgunSigningKey) return options;
+  const timestamp = String(Math.floor((options.now ?? Date.now()) / 1000));
+  const token = options.token ?? randomString(50);
+  const signature = await hmacSha256Hex(options.mailgunSigningKey, timestamp + token);
+  return { ...options, now: Number(timestamp) * 1000, token, hmacSha256Hex: () => signature };
+}
+
 /** The email in `format`'s shape, a Mailgun form signed with Web Crypto. */
 export async function renderInboundEmail(
   format: InboundEmailFormat,
   source: EmailJsonSource,
   options: InboundEmailOptions = {}
 ): Promise<InboundEmailPayload> {
-  if (format !== "mailgun" || !options.mailgunSigningKey) {
-    return inboundEmailPayload(format, source, options);
-  }
-  const timestamp = String(Math.floor((options.now ?? Date.now()) / 1000));
-  const token = options.token ?? randomString(50);
-  const signature = await hmacSha256Hex(options.mailgunSigningKey, timestamp + token);
-  return inboundEmailPayload(format, source, {
-    ...options,
-    now: Number(timestamp) * 1000,
-    token,
-    hmacSha256Hex: () => signature,
-  });
+  return inboundEmailPayload(format, source, await signedAhead(format, options));
+}
+
+/**
+ * `inboundEmailPayloadBytes()` with a Mailgun form signed with Web Crypto, for
+ * code without a synchronous HMAC (browsers, edge runtimes).
+ */
+export async function renderInboundEmailBytes(
+  format: InboundEmailFormat,
+  source: EmailJsonSource,
+  options: InboundEmailOptions = {}
+): Promise<InboundEmailBytesPayload> {
+  return inboundEmailPayloadBytes(format, source, await signedAhead(format, options));
 }

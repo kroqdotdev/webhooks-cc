@@ -49,6 +49,7 @@ export {
   inboundEmailPayloadBytes,
   isInboundEmailFormat,
   renderInboundEmail,
+  renderInboundEmailBytes,
   type InboundEmailFormat,
   type InboundEmailOptions,
   type InboundEmailBytesPayload,

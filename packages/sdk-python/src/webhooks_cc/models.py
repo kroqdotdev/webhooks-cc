@@ -1506,9 +1506,10 @@ class RenderedEmail:
     """The ``content-type`` and ``user-agent`` to send it with."""
     body: str
     """The body; base64 when ``body_encoding`` is ``"base64"`` (``content`` decodes it)."""
-    body_encoding: str | None = None
-    """``"base64"`` when it was asked for, else ``None`` (a text body)."""
     raw: dict[str, Any] = field(default_factory=dict, repr=False, compare=False)
+    body_encoding: str | None = None
+    """``"base64"`` when it was asked for, else ``None`` (a text body). After ``raw`` so
+    positional construction from before it existed keeps working."""
 
     @property
     def content(self) -> bytes:

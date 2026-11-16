@@ -4070,7 +4070,7 @@ export class WebhooksCC {
       if (options.limit !== undefined) params.set("limit", String(options.limit));
       if (options.status !== undefined) params.set("status", options.status);
       if (options.before !== undefined) params.set("before", options.before);
-      if (options.destinationId !== undefined) params.set("destination", options.destinationId);
+      if (options.destinationId) params.set("destination", options.destinationId);
       const query = params.toString() ? `?${params.toString()}` : "";
       return this.request<DeliveryLogEntry[]>(
         "GET",
@@ -4088,10 +4088,10 @@ export class WebhooksCC {
       options: { destinationId?: string } = {}
     ): Promise<DeliverySummary> => {
       validatePathSegment(endpointSlug, "endpointSlug");
-      const query =
-        options.destinationId !== undefined
-          ? `?${new URLSearchParams({ destination: options.destinationId }).toString()}`
-          : "";
+      // An empty id means no filter, as an omitted one does.
+      const query = options.destinationId
+        ? `?${new URLSearchParams({ destination: options.destinationId }).toString()}`
+        : "";
       return this.request<DeliverySummary>(
         "GET",
         `/endpoints/${endpointSlug}/deliveries/summary${query}`

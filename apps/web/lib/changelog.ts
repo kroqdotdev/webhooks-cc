@@ -2583,7 +2583,8 @@ export const CHANGELOG: ChangelogEntry[] = [
     track: "sdk",
     items: [
       '`emails.render()` takes `bodyEncoding: "base64"`: the body comes as its exact bytes in base64, and the SendGrid and Mailgun forms carry binary attachments (a PDF, an image) with their real contents, as the providers post them. Without it nothing changes',
-      "`inboundEmailPayloadBytes()` builds the same shapes locally as bytes, binary files included",
+      "`inboundEmailPayloadBytes()` builds the same shapes locally as bytes, binary files included, and `renderInboundEmailBytes()` does so with a Mailgun form signed through Web Crypto, for browsers and edge runtimes",
+      "`forwarding.list()` and `forwarding.summary()` read an empty `destinationId` as no filter, as an omitted one",
       "`forwarding.summary(slug, { destinationId })` counts one destination's deliveries, matching `forwarding.deliveries()` with the same option",
       'A checkout link\'s `expiredReason` can be `"cancelled"`, and waiting on a cancelled link throws `CheckoutExpiredError` with that reason and says the link was cancelled',
       "`CapacityState` types the API's unit names (`unit`, `planUnits`, `blockUnits`, `creditUnits`, `overage.maxUnits`, `overage.usedUnits`) and `noSubscription`, set when the plan allows add-ons but is held without a subscription",

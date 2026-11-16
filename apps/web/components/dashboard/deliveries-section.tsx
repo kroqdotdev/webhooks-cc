@@ -257,9 +257,14 @@ export function DeliveriesSection({
               {
                 value: "pending",
                 label: "Retrying",
-                count: formatCappedCount(summary?.pending ?? 0),
+                // No count until this filter's summary arrives, never a false 0.
+                count: summary ? formatCappedCount(summary.pending) : undefined,
               },
-              { value: "failed", label: "Failed", count: formatCappedCount(summary?.failed ?? 0) },
+              {
+                value: "failed",
+                label: "Failed",
+                count: summary ? formatCappedCount(summary.failed) : undefined,
+              },
               { value: "skipped", label: "Filtered out" },
             ]}
           />
