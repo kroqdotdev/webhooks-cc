@@ -439,12 +439,39 @@ fn status_text(status: u16) -> String {
 /// The status in words for a body that names only `code`: alone when the
 /// code just names the status, else with the code in brackets.
 fn code_text(status: u16, code: &str) -> String {
+    if let Some(sentence) = code_sentence(code) {
+        return sentence.to_string();
+    }
     let words = status_text(status);
     if code.replace('_', " ") == words.to_lowercase() {
         words
     } else {
         format!("{words} ({code})")
     }
+}
+
+/// Sentences for the codes the request, search and email routes answer
+/// with alone, so a message says what to change rather than naming a code.
+/// The same table as the TypeScript SDK's `ERROR_CODE_SENTENCES`; the shared
+/// error vectors check it.
+fn code_sentence(code: &str) -> Option<&'static str> {
+    Some(match code {
+        "invalid_cursor" => "Invalid search cursor: start the search again without a cursor",
+        "invalid_since" => "Invalid since: give a time in milliseconds since 1970, at least 0",
+        "invalid_limit" => "Invalid limit: give a whole number of at least 1",
+        "invalid_kind" => "Invalid kind: give \"http\" or \"email\"",
+        "invalid_extracts" => "Invalid extracts: give true or false",
+        "invalid_from" => {
+            "Invalid from: give a time in milliseconds or a duration back from now, such as \"1h\""
+        }
+        "invalid_to" => {
+            "Invalid to: give a time in milliseconds or a duration back from now, such as \"1h\""
+        }
+        "invalid_q" => "Invalid search term: at most 1000 characters",
+        "invalid_index" => "Invalid attachment index: give a whole number from 0",
+        "not_an_email" => "The request is not an email",
+        _ => return None,
+    })
 }
 
 /// `text` cut to `max` characters with "..." after it, or whole.
