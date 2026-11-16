@@ -67,7 +67,7 @@ Puts your local site at a public link on sharehooks.cc, for showing work in prog
 `whk` is built to be driven by programs as well as people:
 
 - `--json` prints the API's own answers unchanged (every field the server sends), NDJSON for streams such as `listen` and `tunnel`, and failures as one `{"error": {...}}` object on stderr with a `code`, the `message`, the `exit` status, the HTTP `status` when there was one, and a `hint` with the next step. `whk share --json`, whose output is a stream of events, ends with an `error` event carrying the same fields instead.
-- Standard output without a terminal has no colour codes (`NO_COLOR` or `--no-color` turn them off everywhere), and a reader that stops early (`whk list | head -1`) ends `whk` quietly with status 0.
+- Standard output without a terminal has no colour codes (`NO_COLOR` or `--no-color` turn them off everywhere), and a reader that stops early (`whk list | head -1`) ends `whk` quietly with status 0 (a `whk tunnel` keeps relaying until it is stopped). A failure keeps its exit status either way.
 - Exit statuses are stable, so a script can branch on them without reading text:
 
 | Status | Code | Meaning |

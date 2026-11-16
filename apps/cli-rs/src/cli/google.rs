@@ -56,7 +56,7 @@ fn browser_session_refusal() -> anyhow::Error {
 pub async fn connect(client: &ApiClient, opts: ApprovalOptions, json: bool) -> Result<()> {
     let answer = client.google_connect().await?;
     ask(client, answer, opts, json, |_| {
-        eprintln!("{}", browser_session_refusal())
+        crate::errln!("{}", browser_session_refusal())
     })
     .await
 }
@@ -69,7 +69,7 @@ pub async fn pick(
 ) -> Result<()> {
     let answer = client.google_pick(connection_id).await?;
     ask(client, answer, opts, json, |_| {
-        eprintln!("{}", browser_session_refusal())
+        crate::errln!("{}", browser_session_refusal())
     })
     .await
 }

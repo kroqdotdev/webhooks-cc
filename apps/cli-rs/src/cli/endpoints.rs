@@ -58,13 +58,13 @@ pub async fn create(
         match client.update_endpoint(&endpoint.slug, &update).await {
             Ok(_) => signing_configured = true,
             Err(e) => {
-                eprintln!(
+                crate::errln!(
                     "  {} Endpoint {} was created but signing setup failed: {}",
                     red("⚠"),
                     bold(&endpoint.slug),
                     e
                 );
-                eprintln!("  Update the endpoint manually to configure signing.");
+                crate::errln!("  Update the endpoint manually to configure signing.");
             }
         }
     }

@@ -479,7 +479,7 @@ static WARNED: AtomicBool = AtomicBool::new(false);
 /// Reports a failed write once per process, on stderr, without contents.
 fn warn_once(path: &Path, error: &io::Error) {
     if !WARNED.swap(true, Ordering::Relaxed) {
-        eprintln!(
+        crate::errln!(
             "warning: could not update the agent credential file at {}: {error}",
             path.display()
         );
@@ -692,7 +692,7 @@ mod tests {
         match fs::read_to_string(VECTORS) {
             Ok(text) => Some(serde_json::from_str(&text).expect("vectors are JSON")),
             Err(_) => {
-                eprintln!("SKIPPING: {VECTORS} does not exist yet");
+                crate::errln!("SKIPPING: {VECTORS} does not exist yet");
                 None
             }
         }

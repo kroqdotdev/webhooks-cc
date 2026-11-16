@@ -1319,7 +1319,7 @@ pub async fn secret(
     // Only the secret on stdout, so `$(whk destinations secret ...)` works.
     println!("{}", text(&answer.value, "secret"));
     if rotate {
-        eprintln!(
+        crate::errln!(
             "{}",
             dim("Replaced: deliveries are signed with this secret from now on.")
         );

@@ -174,7 +174,7 @@ pub fn header_row(names: &[&str], right: &[usize]) -> Vec<(String, Cell)> {
 /// Announce a stream reconnect (emitted by `ApiClient::stream_requests`).
 pub fn print_reconnecting(json: bool, attempt: u32, delay_ms: u64, reason: &str) {
     if json {
-        println!(
+        crate::outln!(
             "{}",
             serde_json::json!({
                 "event": "reconnecting",
@@ -189,16 +189,16 @@ pub fn print_reconnecting(json: bool, attempt: u32, delay_ms: u64, reason: &str)
             "Reconnecting in {secs}s (attempt {attempt}): {}",
             sanitize(reason)
         );
-        println!("  {} {}", dim("●"), dim(&line));
+        crate::outln!("  {} {}", dim("●"), dim(&line));
     }
 }
 
 /// Announce that a stream reconnect succeeded.
 pub fn print_reconnected(json: bool) {
     if json {
-        println!("{}", serde_json::json!({ "event": "reconnected" }));
+        crate::outln!("{}", serde_json::json!({ "event": "reconnected" }));
     } else {
-        println!("  {} {}", green("●"), dim("Reconnected"));
+        crate::outln!("  {} {}", green("●"), dim("Reconnected"));
     }
 }
 

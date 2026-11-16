@@ -107,7 +107,7 @@ pub async fn search(
     if json {
         println!("{}", serde_json::to_string_pretty(&result.raw)?);
         if !result.complete {
-            eprintln!("{}", search_progress_json(&result, next.as_deref()));
+            crate::errln!("{}", search_progress_json(&result, next.as_deref()));
         }
         return Ok(());
     }
@@ -121,7 +121,7 @@ pub async fn search(
         println!("\n  {} {}", dim("Shown:"), result.requests.len());
     }
     if !result.complete {
-        eprintln!(
+        crate::errln!(
             "  {}",
             search_progress_line(result.searched_until, order, next.as_deref())
         );
@@ -287,13 +287,13 @@ pub async fn count(
     if json {
         println!("{}", count_json(&result, filters));
         if !result.exact {
-            eprintln!("{}", count_progress_json(&result, next.as_deref()));
+            crate::errln!("{}", count_progress_json(&result, next.as_deref()));
         }
         return Ok(());
     }
     println!("  {}", count_line(&result));
     if let Some(next) = next {
-        eprintln!("  Count the rest (add it to this) with: {next}");
+        crate::errln!("  Count the rest (add it to this) with: {next}");
     }
     Ok(())
 }

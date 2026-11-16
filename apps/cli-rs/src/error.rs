@@ -369,11 +369,9 @@ pub fn is_broken_pipe(error: &anyhow::Error) -> bool {
 /// because the pipe it wrote to was closed. Rust ignores SIGPIPE, so a
 /// closed pipe comes back as an error, and the print macros panic on it.
 pub fn is_broken_pipe_panic(message: &str) -> bool {
-    // A failure's own report never gets here (main writes it without
-    // panicking), so a closed stderr is only ever a note on the way, as on
-    // stdout: the reader went away, and whk ends quietly.
-    let printing = message.starts_with("failed printing to stdout")
-        || message.starts_with("failed printing to stderr");
+    // stdout only: notes on stderr go through errln!, which never panics, so
+    // a stderr panic is a bug, never a reason to call a failure a success.
+    let printing = message.starts_with("failed printing to stdout");
     // EPIPE's text on Unix; ERROR_BROKEN_PIPE (109) and ERROR_NO_DATA (232)
     // on Windows.
     printing
@@ -624,7 +622,7 @@ mod tests {
         assert!(is_broken_pipe_panic(
             "failed printing to stdout: The pipe is being closed. (os error 232)"
         ));
-        assert!(is_broken_pipe_panic(
+        assert!(!is_broken_pipe_panic(
             "failed printing to stderr: Broken pipe (os error 32)"
         ));
         assert!(!is_broken_pipe_panic(

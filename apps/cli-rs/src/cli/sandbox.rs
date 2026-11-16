@@ -88,7 +88,7 @@ fn explain_gone(error: anyhow::Error) -> anyhow::Error {
 async fn register(client: &ApiClient, store: &CredentialStore, json: bool) -> Result<Sandbox> {
     let on_solve = |challenge: &PowChallenge| {
         if !json {
-            eprintln!(
+            crate::errln!(
                 "  {}",
                 dim(&format!(
                     "Registering an anonymous sandbox: solving a proof of work ({} x 2^{} hashes, a few seconds)...",
@@ -100,7 +100,7 @@ async fn register(client: &ApiClient, store: &CredentialStore, json: bool) -> Re
     let (sandbox, full) =
         Sandbox::register(&client.agent_http, &client.base_url, store, &on_solve).await?;
     if full {
-        eprintln!(
+        crate::errln!(
             "  {} The shared sandbox is full right now; creating an endpoint may answer sandbox_full.",
             red("!")
         );
@@ -165,7 +165,7 @@ fn print_endpoint(endpoint: &Value) {
 pub async fn create(client: &ApiClient, json: bool) -> Result<()> {
     let store = store_for(client);
     if !json && store.load().claimed.is_some() {
-        eprintln!(
+        crate::errln!(
             "  {}",
             dim(
                 "This agent is connected to an account: `whk create` makes a regular endpoint there."
@@ -178,7 +178,7 @@ pub async fn create(client: &ApiClient, json: bool) -> Result<()> {
     };
     let endpoint = match sandbox.create_endpoint().await {
         Err(error) if reused && registration_gone(&error) => {
-            eprintln!(
+            crate::errln!(
                 "  {} The saved sandbox registration is gone ({}); registering a new one.",
                 red("!"),
                 protocol::error_code(&error).unwrap_or("gone")
@@ -417,7 +417,7 @@ pub async fn wait(
     let mut seen = HashSet::new();
     let mut collected: Vec<Value> = Vec::new();
     if !json {
-        eprintln!(
+        crate::errln!(
             "  {}",
             dim(&format!(
                 "Waiting up to {timeout} for {count} request(s) at {slug}..."

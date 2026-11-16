@@ -90,7 +90,7 @@ pub async fn run(
     let email_format = emails.as_ref().map(|options| options.format);
 
     if json {
-        println!(
+        crate::outln!(
             "{}",
             serde_json::json!({
                 "event": "started",
@@ -104,11 +104,11 @@ pub async fn run(
             })
         );
     } else {
-        println!("\n  {} Tunnel active", green("●"));
-        println!("  {} {}", dim("Webhook URL:"), bold(&webhook_url));
-        println!("  {} {}", dim("Forwarding to:"), bold(&target_url));
+        crate::outln!("\n  {} Tunnel active", green("●"));
+        crate::outln!("  {} {}", dim("Webhook URL:"), bold(&webhook_url));
+        crate::outln!("  {} {}", dim("Forwarding to:"), bold(&target_url));
         if live {
-            println!(
+            crate::outln!(
                 "  {} {}",
                 dim("Live:"),
                 dim("senders get your app's answer while whk runs")
@@ -117,18 +117,18 @@ pub async fn run(
         match (&emails, &email_url) {
             (Some(options), Some(url)) => {
                 if let Some(ref address) = email_address {
-                    println!("  {} {}", dim("Email address:"), bold(address));
+                    crate::outln!("  {} {}", dim("Email address:"), bold(address));
                 }
-                println!(
+                crate::outln!(
                     "  {} {} {}",
                     dim("Emails to:"),
                     bold(url),
                     dim(&email_shape(options))
                 );
             }
-            _ => println!("  {} {}", dim("Emails:"), dim(EMAIL_SKIPPED)),
+            _ => crate::outln!("  {} {}", dim("Emails:"), dim(EMAIL_SKIPPED)),
         }
-        println!("  {}\n", dim("Press Ctrl+C to stop."));
+        crate::outln!("  {}\n", dim("Press Ctrl+C to stop."));
     }
 
     // --live: the edge relays each HTTP capture down this session while the
@@ -214,12 +214,12 @@ pub async fn run(
                             if relay.announce() {
                                 drop(relay);
                                 if json {
-                                    println!(
+                                    crate::outln!(
                                         "{}",
                                         serde_json::json!({ "event": "live_fallback" })
                                     );
                                 } else {
-                                    println!(
+                                    crate::outln!(
                                         "  {} {}",
                                         dim("●"),
                                         dim(LIVE_FALLBACK)
@@ -233,7 +233,7 @@ pub async fn run(
                         // --no-email: the email is listed, not posted.
                         if req.is_email() && email_format.is_none() {
                             if json {
-                                println!(
+                                crate::outln!(
                                     "{}",
                                     serde_json::json!({
                                         "event": "skipped",
@@ -244,7 +244,7 @@ pub async fn run(
                                     })
                                 );
                             } else {
-                                println!("{}", request_line(&req, &dim(EMAIL_SKIPPED)));
+                                crate::outln!("{}", request_line(&req, &dim(EMAIL_SKIPPED)));
                             }
                             continue;
                         }
@@ -252,9 +252,9 @@ pub async fn run(
                     }
                     SseEvent::EndpointDeleted => {
                         if json {
-                            println!("{}", serde_json::json!({ "event": "endpoint_deleted" }));
+                            crate::outln!("{}", serde_json::json!({ "event": "endpoint_deleted" }));
                         } else {
-                            println!("\n  {} Endpoint was deleted.", red("●"));
+                            crate::outln!("\n  {} Endpoint was deleted.", red("●"));
                         }
                         break;
                     }
@@ -288,7 +288,7 @@ pub async fn run(
                 }
                 let due = if due.is_empty() { due } else { undelivered(client, due).await };
                 if !due.is_empty() && !json {
-                    println!("  {} {}", dim("●"), dim(&not_relayed(due.len())));
+                    crate::outln!("  {} {}", dim("●"), dim(&not_relayed(due.len())));
                 }
                 for req in due {
                     deliver(&tunnel, &req, json, email_format).await;
@@ -333,7 +333,7 @@ pub async fn run(
     if created {
         if ephemeral {
             if let Err(e) = client.delete_endpoint(&slug).await {
-                eprintln!("  {} Could not delete endpoint {slug}: {e:#}", dim("●"));
+                crate::errln!("  {} Could not delete endpoint {slug}: {e:#}", dim("●"));
             }
         } else if json {
             crate::outln!(
@@ -357,7 +357,7 @@ pub async fn run(
         && stream_result.is_ok()
         && let Some(hint) = crate::util::star::take(json)
     {
-        println!("{hint}");
+        crate::outln!("{hint}");
     }
     stream_result
 }
@@ -380,14 +380,14 @@ async fn deliver(
 ) {
     let result = tunnel.forward(req).await;
     if json {
-        println!("{}", forwarded_event(req, &result, email_format));
+        crate::outln!("{}", forwarded_event(req, &result, email_format));
     } else {
         let status = if result.success {
             green(&result.to_string())
         } else {
             red(&result.to_string())
         };
-        println!("{}", request_line(req, &status));
+        crate::outln!("{}", request_line(req, &status));
     }
 }
 
@@ -778,7 +778,7 @@ fn show_live_update(update: Update, json: bool) {
 const STOPPED_HERE: &str = "you stopped it on this computer";
 
 fn live_stopped(json: bool, reason: &str) {
-    println!("{}", live_stopped_line(json, reason));
+    crate::outln!("{}", live_stopped_line(json, reason));
 }
 
 fn live_stopped_line(json: bool, reason: &str) -> String {
