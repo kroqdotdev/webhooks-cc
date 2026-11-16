@@ -324,7 +324,10 @@ pub async fn run(
 
     // Make any in-flight send in the stream task fail fast, then collect its result.
     drop(rx);
-    let stream_result = join_stream(stream_handle, interrupted).await;
+    // A refused live session ends the run: the stream is stopped as on an
+    // interrupt, so whk does not wait for its next capture (keepalives hold
+    // it open for up to 30 minutes) before saying why.
+    let stream_result = join_stream(stream_handle, interrupted || live_refused.is_some()).await;
 
     // Cleanup: only endpoints we created, and only when asked to (--ephemeral).
     if created {
@@ -333,17 +336,17 @@ pub async fn run(
                 eprintln!("  {} Could not delete endpoint {slug}: {e:#}", dim("●"));
             }
         } else if json {
-            println!(
+            crate::outln!(
                 "{}",
                 serde_json::json!({ "event": "endpoint_kept", "slug": slug })
             );
         } else {
-            println!("\n  {} Endpoint kept: {}", dim("●"), bold(&slug));
-            println!(
+            crate::outln!("\n  {} Endpoint kept: {}", dim("●"), bold(&slug));
+            crate::outln!(
                 "    {} whk tunnel {target} --endpoint {slug}",
                 dim("Reuse: ")
             );
-            println!("    {} whk delete {slug}", dim("Delete:"));
+            crate::outln!("    {} whk delete {slug}", dim("Delete:"));
         }
     }
 
@@ -706,14 +709,14 @@ fn show_live_update(update: Update, json: bool) {
     match update {
         Update::Ready { .. } => {
             if json {
-                println!("{}", serde_json::json!({ "event": "live_connected" }));
+                crate::outln!("{}", serde_json::json!({ "event": "live_connected" }));
             } else {
-                println!("  {} {}", green("●"), dim("Live relay connected"));
+                crate::outln!("  {} {}", green("●"), dim("Live relay connected"));
             }
         }
         Update::Reconnected => {
             if json {
-                println!("{}", serde_json::json!({ "event": "live_reconnected" }));
+                crate::outln!("{}", serde_json::json!({ "event": "live_reconnected" }));
             } else {
                 print_reconnected(false);
             }
@@ -736,9 +739,9 @@ fn show_live_update(update: Update, json: bool) {
                 if let Some(id) = request_id {
                     event["request_id"] = serde_json::Value::String(id);
                 }
-                println!("{event}");
+                crate::outln!("{event}");
             } else {
-                println!(
+                crate::outln!(
                     "{}",
                     crate::cli::share::request_line(&method, &path, status, ms)
                 );
@@ -746,19 +749,19 @@ fn show_live_update(update: Update, json: bool) {
         }
         Update::Notice(text) => {
             if json {
-                println!("{}", serde_json::json!({ "event": "notice", "text": text }));
+                crate::outln!("{}", serde_json::json!({ "event": "notice", "text": text }));
             } else {
-                println!("  {} {}", dim("●"), sanitize(&text));
+                crate::outln!("  {} {}", dim("●"), sanitize(&text));
             }
         }
         Update::Retrying { message, seconds } => {
             if json {
-                println!(
+                crate::outln!(
                     "{}",
                     serde_json::json!({ "event": "live_retrying", "message": message, "seconds": seconds })
                 );
             } else {
-                println!(
+                crate::outln!(
                     "  {} {}",
                     dim("●"),
                     dim(&format!(

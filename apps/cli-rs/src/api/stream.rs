@@ -302,7 +302,13 @@ async fn read_stream(
     let mut data_lines: Vec<String> = Vec::new();
 
     loop {
-        let chunk = match tokio::time::timeout(READ_IDLE_TIMEOUT, stream.next()).await {
+        let next = tokio::select! {
+            // Nobody reads the events any more: stop, rather than wait for
+            // the next one to find that out.
+            () = tx.closed() => return StreamEnd::Done,
+            next = tokio::time::timeout(READ_IDLE_TIMEOUT, stream.next()) => next,
+        };
+        let chunk = match next {
             Ok(Some(Ok(chunk))) => chunk,
             Ok(Some(Err(e))) => return StreamEnd::Failed(format!("read error: {e}")),
             Ok(None) => return StreamEnd::Failed("connection closed by server".to_string()),
