@@ -371,19 +371,27 @@ pub fn is_broken_pipe(error: &anyhow::Error) -> bool {
 pub fn stdout_closed() -> bool {
     #[cfg(unix)]
     {
-        let mut fd = libc::pollfd {
-            fd: libc::STDOUT_FILENO,
-            events: libc::POLLOUT,
-            revents: 0,
-        };
-        // SAFETY: one valid pollfd, no wait.
-        let ready = unsafe { libc::poll(&mut fd, 1, 0) };
-        ready > 0 && fd.revents & (libc::POLLERR | libc::POLLHUP) != 0
+        fd_closed(libc::STDOUT_FILENO)
     }
     #[cfg(not(unix))]
     {
         true
     }
+}
+
+/// Whether the reader of the pipe or socket `fd` writes to has gone (a
+/// zero-wait poll reports POLLERR or POLLHUP). A failed poll counts as not
+/// closed.
+#[cfg(unix)]
+fn fd_closed(fd: libc::c_int) -> bool {
+    let mut poll = libc::pollfd {
+        fd,
+        events: libc::POLLOUT,
+        revents: 0,
+    };
+    // SAFETY: one valid pollfd, no wait.
+    let ready = unsafe { libc::poll(&mut poll, 1, 0) };
+    ready > 0 && poll.revents & (libc::POLLERR | libc::POLLHUP) != 0
 }
 
 /// Whether a panic's message is `println!` (or `print!`) failing
@@ -426,6 +434,18 @@ pub fn error_json(error: &anyhow::Error, c: &Classified) -> Value {
 
 #[cfg(test)]
 mod tests {
+
+    #[cfg(unix)]
+    #[test]
+    fn a_pipe_whose_reader_closed_reads_as_closed() {
+        let mut fds = [0 as libc::c_int; 2];
+        // SAFETY: a fresh pipe, both ends closed below.
+        assert_eq!(unsafe { libc::pipe(fds.as_mut_ptr()) }, 0);
+        assert!(!fd_closed(fds[1]), "a reader is still there");
+        unsafe { libc::close(fds[0]) };
+        assert!(fd_closed(fds[1]), "the reader has gone");
+        unsafe { libc::close(fds[1]) };
+    }
     use super::*;
 
     fn api(status: u16) -> anyhow::Error {
