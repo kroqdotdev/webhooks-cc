@@ -51,8 +51,11 @@ describe("links in the docs", () => {
     const broken: string[] = [];
     for (const [slug, source] of docs) {
       const prose = proseOf(source);
-      for (const match of prose.matchAll(/\]\((\/docs[^)\s]*|#[^)\s]*)\)/g)) {
-        const href = match[1];
+      // Markdown links, and JSX href props (<LinkCard href="/docs/...">).
+      for (const match of prose.matchAll(
+        /\]\((\/docs[^)\s]*|#[^)\s]*)\)|\bhref=["'](\/docs[^"'\s]*|#[^"'\s]*)["']/g
+      )) {
+        const href = match[1] ?? match[2];
         const [path, hash] = href.split("#");
         const target = href.startsWith("#")
           ? slug
