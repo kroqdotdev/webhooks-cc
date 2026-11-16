@@ -45,8 +45,16 @@ pub(crate) fn check(input: &[u8]) -> Result<(), Failure> {
             return Err(BOMB);
         }
     }
+    // Entries that share bytes (two records on one local header, a header
+    // inside another entry's data) only serve to make the readers do the
+    // same work again under other names; no honest archive has them.
+    if archive.has_overlapping_entries().unwrap_or(true) {
+        return Err(OVERLAP);
+    }
     Ok(())
 }
+
+const OVERLAP: Failure = Failure::new(ErrorCode::ZipBomb, "the archive's entries overlap");
 
 /// What a zip archive holds, judged by its entry names.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
