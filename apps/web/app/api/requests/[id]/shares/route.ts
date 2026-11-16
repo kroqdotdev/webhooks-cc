@@ -62,7 +62,9 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   }
   const hideSensitive = body.hideSensitive !== false;
 
-  if (!isUuid(id)) return Response.json({ error: "not_found" }, { status: 404 });
+  if (!isUuid(id)) {
+    return Response.json({ error: "not_found", message: "Request not found" }, { status: 404 });
+  }
 
   // An API key or agent token: the account's owner approves the link first.
   if (auth.keyId) {
@@ -89,7 +91,12 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
         targetId: id,
         reason: result.error,
       });
-      return Response.json({ error: message }, { status });
+      return Response.json(
+        result.error === "not_found"
+          ? { error: "not_found", message: "Request not found" }
+          : { error: message },
+        { status }
+      );
     }
 
     await auditUserAction(request, auth.userId, {

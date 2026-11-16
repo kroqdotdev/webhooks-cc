@@ -283,8 +283,8 @@ function mapStatusToError(
   body?: string
 ): WebhooksCCError {
   const text = errorTextOf(body ?? message);
-  // A bare code (`{ "error": "not_found" }`) is no sentence: say the status instead.
-  const plain = text === undefined ? message : BARE_CODE.test(text) ? statusText(status) : text;
+  // A bare code (`{ "error": "not_found" }`) is no sentence: say the status (see codeText).
+  const plain = text === undefined ? message : BARE_CODE.test(text) ? codeText(status, text) : text;
   const error = statusError(status, plain, response, path);
   error.apiMessage = plain;
   if (path !== undefined) error.path = path;
@@ -312,8 +312,18 @@ function statusText(status: number): string {
     case 429:
       return "Too many requests";
     default:
-      return status >= 500 ? "Server error" : `Request failed (HTTP ${status})`;
+      return status >= 500 ? "Server error" : `Request failed with HTTP ${status}`;
   }
+}
+
+/**
+ * The status in words for a body that names only `code`: alone when the
+ * code just names the status (`not_found` on a 404), else with the code in
+ * brackets, since it says what went wrong (`Bad request (invalid_since)`).
+ */
+function codeText(status: number, code: string): string {
+  const words = statusText(status);
+  return code.replace(/_/g, " ") === words.toLowerCase() ? words : `${words} (${code})`;
 }
 
 /** Longest text taken from a JSON error body, so one answer cannot make a huge message. */

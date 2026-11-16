@@ -885,10 +885,19 @@ def test_errors_are_typed(status: int, error_type: type[Exception]) -> None:
             '{"error":"not_found","message":"Request not found"}',
             "Request not found: use client.endpoints.list() to see your endpoints",
         ),
+        (
+            401,
+            '{"error":"unauthorized"}',
+            "Unauthorized. Get an API key at https://webhooks.cc/account/api-keys",
+        ),
         (403, '{"error":"forbidden"}', "Forbidden"),
         (409, '{"error":"conflict"}', "Conflict"),
-        (500, '{"error":"internal"}', "Server error"),
-        (422, '{"error":"some_code"}', "Request failed (HTTP 422)"),
+        # A code that says more than the status stays, in brackets.
+        (400, '{"error":"invalid_since"}', "Bad request (invalid_since)"),
+        (409, '{"error":"slug_exists"}', "Conflict (slug_exists)"),
+        (500, '{"error":"internal_error"}', "Server error (internal_error)"),
+        (410, '{"error":"expired"}', "Request failed with HTTP 410 (expired)"),
+        (410, '{"message":"expired"}', "Request failed with HTTP 410 (expired)"),
     ],
 )
 def test_error_messages_are_the_plain_text_of_the_body(
@@ -912,7 +921,7 @@ def test_a_bare_code_keeps_its_meaning() -> None:
     plain = make_client(lambda request: httpx.Response(400, json={"error": "invalid_input"}))
     with pytest.raises(errors.WebhooksCCError) as other:
         plain.endpoints.get("acme")
-    assert other.value.message == "Bad request"
+    assert other.value.message == "Bad request (invalid_input)"
 
 
 def test_rate_limit_error_carries_the_headers() -> None:
@@ -2219,7 +2228,7 @@ def test_an_invalid_cursor_has_its_own_error() -> None:
     with pytest.raises(errors.WebhooksCCError) as plain:
         other.requests.search_page(q="x")
     assert not isinstance(plain.value, errors.InvalidCursorError)
-    assert plain.value.message == "Bad request"
+    assert "invalid_q" in plain.value.message
 
 
 def test_a_busy_search_is_retried_after_retry_after(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -527,7 +527,18 @@ func statusText(status int) string {
 	if status >= 500 {
 		return "Server error"
 	}
-	return fmt.Sprintf("Request failed (HTTP %d)", status)
+	return fmt.Sprintf("Request failed with HTTP %d", status)
+}
+
+// codeText is the status in words for a body that names only code: alone
+// when the code just names the status (not_found on a 404), else with the
+// code in brackets, since it says what went wrong ("Bad request (invalid_since)").
+func codeText(status int, code string) string {
+	words := statusText(status)
+	if strings.ReplaceAll(code, "_", " ") == strings.ToLower(words) {
+		return words
+	}
+	return words + " (" + code + ")"
 }
 
 // errorText is the plain text of a JSON error body: its string "message",
@@ -573,8 +584,8 @@ func errorFromResponse(response *apiResponse, path string) *Error {
 			message = string([]rune(message)[:200]) + "..."
 		}
 	} else if bareCode.MatchString(message) {
-		// A bare code ({"error": "not_found"}) is no sentence: say the status instead.
-		message = statusText(response.status)
+		// A bare code ({"error": "not_found"}) is no sentence: say the status (see codeText).
+		message = codeText(response.status, message)
 	}
 	generic := len(message) < 30
 	apiErr := &Error{StatusCode: response.status, Message: message}

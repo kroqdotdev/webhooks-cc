@@ -2678,20 +2678,24 @@ describe("WebhooksCC", () => {
         "Not found: Use client.endpoints.list() to see available endpoints."
       );
       expect(error.code).toBe("not_found");
-      for (const [status, text] of [
-        [400, "Bad request"],
-        [401, "Unauthorized"],
-        [403, "Forbidden"],
-        [409, "Conflict"],
-        [429, "Too many requests"],
-        [500, "Server error"],
-        [503, "Server error"],
-        [422, "Request failed (HTTP 422)"],
+      for (const [status, code, text] of [
+        [401, "unauthorized", "Unauthorized"],
+        [403, "forbidden", "Forbidden"],
+        [409, "conflict", "Conflict"],
+        [429, "too_many_requests", "Too many requests"],
+        [400, "invalid_since", "Bad request (invalid_since)"],
+        [409, "slug_exists", "Conflict (slug_exists)"],
+        [500, "internal_error", "Server error (internal_error)"],
+        [503, "unavailable", "Server error (unavailable)"],
+        [410, "expired", "Request failed with HTTP 410 (expired)"],
       ] as const) {
-        const coded = await failWith(status, '{"error":"some_code"}');
+        const coded = await failWith(status, JSON.stringify({ error: code }));
         expect(coded.apiMessage, String(status)).toBe(text);
-        expect(coded.code, String(status)).toBe("some_code");
+        expect(coded.code, String(status)).toBe(code);
       }
+      // A message that is only a code keeps it too.
+      const message = await failWith(410, '{"message":"expired"}');
+      expect(message.apiMessage).toBe("Request failed with HTTP 410 (expired)");
     });
 
     it("keeps an error that is a sentence, and a message beside a code", async () => {

@@ -1035,7 +1035,7 @@ func TestAnInvalidCursorHasItsOwnError(t *testing.T) {
 		t.Errorf("count page: %v", err)
 	}
 	// Another 400 is not an invalid cursor.
-	if _, err := client.Requests.SearchPage(ctx, webhookscc.SearchOptions{Query: "x"}, ""); err == nil || errors.Is(err, webhookscc.ErrInvalidCursor) || !strings.Contains(err.Error(), "Bad request") {
+	if _, err := client.Requests.SearchPage(ctx, webhookscc.SearchOptions{Query: "x"}, ""); err == nil || errors.Is(err, webhookscc.ErrInvalidCursor) || !strings.Contains(err.Error(), "invalid_q") {
 		t.Errorf("another 400: %v", err)
 	}
 }
@@ -1272,11 +1272,15 @@ func TestErrorMessagesAreThePlainTextOfTheBody(t *testing.T) {
 		{404, `{"error":"not_found"}`, "Not found: Use Endpoints.List to see your endpoints"},
 		{404, `{"error":"Request not found"}`, "Request not found: Use Endpoints.List to see your endpoints"},
 		{404, `{"error":"not_found","message":"Request not found"}`, "Request not found: Use Endpoints.List to see your endpoints"},
-		{400, `{"error":"invalid_input"}`, "Bad request"},
+		{401, `{"error":"unauthorized"}`, "Unauthorized. Get an API key at https://webhooks.cc/account/api-keys"},
 		{403, `{"error":"forbidden"}`, "Forbidden"},
 		{409, `{"error":"conflict"}`, "Conflict"},
-		{500, `{"error":"internal"}`, "Server error"},
-		{422, `{"error":"some_code"}`, "Request failed (HTTP 422)"},
+		// A code that says more than the status stays, in brackets.
+		{400, `{"error":"invalid_since"}`, "Bad request (invalid_since)"},
+		{409, `{"error":"slug_exists"}`, "Conflict (slug_exists)"},
+		{500, `{"error":"internal_error"}`, "Server error (internal_error)"},
+		{410, `{"error":"expired"}`, "Request failed with HTTP 410 (expired)"},
+		{410, `{"message":"expired"}`, "Request failed with HTTP 410 (expired)"},
 	}
 	for _, c := range cases {
 		api := newFakeAPI(t)
