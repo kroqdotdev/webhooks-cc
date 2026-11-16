@@ -1,0 +1,11 @@
+{
+  "title": "Steadier mail checks, readable live tunnel errors",
+  "items": [
+    "A reverse DNS lookup that could not finish in time is recorded as temperror (could not check) rather than fail, so a sender with a valid PTR record is no longer shown as missing one",
+    "DNS lookups for the SPF, DKIM, DMARC and reverse DNS checks are retried quickly when an answer is lost, and a reverse lookup that outlives the connection's wait still counts for the message",
+    "Spam scores no longer time out on mail with links: rspamd gets up to 8 seconds, and its slowest rule no longer asks an outside service about every link",
+    "whk tunnel --live answers a sender with 503 and the reason as JSON (\"Nothing is running on port 3000 on the computer running whk.\") instead of a 502 or 504, which Cloudflare replaced with its own page",
+    "whk share tells you when a preview response streamed past 50 MB without a stated size and was cut off, and the docs say what the visitor sees",
+    "The pages sharehooks.cc shows itself use the system's fonts on purpose, as they load nothing from elsewhere"
+  ]
+}

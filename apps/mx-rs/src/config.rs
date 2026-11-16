@@ -57,6 +57,10 @@ pub struct Config {
     /// rspamd's normal worker, e.g. "http://127.0.0.1:11333"; unset turns
     /// spam scoring off (see `spam_check`).
     pub rspamd_url: Option<String>,
+    /// DNS servers for the authentication checks (`MX_DNS_SERVERS`, a comma
+    /// list of addresses, each with an optional port); empty means the
+    /// system's resolvers.
+    pub dns_servers: Vec<std::net::SocketAddr>,
     pub limits: Limits,
     pub timeouts: Timeouts,
     /// The file drop egress proxy (see `egress`), when set: its address on
@@ -101,9 +105,17 @@ pub struct Timeouts {
     pub data: Duration,
     pub session: Duration,
     pub data_slot_wait: Duration,
+    /// How long a new connection waits for its reverse DNS before the
+    /// session starts without it.
     pub reverse_dns: Duration,
+    /// How long a reverse lookup may run in all. One that outlives the
+    /// connection's wait goes on, and a message's checks take its answer.
+    pub reverse_dns_lookup: Duration,
+    /// How long a message's checks wait for such a lookup to finish.
+    pub reverse_dns_late_wait: Duration,
     pub auth_checks: Duration,
-    /// One rspamd check, answer included.
+    /// One rspamd check, answer included. The authentication checks run
+    /// beside it, so up to `auth_checks` it adds no wait of its own.
     pub spam_check: Duration,
     pub check_call: Duration,
     pub deliver_call: Duration,
@@ -134,8 +146,13 @@ impl Default for Timeouts {
             session: Duration::from_secs(600),
             data_slot_wait: Duration::from_secs(30),
             reverse_dns: Duration::from_secs(3),
+            reverse_dns_lookup: Duration::from_secs(10),
+            reverse_dns_late_wait: Duration::from_secs(2),
             auth_checks: Duration::from_secs(8),
-            spam_check: Duration::from_secs(3),
+            // rspamd's slowest rules (phishing, URL checks) take seconds;
+            // its own task timeout is set below this, so it answers with
+            // what it has rather than being cut off.
+            spam_check: Duration::from_secs(8),
             check_call: Duration::from_secs(10),
             deliver_call: Duration::from_secs(120),
         }
@@ -157,6 +174,7 @@ impl std::fmt::Debug for Config {
             .field("data_slots", &self.data_slots)
             .field("trusted_rdns", &self.trusted_rdns)
             .field("rspamd_url", &self.rspamd_url)
+            .field("dns_servers", &self.dns_servers)
             .field("limits", &self.limits)
             .field("timeouts", &self.timeouts)
             .field(
@@ -233,11 +251,36 @@ impl Config {
             data_slots: parse_env_or("MX_DATA_SLOTS", 16).max(1),
             trusted_rdns,
             rspamd_url: non_empty("MX_RSPAMD_URL"),
+            dns_servers: non_empty("MX_DNS_SERVERS")
+                .map(|raw| {
+                    dns_servers(&raw)
+                        .unwrap_or_else(|bad| panic!("MX_DNS_SERVERS: '{bad}' is not an address"))
+                })
+                .unwrap_or_default(),
             limits: Limits::default(),
             timeouts: Timeouts::default(),
             egress: egress_from_env(),
         }
     }
+}
+
+/// "192.0.2.53, [2001:db8::53]:5353, 127.0.0.1:5353": addresses, port 53
+/// unless one is given. `Err` names the entry that is neither.
+fn dns_servers(raw: &str) -> Result<Vec<std::net::SocketAddr>, String> {
+    raw.split(',')
+        .map(str::trim)
+        .filter(|entry| !entry.is_empty())
+        .map(|entry| {
+            entry
+                .parse::<std::net::SocketAddr>()
+                .or_else(|_| {
+                    entry
+                        .parse::<std::net::IpAddr>()
+                        .map(|ip| std::net::SocketAddr::new(ip, 53))
+                })
+                .map_err(|_| entry.to_string())
+        })
+        .collect()
 }
 
 fn egress_from_env() -> Option<EgressConfig> {
@@ -302,7 +345,7 @@ fn is_private_listen(ip: std::net::IpAddr) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::{is_private_listen, list};
+    use super::{Timeouts, dns_servers, is_private_listen, list};
 
     #[test]
     fn egress_listens_only_on_private_addresses() {
@@ -320,6 +363,32 @@ mod tests {
         for refused in ["0.0.0.0", "::", "203.0.113.7", "2001:db8::1", "100.128.0.1"] {
             assert!(!is_private_listen(refused.parse().unwrap()), "{refused}");
         }
+    }
+
+    #[test]
+    fn parses_dns_server_lists() {
+        assert_eq!(
+            dns_servers(" 192.0.2.53, [2001:db8::53]:5353,127.0.0.1:5353 ,").unwrap(),
+            vec![
+                "192.0.2.53:53".parse().unwrap(),
+                "[2001:db8::53]:5353".parse().unwrap(),
+                "127.0.0.1:5353".parse().unwrap(),
+            ]
+        );
+        assert_eq!(
+            dns_servers("192.0.2.53, dns.example").unwrap_err(),
+            "dns.example"
+        );
+    }
+
+    #[test]
+    fn checks_finish_inside_their_budgets() {
+        let timeouts = Timeouts::default();
+        // The spam check runs beside the authentication checks, so a slow
+        // rspamd costs a message no more than they may.
+        assert!(timeouts.spam_check <= timeouts.auth_checks);
+        assert!(timeouts.reverse_dns < timeouts.reverse_dns_lookup);
+        assert!(timeouts.reverse_dns_late_wait < timeouts.auth_checks);
     }
 
     #[test]

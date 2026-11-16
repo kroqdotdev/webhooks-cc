@@ -781,7 +781,7 @@ whk tunnel <port>[/path]               # Forward webhooks to localhost
   --email-format <format>              # json (default), postmark, sendgrid, mailgun or cloudmailin
   --email-path <path> / --no-email     # Where emails go, or skip them
   --live                               # Relay each webhook while the sender waits; the sender gets your app's answer
-                                       # (502 when whk is not connected, 504 after 25 s), stored with the request
+                                       # (503 with the reason when whk is not connected or after 25 s), stored with the request
 
 whk listen <slug>                      # Stream requests to terminal
 

@@ -78,6 +78,8 @@ impl SpamChecker {
         let Ok(_slot) = self.slots.clone().try_acquire_owned() else {
             return json!({ "error": "busy" });
         };
+        // One budget for the whole exchange: reqwest's timeout runs until
+        // the answer's body has been read.
         let response = self
             .client
             .post(&self.url)
@@ -92,10 +94,10 @@ impl SpamChecker {
             Err(e) if e.is_timeout() => return json!({ "error": "timeout" }),
             Err(_) => return json!({ "error": "unavailable" }),
         };
-        match tokio::time::timeout(self.budget, response.json::<Value>()).await {
-            Ok(Ok(answer)) => summarize(&answer),
-            Ok(Err(_)) => json!({ "error": "invalid" }),
-            Err(_) => json!({ "error": "timeout" }),
+        match response.json::<Value>().await {
+            Ok(answer) => summarize(&answer),
+            Err(e) if e.is_timeout() => json!({ "error": "timeout" }),
+            Err(_) => json!({ "error": "invalid" }),
         }
     }
 }
@@ -382,6 +384,15 @@ mod tests {
             checker.check(request()).await,
             json!({ "error": "unavailable" })
         );
+    }
+
+    #[tokio::test]
+    async fn a_slow_verdict_inside_the_budget_is_kept() {
+        // rspamd's phishing rule alone took about 3 s on real mail.
+        let (url, _) = stub(200, ANSWER, Duration::from_millis(400)).await;
+        let checker = SpamChecker::new(&url, Duration::from_secs(2), 2);
+        assert_eq!(checker.check(request()).await["score"], json!(7.46));
+        assert!(crate::config::Timeouts::default().spam_check >= Duration::from_secs(6));
     }
 
     #[tokio::test]

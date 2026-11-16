@@ -16,20 +16,22 @@
 //! form data, the text types in [`TEXT_TYPES`]), no downloads, at most
 //! [`MAX_ANSWER`]. A short answer with no type at all (`res.end('ok')`) goes
 //! back as plain text, as a share passes an untyped error.
-//! What the edge says itself carries `x-whk-live`:
+//! What the edge says itself is a 503 ([`FAILED`]) with the reason as JSON
+//! (`{"error": "Nothing is running on port 3000 ..."}`), and carries
+//! `x-whk-live`:
 //!
-//! - `offline` (502): no live session for the endpoint.
-//! - `unreachable` (502): the session is open, but nothing answers on the
-//!   local port, or the tunnel dropped mid-request.
-//! - `timeout` (504): no answer's head within [`HEAD_TIMEOUT`].
-//! - `busy` (503, with `Retry-After`): the account has too many live
-//!   requests in flight ([`LIVE_STREAMS`], apart from its previews').
-//! - `refused` (502): the app's answer is not passed back ([`check`]), or
-//!   the request was for Werkzeug's debugger and never reached the app
+//! - `offline`: no live session for the endpoint.
+//! - `unreachable`: the session is open, but nothing answers on the local
+//!   port, or the tunnel dropped mid-request.
+//! - `timeout`: no answer's head within [`HEAD_TIMEOUT`].
+//! - `busy` (with `Retry-After`): the account has too many live requests in
+//!   flight ([`LIVE_STREAMS`], apart from its previews').
+//! - `refused`: the app's answer is not passed back ([`check`]), or the
+//!   request was for Werkzeug's debugger and never reached the app
 //!   (debugger.rs, as for a share); the CLI hears why. (A 404 `refused` is a
 //!   request without the secret.)
 //! - `answered`: on the app's own answer, whatever its status, so the
-//!   receiver can tell the app's 502 from the edge's.
+//!   receiver can tell the app's 503 from the edge's.
 
 use std::convert::Infallible;
 use std::net::SocketAddr;
@@ -53,6 +55,12 @@ pub const PATH_PREFIX: &str = "/v1/live/";
 pub const AUTH_HEADER: &str = "x-whk-relay-auth";
 /// What the edge says about the answer (see the module's words).
 pub const LIVE_HEADER: &str = "x-whk-live";
+/// The status of every answer the edge gives in the app's place. Not 502 or
+/// 504: Cloudflare, in front of the capture host, puts its own page
+/// ("error code: 502") in place of an origin's 502 or 504, and the sender
+/// would never read why. A 503 passes through with the reason, and senders
+/// retry it as they would a 502.
+pub const FAILED: StatusCode = StatusCode::SERVICE_UNAVAILABLE;
 /// How long the app has to start its answer (a second in the tests).
 pub const HEAD_TIMEOUT: Duration = if cfg!(test) {
     Duration::from_secs(1)
@@ -253,8 +261,9 @@ fn said(status: StatusCode, live: &'static str, message: &str) -> Response<Body>
         .header(header::CONTENT_TYPE, "application/json")
         .header(header::CACHE_CONTROL, "no-store")
         .header(LIVE_HEADER, live);
-    // A sender told to come back says when.
-    if status == StatusCode::SERVICE_UNAVAILABLE {
+    // A sender turned away while the tunnel is busy is told when to come
+    // back; the other failures last as long as the app is down.
+    if live == "busy" {
         response = response.header(header::RETRY_AFTER, "5");
     }
     response.body(pages::full(body)).unwrap()
@@ -266,17 +275,13 @@ fn debugger_refused(
     session: &crate::registry::Session,
     unreachable: &impl Fn(&crate::registry::Session, u16),
 ) -> Response<Body> {
-    unreachable(session, 502);
+    unreachable(session, FAILED.as_u16());
     if session.limits.should_warn_debugger() {
         session.notify(&EdgeMessage::Notice {
             text: crate::debugger::LIVE_NOTICE.into(),
         });
     }
-    said(
-        StatusCode::BAD_GATEWAY,
-        "refused",
-        "The request was not passed to the app.",
-    )
+    said(FAILED, "refused", "The request was not passed to the app.")
 }
 
 /// The receiver's capture id ([`HEADER_REQUEST_ID`]), when it is a plain id
@@ -304,7 +309,7 @@ async fn handle(state: State, req: Request<Incoming>) -> Response<Body> {
     };
     let Some(session) = state.registry.get_live(endpoint_id) else {
         return said(
-            StatusCode::BAD_GATEWAY,
+            FAILED,
             "offline",
             "No live tunnel is open for this endpoint.",
         );
@@ -326,9 +331,9 @@ async fn handle(state: State, req: Request<Incoming>) -> Response<Body> {
     let Some(_hold) = session.door.live_streams.enter(LIVE_STREAMS) else {
         // The sender is told to retry; the CLI hears the capture was this
         // relay's, so it does not forward it as well.
-        unreachable(&session, 503);
+        unreachable(&session, FAILED.as_u16());
         return said(
-            StatusCode::SERVICE_UNAVAILABLE,
+            FAILED,
             "busy",
             "Too many requests in flight through this live tunnel.",
         );
@@ -343,23 +348,15 @@ async fn handle(state: State, req: Request<Incoming>) -> Response<Body> {
     // Where Werkzeug's console page would be.
     let console = crate::debugger::may_be_console(target.path());
     let Ok(stream) = session.opener.open().await else {
-        unreachable(&session, 502);
-        return said(
-            StatusCode::BAD_GATEWAY,
-            "unreachable",
-            "The live tunnel dropped.",
-        );
+        unreachable(&session, FAILED.as_u16());
+        return said(FAILED, "unreachable", "The live tunnel dropped.");
     };
     let Ok((mut sender, connection)) = hyper::client::conn::http1::Builder::new()
         .handshake(TokioIo::new(stream))
         .await
     else {
-        unreachable(&session, 502);
-        return said(
-            StatusCode::BAD_GATEWAY,
-            "unreachable",
-            "The live tunnel dropped.",
-        );
+        unreachable(&session, FAILED.as_u16());
+        return said(FAILED, "unreachable", "The live tunnel dropped.");
     };
     tokio::spawn(async move {
         let _ = connection.await;
@@ -395,27 +392,23 @@ async fn handle(state: State, req: Request<Incoming>) -> Response<Body> {
     {
         Ok(Ok(response)) => response,
         Ok(Err(_)) => {
-            unreachable(&session, 502);
+            unreachable(&session, FAILED.as_u16());
             return said(
-                StatusCode::BAD_GATEWAY,
+                FAILED,
                 "unreachable",
                 "The app closed the connection without an answer.",
             );
         }
         Err(_) => {
-            unreachable(&session, 504);
-            return said(
-                StatusCode::GATEWAY_TIMEOUT,
-                "timeout",
-                "The app did not answer in time.",
-            );
+            unreachable(&session, FAILED.as_u16());
+            return said(FAILED, "timeout", "The app did not answer in time.");
         }
     };
     let status = response.status();
     if response.headers().contains_key(HEADER_NOTHING_LISTENING) {
-        unreachable(&session, 502);
+        unreachable(&session, FAILED.as_u16());
         return said(
-            StatusCode::BAD_GATEWAY,
+            FAILED,
             "unreachable",
             &format!(
                 "Nothing is running on port {} on the computer running whk.",
@@ -428,9 +421,9 @@ async fn handle(state: State, req: Request<Incoming>) -> Response<Body> {
     // short is read whole, then passed on if it is the app's.
     let body: Body = if console && crate::debugger::could_be_console_page(status, &parts.headers) {
         let Ok(page) = body.collect().await.map(|b| b.to_bytes()) else {
-            unreachable(&session, 502);
+            unreachable(&session, FAILED.as_u16());
             return said(
-                StatusCode::BAD_GATEWAY,
+                FAILED,
                 "unreachable",
                 "The app closed the connection without an answer.",
             );
@@ -448,7 +441,7 @@ async fn handle(state: State, req: Request<Incoming>) -> Response<Body> {
     let pass = match check(status, &parts.headers) {
         Ok(pass) => pass,
         Err(refusal) => {
-            unreachable(&session, 502);
+            unreachable(&session, FAILED.as_u16());
             if session.limits.should_warn_blocked(Instant::now()) {
                 session.notify(&EdgeMessage::Notice {
                 text: format!(
@@ -459,11 +452,7 @@ async fn handle(state: State, req: Request<Incoming>) -> Response<Body> {
                 ),
             });
             }
-            return said(
-                StatusCode::BAD_GATEWAY,
-                "refused",
-                "The app's answer was not passed back.",
-            );
+            return said(FAILED, "refused", "The app's answer was not passed back.");
         }
     };
     session.notify_soon(&EdgeMessage::Request {
@@ -749,7 +738,8 @@ mod tests {
             .send()
             .await
             .unwrap();
-        assert_eq!(offline.status(), 502);
+        assert_eq!(offline.status(), 503);
+        assert!(offline.headers().get("retry-after").is_none());
         assert_eq!(offline.headers()[LIVE_HEADER], "offline");
         for auth in [Some("wrong"), None] {
             let mut request = client.post(format!("{base}/v1/live/nobody/x"));
@@ -762,7 +752,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn a_slow_app_times_out_with_504() {
+    async fn a_slow_app_times_out() {
         let state = state();
         let port = app(|_req: Request<Incoming>| async move {
             tokio::time::sleep(Duration::from_secs(30)).await;
@@ -777,7 +767,7 @@ mod tests {
             .send()
             .await
             .unwrap();
-        assert_eq!(response.status(), 504);
+        assert_eq!(response.status(), 503);
         assert_eq!(response.headers()[LIVE_HEADER], "timeout");
     }
 
@@ -797,8 +787,12 @@ mod tests {
             .send()
             .await
             .unwrap();
-        assert_eq!(response.status(), 502);
+        // Not 502: Cloudflare would put its own page in its place.
+        assert_eq!(response.status(), 503);
         assert_eq!(response.headers()[LIVE_HEADER], "unreachable");
+        assert!(response.headers().get("retry-after").is_none());
+        let reason: serde_json::Value = response.json().await.unwrap();
+        assert!(reason["error"].as_str().is_some_and(|e| !e.is_empty()));
     }
 
     #[test]
@@ -912,7 +906,7 @@ mod tests {
                 .send()
                 .await
                 .unwrap();
-            assert_eq!(response.status(), 502, "{query}");
+            assert_eq!(response.status(), 503, "{query}");
             assert_eq!(response.headers()[LIVE_HEADER], "refused", "{query}");
         }
         assert_eq!(reached.load(Ordering::SeqCst), 0, "never sent to the app");
@@ -927,7 +921,7 @@ mod tests {
             .send()
             .await
             .unwrap();
-        assert_eq!(console.status(), 502);
+        assert_eq!(console.status(), 503);
         assert_eq!(console.headers()[LIVE_HEADER], "refused");
         // A page of the app's own there is its answer.
         let own = client
@@ -959,7 +953,7 @@ mod tests {
             .send()
             .await
             .unwrap();
-        assert_eq!(response.status(), 502);
+        assert_eq!(response.status(), 503);
         assert_eq!(response.headers()[LIVE_HEADER], "refused");
     }
 
@@ -1148,7 +1142,7 @@ mod tests {
             .send()
             .await
             .unwrap();
-        assert_eq!(response.status(), 502);
+        assert_eq!(response.status(), 503);
         assert_eq!(response.headers()[LIVE_HEADER], "refused");
     }
 }

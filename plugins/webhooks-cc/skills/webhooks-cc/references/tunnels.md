@@ -31,9 +31,10 @@ and read deliveries with `get_request` or `whk requests get <id>`.
 For Slack slash commands, Twilio replies, verification handshakes and OAuth
 callbacks: each webhook is relayed to the local app while the sender waits,
 and the sender gets the app's answer. Every request is still captured, and
-`get_request` shows the app's answer as `liveResponse`. No `whk` connected
-means a 502; no answer within 25 seconds means a 504. Live traffic counts
-against the request quota.
+`get_request` shows the app's answer as `liveResponse`. No `whk` connected,
+nothing on the port, or no answer within 25 seconds gets the sender a 503
+with the reason as JSON; `liveResponse.outcome` says which. Live traffic
+counts against the request quota.
 
 ## `whk share <port>` and `share_port`
 

@@ -18,7 +18,7 @@ use smtp_proto::{Error as SmtpError, Request};
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, ReadBuf};
 use tokio::sync::{OwnedSemaphorePermit, Semaphore, watch};
 
-use crate::auth_check::{AuthOutcome, AuthRequest, ReverseDns, header_section_end};
+use crate::auth_check::{AuthOutcome, AuthRequest, LateReverseDns, ReverseDns, header_section_end};
 use crate::config::{MAX_MESSAGE_BYTES, MAX_RECIPIENTS, Timeouts};
 use crate::ingest::Delivery;
 use crate::limits::{Client, Limiter, SlotGuard, address_key};
@@ -70,6 +70,8 @@ pub struct Peer {
     pub ip: IpAddr,
     pub client: Client,
     pub reverse_dns: ReverseDns,
+    /// The reverse lookup, when it was still running as the session began.
+    pub late_reverse_dns: Option<LateReverseDns>,
 }
 
 /// Plain TCP, or TLS after STARTTLS.
@@ -679,10 +681,31 @@ impl<'a, B: Backend, S: AsyncRead + AsyncWrite + Unpin + Send> Session<'a, B, S>
         }
     }
 
+    /// Takes the answer of a reverse lookup that was still running when the
+    /// session began, waiting a little for it: what the message's checks
+    /// record is then the lookup's real outcome, not that it was slow. The
+    /// client's limits stay those it was given at the start.
+    async fn settle_reverse_dns(&mut self) {
+        let Some(mut late) = self.peer.late_reverse_dns.take() else {
+            return;
+        };
+        let wait = self.shared.timeouts.reverse_dns_late_wait;
+        let found = tokio::time::timeout(wait, late.wait_for(Option::is_some))
+            .await
+            .ok()
+            .and_then(|found| found.ok().and_then(|found| (*found).clone()));
+        match found {
+            Some(found) => self.peer.reverse_dns = found,
+            // Still running: a later message in the session may have it.
+            None => self.peer.late_reverse_dns = Some(late),
+        }
+    }
+
     /// Hand the message to the receiver. Returns the reply, the retry store's
     /// attempts, and whether the reply is definitive; the attempts are
     /// finished once the reply has been written.
     async fn deliver(&mut self, raw: Vec<u8>) -> (Reply, Vec<Attempt>, bool) {
+        self.settle_reverse_dns().await;
         let raw = Arc::new(raw);
         let helo = self.helo.clone().unwrap_or_default();
         let mail_from = self.tx.mail_from.clone().unwrap_or_default();

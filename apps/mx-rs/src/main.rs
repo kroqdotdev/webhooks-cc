@@ -27,11 +27,11 @@ use tokio::io::AsyncWriteExt;
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::{Semaphore, watch};
 
-use auth_check::{AuthChecker, AuthOutcome, AuthRequest, ReverseDns};
+use auth_check::{AuthChecker, AuthOutcome, AuthRequest, LateReverseDns, ReverseDns};
 use config::Config;
 use expiring::Expiring;
 use ingest::{Delivery, Ingest};
-use limits::{Client, ClientKey, Limiter, is_trusted_name};
+use limits::{Client, ClientKey, Limiter, SlotGuard, is_trusted_name};
 use reply::{CheckStatus, DeliverOutcome, Reply};
 use retry_store::RetryStore;
 use session::{Backend, Peer, Session, Shared};
@@ -148,6 +148,7 @@ async fn run(statoss: bool) {
         &config.hostname,
         config.timeouts.auth_checks,
         config.data_slots,
+        &config.dns_servers,
     );
     let server = Arc::new(Server {
         shared: Shared {
@@ -267,17 +268,25 @@ async fn accept_loop(
             // Reverse DNS decides whether the client is a known provider,
             // which sets its limits, so it is looked up before anything else,
             // under a per-client cap of its own.
-            let reverse_dns = match server.cached_reverse_dns(ip) {
-                Some(found) => found,
+            let (reverse_dns, late_reverse_dns) = match server.cached_reverse_dns(ip) {
+                Some(found) => (found, None),
                 None => {
-                    let Some(_lookup) = server.shared.limiter.start_lookup(ip) else {
+                    let Some(lookup) = server.shared.limiter.start_lookup(ip) else {
                         server.refuse(stream, Client::new(ip, false), &reply::TOO_BUSY);
                         return;
                     };
-                    let budget = server.shared.timeouts.reverse_dns;
-                    let found = server.auth.reverse_dns(ip, budget).await;
-                    server.remember_reverse_dns(ip, &found);
-                    found
+                    let mut answer = server.clone().look_up_reverse_dns(ip, lookup);
+                    let wait = server.shared.timeouts.reverse_dns;
+                    let found = tokio::time::timeout(wait, answer.wait_for(Option::is_some))
+                        .await
+                        .ok()
+                        .and_then(|found| found.ok().and_then(|found| (*found).clone()));
+                    match found {
+                        Some(found) => (found, None),
+                        // The session starts without it; its messages take
+                        // the answer if it comes in time.
+                        None => (ReverseDns::incomplete(), Some(answer)),
+                    }
                 }
             };
             let trusted = reverse_dns.confirmed
@@ -294,6 +303,7 @@ async fn accept_loop(
                 ip,
                 client,
                 reverse_dns,
+                late_reverse_dns,
             };
             let stats = Session::new(&server.shared, stream, peer, stopped)
                 .run()
@@ -324,7 +334,28 @@ impl Server {
             .map(|(found, _)| found.clone())
     }
 
+    /// Starts the reverse lookup for `ip` on a task of its own, so it can
+    /// outlive the connection's wait: a dropped lookup would leave nothing in
+    /// the resolver's cache either. The client's lookup slot is held until it
+    /// ends, and a definite answer is remembered for later connections.
+    fn look_up_reverse_dns(self: Arc<Self>, ip: IpAddr, slot: SlotGuard) -> LateReverseDns {
+        let (answer, receiver) = watch::channel(None);
+        tokio::spawn(async move {
+            let _slot = slot;
+            let budget = self.shared.timeouts.reverse_dns_lookup;
+            let found = self.auth.reverse_dns(ip, budget).await;
+            self.remember_reverse_dns(ip, &found);
+            let _ = answer.send(Some(found));
+        });
+        receiver
+    }
+
+    /// A lookup that did not finish is not remembered: the next connection
+    /// asks again.
     fn remember_reverse_dns(&self, ip: IpAddr, found: &ReverseDns) {
+        if found.temporary_error {
+            return;
+        }
         let now = Instant::now();
         let mut cache = self.reverse_dns.lock().unwrap_or_else(|e| e.into_inner());
         cache.insert(ip, (found.clone(), now), |_, (_, at)| {

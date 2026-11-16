@@ -179,7 +179,9 @@ fn peer() -> Peer {
         reverse_dns: ReverseDns {
             name: Some("mail.client.test".to_string()),
             confirmed: true,
+            temporary_error: false,
         },
+        late_reverse_dns: None,
     }
 }
 
@@ -404,7 +406,7 @@ async fn passes_on_only_a_forward_confirmed_reverse_dns_name() {
     let mut unconfirmed = peer();
     unconfirmed.reverse_dns = ReverseDns {
         name: Some("mail.google.com".to_string()),
-        confirmed: false,
+        ..ReverseDns::default()
     };
     let (mut client, _handle, _stop) = start_with(shared.clone(), unconfirmed);
     greet(&mut client).await;
@@ -412,6 +414,56 @@ async fn passes_on_only_a_forward_confirmed_reverse_dns_name() {
     client.send("x\r\n.\r\n").await;
     client.expect(250).await;
     assert_eq!(shared.backend.deliveries()[0].client_rdns, None);
+}
+
+#[tokio::test]
+async fn a_reverse_lookup_that_finishes_during_the_session_is_what_the_checks_see() {
+    let shared = shared(FakeBackend::default());
+    let (answer, late) = watch::channel(None);
+    let mut slow = peer();
+    slow.reverse_dns = ReverseDns::incomplete();
+    slow.late_reverse_dns = Some(late);
+    let (mut client, _handle, _stop) = start_with(shared.clone(), slow);
+    greet(&mut client).await;
+    client.start_message("a@mailhooks.cc").await;
+    // The lookup ends while the message is on its way.
+    answer.send(Some(peer().reverse_dns)).unwrap();
+    client.send("x\r\n.\r\n").await;
+    client.expect(250).await;
+    let auth = shared.backend.auth_requests.lock().unwrap().clone();
+    assert_eq!(auth[0].reverse_dns, peer().reverse_dns);
+    assert_eq!(
+        shared.backend.deliveries()[0].client_rdns.as_deref(),
+        Some("mail.client.test")
+    );
+}
+
+#[tokio::test]
+async fn a_reverse_lookup_still_running_at_the_end_of_data_is_a_temporary_error() {
+    let shared = shared_with(
+        FakeBackend::default(),
+        Limits::default(),
+        timeouts(|t| t.reverse_dns_late_wait = Duration::from_millis(50)),
+        None,
+    );
+    let (answer, late) = watch::channel(None);
+    let mut slow = peer();
+    slow.reverse_dns = ReverseDns::incomplete();
+    slow.late_reverse_dns = Some(late);
+    let (mut client, _handle, _stop) = start_with(shared.clone(), slow);
+    greet(&mut client).await;
+    client.start_message("a@mailhooks.cc").await;
+    client.send("x\r\n.\r\n").await;
+    client.expect(250).await;
+    // It finishes before the next message, which records the answer.
+    answer.send(Some(peer().reverse_dns)).unwrap();
+    client.start_message("a@mailhooks.cc").await;
+    client.send("y\r\n.\r\n").await;
+    client.expect(250).await;
+    let auth = shared.backend.auth_requests.lock().unwrap().clone();
+    assert_eq!(auth[0].reverse_dns, ReverseDns::incomplete());
+    assert_eq!(auth[0].reverse_dns.iprev_result(), "temperror");
+    assert_eq!(auth[1].reverse_dns, peer().reverse_dns);
 }
 
 #[tokio::test]
