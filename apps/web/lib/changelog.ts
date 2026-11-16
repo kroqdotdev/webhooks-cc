@@ -34,7 +34,7 @@ export const CLI_VERSION = "1.20.4";
 export const SDK_VERSION = "1.34.0";
 export const PYTHON_SDK_VERSION = "0.12.0";
 export const GO_SDK_VERSION = "0.12.0";
-export const MCP_VERSION = "2.6.1";
+export const MCP_VERSION = "2.6.2";
 
 export const CHANGELOG: ChangelogEntry[] = [
   ...RELEASE.entries,
@@ -2593,6 +2593,7 @@ export const CHANGELOG: ChangelogEntry[] = [
     track: "sdk",
     items: [
       "`verifyStandardWebhookSignature()` takes the body as bytes too (`Uint8Array`, a Node `Buffer` or `ArrayBuffer`), as `verifyForwardedEmail()` already did, so a forwarded SendGrid or Mailgun form carrying a binary file (a PDF, an image) verifies: decoded as text, such a body changes and its signature no longer matches. A string is checked as before",
+      "`verifySignature()` with `standard-webhooks` reads a captured request's `bodyRaw` when it has one, so a captured form with a binary file verifies too",
     ],
   },
   {
@@ -3491,6 +3492,15 @@ export const CHANGELOG: ChangelogEntry[] = [
   },
 
   // ─── MCP ────────────────────────────────────────────────────────────
+  {
+    version: "2.6.2",
+    date: "2026-11-16",
+    title: "Signature Checks On Binary Forms",
+    track: "mcp",
+    items: [
+      "`verify_signature` with `standard-webhooks` checks a captured request whose body is not text (a forwarded SendGrid or Mailgun form carrying a PDF or an image) over its exact bytes, through SDK 1.34.0",
+    ],
+  },
   {
     version: "2.6.1",
     date: "2026-11-16",

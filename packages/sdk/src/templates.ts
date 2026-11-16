@@ -2380,7 +2380,9 @@ export async function hmacSignRaw(
     key,
     (typeof payload === "string"
       ? new TextEncoder().encode(payload)
-      : Uint8Array.from(payload)) as Uint8Array<ArrayBuffer>
+      : payload.buffer instanceof ArrayBuffer
+        ? payload
+        : new Uint8Array(payload)) as Uint8Array<ArrayBuffer>
   );
   return new Uint8Array(signature);
 }

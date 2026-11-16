@@ -568,6 +568,13 @@ describe("signature verification", () => {
     expect(await verifyStandardWebhookSignature(foreign, signed, secret)).toBe(true);
     // Decoded as text, the PDF's bytes change and the check fails.
     expect(await verifyStandardWebhookSignature(body.toString("utf8"), signed, secret)).toBe(false);
+    // Captured, such a body has no text, only bodyRaw; verifySignature reads that.
+    await expect(
+      verifySignature(
+        { body: undefined, bodyRaw: body.toString("base64"), headers: signed },
+        { provider: "standard-webhooks", secret }
+      )
+    ).resolves.toEqual({ valid: true });
   });
 
   it("verifies Standard Webhooks signatures with whsec_ secrets", async () => {

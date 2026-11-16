@@ -22,8 +22,12 @@ import {
   VERIFY_PROVIDERS,
 } from "./templates";
 
-type VerifyableRequest =
-  Pick<CapturedRequest, "body" | "headers"> | Pick<SearchResult, "body" | "headers">;
+type VerifyableRequest = (
+  Pick<CapturedRequest, "body" | "headers"> | Pick<SearchResult, "body" | "headers">
+) & {
+  /** Base64 of the exact bytes, which captures carry when the body is not UTF-8. */
+  bodyRaw?: string;
+};
 
 type PayPalSignatureOptions = {
   fetchCertificate?: (url: string) => Promise<string>;
@@ -1622,7 +1626,9 @@ export async function verifySignature(
   }
 
   if (options.provider === "standard-webhooks") {
-    valid = await verifyStandardWebhookSignature(request.body, request.headers, options.secret);
+    // A binary body (a forwarded form with a file) is captured only as bodyRaw.
+    const body = request.bodyRaw ? bytesFromBase64(request.bodyRaw) : request.body;
+    valid = await verifyStandardWebhookSignature(body, request.headers, options.secret);
   }
 
   if (options.provider === "meta") {
