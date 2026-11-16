@@ -578,7 +578,8 @@ function TeamDetailContent() {
           />
         )}
 
-        {subscribed && isOwner && (
+        {/* A complimentary team has no subscription for agents to spend through. */}
+        {subscribed && isOwner && !team.complimentary && (
           <AgentBudgetPanel
             accessToken={accessToken}
             teamId={team.id}

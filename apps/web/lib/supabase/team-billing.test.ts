@@ -1588,6 +1588,58 @@ describe("revokeTeamSeat", () => {
   });
 });
 
+describe("complimentary (staff) teams", () => {
+  const COMPLIMENTARY = "This team is complimentary (staff) and has no subscription to change";
+  const staffTeam = () =>
+    teamRow({
+      polar_subscription_id: null,
+      subscription_status: "active",
+      business: true,
+      seats: 10,
+      billing_interval: "month",
+    });
+
+  function ownerAdmin() {
+    mockFns.createAdminClient.mockReturnValue(
+      createFakeAdmin({
+        "team_members:select": [OWNER_MEMBERSHIP],
+        "teams:select": [staffTeam()],
+      })
+    );
+  }
+
+  test.each([
+    ["cancelling", () => cancelTeamSubscription("user_1", "team_1")],
+    ["resuming", () => resubscribeTeam("user_1", "team_1")],
+    ["changing seats", () => updateTeamSeats("user_1", "team_1", 12)],
+    ["quoting seats", () => quoteTeamSeatChange("user_1", "team_1", 12)],
+    ["changing the plan", () => changeTeamPlan("user_1", "team_1", "team", "month")],
+    ["keeping the plan", () => keepTeamPlan("user_1", "team_1")],
+  ])("%s is refused before Polar is asked", async (_what, call) => {
+    ownerAdmin();
+    await expect(call()).rejects.toMatchObject({ code: "no_subscription", message: COMPLIMENTARY });
+    expect(mockFns.createPolarClient).not.toHaveBeenCalled();
+  });
+
+  test("a checkout is refused as already live", async () => {
+    ownerAdmin();
+    await expect(createTeamCheckout("user_1", "team_1", 5, "team_business")).rejects.toMatchObject({
+      code: "already_subscribed",
+      message: "This team is complimentary (staff) and needs no subscription",
+    });
+    expect(mockFns.createPolarClient).not.toHaveBeenCalled();
+  });
+
+  test("the billing portal says there are no invoices", async () => {
+    ownerAdmin();
+    await expect(createTeamCustomerPortal("user_1", "team_1")).rejects.toMatchObject({
+      code: "no_customer",
+      message: "This team is complimentary (staff) and has no invoices",
+    });
+    expect(mockFns.createPolarClient).not.toHaveBeenCalled();
+  });
+});
+
 describe("subscription management", () => {
   test("cancelTeamSubscription flags cancel-at-period-end in Polar, then the row", async () => {
     mockFns.createAdminClient.mockReturnValue(
@@ -2701,6 +2753,70 @@ describe("subscription event guards", () => {
     );
 
     expect(teamsUpdates()).toEqual([]);
+  });
+
+  test("a late event for an ended subscription does not bring it back to a complimentary team", async () => {
+    // A staff team whose paid subscription was revoked is live again with
+    // no stored id; only a new subscription (created) may take it over.
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    const complimentary = {
+      data: {
+        polar_subscription_id: null,
+        subscription_status: "active",
+        seats: 10,
+        period_start: "2026-08-01T00:00:00.000Z",
+        business: true,
+        billing_interval: "month",
+      },
+    };
+    mockFns.createAdminClient.mockReturnValue(
+      createFakeAdmin({ "teams:select": [complimentary, complimentary, complimentary] })
+    );
+
+    await applyTeamPolarWebhookEvent(
+      "subscription.updated",
+      "team_1",
+      subscriptionEvent("sub_old")
+    );
+    await applyTeamPolarWebhookEvent("subscription.active", "team_1", subscriptionEvent("sub_old"));
+    await applyTeamPolarWebhookEvent(
+      "subscription.created",
+      "team_1",
+      subscriptionEvent("sub_old", { status: "canceled", ended_at: "2026-08-02T00:00:00Z" })
+    );
+
+    expect(teamsUpdates()).toEqual([]);
+  });
+
+  test("a new live subscription takes a complimentary team over", async () => {
+    const complimentary = {
+      data: {
+        polar_subscription_id: null,
+        subscription_status: "active",
+        seats: 10,
+        period_start: "2026-08-01T00:00:00.000Z",
+        business: true,
+        billing_interval: "month",
+      },
+    };
+    mockFns.createAdminClient.mockReturnValue(
+      createFakeAdmin({
+        "teams:select": [complimentary, complimentary],
+        "teams:update": [{ data: [{ id: "team_1" }] }, {}],
+      })
+    );
+
+    await applyTeamPolarWebhookEvent(
+      "subscription.created",
+      "team_1",
+      subscriptionEvent("sub_new")
+    );
+
+    expect(teamsUpdates()[0].payload).toMatchObject({
+      polar_subscription_id: "sub_new",
+      subscription_status: "active",
+      seats: 3,
+    });
   });
 
   test("a write that lost to another fails, so Polar delivers the event again", async () => {

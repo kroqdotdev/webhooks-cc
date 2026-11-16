@@ -12,6 +12,10 @@ vi.mock("./admin", () => ({
 
 vi.mock("./team-billing", () => ({
   revokeTeamSubscription: mockFns.revokeTeamSubscription,
+  isComplimentaryTeam: (team: {
+    polar_subscription_id: string | null;
+    subscription_status: string | null;
+  }) => team.polar_subscription_id === null && team.subscription_status !== null,
 }));
 
 vi.mock("./capacity-billing", () => ({
@@ -83,12 +87,37 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
+const NEW_TEAM_ROW = {
+  id: "team_1",
+  name: "Acme",
+  created_by: "user_1",
+  created_at: "2026-01-01T00:00:00Z",
+  subscription_status: null,
+  polar_subscription_id: null,
+  seats: 0,
+  requests_used: 0,
+  request_limit: 0,
+  block_requests: 0,
+  period_end: null,
+  cancel_at_period_end: false,
+  pending_seats: null,
+  business: false,
+  billing_interval: null,
+  billing_period_end: null,
+  pending_plan: null,
+  pending_interval: null,
+};
+
+const CREATED = {
+  id: "team_1",
+  name: "Acme",
+  created_by: "user_1",
+  created_at: "2026-01-01T00:00:00Z",
+};
+
 describe("createTeam", () => {
   test("creates a suspended, seatless team without checking the caller's plan", async () => {
-    const admin = createFakeAdmin(
-      {},
-      { id: "team_1", name: "Acme", created_by: "user_1", created_at: "2026-01-01T00:00:00Z" }
-    );
+    const admin = createFakeAdmin({ "teams:select": [{ data: NEW_TEAM_ROW }] }, CREATED);
     mockFns.createAdminClient.mockReturnValue(admin);
 
     const result = await createTeam("user_1", "Acme");
@@ -105,10 +134,46 @@ describe("createTeam", () => {
       requestLimit: 0,
       periodEnd: null,
       cancelAtPeriodEnd: false,
+      complimentary: false,
     });
     expect(admin.rpc).toHaveBeenCalledWith("create_team_with_owner", {
       p_user_id: "user_1",
       p_name: "Acme",
+    });
+  });
+
+  test("returns a staff owner's team live and complimentary, as the database made it", async () => {
+    const periodEnd = "2026-02-01T00:00:00Z";
+    const admin = createFakeAdmin(
+      {
+        "teams:select": [
+          {
+            data: {
+              ...NEW_TEAM_ROW,
+              subscription_status: "active",
+              business: true,
+              seats: 10,
+              request_limit: 2_500_000,
+              billing_interval: "month",
+              period_end: periodEnd,
+            },
+          },
+        ],
+      },
+      CREATED
+    );
+    mockFns.createAdminClient.mockReturnValue(admin);
+
+    const result = await createTeam("user_1", "Acme");
+
+    expect(result).toMatchObject({
+      suspended: false,
+      subscriptionStatus: "active",
+      business: true,
+      seats: 10,
+      requestLimit: 2_500_000,
+      periodEnd: Date.parse(periodEnd),
+      complimentary: true,
     });
   });
 });
@@ -171,6 +236,7 @@ describe("listTeamsForUser", () => {
                 created_by: "user_1",
                 created_at: "2026-01-01T00:00:00Z",
                 subscription_status: "active",
+                polar_subscription_id: "sub_1",
                 seats: 3,
                 requests_used: 42,
                 request_limit: 300_000,
@@ -197,6 +263,7 @@ describe("listTeamsForUser", () => {
       blockRequests: 50_000,
       periodEnd: Date.parse(periodEnd),
       cancelAtPeriodEnd: true,
+      complimentary: false,
     });
   });
 });

@@ -114,6 +114,17 @@ vi.mock("@/lib/supabase/team-billing", () => {
   return {
     TeamBillingError,
     getTeamForOwner: vi.fn(async () => team()),
+    refuseComplimentaryTeam: (t: {
+      polar_subscription_id: string | null;
+      subscription_status: string | null;
+    }) => {
+      if (t.polar_subscription_id === null && t.subscription_status !== null) {
+        throw new TeamBillingError(
+          "no_subscription",
+          "This team is complimentary (staff) and has no subscription to change"
+        );
+      }
+    },
     loadTeamSeatQuote: vi.fn(async (_user: string, _team: string, seats: number) => {
       if (polar.state.status !== "active") throw new TeamBillingError("no_subscription");
       const s = { ...polar.state };
@@ -195,6 +206,7 @@ const {
   chargeCeiling,
   cleanTeamName,
   loadBillingQuote,
+  refusalOf,
   parseBillingChangeRequest,
   quoteFingerprint,
   billingChangeStillRunning,
@@ -760,6 +772,20 @@ describe("team names and resuming", () => {
     const { outcome } = await runBillingChange("owner", resume, approved);
     expect(outcome).toMatchObject({ executed: false, code: "quote_changed" });
     expect(teamBilling.resubscribeTeam).not.toHaveBeenCalled();
+  });
+
+  test("a complimentary team is refused before Polar is asked", async () => {
+    vi.mocked(teamBilling.getTeamForOwner).mockResolvedValueOnce({
+      ...(await teamBilling.getTeamForOwner("owner", TEAM)),
+      polar_subscription_id: null,
+    });
+    const cancel = { teamId: TEAM, change: { kind: "cancel" as const } };
+    const error = await loadBillingQuote("owner", cancel).catch((e: unknown) => e);
+    expect(refusalOf(error)).toMatchObject({
+      status: 409,
+      code: "no_subscription",
+      message: "This team is complimentary (staff) and has no subscription to change",
+    });
   });
 
   test("keeping the plan renews at the reduced seats when a reduction waits", async () => {

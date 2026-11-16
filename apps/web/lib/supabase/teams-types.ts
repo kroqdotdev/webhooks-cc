@@ -47,6 +47,11 @@ export interface Team {
   cancelAtPeriodEnd: boolean;
   /** Seat count a scheduled reduction applies at the next renewal; null when none. */
   pendingSeats: number | null;
+  /**
+   * Live on Team Business without a subscription because staff own it
+   * (migration 00108): nothing to check out, change or cancel.
+   */
+  complimentary: boolean;
 }
 
 export interface TeamMember {

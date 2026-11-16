@@ -165,6 +165,10 @@ function creditsFor(kind: CapacityKind): PurchaseKind | null {
   return null;
 }
 
+/** Why a complimentary (staff) team cannot buy add-ons: there is no subscription to add them to. */
+export const COMPLIMENTARY_TEAM_ADDONS_MESSAGE =
+  "This team is complimentary (staff) and has no subscription to add to";
+
 export class CapacityError extends Error {
   code: string;
   status: number;
@@ -223,6 +227,11 @@ export interface CapacityState {
 
 interface AccountRow {
   plan_active: boolean;
+  /**
+   * A team live without a Polar subscription (a staff team, migration
+   * 00108): its plan counts, but it has nothing to add add-ons to.
+   */
+  complimentary: boolean;
   /** Page add-ons count: Business, or Team Business, on a live plan. */
   pages_active: boolean;
   /** Extra pages end at the renewal: the plan changes to one without them. */
@@ -296,7 +305,7 @@ async function readAccount(account: CapacityAccount): Promise<AccountRow | null>
     const { data, error } = await admin
       .from("teams")
       .select(
-        `${ACCOUNT_COLUMNS}, subscription_status, business, seats, pending_plan, billing_interval, billing_period_end`
+        `${ACCOUNT_COLUMNS}, subscription_status, polar_subscription_id, business, seats, pending_plan, billing_interval, billing_period_end`
       )
       .eq("id", account.teamId)
       .maybeSingle();
@@ -308,6 +317,7 @@ async function readAccount(account: CapacityAccount): Promise<AccountRow | null>
       pending_plan: pendingPlan,
       billing_interval: interval,
       billing_period_end: billingEnd,
+      polar_subscription_id: subscriptionId,
       ...row
     } = data;
     const live = row.subscription_status !== null;
@@ -318,6 +328,7 @@ async function readAccount(account: CapacityAccount): Promise<AccountRow | null>
     return {
       ...row,
       plan_active: live,
+      complimentary: live && subscriptionId === null,
       pages_active: live && entitlements.pageAddons,
       pages_ending: leavingBusiness,
       domains_active: live && entitlements.customDomains > 0,
@@ -349,6 +360,7 @@ async function readAccount(account: CapacityAccount): Promise<AccountRow | null>
   return {
     ...row,
     plan_active: entitlements.requestAddons && row.subscription_status !== null,
+    complimentary: false,
     pages_active: entitlements.pageAddons && row.subscription_status !== null,
     pages_ending: pendingPlan !== null && !planEntitlements(pendingPlan).pageAddons,
     domains_active: entitlements.customDomains > 0 && row.subscription_status !== null,
@@ -440,6 +452,9 @@ async function requireEligible(
   if (!row) {
     throw new CapacityError("not_found", "Account not found", 404);
   }
+  if (row.complimentary) {
+    throw new CapacityError("plan_required", COMPLIMENTARY_TEAM_ADDONS_MESSAGE);
+  }
   if (resource === "pages" && !row.pages_active) {
     throw new CapacityError(
       "plan_required",
@@ -519,7 +534,7 @@ export async function getCapacityState(
 
   return {
     offered: getCapacityProductIds() !== null,
-    eligible: row.plan_active,
+    eligible: row.plan_active && !row.complimentary,
     planEnding: row.plan_active && row.cancel_at_period_end && row.last_period,
     periodStart: row.period_start,
     periodEnd: row.period_end,
@@ -563,7 +578,7 @@ async function pageState(account: CapacityAccount, row: AccountRow): Promise<Cap
   const overageMax = row.page_overage_max;
   return {
     offered: getPageProductIds() !== null,
-    eligible: row.pages_active,
+    eligible: row.pages_active && !row.complimentary,
     // Extra pages end with the plan, or a change away from Business or
     // Team Business.
     planEnding:
@@ -669,7 +684,7 @@ async function domainState(account: CapacityAccount, row: AccountRow): Promise<C
   const blocks = liveOfKind(subscriptions, "domain_blocks");
   return {
     offered: getDomainProductIds() !== null,
-    eligible: row.domains_active,
+    eligible: row.domains_active && !row.complimentary,
     planEnding:
       row.domains_active && row.last_period && (row.cancel_at_period_end || row.domains_ending),
     periodStart: row.period_start,
@@ -2017,11 +2032,15 @@ export async function reconcileAddonsWithPlan(account: CapacityAccount): Promise
 
   for (const row of rows) {
     // Page and domain add-ons need Business (or Team Business); the rest the plan.
-    const active = PAGE_KINDS.has(row.kind)
-      ? plan.pages_active
-      : DOMAIN_KINDS.has(row.kind)
-        ? plan.domains_active
-        : plan.plan_active;
+    // A complimentary (staff) team has no plan subscription for add-ons to
+    // go with, so its add-ons end as they would with the plan gone.
+    const active =
+      !plan.complimentary &&
+      (PAGE_KINDS.has(row.kind)
+        ? plan.pages_active
+        : DOMAIN_KINDS.has(row.kind)
+          ? plan.domains_active
+          : plan.plan_active);
     const leaving =
       plan.cancel_at_period_end ||
       (PAGE_KINDS.has(row.kind) && pagesLeaving) ||

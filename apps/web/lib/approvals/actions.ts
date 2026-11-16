@@ -490,7 +490,11 @@ const deleteTeamAction: ActionSpec<TeamDeleteParams> = {
       { label: "Shared endpoints", value: "Stop being shared; they stay with their owners" },
       {
         label: "Subscription",
-        value: team.subscriptionStatus !== null ? "Ends now, with the rest of its period" : "None",
+        value: team.complimentary
+          ? "None (complimentary)"
+          : team.subscriptionStatus !== null
+            ? "Ends now, with the rest of its period"
+            : "None",
       },
     ];
   },
