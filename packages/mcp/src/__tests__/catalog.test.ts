@@ -134,8 +134,21 @@ describe("tool group settings", () => {
     expect(parseToolGroups("teams+domains")).toEqual({
       groups: new Set(["core", "teams", "domains"]),
       unknown: [],
+      named: true,
     });
     expect(parseToolGroups("Teams, nope")!.unknown).toEqual(["nope"]);
+  });
+
+  it("says whether any name was a group, so a typo alone is told apart from core", () => {
+    expect(parseToolGroups("typo")).toEqual({
+      groups: new Set(["core"]),
+      unknown: ["typo"],
+      named: false,
+    });
+    expect(parseToolGroups("typo, nope")!.named).toBe(false);
+    expect(parseToolGroups("core")!.named).toBe(true);
+    expect(parseToolGroups("all,typo")!.named).toBe(true);
+    expect(parseToolGroups("TEAMS")!.named).toBe(true);
   });
 
   it("gives every group to clients that take long lists, and core to the rest", () => {

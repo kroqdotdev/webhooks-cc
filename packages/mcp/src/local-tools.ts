@@ -4,7 +4,7 @@ import {
   type ServerContext,
   type Transport,
 } from "@modelcontextprotocol/server";
-import { sdkToolResult, toolCallFrom } from "./sdk-call";
+import { listedInputSchema, sdkToolResult, toolCallFrom } from "./sdk-call";
 import type { WebhooksCC } from "@webhooks-cc/sdk";
 import type { DashboardOrigins } from "./app";
 import { z } from "zod";
@@ -42,7 +42,7 @@ export function asToolServer(server: McpServer): ToolServer {
         {
           title: annotations?.title,
           description,
-          inputSchema: z.object(shape),
+          inputSchema: listedInputSchema(z.object(shape)),
           annotations,
           ...(meta ? { _meta: meta } : {}),
         },
@@ -88,7 +88,9 @@ export function toolSelection(options: ToolSelectionOptions = {}): ToolSelection
   }
   const readOnly =
     options.readOnly ?? /^(1|true|yes|on)$/i.test((process.env.WHK_MCP_READ_ONLY ?? "").trim());
-  return { groups: parsed?.groups ?? null, readOnly };
+  // Only unknown names (a typo): the client's default, as on the hosted
+  // server, rather than the core alone.
+  return { groups: parsed?.named ? parsed.groups : null, readOnly };
 }
 
 /** The groups past core, which enable_tools takes. */

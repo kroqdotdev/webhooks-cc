@@ -7,7 +7,12 @@ import {
   type JSONRPCMessage,
 } from "@modelcontextprotocol/server";
 import { serveStdio } from "@modelcontextprotocol/server/stdio";
-import { APP_MIME_TYPE, INSPECTOR_URI } from "@webhooks-cc/mcp/tools";
+import {
+  APP_MIME_TYPE,
+  INSPECTOR_URI,
+  TOOL_GROUP_NAMES,
+  type ToolGroup,
+} from "@webhooks-cc/mcp/tools";
 import { MCP_VERSION } from "@/lib/changelog";
 
 // The hosted server's registration of the request inspector (an MCP App):
@@ -23,6 +28,7 @@ vi.mock("@/lib/forwarding/config", () => ({ sendOptions: () => ({}) }));
 vi.mock("@/lib/forwarding/send", () => ({ sendForward: vi.fn() }));
 
 const { buildServer, TARGET_URL_NOTE } = await import("./hosted");
+type CallerAuth = import("./hosted").CallerAuth;
 
 const open: Array<{ close(): Promise<void> }> = [];
 afterEach(async () => {
@@ -31,7 +37,11 @@ afterEach(async () => {
 });
 
 /** Sends one 2026-07-28 request to a fresh hosted server and returns its result. */
-async function ask(method: string, params: Record<string, unknown> = {}) {
+async function ask(
+  method: string,
+  params: Record<string, unknown> = {},
+  caller: Partial<CallerAuth> = {}
+) {
   const [clientSide, serverSide] = InMemoryTransport.createLinkedPair();
   open.push(
     serveStdio(
@@ -42,6 +52,7 @@ async function ask(method: string, params: Record<string, unknown> = {}) {
           userId: "user-1",
           groups: new Set(["core"]),
           readOnly: false,
+          ...caller,
         }),
       { transport: serverSide }
     )
@@ -293,5 +304,77 @@ describe("the hosted server", () => {
     })) as { isError?: boolean; content: Array<{ text: string }> };
     expect(result.isError, result.content[0]?.text).toBeFalsy();
     expect(result.content.map((item) => item.text)).not.toContain(TARGET_URL_NOTE);
+  });
+});
+
+describe("hosted errors", () => {
+  it("answers a timeout that is not a duration as a validation error", async () => {
+    const fetch = vi.fn(async () => Response.json([]));
+    vi.stubGlobal("fetch", fetch);
+    const messages = new Set<string>();
+    for (const timeout of ["banana", -5]) {
+      const result = (await ask("tools/call", {
+        name: "wait_for_request",
+        arguments: { endpointSlug: "acme", timeout },
+      })) as { isError?: boolean; content: Array<{ text: string }> };
+      expect(result.isError).toBe(true);
+      const error = JSON.parse(result.content[0].text);
+      expect(error).toMatchObject({ error: true, code: "validation_error" });
+      expect(error.message).toMatch(/^timeout: /);
+      messages.add(error.message);
+    }
+    expect(messages.size).toBe(2);
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it("notes unknown groups on describe and in the instructions", async () => {
+    const caller = { unknownGroups: ["teamz"] };
+    const { tools } = (await ask("tools/list", {}, caller)) as {
+      tools: Array<{ name: string; description: string }>;
+    };
+    const describe = tools.find((tool) => tool.name === "describe");
+    expect(describe?.description).toContain('Unknown tool groups in ?tools=: "teamz" (known: all,');
+    const others = tools.filter((tool) => tool.name !== "describe");
+    expect(others.some((tool) => tool.description.includes("Unknown tool groups"))).toBe(false);
+    const discover = (await ask("server/discover", {}, caller)) as { instructions?: string };
+    expect(discover.instructions).toContain('Unknown tool groups in ?tools=: "teamz"');
+    // describe is listed on a read-only server too.
+    const readOnly = (await ask("tools/list", {}, { ...caller, readOnly: true })) as {
+      tools: Array<{ name: string }>;
+    };
+    expect(readOnly.tools.map((tool) => tool.name)).toContain("describe");
+  });
+});
+
+describe("the size of the hosted tool lists", () => {
+  /** What a client receives for its tool list: every tool object, whole. */
+  async function listed(groups: ToolGroup[]): Promise<number> {
+    const { tools } = (await ask("tools/list", {}, { groups: new Set(groups) })) as {
+      tools: unknown[];
+    };
+    return JSON.stringify(tools).length;
+  }
+
+  it("keeps the core list and the full list within their budgets", async () => {
+    const core = await listed(["core"]);
+    const all = await listed([...TOOL_GROUP_NAMES]);
+    // Measured whole, as sent (title, _meta and the targetUrl wrappers
+    // included): 59.1 KB and 119.3 KB in mcp 2.5.0 (from 63.4 KB and 128.1 KB).
+    expect(core).toBeLessThanOrEqual(60 * 1024);
+    expect(all).toBeLessThanOrEqual(140 * 1024);
+  });
+
+  it("lists input schemas without the $schema URI, and still validates calls", async () => {
+    const { tools } = (await ask("tools/list")) as {
+      tools: Array<{ name: string; inputSchema: Record<string, unknown> }>;
+    };
+    for (const tool of tools) expect(tool.inputSchema, tool.name).not.toHaveProperty("$schema");
+    expect(tools.find((tool) => tool.name === "get_request")?.inputSchema.required).toEqual([
+      "requestId",
+    ]);
+    const refused = (await ask("tools/call", { name: "get_request", arguments: {} })) as {
+      isError?: boolean;
+    };
+    expect(refused.isError).toBe(true);
   });
 });

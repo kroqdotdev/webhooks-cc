@@ -1505,6 +1505,11 @@ const DURATION_INPUTS: (number | string)[] = [
   "1e3",
   "0b11",
   "+5",
+  // Digits past what a double holds, and a value its unit overflows: refused, never Infinity.
+  "9".repeat(400),
+  "1e400",
+  `${"9".repeat(400)}ms`,
+  `1${"0".repeat(306)}d`,
   ".5",
   "5.",
   "Infinity",

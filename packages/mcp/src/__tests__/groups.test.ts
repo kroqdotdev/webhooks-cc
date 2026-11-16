@@ -119,6 +119,21 @@ describe("tool groups on the local server", () => {
     expect(log).not.toHaveBeenCalled();
   });
 
+  it("gives the client's default for a WHK_MCP_TOOLS of unknown names only, and warns", async () => {
+    const warn = vi.spyOn(console, "error").mockImplementation(() => {});
+    vi.stubEnv("WHK_MCP_TOOLS", "teamz");
+    try {
+      // A typo alone is no choice: Claude Code still gets every tool, Cursor the core.
+      const everything = await legacyClient("claude-code");
+      expect(await everything.names()).toEqual(sorted(ALL));
+      const core = await legacyClient("cursor-vscode");
+      expect(await core.names()).toEqual(sorted([...CORE, ENABLE_TOOLS]));
+      expect(warn.mock.calls.flat().join(" ")).toContain("teamz");
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
   it("lists only the tools that change nothing in read-only mode", async () => {
     vi.stubEnv("WHK_MCP_READ_ONLY", "1");
     try {
@@ -220,5 +235,64 @@ describe("tool groups on the local server", () => {
     };
     expect(answer.error).toBeUndefined();
     expect(answer.result!.tools.map((tool) => tool.name).sort()).toEqual(sorted(ALL));
+  });
+});
+
+describe("the size of the hosted tool lists", () => {
+  /** The hosted server's tools/list for `groups`, as a client gets it. */
+  async function remoteList(groups: ToolGroup[]) {
+    const { McpServer } = await import("@modelcontextprotocol/server");
+    const { WebhooksCC } = await import("@webhooks-cc/sdk");
+    const { registerTools } = await import("../tools");
+    const { asToolServer } = await import("../local-tools");
+    const [clientSide, serverSide] = InMemoryTransport.createLinkedPair();
+    open.push(
+      serveStdio(
+        () => {
+          const server = new McpServer({ name: "webhooks-cc", version: "0.0.0" });
+          registerTools(asToolServer(server), new WebhooksCC(SERVER), {
+            remote: true,
+            groups: new Set(groups),
+          });
+          return server;
+        },
+        { transport: serverSide }
+      )
+    );
+    const client = new Client({ name: "size-test", version: "1.0.0" }, { capabilities: {} });
+    await client.connect(clientSide as never);
+    open.push(client);
+    const { tools } = await client.listTools();
+    return tools;
+  }
+
+  /** What a list costs a client: every tool object as it receives it, title and _meta included. */
+  const listSize = (tools: Awaited<ReturnType<typeof remoteList>>) => JSON.stringify(tools).length;
+
+  it("keeps the core list and the full list within their budgets", async () => {
+    const core = listSize(await remoteList(["core"]));
+    const all = listSize(await remoteList([...TOOL_GROUP_NAMES]));
+    // A client pays for its whole list on every request. Measured whole at
+    // 59.1 KB and 119.3 KB in mcp 2.5.0 (from 63.4 KB and 128.1 KB); the
+    // hosted server's own list is measured in apps/web (hosted-app.test.ts).
+    expect(core).toBeLessThanOrEqual(60 * 1024);
+    expect(all).toBeLessThanOrEqual(140 * 1024);
+  });
+
+  it("answers describe with the section names, and a section on request", async () => {
+    const { WebhooksCC } = await import("@webhooks-cc/sdk");
+    const { describeSection } = await import("../tools");
+    const description = new WebhooksCC(SERVER).describe();
+    const overview = describeSection(description, undefined) as {
+      version: string;
+      sections: Record<string, string[]>;
+    };
+    expect(JSON.stringify(overview, null, 2).length).toBeLessThanOrEqual(4 * 1024);
+    expect(overview.version).toBe(description.version);
+    expect(overview.sections.endpoints).toContain("create");
+    expect(overview.sections.usage).toEqual([]);
+    const endpoints = describeSection(description, "endpoints") as { operations: unknown };
+    expect(endpoints.operations).toEqual(description.endpoints);
+    expect(() => describeSection(description, "nope")).toThrow(/Sections: .*endpoints/);
   });
 });

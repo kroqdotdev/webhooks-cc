@@ -2630,6 +2630,97 @@ describe("WebhooksCC", () => {
         expect((error as WebhooksCCError).message.length).toBeLessThan(300);
       }
     });
+
+    /** The error a call fails with when the API answers `status` with `text`. */
+    async function failWith(status: number, text: string): Promise<WebhooksCCError> {
+      globalThis.fetch = vi.fn().mockResolvedValue({
+        ok: false,
+        status,
+        headers: new Headers({ "content-type": "application/json" }),
+        json: () => Promise.resolve(JSON.parse(text)),
+        text: () => Promise.resolve(text),
+      });
+      try {
+        await createClient().endpoints.get("acme");
+      } catch (error) {
+        expect(error).toBeInstanceOf(WebhooksCCError);
+        return error as WebhooksCCError;
+      }
+      throw new Error("Should have thrown");
+    }
+
+    it("takes the error of a JSON body as plain text", async () => {
+      const error = await failWith(404, '{"error":"Endpoint not found"}');
+      expect(error).toBeInstanceOf(NotFoundError);
+      expect(error.apiMessage).toBe("Endpoint not found");
+      expect(error.message).toBe(
+        "Endpoint not found: Use client.endpoints.list() to see available endpoints."
+      );
+      expect(error.path).toBe("/endpoints/acme");
+      expect(error.code).toBeUndefined();
+    });
+
+    it("prefers a JSON body's message to its error code", async () => {
+      const error = await failWith(
+        400,
+        '{"error":"invalid_cursor","message":"The cursor is not one this search returned"}'
+      );
+      expect(error.message).toBe("The cursor is not one this search returned");
+      expect(error.apiMessage).toBe("The cursor is not one this search returned");
+      expect(error.code).toBe("invalid_cursor");
+    });
+
+    it("lets a message only trim() calls blank (U+FEFF) give way to the error", async () => {
+      const error = await failWith(400, '{"message":"\\ufeff ","error":"name is too long"}');
+      expect(error.apiMessage).toBe("name is too long");
+    });
+
+    it("keeps a body that is not JSON as it came", async () => {
+      const error = await failWith(502, "Bad gateway");
+      expect(error.apiMessage).toBe("Bad gateway");
+      expect(error.message).toBe("Bad gateway");
+    });
+
+    it("reads the whole JSON body even when it is over 200 characters", async () => {
+      const long = "y".repeat(250);
+      const error = await failWith(400, JSON.stringify({ error: "invalid_input", message: long }));
+      expect(error.message).toBe(long);
+      expect(error.message.startsWith("{")).toBe(false);
+      expect(error.code).toBe("invalid_input");
+    });
+
+    it("never splits a surrogate pair when it cuts a long message", async () => {
+      // 999 plain characters, then emoji: the cut falls on the first emoji.
+      const message = "a".repeat(999) + "\u{1F600}".repeat(5);
+      const error = await failWith(400, JSON.stringify({ error: "invalid_input", message }));
+      expect(error.apiMessage).toBe("a".repeat(999) + "\u{1F600}...");
+    });
+
+    it("names the stream's path on a refused stream", async () => {
+      globalThis.fetch = vi.fn().mockResolvedValue(
+        new Response('{"error":"Endpoint not found"}', {
+          status: 404,
+          headers: { "content-type": "application/json" },
+        })
+      );
+      const iterator = createClient().requests.subscribe("acme")[Symbol.asyncIterator]();
+      const error = (await iterator.next().catch((caught: unknown) => caught)) as WebhooksCCError;
+      expect(error).toBeInstanceOf(NotFoundError);
+      expect(error.path).toBe("/stream/acme");
+      expect(error.apiMessage).toBe("Endpoint not found");
+    });
+
+    it("cuts a long body that is not JSON by code point, never splitting an emoji", async () => {
+      // 199 plain characters, then emoji: the cut at 200 falls on the first emoji.
+      const error = await failWith(502, "b".repeat(199) + "\u{1F600}".repeat(50));
+      expect(error.apiMessage).toBe("b".repeat(199) + "\u{1F600}...");
+      expect(error.message).toBe("b".repeat(199) + "\u{1F600}...");
+    });
+
+    it("cuts a long body that is not JSON short", async () => {
+      const error = await failWith(500, "z".repeat(400));
+      expect(error.apiMessage).toBe("z".repeat(200) + "...");
+    });
   });
 
   describe("retry", () => {

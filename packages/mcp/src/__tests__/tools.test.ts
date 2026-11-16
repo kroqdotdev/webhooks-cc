@@ -16,7 +16,13 @@ import {
   type Request,
 } from "@webhooks-cc/sdk";
 import { registerResources } from "../resources";
-import { registerTools, summarizeResponse, toolWords, type ToolServer } from "../tools";
+import {
+  registerTools,
+  signingFailure,
+  summarizeResponse,
+  toolWords,
+  type ToolServer,
+} from "../tools";
 
 const EXPECTED_TOOLS = [
   "create_endpoint",
@@ -402,9 +408,12 @@ describe("registerTools", () => {
       createMockClient({
         endpoints: {
           get: vi.fn(async () => {
-            throw new NotFoundError(
-              "Endpoint 'missing' not found — Use list_endpoints to see available endpoints"
+            const error = new NotFoundError(
+              "Endpoint not found: Use client.endpoints.list() to see available endpoints."
             );
+            error.apiMessage = "Endpoint not found";
+            error.path = "/endpoints/missing";
+            throw error;
           }),
         } as unknown as WebhooksCC["endpoints"],
       })
@@ -417,8 +426,8 @@ describe("registerTools", () => {
     expect(error).toEqual({
       error: true,
       code: "not_found",
-      message: "Endpoint 'missing' not found",
-      hint: "Use list_endpoints to see available endpoints",
+      message: "Endpoint not found",
+      hint: "list_endpoints lists your endpoints and their slugs.",
       retryAfter: null,
     });
   });
@@ -1472,19 +1481,175 @@ describe("registerTools", () => {
     expect(result).toMatchObject({ signingProvider: "discord", hasSigningSecret: true });
   });
 
-  it("returns the endpoint with a warning when signing fails to save", async () => {
+  it("deletes the endpoint again and answers the error when signing fails to save", async () => {
     const create = vi
       .fn()
       .mockResolvedValue({ slug: "acme-2", url: "https://go.webhooks.cc/w/acme-2" });
-    const update = vi.fn().mockRejectedValue(new Error("Invalid signing secret"));
+    const refused = new WebhooksCCError(400, "Invalid signing secret");
+    refused.apiMessage = "Invalid signing secret";
+    const update = vi.fn().mockRejectedValue(refused);
+    const remove = vi.fn().mockResolvedValue(undefined);
     const tools = getRegisteredTools(
-      createMockClient({ endpoints: { create, update } as unknown as WebhooksCC["endpoints"] })
+      createMockClient({
+        endpoints: { create, update, delete: remove } as unknown as WebhooksCC["endpoints"],
+      })
     );
-    const result = parseJsonResult(
+    const result = await tools.create_endpoint.handler({
+      signingProvider: "stripe",
+      signingSecret: "abc",
+    });
+    expect(result.isError).toBe(true);
+    const error = parseJsonResult(result);
+    expect(error).toMatchObject({
+      error: true,
+      code: "validation_error",
+      message:
+        "Invalid signing secret The endpoint was deleted, so nothing was created: fix the signing options and call create_endpoint again.",
+    });
+    expect(error).not.toHaveProperty("warning");
+    expect(remove).toHaveBeenCalledWith("acme-2");
+  });
+
+  it("says the endpoint was deleted on a plain error too, keeping its code", async () => {
+    const create = vi
+      .fn()
+      .mockResolvedValue({ slug: "acme-4", url: "https://go.webhooks.cc/w/acme-4" });
+    const update = vi.fn().mockRejectedValue(new Error("socket hang up"));
+    const remove = vi.fn().mockResolvedValue(undefined);
+    const tools = getRegisteredTools(
+      createMockClient({
+        endpoints: { create, update, delete: remove } as unknown as WebhooksCC["endpoints"],
+      })
+    );
+    const error = parseJsonResult(
       await tools.create_endpoint.handler({ signingProvider: "stripe", signingSecret: "abc" })
     );
-    expect(result.slug).toBe("acme-2");
-    expect(result.warning).toContain("signing configuration failed: Invalid signing secret");
+    expect(error.code).toBe("validation_error");
+    // Not the options' fault: just try again.
+    expect(error.message).toBe(
+      "socket hang up The endpoint was deleted, so nothing was created: call create_endpoint again."
+    );
+    // A server error keeps its own code, and is not blamed on the options either.
+    update.mockRejectedValue(new WebhooksCCError(503, "Service unavailable"));
+    const server = parseJsonResult(
+      await tools.create_endpoint.handler({ signingProvider: "stripe", signingSecret: "abc" })
+    );
+    expect(server.code).toBe("server_error");
+    expect(server.message).toBe(
+      "Service unavailable The endpoint was deleted, so nothing was created: call create_endpoint again."
+    );
+    // A rate limit keeps its code and retryAfter.
+    update.mockRejectedValue(new RateLimitError(7));
+    const limited = parseJsonResult(
+      await tools.create_endpoint.handler({ signingProvider: "stripe", signingSecret: "abc" })
+    );
+    expect(limited).toMatchObject({ code: "rate_limited", retryAfter: 7 });
+    expect(limited.message).toContain("call create_endpoint again.");
+    expect(limited.message).not.toContain("fix the signing options");
+  });
+
+  it("keeps a plain error as the cause of the one it answers", async () => {
+    const create = vi
+      .fn()
+      .mockResolvedValue({ slug: "acme-5", url: "https://go.webhooks.cc/w/acme-5" });
+    const original = new Error("socket hang up");
+    const update = vi.fn().mockRejectedValue(original);
+    const remove = vi.fn().mockResolvedValue(undefined);
+    const tools = getRegisteredTools(
+      createMockClient({
+        endpoints: { create, update, delete: remove } as unknown as WebhooksCC["endpoints"],
+      })
+    );
+    await tools.create_endpoint.handler({ signingProvider: "stripe", signingSecret: "abc" });
+    // The thrown error is a new one; the original keeps its own message.
+    expect(original.message).toBe("socket hang up");
+    const answered = signingFailure(original, "acme-5", true);
+    expect(answered).not.toBe(original);
+    expect((answered as Error & { cause?: unknown }).cause).toBe(original);
+    expect(answered.message).toBe(
+      "socket hang up The endpoint was deleted, so nothing was created: call create_endpoint again."
+    );
+  });
+
+  it("names the endpoint left without signing when it cannot be deleted either", async () => {
+    const create = vi
+      .fn()
+      .mockResolvedValue({ slug: "acme-3", url: "https://go.webhooks.cc/w/acme-3" });
+    const update = vi.fn().mockRejectedValue(new WebhooksCCError(400, "Invalid signing secret"));
+    const remove = vi.fn().mockRejectedValue(new WebhooksCCError(503, "Service unavailable"));
+    const tools = getRegisteredTools(
+      createMockClient({
+        endpoints: { create, update, delete: remove } as unknown as WebhooksCC["endpoints"],
+      })
+    );
+    const result = await tools.create_endpoint.handler({
+      signingProvider: "stripe",
+      signingSecret: "abc",
+    });
+    expect(result.isError).toBe(true);
+    const error = parseJsonResult(result);
+    // The signing error itself, its code kept, with what became of the endpoint.
+    expect(error.code).toBe("validation_error");
+    expect(error.message).toBe(
+      'Invalid signing secret The endpoint "acme-3" could not be deleted: it exists without signing. Fix it with update_endpoint, or delete it with delete_endpoint.'
+    );
+    expect(error).not.toHaveProperty("warning");
+  });
+
+  it("counts an endpoint already gone as deleted, and blames the options only for their own 4xx", async () => {
+    const create = vi
+      .fn()
+      .mockResolvedValue({ slug: "acme-7", url: "https://go.webhooks.cc/w/acme-7" });
+    const update = vi.fn().mockRejectedValue(new WebhooksCCError(400, "Invalid signing secret"));
+    const remove = vi.fn().mockRejectedValue(new NotFoundError("Endpoint not found"));
+    const tools = getRegisteredTools(
+      createMockClient({
+        endpoints: { create, update, delete: remove } as unknown as WebhooksCC["endpoints"],
+      })
+    );
+    const gone = parseJsonResult(
+      await tools.create_endpoint.handler({ signingProvider: "stripe", signingSecret: "abc" })
+    );
+    expect(gone.message).toBe(
+      "Invalid signing secret The endpoint was deleted, so nothing was created: fix the signing options and call create_endpoint again."
+    );
+    for (const status of [401, 404]) {
+      const answered = signingFailure(new WebhooksCCError(status, "x"), "acme-7", true);
+      expect((answered as WebhooksCCError).apiMessage, String(status)).toBe(
+        "x The endpoint was deleted, so nothing was created: call create_endpoint again."
+      );
+    }
+  });
+
+  it("keeps a rate limit's retryAfter when the endpoint cannot be deleted either", async () => {
+    const create = vi
+      .fn()
+      .mockResolvedValue({ slug: "acme-6", url: "https://go.webhooks.cc/w/acme-6" });
+    const update = vi.fn().mockRejectedValue(new RateLimitError(9));
+    const remove = vi.fn().mockRejectedValue(new WebhooksCCError(503, "Service unavailable"));
+    const tools = getRegisteredTools(
+      createMockClient({
+        endpoints: { create, update, delete: remove } as unknown as WebhooksCC["endpoints"],
+      })
+    );
+    const error = parseJsonResult(
+      await tools.create_endpoint.handler({ signingProvider: "stripe", signingSecret: "abc" })
+    );
+    expect(error).toMatchObject({ code: "rate_limited", retryAfter: 9 });
+    expect(error.message).toContain('"acme-6" could not be deleted');
+  });
+
+  it("refuses a signing provider it does not know before creating anything", () => {
+    const tools = getRegisteredTools(createMockClient());
+    for (const tool of [tools.create_endpoint, tools.update_endpoint]) {
+      const parsed = z
+        .object(tool.schema as z.ZodRawShape)
+        .safeParse({ slug: "acme", signingProvider: "notaprovider", signingSecret: "abc" });
+      expect(parsed.success).toBe(false);
+    }
+    const update = z.object(tools.update_endpoint.schema as z.ZodRawShape);
+    expect(update.safeParse({ slug: "acme", signingProvider: null }).success).toBe(true);
+    expect(update.safeParse({ slug: "acme", signingProvider: "generic-hmac" }).success).toBe(true);
   });
 
   it("creates multiple endpoints in one call", async () => {
@@ -4074,5 +4239,136 @@ describe("the agent spend budget", () => {
     );
     expect(fallback.content[0].text).toContain("$1.00 left, $40.00 needed");
     expect(fallback.content[0].text).toContain("Asked for approval");
+  });
+});
+
+describe("errors from the API", () => {
+  /** A real client whose API answers every call with `status` and `body`. */
+  function failingClient(status: number, body: string): WebhooksCC {
+    return new WebhooksCC({
+      apiKey: "whcc_test",
+      baseUrl: "https://webhooks.test",
+      retry: { maxAttempts: 1 },
+      fetch: async () =>
+        new Response(body, { status, headers: { "content-type": "application/json" } }),
+    });
+  }
+
+  it("says what the API said and names the tools to try next", async () => {
+    const tools = getRegisteredTools(failingClient(404, '{"error":"Request not found"}'));
+    const result = await tools.get_request.handler({ requestId: "req_missing" });
+    expect(result.isError).toBe(true);
+    const error = parseJsonResult(result);
+    expect(error.code).toBe("not_found");
+    expect(error.message).toBe("Request not found");
+    expect(error.hint).toContain("list_requests");
+    expect(error.hint).toContain("list_endpoints");
+  });
+
+  it("never answers raw JSON or the SDK's method names as an error", async () => {
+    const bodies: Array<[number, string]> = [
+      [404, '{"error":"Endpoint not found"}'],
+      [400, '{"error":"invalid_input","message":"name is too long"}'],
+      [401, '{"error":"Unauthorized"}'],
+      [500, '{"error":"internal"}'],
+      [400, JSON.stringify({ error: "invalid_input", message: "x".repeat(300) })],
+    ];
+    for (const remote of [false, true]) {
+      for (const [status, body] of bodies) {
+        const tools = getRegisteredTools(failingClient(status, body), { remote });
+        for (const call of [
+          () => tools.get_endpoint.handler({ slug: "acme" }),
+          () => tools.list_requests.handler({ endpointSlug: "acme", limit: 5 }),
+          () => tools.get_request.handler({ requestId: "req_1" }),
+          () => tools.list_shares.handler({}),
+          () => tools.list_teams.handler({}),
+        ]) {
+          const result = await call();
+          expect(result.isError, body).toBe(true);
+          const text = result.content[0].text;
+          const error = JSON.parse(text);
+          expect(error.message.startsWith("{"), body).toBe(false);
+          expect(text, body).not.toContain("client.");
+        }
+      }
+    }
+  });
+
+  it("hints only at tools the server has", async () => {
+    const { TOOL_CATALOG } = await import("../catalog");
+    const remoteTools = getRegisteredTools(createMockClient(), { remote: true });
+    // Each route a 404 can come from, and the tool its hint must name.
+    const routes: Array<[string, string | null]> = [
+      ["/endpoints/acme", "list_endpoints"],
+      ["/endpoints/acme/requests?limit=5", "list_requests"],
+      ["/requests/req_1", "list_requests"],
+      ["/endpoints/acme/destinations/d_1", "list_destinations"],
+      ["/stream/acme", "list_endpoints"],
+      ["/shares/s_1/stop", "list_shares"],
+      ["/tunnel-names/acme", "list_names"],
+      ["/teams/t_1", "list_teams"],
+      ["/teams/t_1/members/u_1", "list_team_members"],
+      ["/teams/t_1/invites/i_1", "list_team_members"],
+      ["/teams/t_1/billing/seats", "get_billing"],
+      ["/send-test-email", "list_endpoints"],
+      ["/domains/acme.test", "list_domains"],
+      ["/request-shares/rs_1", "list_share_links"],
+      ["/invites/i_1/accept", "list_invites"],
+      ["/api-keys?id=k_1", "list_api_keys"],
+      ["/agent/registrations/a_1", "list_connected_agents"],
+      ["/integrations/google/connections/g_1", "list_google_connections"],
+      ["/approvals/ap_1", null],
+      ["/billing/checkouts/c_1", null],
+    ];
+    const paths = routes.map(([path]) => path);
+    const { toolHint } = await import("../tools");
+    for (const remote of [false, true]) {
+      const errors: WebhooksCCError[] = [new WebhooksCCError(401, "Unauthorized")];
+      for (const path of paths) {
+        const error = new NotFoundError("Not found");
+        error.path = path;
+        errors.push(error);
+      }
+      for (const error of errors) {
+        const hint = toolHint(error, remote);
+        expect(hint, error.path).toBeTruthy();
+        const expected = routes.find(([path]) => path === error.path)?.[1];
+        if (expected) expect(hint, error.path).toContain(expected);
+        if (expected === null)
+          expect(hint).toBe("Pass the id exactly as the asking tool returned it.");
+        const named = (hint ?? "").match(/\b[a-z]+(?:_[a-z]+)+\b/g) ?? [];
+        for (const tool of named) {
+          if (remote) expect(remoteTools[tool], tool).toBeDefined();
+          // connect_account is the account-less server's own tool.
+          else expect(tool in TOOL_CATALOG || tool === "connect_account", tool).toBe(true);
+        }
+      }
+    }
+    // No route, or one without a list to try: no hint rather than a wrong one.
+    expect(toolHint(new NotFoundError("x"), false)).toBeNull();
+    const elsewhere = new NotFoundError("x");
+    elsewhere.path = "/usage";
+    expect(toolHint(elsewhere, false)).toBeNull();
+    // A prefix only matches whole segments.
+    const lookalike = new NotFoundError("x");
+    lookalike.path = "/endpointsx";
+    expect(toolHint(lookalike, true)).toBeNull();
+    expect(toolHint(new WebhooksCCError(401, "x"), true)).toContain("reconnect");
+    expect(toolHint(new WebhooksCCError(401, "x"), false)).toBe(
+      "The API key or agent connection was refused: if WHK_API_KEY is set, use a working key (https://webhooks.cc/account/api-keys); otherwise restart the server and connect again with connect_account."
+    );
+  });
+
+  it("refuses a timeout that is not a duration with a validation error", async () => {
+    const tools = getRegisteredTools(failingClient(500, "{}"));
+    const messages = new Set<string>();
+    for (const timeout of ["banana", -5]) {
+      const result = await tools.wait_for_request.handler({ endpointSlug: "acme", timeout });
+      expect(result.isError).toBe(true);
+      const error = parseJsonResult(result);
+      expect(error).toMatchObject({ error: true, code: "validation_error" });
+      messages.add(error.message);
+    }
+    expect(messages.size).toBe(2);
   });
 });

@@ -247,8 +247,10 @@ def _not_found_hint(path: str) -> str:
 
 
 def _map_error(
-    status: int, message: str, headers: httpx.Headers, path: str = ""
+    status: int, message: str, headers: httpx.Headers, path: str = "", body: str | None = None
 ) -> WebhooksCCError:
+    """``message`` is the plain text; ``body`` the whole answer, to find its code in."""
+    raw = message if body is None else body
     generic = len(message) < 30
     if status == 401:
         return UnauthorizedError(
@@ -256,7 +258,7 @@ def _map_error(
             if generic
             else message
         )
-    if status == 400 and _error_code(message) == "invalid_cursor":
+    if status == 400 and _error_code(raw) == "invalid_cursor":
         return InvalidCursorError("Invalid search cursor: start the search again without a cursor")
     if status == 404:
         return NotFoundError(f"{message}: {_not_found_hint(path)}" if generic else message)
@@ -270,7 +272,7 @@ def _map_error(
             limit=limit if complete else None,
             remaining=remaining if complete else None,
             reset=reset if complete else None,
-            code=_error_code(message),
+            code=_error_code(raw),
         )
     return WebhooksCCError(status, message)
 
@@ -285,18 +287,37 @@ def _error_code(message: str) -> str | None:
     return code if isinstance(code, str) else None
 
 
+# Longest text taken from a JSON error body, so one answer cannot make a huge message.
+_MAX_ERROR_TEXT = 1_000
+
+
+def _error_text(body: str) -> str | None:
+    """The plain text of a JSON error body: its string ``message``, else its
+    string ``error``; None when the body is not a JSON object naming either."""
+    try:
+        parsed = json.loads(body)
+    except ValueError:
+        return None
+    if not isinstance(parsed, dict):
+        return None
+    for key in ("message", "error"):
+        text = parsed.get(key)
+        # Blank as JavaScript's trim() sees it (U+FEFF too), as the TypeScript SDK reads it.
+        if isinstance(text, str) and js_trim(text):
+            return text[:_MAX_ERROR_TEXT] + "..." if len(text) > _MAX_ERROR_TEXT else text
+    return None
+
+
 def _error_from_response(response: httpx.Response) -> WebhooksCCError:
     text = response.text
     try:
         path = response.request.url.path
     except RuntimeError:  # a response built without its request
         path = ""
-    return _map_error(
-        response.status_code,
-        text[:200] + "..." if len(text) > 200 else text,
-        response.headers,
-        path,
-    )
+    plain = _error_text(text)
+    if plain is None:
+        plain = text[:200] + "..." if len(text) > 200 else text
+    return _map_error(response.status_code, plain, response.headers, path, text)
 
 
 class _RecentIds:

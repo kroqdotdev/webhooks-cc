@@ -7,6 +7,7 @@ import {
   type InputRequiredResult,
   type McpServer,
   type ServerContext,
+  type StandardSchemaWithJSON,
 } from "@modelcontextprotocol/server";
 import type { ToolCall, ToolResult } from "./tools";
 
@@ -66,4 +67,32 @@ export function sdkToolResult(result: ToolResult): CallToolResult | InputRequire
     // or agent that asked may read the approval (GET /api/approvals/{id}).
     requestState: approval.id,
   });
+}
+
+/**
+ * A tool's input schema as it is listed: the JSON Schema without its
+ * `$schema` URI. MCP reads an inputSchema without one as JSON Schema
+ * 2020-12, which is what zod writes, so the URI only made every tool of
+ * every list about 50 characters longer. Validation is the schema's own.
+ */
+export function listedInputSchema(schema: StandardSchemaWithJSON): StandardSchemaWithJSON {
+  const standard = schema["~standard"];
+  const strip =
+    (
+      convert: (options: Parameters<typeof standard.jsonSchema.input>[0]) => Record<string, unknown>
+    ) =>
+    (options: Parameters<typeof standard.jsonSchema.input>[0]) => {
+      const listed = { ...convert(options) };
+      delete listed.$schema;
+      return listed;
+    };
+  return {
+    "~standard": {
+      ...standard,
+      jsonSchema: {
+        input: strip(standard.jsonSchema.input),
+        output: strip(standard.jsonSchema.output),
+      },
+    },
+  };
 }

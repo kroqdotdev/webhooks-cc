@@ -26,6 +26,34 @@ function parseResourceText(result: {
   return JSON.parse(result.contents[0].text ?? "null");
 }
 
+describe("the tool list", () => {
+  it("gives no tool an outputSchema", async () => {
+    // Deliberate: results stay text only, without structuredContent. A
+    // client that passes both to the model pays for every result twice;
+    // results are compacted and cut at 32,768 characters, changing shape
+    // when cut, which an output schema would have to allow for; and a
+    // schema for every tool would grow the list each client loads.
+    const server = createServer({
+      apiKey: "whcc_test",
+      baseUrl: "http://127.0.0.1:9",
+      tools: "all",
+    });
+    const client = new Client(
+      { name: "output-schema-test", version: "1.0.0" },
+      { capabilities: {} }
+    );
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    await Promise.all([server.connect(serverTransport), client.connect(clientTransport)]);
+    try {
+      const { tools } = await client.listTools();
+      expect(tools.length).toBeGreaterThan(40);
+      for (const tool of tools) expect(tool.outputSchema, tool.name).toBeUndefined();
+    } finally {
+      await client.close();
+    }
+  });
+});
+
 describe.skipIf(!API_KEY)("MCP protocol integration tests", () => {
   const createdSlugs = new Set<string>();
   let rawClient: WebhooksCC;

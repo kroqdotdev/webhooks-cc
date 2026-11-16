@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { WebhooksCC } from "../client";
+import { WebhooksCCError } from "../errors";
 
 const BASE_URL = "https://webhooks.example";
 
@@ -40,6 +41,33 @@ describe("downloads", () => {
     await expect(
       client(ok as unknown as typeof fetch).requests.attachment("req-1", 100)
     ).rejects.toThrow(/index/);
+  });
+});
+
+describe("download errors", () => {
+  it("reads a long JSON error body whole, not cut into broken JSON", async () => {
+    const long = "This email's attachment contents were not kept. ".repeat(6).trim();
+    const gone = vi.fn(async () =>
+      Response.json({ error: "not_kept", message: long }, { status: 404 })
+    );
+    const error = (await client(gone as unknown as typeof fetch)
+      .requests.attachment("req-1", 0)
+      .catch((caught: unknown) => caught)) as WebhooksCCError;
+    expect(error).toBeInstanceOf(WebhooksCCError);
+    expect(error.apiMessage).toBe(long);
+    expect(error.code).toBe("not_kept");
+    expect(error.path).toBe("/requests/req-1/attachments/0");
+  });
+});
+
+describe("download errors by code point", () => {
+  it("never splits an emoji when it cuts a body that is not JSON", async () => {
+    const body = "c".repeat(199) + "\u{1F600}".repeat(50);
+    const gone = vi.fn(async () => new Response(body, { status: 410 }));
+    const error = (await client(gone as unknown as typeof fetch)
+      .requests.raw("req-1")
+      .catch((caught: unknown) => caught)) as WebhooksCCError;
+    expect(error.message).toBe("c".repeat(199) + "\u{1F600}...");
   });
 });
 

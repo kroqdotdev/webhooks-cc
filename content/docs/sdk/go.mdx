@@ -466,7 +466,7 @@ client, err := connection.Wait(ctx)
 
 ## Errors
 
-API errors are a `*webhookscc.Error` with a `StatusCode`. Test them with `errors.Is`:
+API errors are a `*webhookscc.Error` with a `StatusCode` and a `Message`, the API's own text (the `message` of a JSON error body, else its `error`) with a recovery hint when it is short. Test them with `errors.Is`:
 
 | Error                         | When                                                            |
 | ----------------------------- | --------------------------------------------------------------- |

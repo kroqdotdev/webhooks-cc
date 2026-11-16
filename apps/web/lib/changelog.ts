@@ -31,10 +31,10 @@ const RELEASE = release as { version: string | null; entries: ChangelogEntry[] }
 
 export const APP_VERSION: string = RELEASE.version ?? "dev";
 export const CLI_VERSION = "1.20.1";
-export const SDK_VERSION = "1.30.0";
-export const PYTHON_SDK_VERSION = "0.10.0";
-export const GO_SDK_VERSION = "0.10.0";
-export const MCP_VERSION = "2.4.2";
+export const SDK_VERSION = "1.31.0";
+export const PYTHON_SDK_VERSION = "0.10.1";
+export const GO_SDK_VERSION = "0.10.1";
+export const MCP_VERSION = "2.5.0";
 
 export const CHANGELOG: ChangelogEntry[] = [
   ...RELEASE.entries,
@@ -2547,6 +2547,17 @@ export const CHANGELOG: ChangelogEntry[] = [
 
   // ─── SDK ────────────────────────────────────────────────────────────
   {
+    version: "1.31.0",
+    date: "2026-11-16",
+    title: "Plain Error Messages",
+    track: "sdk",
+    items: [
+      "An error from the API carries its text, not its JSON: the `message` of a JSON error body, else its `error`, so a long answer is no longer cut into broken JSON; the recovery hint for a short message is still added",
+      "`WebhooksCCError` has `apiMessage`, what the API said without the SDK's hint, and `path`, the API route that answered, on downloads and `requests.subscribe()` streams too",
+      "A duration string too long or too large for a number (400 digits, or a huge value with a unit) is refused as an invalid duration instead of becoming Infinity, which made a wait run forever",
+    ],
+  },
+  {
     version: "1.30.0",
     date: "2026-11-15",
     title: "Billing Changes, Checkout Links And The Agent Budget",
@@ -3023,6 +3034,16 @@ export const CHANGELOG: ChangelogEntry[] = [
 
   // ─── Python SDK ─────────────────────────────────────────────────────
   {
+    version: "0.10.1",
+    date: "2026-11-16",
+    title: "Plain Error Messages",
+    track: "python",
+    items: [
+      "An error's `message` is the API's text, not its JSON: the `message` of a JSON error body, else its `error`, so a long answer is no longer cut into broken JSON",
+      "A duration string too long or too large for a float (400 digits, or a huge value with a unit) raises the invalid-duration `ValueError` instead of becoming an endless wait",
+    ],
+  },
+  {
     version: "0.10.0",
     date: "2026-11-15",
     title: "Checkout Links",
@@ -3165,6 +3186,15 @@ export const CHANGELOG: ChangelogEntry[] = [
 
   // ─── Go SDK ─────────────────────────────────────────────────────────
   {
+    version: "0.10.1",
+    date: "2026-11-16",
+    title: "Plain Error Messages",
+    track: "go",
+    items: [
+      'An `Error`\'s `Message` is the API\'s text, not its JSON: the `message` of a JSON error body, else its `error`, so a long answer is no longer cut into broken JSON; a short one gets its hint after ": " (404) or ". " (401), as in the other SDKs, and `errors.Is(err, ErrInvalidCursor)` reads the body\'s code as before',
+    ],
+  },
+  {
     version: "0.10.0",
     date: "2026-11-15",
     title: "Checkout Links",
@@ -3284,6 +3314,20 @@ export const CHANGELOG: ChangelogEntry[] = [
   },
 
   // ─── MCP ────────────────────────────────────────────────────────────
+  {
+    version: "2.5.0",
+    date: "2026-11-16",
+    title: "Clearer Errors And Smaller Tool Lists",
+    track: "mcp",
+    items: [
+      "Tool errors say what the API said, never its raw JSON, and their hint names this server's tools (`list_requests`, `list_endpoints`, `list_shares`, `list_names`, `list_teams`) instead of SDK methods; a refused key says to set `WHK_API_KEY` or connect an account, and on the hosted server to reconnect",
+      "`create_endpoint` and `update_endpoint` take only signing providers webhooks.cc verifies, and when signing cannot be saved, `create_endpoint` deletes the endpoint it just made and answers the error, saying nothing was created, rather than leave an endpoint that verifies nothing",
+      'A timeout or poll interval that is not a duration (`"banana"`, `-5`) is a validation error saying why, on both servers, rather than a silent default',
+      "`describe` answers the SDK version and its sections' operation names (about 2.5 KB, from 33 KB); `section` returns one section's parameters and types",
+      "The tool list is smaller: conditions of response rules, filters and layouts are described once per list, a rule's response once as `mockResponse`, and input schemas leave out the `$schema` URI (MCP reads JSON Schema 2020-12 without it). The core list is 59.1 KB as sent (from 63.4 KB), the full one 119.3 KB (from 128.1 KB)",
+      "On the hosted server, names in `?tools=` that are no group are reported on `describe` and in the instructions, and when none of the names is a group the client's own default applies rather than the core",
+    ],
+  },
   {
     version: "2.4.2",
     date: "2026-11-15",

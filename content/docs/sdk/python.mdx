@@ -377,7 +377,7 @@ client = pending.wait()
 
 ## Errors
 
-API errors raise `WebhooksCCError` with a `status_code`, or one of its subclasses:
+API errors raise `WebhooksCCError` with a `status_code` and a `message`, the API's own text (the `message` of a JSON error body, else its `error`) with a recovery hint when it is short, or one of its subclasses:
 
 | Error                | When                                                          |
 | -------------------- | ------------------------------------------------------------- |

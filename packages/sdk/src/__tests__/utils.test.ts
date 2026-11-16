@@ -22,6 +22,21 @@ describe("parseDuration", () => {
     it("throws on Infinity", () => {
       expect(() => parseDuration(Infinity)).toThrow("must be a finite non-negative number");
     });
+
+    it("refuses a string that would be Infinity, so no wait runs forever", () => {
+      for (const input of [
+        "9".repeat(400),
+        "1e400",
+        `${"9".repeat(400)}ms`,
+        `${"9".repeat(400)}s`,
+        `1${"0".repeat(306)}d`,
+      ]) {
+        expect(() => parseDuration(input), input.slice(0, 12)).toThrow("Invalid duration");
+      }
+      // The largest values that stay finite are still taken.
+      expect(parseDuration(`1${"0".repeat(300)}`)).toBe(1e300);
+      expect(parseDuration(`1${"0".repeat(300)}d`)).toBe(1e300 * 86_400_000);
+    });
   });
 
   describe("milliseconds", () => {

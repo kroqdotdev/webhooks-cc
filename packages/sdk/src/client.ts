@@ -282,10 +282,52 @@ function mapStatusToError(
   /** The whole body, when `message` was cut short, to find its code in. */
   body?: string
 ): WebhooksCCError {
-  const error = statusError(status, message, response, path);
+  const plain = errorTextOf(body ?? message) ?? message;
+  const error = statusError(status, plain, response, path);
+  error.apiMessage = plain;
+  if (path !== undefined) error.path = path;
   const code = errorCodeOf(body ?? message);
   if (code !== undefined) error.code = code;
   return error;
+}
+
+/** Longest text taken from a JSON error body, so one answer cannot make a huge message. */
+const MAX_ERROR_TEXT = 1_000;
+
+/**
+ * The plain text of a JSON error body: its string `message`, else its
+ * string `error`; undefined when the body is not a JSON object naming
+ * either, so the caller keeps the (cut-short) body itself.
+ */
+function errorTextOf(body: string): string | undefined {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(body);
+  } catch {
+    return undefined;
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return undefined;
+  const { message, error } = parsed as { message?: unknown; error?: unknown };
+  const text =
+    typeof message === "string" && message.trim() !== ""
+      ? message
+      : typeof error === "string" && error.trim() !== ""
+        ? error
+        : undefined;
+  return text === undefined ? undefined : cutText(text, MAX_ERROR_TEXT);
+}
+
+/** How much of an error body that is not JSON goes into the error's message. */
+const ERROR_BODY_CUT = 200;
+
+/**
+ * `text` cut to `max` code points with "..." after it, or whole when it
+ * fits: by code point, so a surrogate pair (an emoji) is never split.
+ */
+function cutText(text: string, max: number): string {
+  if (text.length <= max) return text;
+  const points = Array.from(text);
+  return points.length > max ? points.slice(0, max).join("") + "..." : text;
 }
 
 /**
@@ -404,7 +446,11 @@ function resolveTeam(teams: Team[], team: string): Team {
   const byName = teams.filter((t) => t.name.toLowerCase() === lowered);
   if (byName.length === 1) return byName[0]!;
   if (byName.length === 0) {
-    throw new NotFoundError(`No team named or with id "${needle}": see client.teams.list()`);
+    const plain = `No team named or with id "${needle}"`;
+    const error = new NotFoundError(`${plain}: see client.teams.list()`);
+    error.apiMessage = plain;
+    error.path = "/teams";
+    throw error;
   }
   throw new Error(
     `${byName.length} teams are named "${needle}"; pass the team id instead (${byName
@@ -1076,9 +1122,10 @@ export class WebhooksCC {
         const text = await response.text();
         throw mapStatusToError(
           response.status,
-          text.length > 200 ? text.slice(0, 200) + "..." : text,
+          cutText(text, ERROR_BODY_CUT),
           response,
-          path
+          path,
+          text
         );
       }
       const disposition = response.headers.get("content-disposition") ?? "";
@@ -1221,8 +1268,7 @@ export class WebhooksCC {
 
         if (!response.ok) {
           const errorText = await readBody(response.text());
-          const sanitizedError =
-            errorText.length > 200 ? errorText.slice(0, 200) + "..." : errorText;
+          const sanitizedError = cutText(errorText, ERROR_BODY_CUT);
           const error = mapStatusToError(
             response.status,
             sanitizedError,
@@ -3600,7 +3646,11 @@ export class WebhooksCC {
       validatePathSegment(requestId, "requestId");
       const request = await this.request<Request>("GET", `/requests/${requestId}?extracts=true`);
       if (!isEmailRequest(request)) {
-        throw new NotFoundError(`Request ${requestId} is not a captured email`);
+        const error = new NotFoundError(`Request ${requestId} is not a captured email`);
+        error.apiMessage = error.message;
+        // The route that answered, so a caller's hint points at the endpoint's requests.
+        error.path = `/requests/${requestId}`;
+        throw error;
       }
       // The codes and links come from extractCode()/extractLink(); only the fields are kept.
       const email = { ...request } as EmailRequest & { extracts?: unknown };
@@ -4694,7 +4744,8 @@ export class WebhooksCC {
             // Resume from the last request, or from the floor recorded at the first
             // connection; the very first connection sends no `since` (server default).
             const since = lastReceivedAt !== undefined ? lastReceivedAt - 1 : resumeFloor;
-            const url = `${baseUrl}${buildStreamPath(slug, since)}`;
+            const streamPath = buildStreamPath(slug, since);
+            const url = `${baseUrl}${streamPath}`;
             const connectStartedAt = Date.now();
             // Bound the connect phase; the idle watchdog takes over once the stream is open
             const connectTimeout = setTimeout(
@@ -4716,7 +4767,14 @@ export class WebhooksCC {
 
             if (!response.ok) {
               const text = await response.text();
-              throw mapStatusToError(response.status, text, response);
+              throw mapStatusToError(
+                response.status,
+                cutText(text, ERROR_BODY_CUT),
+                response,
+                // The API path as the other calls name it, after /api.
+                streamPath.replace(/^\/api/, ""),
+                text
+              );
             }
 
             if (!response.body) {

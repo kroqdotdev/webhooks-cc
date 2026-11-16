@@ -5,6 +5,7 @@ import { POST_CLAIM_SCOPES } from "@/lib/agent/constants";
 import { CLIENT_INFO_META_KEY } from "@modelcontextprotocol/server";
 import { TOOL_GROUP_NAMES } from "@webhooks-cc/mcp/tools";
 import {
+  listingToolSelection,
   mcpHandler,
   registrationClientName,
   requestClientName,
@@ -140,13 +141,10 @@ async function handle(request: Request): Promise<Response> {
   const url = new URL(request.url);
   const listing = (parsedBody as { method?: unknown } | undefined)?.method === "tools/list";
   const tools = listing
-    ? toolSelection(url, [
-        requestClientName(parsedBody, CLIENT_INFO_META_KEY),
-        url.searchParams.has("tools")
-          ? null
-          : await registrationClientName(validation.agentRegistrationId ?? null),
-      ])
-    : { groups: new Set(TOOL_GROUP_NAMES), readOnly: toolSelection(url, []).readOnly };
+    ? await listingToolSelection(url, requestClientName(parsedBody, CLIENT_INFO_META_KEY), () =>
+        registrationClientName(validation.agentRegistrationId ?? null)
+      )
+    : { ...toolSelection(url, []), groups: new Set(TOOL_GROUP_NAMES) };
   const response = await mcpHandler.fetch(request, {
     parsedBody,
     authInfo: {
@@ -159,6 +157,7 @@ async function handle(request: Request): Promise<Response> {
         userId: validation.userId,
         groups: tools.groups,
         readOnly: tools.readOnly,
+        unknownGroups: tools.unknown,
       },
     },
   });

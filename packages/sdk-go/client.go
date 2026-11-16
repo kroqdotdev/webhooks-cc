@@ -500,29 +500,71 @@ func notFoundHint(path string) string {
 	}
 }
 
+// maxErrorText caps the text taken from a JSON error body, so one answer
+// cannot make a huge message.
+const maxErrorText = 1000
+
+// errorText is the plain text of a JSON error body: its string "message",
+// else its string "error"; false when the body is not a JSON object naming
+// either.
+func errorText(body []byte) (string, bool) {
+	var fields map[string]any
+	if json.Unmarshal(body, &fields) != nil || fields == nil {
+		return "", false
+	}
+	for _, key := range []string{"message", "error"} {
+		// Blank as JavaScript's trim() sees it (U+FEFF too), as the TypeScript SDK reads it.
+		if text, ok := fields[key].(string); ok && webtext.JSTrim(text) != "" {
+			if utf8.RuneCountInString(text) > maxErrorText {
+				text = string([]rune(text)[:maxErrorText]) + "..."
+			}
+			return text, true
+		}
+	}
+	return "", false
+}
+
+// withHint adds a recovery hint to a short message: "Not found: Use
+// Endpoints.List ...", with the separators the TypeScript and Python SDKs
+// use. Unlike them, Go trims the message (as JavaScript's trim() does)
+// before it adds the hint, and errorFromResponse calls a message short
+// when it is under 30 bytes, where they count characters (UTF-16 units in
+// TypeScript, code points in Python), so a short message with non-ASCII
+// text can get no hint here and one there.
+func withHint(message, separator, hint string) string {
+	message = webtext.JSTrim(message)
+	if message == "" {
+		return hint
+	}
+	return message + separator + hint
+}
+
 func errorFromResponse(response *apiResponse, path string) *Error {
-	message := string(response.body)
-	if utf8.RuneCountInString(message) > 200 {
-		message = string([]rune(message)[:200]) + "..."
+	message, ok := errorText(response.body)
+	if !ok {
+		message = string(response.body)
+		if utf8.RuneCountInString(message) > 200 {
+			message = string([]rune(message)[:200]) + "..."
+		}
 	}
 	generic := len(message) < 30
 	apiErr := &Error{StatusCode: response.status, Message: message}
+	var coded struct {
+		Error string `json:"error"`
+	}
+	if json.Unmarshal(response.body, &coded) == nil {
+		apiErr.code = coded.Error
+	}
 	switch response.status {
 	case http.StatusUnauthorized:
 		if generic {
-			apiErr.Message = strings.TrimSpace(message + " Get an API key at https://webhooks.cc/account/api-keys")
+			apiErr.Message = withHint(message, ". ", "Get an API key at https://webhooks.cc/account/api-keys")
 		}
 	case http.StatusNotFound:
 		if generic {
-			apiErr.Message = strings.TrimSpace(message + " " + notFoundHint(path))
+			apiErr.Message = withHint(message, ": ", notFoundHint(path))
 		}
 	case http.StatusTooManyRequests:
-		var body struct {
-			Error string `json:"error"`
-		}
-		if json.Unmarshal(response.body, &body) == nil {
-			apiErr.code = body.Error
-		}
 		if seconds, ok := headerInt(response.header, "Retry-After"); ok {
 			apiErr.RetryAfter = time.Duration(seconds) * time.Second
 		}

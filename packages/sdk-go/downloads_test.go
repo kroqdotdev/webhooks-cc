@@ -98,7 +98,7 @@ func TestDownloadsReturnTypedErrorsAndCheckTheirInput(t *testing.T) {
 	ctx := context.Background()
 
 	_, err := client.Requests.Attachment(ctx, "req_1", 0)
-	if !errors.Is(err, webhookscc.ErrNotFound) || !strings.Contains(err.Error(), "not_kept") {
+	if !errors.Is(err, webhookscc.ErrNotFound) || !strings.Contains(err.Error(), "were not kept") {
 		t.Errorf("404: %v", err)
 	}
 	_, err = client.Requests.Raw(ctx, "req_1")

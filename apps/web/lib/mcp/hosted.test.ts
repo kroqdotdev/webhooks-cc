@@ -1,6 +1,12 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { TOOL_GROUP_NAMES } from "@webhooks-cc/mcp/tools";
-import { INSTRUCTIONS, requestClientName, toolSelection } from "./hosted";
+import {
+  INSTRUCTIONS,
+  listingToolSelection,
+  requestClientName,
+  toolSelection,
+  unknownGroupsNote,
+} from "./hosted";
 
 const META = "io.modelcontextprotocol/clientInfo";
 const url = (query = "") => new URL(`https://webhooks.cc/mcp${query}`);
@@ -19,6 +25,63 @@ describe("toolSelection", () => {
     expect(chosen.readOnly).toBe(true);
     expect(toolSelection(url("?tools=all"), ["cursor-vscode"]).groups.has("sheets")).toBe(true);
     expect(toolSelection(url(), []).readOnly).toBe(false);
+  });
+});
+
+describe("unknown groups in ?tools=", () => {
+  it("keeps the client's default when no name is a group, and reports them", () => {
+    const bogus = toolSelection(url("?tools=bogus"), ["Claude Code"]);
+    expect([...bogus.groups].sort()).toEqual([...TOOL_GROUP_NAMES].sort());
+    expect(bogus.unknown).toEqual(["bogus"]);
+    expect([...toolSelection(url("?tools=bogus"), ["cursor-vscode"]).groups]).toEqual(["core"]);
+  });
+
+  it("loads the groups named beside an unknown one and says which was not known", () => {
+    const chosen = toolSelection(url("?tools=core,teamz"), ["Claude Code"]);
+    expect([...chosen.groups]).toEqual(["core"]);
+    expect(chosen.unknown).toEqual(["teamz"]);
+    const note = unknownGroupsNote(chosen.unknown);
+    expect(note).toBe(
+      `Unknown tool groups in ?tools=: "teamz" (known: all, ${TOOL_GROUP_NAMES.join(", ")}).`
+    );
+    expect(unknownGroupsNote([])).toBeNull();
+    expect(toolSelection(url("?tools=core,teams"), []).unknown).toEqual([]);
+  });
+
+  it("names a client by its registration when ?tools= names no group", async () => {
+    const registration = vi.fn(async () => "Claude");
+    const typo = await listingToolSelection(url("?tools=typo"), null, registration);
+    expect([...typo.groups].sort()).toEqual([...TOOL_GROUP_NAMES].sort());
+    expect(typo.unknown).toEqual(["typo"]);
+    expect(registration).toHaveBeenCalledTimes(1);
+    // No ?tools= at all: the registration decides too.
+    const plain = await listingToolSelection(url(), null, registration);
+    expect(plain.groups.has("teams")).toBe(true);
+  });
+
+  it("reads no registration when ?tools= or the request decides", async () => {
+    const registration = vi.fn(async () => "Claude");
+    const core = await listingToolSelection(url("?tools=core,typo"), null, registration);
+    expect([...core.groups]).toEqual(["core"]);
+    const named = await listingToolSelection(url("?tools=typo"), "cursor-vscode", registration);
+    expect([...named.groups]).toEqual(["core"]);
+    expect(registration).not.toHaveBeenCalled();
+  });
+
+  it("reports at most five short names of plain characters", () => {
+    const long = "x".repeat(80);
+    const setting = encodeURIComponent(`<script>,${long},a1,b2,c3,d4,e5,f6`);
+    const { unknown } = toolSelection(url(`?tools=${setting}`), []);
+    expect(unknown).toEqual(["?script?", "x".repeat(32), "a1", "b2", "c3"]);
+    for (const name of unknown) expect(name).toMatch(/^[a-z0-9_?-]{1,32}$/);
+  });
+
+  it("never lets junk read as a real group name in the note", () => {
+    const setting = encodeURIComponent("te<a>ms,co\u{1F600}re");
+    const { groups, unknown } = toolSelection(url(`?tools=${setting}`), []);
+    expect([...groups]).toEqual(["core"]);
+    // One "?" per character, an emoji included.
+    expect(unknown).toEqual(["te?a?ms", "co?re"]);
   });
 });
 

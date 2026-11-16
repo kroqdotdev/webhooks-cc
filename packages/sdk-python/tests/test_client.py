@@ -851,6 +851,36 @@ def test_errors_are_typed(status: int, error_type: type[Exception]) -> None:
     assert caught.value.status_code == status
 
 
+@pytest.mark.parametrize(
+    ("status", "body", "message"),
+    [
+        (
+            404,
+            '{"error":"Endpoint not found"}',
+            "Endpoint not found: use client.endpoints.list() to see your endpoints",
+        ),
+        (
+            400,
+            '{"error":"invalid_input","message":"name is too long"}',
+            "name is too long",
+        ),
+        (502, "Bad gateway", "Bad gateway"),
+        (400, json.dumps({"error": "invalid_input", "message": "y" * 250}), "y" * 250),
+        (500, "z" * 400, "z" * 200 + "..."),
+        # A message only JavaScript's trim() calls blank (U+FEFF) gives way to the error.
+        (400, '{"message":"\\ufeff ","error":"name is too long"}', "name is too long"),
+    ],
+)
+def test_error_messages_are_the_plain_text_of_the_body(
+    status: int, body: str, message: str
+) -> None:
+    client = make_client(lambda request: httpx.Response(status, text=body))
+    with pytest.raises(errors.WebhooksCCError) as caught:
+        client.endpoints.get("acme")
+    assert caught.value.message == message
+    assert not caught.value.message.startswith("{")
+
+
 def test_rate_limit_error_carries_the_headers() -> None:
     headers = {
         "retry-after": "7",
@@ -1911,7 +1941,8 @@ def test_downloads_raise_typed_errors_and_check_their_input() -> None:
     client = make_client(handler)
     with pytest.raises(errors.NotFoundError) as missing:
         client.requests.attachment("r1", 0)
-    assert missing.value.status_code == 404 and "not_kept" in str(missing.value)
+    assert missing.value.status_code == 404
+    assert missing.value.message == "This email's attachment contents were not kept."
     with pytest.raises(errors.WebhooksCCError) as not_email:
         client.requests.raw("r1")
     assert not_email.value.status_code == 400
