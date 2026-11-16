@@ -50,11 +50,18 @@ const UNSUBSCRIBE =
 const DROP = /(privacy|terms|legal|help|support|\/open\/|\/pixel)/i;
 /**
  * The shape of an open-tracking pixel's path: a last segment like
- * `pixel.gif`, `open.gif` or `o.gif`, SendGrid's `/wf/open`, or a `/pixel/`
- * segment anywhere. Click-tracking redirects lead to the real link and stay.
+ * `pixel.gif`, `open.gif`, `beacon.png` (an image extension required),
+ * a one-letter `.gif` (`o.gif`), SendGrid's `/wf/open`, or a `/pixel/`
+ * segment anywhere.
  */
 const PIXEL_PATH =
-  /(?:\/(?:pixel|beacon|spacer|blank)(?:\.(?:gif|png|jpe?g|php))?\/?$|\/(?:open|opened)\.(?:gif|png|jpe?g|php)$|\/wf\/open\/?$|\/[a-z]\.(?:gif|png)$|\/pixel\/)/i;
+  /(?:\/(?:pixel|beacon|spacer|blank|open|opened)\.(?:gif|png|jpe?g|php)$|\/wf\/open\/?$|\/[a-z]\.gif$|\/pixel\/)/i;
+/**
+ * A click tracker's wrapper (Mailchimp's, Mandrill's /track/click/): it
+ * leads to the real link, which the mail often carries too (in its text
+ * part), so it ranks after the mail's direct links.
+ */
+const TRACKER_PATH = /\/track\/(?:click|open)(?:\/|$)/i;
 const SOCIAL_HOSTS =
   /(^|\.)(facebook|twitter|x|linkedin|instagram|youtube|tiktok|github|discord|medium)\.com$/i;
 const MAX_LINKS = 20;
@@ -311,7 +318,8 @@ function findLinks(text: string | null, html: string | null): ExtractedLink[] {
     if (!kept) return;
     seen.add(url);
     const link = { url, label, action: ACTION.test(url) || (label !== null && ACTION.test(label)) };
-    (kept === "rescued" ? rescued : links).push(link);
+    const fallback = kept === "rescued" || TRACKER_PATH.test(new URL(url).pathname);
+    (fallback ? rescued : links).push(link);
   };
   if (html) {
     for (const anchor of findAnchors(html)) {

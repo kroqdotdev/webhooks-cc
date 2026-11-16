@@ -148,10 +148,11 @@ describe("extractFromEmail", () => {
     });
     // A rescued link (here a support host's verify page) ranks after the
     // mail's own links: it only answers when nothing else does.
+    // Click-tracker wrappers rank last with them, after the mail's direct links.
     expect(found.links.map((link) => [link.url, link.action])).toEqual([
       ["https://shop.acme.test/orders/1043/track/", false],
-      ["https://links.acme.test/track/click?id=9f2", false],
       ["https://support.acme.test/verify?token=Qw81xk", true],
+      ["https://links.acme.test/track/click?id=9f2", false],
     ]);
   });
 
@@ -250,6 +251,27 @@ describe("extractFromEmail", () => {
       html: `<a href="https://pay.acme.test/receipts/77">View receipt</a> <a href="https://acme.test/legal/acceptable-use">Acceptable use</a>`,
     });
     expect(receipt.links.map((link) => link.url)).toEqual(["https://pay.acme.test/receipts/77"]);
+  });
+
+  it("prefers a direct link to a click tracker's wrapper of it", () => {
+    const found = extractFromEmail({
+      subject: "Verify your email",
+      text: "Verify: https://app.acme.test/verify?token=k3y",
+      html: `<a href="https://mandrillapp.test/track/click/30/app.acme.test?p=x">Verify email</a>`,
+    });
+    expect(found.links[0]?.url).toBe("https://app.acme.test/verify?token=k3y");
+  });
+
+  it("keeps links that only look like pixel names", () => {
+    for (const url of [
+      "https://cdn.acme.test/u/9/a.png",
+      "https://app.acme.test/templates/blank",
+      "https://acme.test/products/beacon/",
+    ]) {
+      expect(
+        extractFromEmail({ subject: null, text: url, html: null }).links.map((l) => l.url)
+      ).toEqual([url]);
+    }
   });
 
   it("drops unsubscribe links even when they carry a token", () => {
