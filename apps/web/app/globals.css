@@ -302,6 +302,13 @@ body {
     @apply text-sm font-mono bg-muted px-1.5 py-0.5 border border-foreground/20 rounded-sm;
     overflow-wrap: anywhere;
   }
+  /* Not in tables: there `anywhere` lowers the column's narrowest width, so
+     the name column would shrink and break `enabled` on a desktop. Tables
+     scroll sideways on phones instead. */
+  .docs-content :is(td, th) > code,
+  .docs-content :is(td, th) :not(pre) > code {
+    overflow-wrap: normal;
+  }
 
   /* Card: a hairline on a white surface. One that can be clicked darkens
      its hairline on hover instead of lifting. */

@@ -8,6 +8,6 @@
     "`/docs/providers/<provider>` redirects to the provider's page, and the Coinbase Commerce page cites Coinbase's current documentation",
     "`/.well-known/agent-skills` serves the skills index instead of a 404",
     "The `/share/<framework>` guides have markdown twins, at `/share/<framework>.md` and for an `Accept: text/markdown` request",
-    "A test checks every internal link and heading anchor in the docs"
+    "A test checks every markdown link to another docs page or heading in the docs"
   ]
 }

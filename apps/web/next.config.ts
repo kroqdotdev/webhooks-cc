@@ -160,7 +160,7 @@ const nextConfig: NextConfig = {
       },
       {
         // The framework share guides too, except their .md URLs.
-        source: "/share/:path((?!.*\\.md$)[^/]+)",
+        source: "/share/:path((?!.*\\.md$)(?!opengraph-image$)[^/]+)",
         headers: [{ key: "Link", value: linkHeader(markdownTwin("/share/:path.md")) }, varyAccept],
       },
       {

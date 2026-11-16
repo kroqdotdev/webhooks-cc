@@ -11,7 +11,13 @@ export function MovedAnchors({ anchors }: { anchors: Record<string, string> }) {
   const router = useRouter();
 
   useEffect(() => {
-    const id = decodeURIComponent(window.location.hash.slice(1));
+    // Every moved id is ASCII; a malformed escape (`#%`) is simply not one.
+    let id: string;
+    try {
+      id = decodeURIComponent(window.location.hash.slice(1));
+    } catch {
+      return;
+    }
     const target = Object.hasOwn(anchors, id) ? anchors[id] : undefined;
     if (target) router.replace(`${target}#${id}`);
   }, [anchors, router]);

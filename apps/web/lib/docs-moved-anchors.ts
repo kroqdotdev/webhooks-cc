@@ -3,7 +3,7 @@
  * of their own (the page was 1.2 MB). A link or a bookmark to
  * `/docs/sdk/api#emails` still works: the browser never sends the fragment, so
  * `MovedAnchors` reads it on the old page and goes to the new one.
- * `docs-moved-anchors.test.ts` checks every target heading exists.
+ * `docs-links.test.ts` checks every target heading exists.
  */
 export const MOVED_ANCHORS: Record<string, Record<string, string>> = {
   "sdk/api": {
