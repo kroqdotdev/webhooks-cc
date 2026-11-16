@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { addDays, buildLines, utcDay } from "./metrics";
+import { addDays, buildLines, shapeLast24h, utcDay } from "./metrics";
 import type { Database } from "@/lib/supabase/database";
 
 type Row = Database["public"]["Tables"]["ops_daily_metrics"]["Row"];
@@ -62,5 +62,82 @@ describe("ops metrics", () => {
       "2026-11-02"
     );
     expect(lines.find((line) => line.key === "activated")!.yesterday).toBe(0.4);
+  });
+
+  it("puts the last 24 hours beside each line", () => {
+    const last = shapeLast24h({
+      snapshot_at: "2026-11-02T13:10:00Z",
+      signups: 4,
+      cohort_signups: 5,
+      cohort_activated: 2,
+      active_accounts: 7,
+      captured: 1200,
+      quota_rejected: 3,
+      paid_accounts: 9,
+      new_paid: 1,
+      lost_paid: 0,
+    });
+    const lines = buildLines([row("2026-11-02", { signups: 3 })], "2026-11-02", last);
+    const value = (key: string) => lines.find((line) => line.key === key)!.last24h;
+    expect(value("signups")).toBe(4);
+    expect(value("activated")).toBe(0.4);
+    expect(value("active")).toBe(7);
+    expect(value("captured")).toBe(1200);
+    expect(value("rejected")).toBe(3);
+    expect(value("paid")).toBe(9);
+    expect(value("new_paid")).toBe(1);
+    expect(value("lost_paid")).toBe(0);
+    // Polar's daily figures have no 24-hour value.
+    expect(value("mrr")).toBeNull();
+    expect(value("new_subs")).toBeNull();
+    expect(value("canceled_subs")).toBeNull();
+    // The day's own columns are untouched.
+    expect(lines.find((line) => line.key === "signups")!.yesterday).toBe(3);
+  });
+
+  it("shows a dash for snapshot-based values until a snapshot exists", () => {
+    const last = shapeLast24h({
+      snapshot_at: null,
+      signups: 2,
+      cohort_signups: 0,
+      cohort_activated: 0,
+      // A stray value without a snapshot is never shown.
+      active_accounts: 5,
+      captured: null,
+      quota_rejected: null,
+      paid_accounts: 6,
+      new_paid: null,
+      lost_paid: null,
+    })!;
+    expect(last.since).toBeNull();
+    const lines = buildLines([], "2026-11-02", last);
+    const value = (key: string) => lines.find((line) => line.key === key)!.last24h;
+    expect(value("signups")).toBe(2);
+    expect(value("paid")).toBe(6);
+    // No cohort: no share rather than 0%.
+    expect(value("activated")).toBeNull();
+    for (const key of ["active", "captured", "rejected", "new_paid", "lost_paid"]) {
+      expect(value(key)).toBeNull();
+    }
+  });
+
+  it("reads bigint counts that arrive as strings, and no row as nothing", () => {
+    const last = shapeLast24h({
+      snapshot_at: "2026-11-02T13:10:00Z",
+      signups: "12" as unknown as number,
+      cohort_signups: 0,
+      cohort_activated: 0,
+      active_accounts: 1,
+      captured: "9007199254740993" as unknown as number,
+      quota_rejected: 0,
+      paid_accounts: 0,
+      new_paid: 0,
+      lost_paid: 0,
+    })!;
+    expect(last.signups).toBe(12);
+    expect(last.captured).toBeGreaterThan(9e15);
+    expect(shapeLast24h(undefined)).toBeNull();
+    const lines = buildLines([], "2026-11-02", null);
+    expect(lines.every((line) => line.last24h === null)).toBe(true);
   });
 });
