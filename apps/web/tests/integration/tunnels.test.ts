@@ -1252,7 +1252,7 @@ describe("round two: limits, names and access while runs are open", () => {
 
     const first = await open(user.key, { kind: "live", endpoint: slug });
     expect(await capture()).toBe(true);
-    // The tunnel fell: still live, so senders get the edge's 502.
+    // The tunnel fell: still live, so senders get the edge's 503.
     await edge("close", { shareId: first.body.shareId, reason: "closed" });
     expect(await graceOf()).not.toBeNull();
     expect(await capture()).toBe(true);

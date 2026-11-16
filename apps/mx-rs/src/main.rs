@@ -364,9 +364,18 @@ impl Server {
 
     /// A lookup that did not finish is remembered only briefly
     /// (REVERSE_DNS_TEMPERROR_FOR), so a later minute asks again.
+    /// A late temperror never replaces a definite answer another connection's
+    /// lookup cached meanwhile.
     fn remember_reverse_dns(&self, ip: IpAddr, found: &ReverseDns) {
         let now = Instant::now();
         let mut cache = self.reverse_dns.lock().unwrap_or_else(|e| e.into_inner());
+        if found.temporary_error
+            && cache.get(&ip).is_some_and(|(known, at)| {
+                !known.temporary_error && at.elapsed() < REVERSE_DNS_CACHE_FOR
+            })
+        {
+            return;
+        }
         cache.insert(ip, (found.clone(), now), |_, (_, at)| {
             now.duration_since(*at) < REVERSE_DNS_CACHE_FOR
         });
