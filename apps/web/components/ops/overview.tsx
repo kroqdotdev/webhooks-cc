@@ -137,6 +137,16 @@ export function OpsOverview() {
     timeZone: "UTC",
   });
   const asOf = new Date(data.today.asOf).toISOString().slice(11, 16);
+  const since = data.last24h?.since
+    ? new Date(data.last24h.since).toLocaleString("en-US", {
+        month: "short",
+        day: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+        hourCycle: "h23",
+        timeZone: "UTC",
+      })
+    : null;
   const needs = data.needs.tickets.length + data.needs.refunds.length;
   // Revenue rows split from usage rows by a slightly stronger rule.
   const firstMoney = data.lines.findIndex((line) => line.key === "paid");
@@ -245,6 +255,9 @@ export function OpsOverview() {
                 <th scope="col" className="px-3 py-2 text-left font-medium">
                   Metric
                 </th>
+                <th scope="col" className="whitespace-nowrap px-3 py-2 text-right font-medium">
+                  Last 24h
+                </th>
                 <th scope="col" className="px-3 py-2 text-right font-medium">
                   Yesterday
                 </th>
@@ -273,6 +286,7 @@ export function OpsOverview() {
                     <th scope="row" className="whitespace-nowrap px-3 py-2 text-left font-normal">
                       {line.label}
                     </th>
+                    <td className="px-3 py-2 text-right">{formatValue(line, line.last24h)}</td>
                     <td className="px-3 py-2 text-right">{formatValue(line, line.yesterday)}</td>
                     <td className="px-3 py-2 text-right">{formatValue(line, line.avg7, true)}</td>
                     <td className="px-3 py-2 text-right text-muted-foreground">
@@ -302,6 +316,30 @@ export function OpsOverview() {
           their averages show the last value of each week. MRR and subscriptions come from Polar and
           include add-on subscriptions. Activation is the share of accounts that signed up 7 days
           before a day and captured something within their first week.
+        </p>
+        <p className="max-w-[80ch] text-xs text-muted-foreground">
+          {data.last24h === null ? (
+            <>The last 24 hours could not be read, so that column shows dashes. </>
+          ) : (
+            <>
+              Last 24h: signups and paying accounts are counted now, and activation is the share of
+              the accounts that signed up 7 to 8 days ago. Captures, refusals, accounts with a
+              capture and the paying accounts that came or went count from the hourly snapshot
+              nearest to 24 hours ago,{" "}
+              {since ? (
+                <>
+                  here <span className="tabular-nums">{since}</span> UTC: usually within half an
+                  hour of it, never more than 90 minutes.{" "}
+                </>
+              ) : (
+                <>
+                  and there is none within 90 minutes of then (the first day, or the hourly job was
+                  down), so they show a dash.{" "}
+                </>
+              )}
+            </>
+          )}
+          MRR and subscriptions come from Polar once a day and have no 24-hour value.
         </p>
       </section>
     </div>

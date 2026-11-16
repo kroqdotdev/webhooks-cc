@@ -1,0 +1,6 @@
+{
+  "title": "Last 24 hours in the operations center",
+  "items": [
+    "The operations center's overview has a Last 24h column beside Yesterday: signups, activation and paying accounts counted now, and captures, refusals, active accounts and paying accounts gained or lost counted from an hourly snapshot taken about 24 hours ago"
+  ]
+}

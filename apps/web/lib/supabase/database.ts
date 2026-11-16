@@ -2724,6 +2724,35 @@ export interface Database {
         };
         Relationships: [];
       };
+      /** Hourly snapshots behind the ops overview's "Last 24h" (migration 00111). */
+      ops_snapshots: {
+        Row: { taken_at: string; day: string };
+        Insert: { taken_at: string; day: string };
+        Update: { taken_at?: string; day?: string };
+        Relationships: [];
+      };
+      ops_snapshot_counts: {
+        Row: { taken_at: string; user_id: string | null; captured: number; quota_rejected: number };
+        Insert: {
+          taken_at: string;
+          user_id?: string | null;
+          captured?: number;
+          quota_rejected?: number;
+        };
+        Update: {
+          taken_at?: string;
+          user_id?: string | null;
+          captured?: number;
+          quota_rejected?: number;
+        };
+        Relationships: [];
+      };
+      ops_snapshot_paid: {
+        Row: { taken_at: string; account: string };
+        Insert: { taken_at: string; account: string };
+        Update: { taken_at?: string; account?: string };
+        Relationships: [];
+      };
     };
     Views: Record<string, never>;
     Functions: {
@@ -2868,6 +2897,29 @@ export interface Database {
       ops_excluded_users: {
         Args: Record<string, never>;
         Returns: { user_id: string }[];
+      };
+      ops_paid_now: {
+        Args: Record<string, never>;
+        Returns: { account: string }[];
+      };
+      ops_take_snapshot: {
+        Args: Record<string, never>;
+        Returns: string;
+      };
+      ops_last_24h: {
+        Args: Record<string, never>;
+        Returns: {
+          snapshot_at: string | null;
+          signups: number;
+          cohort_signups: number;
+          cohort_activated: number;
+          active_accounts: number | null;
+          captured: number | null;
+          quota_rejected: number | null;
+          paid_accounts: number;
+          new_paid: number | null;
+          lost_paid: number | null;
+        }[];
       };
       analytics_daily_accounts: {
         Args: { p_day: string };
