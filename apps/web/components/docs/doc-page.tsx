@@ -12,6 +12,8 @@ import { DocsCTA } from "@/components/docs/docs-cta";
 import { getPrevNext } from "@/lib/docs-nav";
 import { rehypeExtractHeadings } from "@/lib/rehype-extract-headings";
 import { TableOfContents, type TocItem } from "@/components/docs/toc";
+import { MovedAnchors } from "@/components/docs/moved-anchors";
+import { MOVED_ANCHORS } from "@/lib/docs-moved-anchors";
 import { JsonLd, faqSchema, howToSchema } from "@/lib/schemas";
 import { extractFaqItems, extractHowToSteps } from "@/lib/mdx-schema-extract";
 import type { Metadata } from "next";
@@ -109,8 +111,17 @@ export async function DocPage({ params }: DocPageProps) {
   }
 
   return (
-    <div className="flex gap-10">
+    <div
+      className={
+        // The page streams, so a long one paints before the table of contents
+        // has arrived: with fixed columns the article does not narrow when it does.
+        headings.length >= 3
+          ? "flex gap-10 xl:grid xl:grid-cols-[minmax(0,48rem)_12rem]"
+          : "flex gap-10"
+      }
+    >
       {schemaData && <JsonLd data={schemaData} />}
+      {MOVED_ANCHORS[slugPath] && <MovedAnchors anchors={MOVED_ANCHORS[slugPath]} />}
       <article className="max-w-3xl flex-1 min-w-0">
         <h1 className="text-3xl md:text-4xl font-bold mb-4">{fm.title}</h1>
         <p className="text-lg text-muted-foreground mb-2">{fm.description}</p>

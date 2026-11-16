@@ -159,6 +159,11 @@ const nextConfig: NextConfig = {
         headers: [{ key: "Link", value: linkHeader(markdownTwin("/docs/:path.md")) }, varyAccept],
       },
       {
+        // The framework share guides too, except their .md URLs.
+        source: "/share/:path((?!.*\\.md$)(?!opengraph-image$)[^/]+)",
+        headers: [{ key: "Link", value: linkHeader(markdownTwin("/share/:path.md")) }, varyAccept],
+      },
+      {
         // The auth.md v0.1 routes are deprecated (RFC 9745); the routes set
         // Deprecation and Sunset. `:path*` matches the bare /api/agent/auth too.
         source: "/api/agent/auth/:path*",
@@ -194,6 +199,12 @@ const nextConfig: NextConfig = {
       beforeFiles: [
         // mailhooks.cc's pages come first: its root is not webhooks.cc's.
         ...mailhooksRewrites,
+        // Next drops the trailing slash from /.well-known/agent-skills/, so the
+        // directory URL is the one clients end up at; it serves the index.
+        {
+          source: "/.well-known/agent-skills",
+          destination: "/.well-known/agent-skills/index.json",
+        },
         // A route segment cannot end in ".md", so the docs twins live
         // under /docs.md; an index page's twin is its directory's.
         { source: "/docs/index.md", destination: "/docs.md" },
@@ -202,6 +213,8 @@ const nextConfig: NextConfig = {
         { source: "/", has: prefersMarkdown, destination: "/index.md" },
         { source: "/docs", has: prefersMarkdown, destination: "/docs.md" },
         { source: "/docs/:path(.+)", has: prefersMarkdown, destination: "/docs.md/:path" },
+        { source: "/share/:path([^/]+)\\.md", destination: "/share.md/:path" },
+        { source: "/share/:path([^/]+)", has: prefersMarkdown, destination: "/share.md/:path" },
         // mailhooks.cc's docs come after the twins, so an agent asking it for
         // markdown gets the same twin as on webhooks.cc.
         ...mailhooksDocsRewrites,
@@ -235,6 +248,8 @@ const nextConfig: NextConfig = {
       // Addresses people guess: sign-up opens the form, and the docs home is the quick start.
       { source: "/signup", destination: "/login?mode=sign-up", permanent: false },
       { source: "/docs/quickstart", destination: "/docs", permanent: true },
+      // Provider pages live under /webhooks; articles linked them from /docs/providers.
+      { source: "/docs/providers/:provider", destination: "/webhooks/:provider", permanent: true },
       // The interactive API explorer was retired; the REST API docs cover it.
       { source: "/api-explorer", destination: "/docs/api", permanent: true },
       {

@@ -1,0 +1,295 @@
+---
+title: "API Reference: Teams and Sharing"
+description: "TypeScript SDK reference for teams, sharing localhost with client.shares, the flow builder and sandbox and agent registration."
+section: sdk
+order: 2
+lastUpdated: 2026-11-16
+schema: none
+keywords: ["SDK API", "webhook SDK methods", "TypeScript API reference"]
+seo:
+  ogTitle: "TypeScript SDK API Reference: Teams and Sharing"
+  ogDescription: "TypeScript SDK reference for teams, sharing localhost with client.shares, the flow builder and sandbox and agent registration."
+---
+
+Part of the [TypeScript SDK API reference](/docs/sdk/api). The constructor, endpoints and direct delivery are on the [first page](/docs/sdk/api).
+
+## Teams
+
+A key has exactly the team access of the account it belongs to. Endpoints shared with you already show up in `endpoints.list()` and work with every request method by slug except `requests.clear`, which stays with the owner; this namespace manages the teams themselves.
+
+<ApiMethod method="GET" path="/teams" title="client.teams.list">
+
+List the teams you own or belong to, with role, seats, pooled usage, and subscription state.
+
+```ts
+list(): Promise<Team[]>
+// Team: { id, name, role, seats, memberCount, suspended, subscriptionStatus,
+//         requestsUsed, requestLimit, periodEnd, cancelAtPeriodEnd, ... }
+```
+
+</ApiMethod>
+
+<ApiMethod method="GET" path="/teams/:teamId/members" title="client.teams.members">
+
+List a team's members and pending invites. Any member may call this.
+
+```ts
+members(teamId: string): Promise<TeamMembers>
+// Returns: { members: TeamMember[], pendingInvites: TeamInvite[] }
+```
+
+</ApiMethod>
+
+<ApiMethod method="POST" path="/teams/:teamId/endpoints" title="client.teams.share">
+
+Share an endpoint you own with a team. Resolves the slug to an endpoint id for you. The team needs an active subscription; the endpoint's requests then draw from the team's pooled quota.
+
+```ts
+share(teamId: string, slug: string): Promise<void>
+```
+
+</ApiMethod>
+
+<ApiMethod method="DELETE" path="/teams/:teamId/endpoints/:endpointId" title="client.teams.unshare">
+
+Stop sharing an endpoint you own with a team. Works on suspended teams too.
+
+```ts
+unshare(teamId: string, slug: string): Promise<void>
+```
+
+</ApiMethod>
+
+<ApiMethod method="POST" path="/teams/:teamId/invite" title="client.teams.invite">
+
+Invite an email address to a team you own. Sends an invite email; accepting claims one of the team's paid seats.
+
+```ts
+invite(teamId: string, email: string): Promise<TeamInvite>
+```
+
+</ApiMethod>
+
+<ApiMethod method="GET" path="/invites" title="client.teams.invites">
+
+Invites waiting for you, and the calls to answer them.
+
+```ts
+invites.list(): Promise<TeamInvite[]>
+invites.accept(inviteId: string): Promise<void>
+invites.decline(inviteId: string): Promise<void>
+```
+
+</ApiMethod>
+
+## Sharing localhost
+
+Public links to ports on this computer ([`whk share`](/docs/share)) and live tunnels ([`whk tunnel --live`](/docs/live-tunnel)). Previews are served at `<name>.sharehooks.cc`; Free previews get a random name ending in `-free` and last 2 hours. Everything the dashboard's Shares page does is here, so an agent never needs it.
+
+<ApiMethod method="GET" path="/shares" title="client.shares.list">
+
+Your previews and live tunnels, live ones first, then the latest that ended, with this month's shared data and your plan's limits. Includes teammates' previews under your teams' names and teammates' live tunnels on endpoints you own.
+
+```ts
+list(options?: { state?: "live" | "ended" }): Promise<TunnelShareList>
+// Returns: { shares: TunnelShare[], usage: TunnelUsage, limits: TunnelLimits,
+//            names: TunnelNamesSummary, suspended: boolean, hints: string[] }
+```
+
+</ApiMethod>
+
+<ApiMethod method="POST" path="/shares/:id/stop" title="client.shares.stop">
+
+Stop a preview or live tunnel. The CLI running it is told why and exits. `stopped` is `false` when it had already ended; `edgeReached` is `false` when the edge could not be told at once, and it ends at the next sync (within half a minute).
+
+```ts
+stop(id: string): Promise<TunnelStopResult>
+// Returns: { ok: true, stopped: boolean, edgeReached: boolean }
+```
+
+</ApiMethod>
+
+<ApiMethod method="GET" path="/shares/:id/requests" title="client.shares.requests">
+
+The last visitor requests to a running preview, newest first: no addresses, a number per visitor.
+
+```ts
+requests(id: string): Promise<TunnelVisits>
+// Returns: { available: boolean, requests: TunnelVisit[] }
+```
+
+</ApiMethod>
+
+<ApiMethod method="RUN" path="whk share" title="client.shares.start">
+
+Share a local port at a public link as this client's account, by running the `whk` CLI (Node.js only, `whk` on the `PATH`). Resolves once the link is live. A client with an API key passes it to `whk`; a client from `WebhooksCC.connected()` makes `whk` use the same agent credential file, so the share belongs to the account the client sees. Any other client throws.
+
+```ts
+start(options: { port: number; name?: string; password?: string; whkPath?: string;
+  tunnelUrl?: string; onRequest?; onNotice?; onEvent?; timeout?: number }): Promise<LiveShare>
+
+const preview = await client.shares.start({ port: 3000 });
+console.log(preview.url); // https://sample-preview-1234-free.sharehooks.cc
+await preview.stop();
+```
+
+</ApiMethod>
+
+<ApiMethod method="RUN" path="whk share" title="share">
+
+The same, without a client: `whk` uses the key you pass (handed over as `WHK_API_KEY` with `WHK_AUTH=key`), else `WHK_API_KEY` from your environment, else its own login.
+
+```ts
+import { share } from "@webhooks-cc/sdk";
+
+const preview = await share({
+  port: 5173,
+  name: "acme-demo", // a name you reserved (Pro and Business)
+  password: process.env.PREVIEW_PASSWORD, // sent through the environment, never the command line
+  onRequest: ({ method, path, status }) => console.log(method, path, status),
+});
+// preview: { url, name, expiresAt, notice, password, port, stop(), closed }
+const { reason } = await preview.closed; // settles however it ends
+```
+
+`stop()` closes the CLI's input and waits for it to exit, so it ends cleanly on every platform. When `whk` is missing, the error says how to install it (`whkInstallHint()`; `WHK_INSTALL_COMMAND` on macOS and Linux, `WHK_INSTALL_WINDOWS` on Windows). A refusal (no free slot, a name that is taken, data used up) rejects with the CLI's own words.
+
+</ApiMethod>
+
+<ApiMethod method="GET" path="/tunnel-names" title="client.names.list">
+
+Your reserved names and your teams', with how many your plan and each team allow. Own names count against your plan; names kept inside a team count against the team (its plan's names per seat times its seats).
+
+```ts
+list(): Promise<TunnelNameList>
+// Returns: { names: TunnelName[], limit, used, plan?, teams?: TunnelTeamNameCount[] }
+```
+
+</ApiMethod>
+
+<ApiMethod method="POST" path="/tunnel-names" title="client.names.reserve">
+
+Reserve a name (Pro and Business). With `team` (a team id, or a name that matches one of your teams) it belongs to that team and every member may share under it.
+
+```ts
+reserve(name: string, options?: { team?: string }): Promise<TunnelName>
+```
+
+</ApiMethod>
+
+<ApiMethod method="DELETE" path="/tunnel-names/:name" title="client.names.release">
+
+Release a name you reserved, or as a team's owner one of its names. A preview running under it stops.
+
+```ts
+release(name: string): Promise<void>
+```
+
+</ApiMethod>
+
+<ApiMethod method="PUT" path="/tunnel-names/:name/password" title="client.names.setPassword">
+
+Put a password (8 to 200 characters) on every preview under the name, a running one included. `clearPassword` removes it.
+
+```ts
+setPassword(name: string, password: string): Promise<void>
+clearPassword(name: string): Promise<void>
+```
+
+</ApiMethod>
+
+Requests captured while `whk tunnel --live` ran carry `liveResponse`: what the local app answered and the sender got. See [Requests](/docs/sdk/api/requests#requests) and the [`LiveResponse` type](/docs/sdk/api/types#types).
+
+## Flow Builder
+
+<ApiMethod method="POST" path="(chained)" title="client.flow">
+
+Create a fluent workflow builder for common webhook capture, verify, and replay workflows.
+
+```ts
+const result = await client
+  .flow()
+  .createEndpoint({ name: "test" })
+  .send({ body: { event: "test" } })
+  .waitForCapture({ timeout: "10s" })
+  .verifySignature({ provider: "stripe", secret: "whsec_..." })
+  .replayTo("http://localhost:3000/webhooks")
+  .cleanup()
+  .run();
+```
+
+</ApiMethod>
+
+## Sandbox and Agent Registration
+
+AI agents can use webhooks.cc without an API key. `WebhooksCC.sandbox()` registers through [auth.md](/auth.md), solves the proof-of-work challenge (about 3 seconds), and returns a sandbox client: up to 3 endpoints, 25 captured requests each and 100 in all, deleted 24 hours after registration. See [AI Agents](/docs/agents) for the limits and how a human connects an agent.
+
+<ApiMethod method="POST" path="/api/agent/identity" title="WebhooksCC.sandbox">
+
+```ts
+const sandbox = await WebhooksCC.sandbox({ clientName: "my-agent" });
+
+const endpoint = await sandbox.endpoints.create(); // endpoint.url captures webhooks
+const request = await sandbox.requests.waitFor(endpoint.slug, { timeout: "60s" });
+
+await sandbox.endpoints.list();
+await sandbox.requests.list(endpoint.slug, { limit: 10 });
+await sandbox.endpoints.delete(endpoint.slug); // frees a slot; the budget is not refunded
+```
+
+Sandbox endpoints only capture: no mock responses, notifications, signature verification, email or forwarding. Refusals throw `SandboxError` with the server's `code`: `sandbox_endpoint_limit` at 3 endpoints, `sandbox_full` when the shared sandbox is full. The access token renews itself.
+
+</ApiMethod>
+
+<ApiMethod method="POST" path="/api/agent/identity/claim" title="sandbox.claim / sandbox.waitForClaim">
+
+Connects the agent to a human's account. Show them the link and the code together; only someone signed in with that email can complete it.
+
+```ts
+const { verificationUri, userCode } = await sandbox.claim({ email: "dev@example.com" });
+console.log(`Open ${verificationUri}, sign in, and enter ${userCode}`);
+
+const client = await sandbox.waitForClaim(); // a WebhooksCC acting for that account
+const endpoints = await client.endpoints.list(); // includes the sandbox endpoints
+```
+
+`waitForClaim()` rejects with `AgentAuthError` `expired_token` when the 15-minute code runs out (call `claim()` again for a new one), or `access_denied` when the human declines. After the claim the sandbox client stops working; the returned client renews its token from the claimed assertion for 90 days.
+
+</ApiMethod>
+
+<ApiMethod method="GET" path="(credential file)" title="WebhooksCC.connected / WebhooksCC.connect">
+
+The connection is saved in the agent credential file that the MCP server, the CLI and the Python and Go SDKs share (`~/.config/whk/agent.json`, or `WHK_AGENT_FILE`), so a later process picks it up. `connected()` returns a client for the connected account, or `null` when there is none or the human has disconnected the agent; `fromSavedConnection()` is the synchronous form that does not check first. `connect()` connects an agent to a human's account without a sandbox.
+
+```ts
+const client = (await WebhooksCC.connected()) ?? (await WebhooksCC.sandbox());
+
+const pending = await WebhooksCC.connect({ email: "dev@example.com" });
+console.log(`Open ${pending.verificationUri}, sign in, and enter ${pending.userCode}`);
+const account = await pending.wait();
+```
+
+</ApiMethod>
+
+<ApiMethod method="POST" path="(protocol)" title="WebhooksCC.agent">
+
+The protocol steps one by one, for callers who drive auth.md themselves:
+
+```ts
+WebhooksCC.agent.discover({ baseUrl? })
+WebhooksCC.agent.challenge()                      // a proof-of-work challenge
+WebhooksCC.agent.solveChallenge(challenge, { signal? })
+WebhooksCC.agent.registerAnonymous({ clientName? })   // challenge + solve + register
+WebhooksCC.agent.registerServiceAuth({ email, clientName? }) // no sandbox; a human must connect it
+WebhooksCC.agent.exchange({ assertion })          // one-hour access token
+WebhooksCC.agent.startClaim({ claimToken, email? })
+WebhooksCC.agent.pollClaim({ claimToken })
+WebhooksCC.agent.waitForClaim({ claimToken, timeout? })
+WebhooksCC.agent.revoke({ token })
+```
+
+The solver refuses challenges above 2^26 hashes, yields to the event loop about every 50 ms, and works in Node and browsers.
+
+`WebhooksCC.register.*` (auth.md 0.1) is deprecated: anonymous and ID-JAG registration throw `AgentRegisterError` with code `endpoint_moved`, and the email flow stops working on November 30, 2026.
+
+</ApiMethod>

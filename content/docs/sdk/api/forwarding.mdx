@@ -1,0 +1,328 @@
+---
+title: "API Reference: Forwarding"
+description: "TypeScript SDK reference for forwarding: destinations, filters, formats, secrets, deliveries, alerts and templates."
+section: sdk
+order: 2
+lastUpdated: 2026-11-16
+schema: none
+keywords: ["SDK API", "webhook SDK methods", "TypeScript API reference"]
+seo:
+  ogTitle: "TypeScript SDK API Reference: Forwarding"
+  ogDescription: "TypeScript SDK reference for forwarding: destinations, filters, formats, secrets, deliveries, alerts and templates."
+---
+
+Part of the [TypeScript SDK API reference](/docs/sdk/api). The constructor, endpoints and direct delivery are on the [first page](/docs/sdk/api).
+
+## Forwarding
+
+[Forwarding](/docs/forwarding) sends what an endpoint captures to up to 10 [destinations](#destinations), each with its own kinds, conditions, format, timing and signing secret, queued, retried and logged. `client.forwarding` manages the endpoint's primary destination (the one its `forwardUrl` stands for) and reads the delivery log of all of them; `client.destinations` manages each one. Only the endpoint's owner can manage forwarding: for anyone else these methods throw `NotFoundError`, and `configure()` fails with a 403 for team members. In your handler, verify relayed requests with [`verifyRelayedRequest()`](/docs/sdk/signatures#forwarded-requests), signed JSON and your own JSON with [`verifyForwardedRequest()`](/docs/sdk/signatures#forwarded-requests) or [`verifyForwardedEmail()`](/docs/sdk/signatures#forwarded-emails).
+
+```ts
+await client.forwarding.configure(slug, {
+  url: "https://api.example.com/hooks",
+  http: true,
+  headers: [{ name: "Authorization", value: `Bearer ${process.env.HOOK_TOKEN}` }],
+  sentField: "publishedAt",
+});
+const secret = await client.forwarding.secret(slug); // put it in your handler
+
+const result = await client.forwarding.test(slug, { kind: "http" });
+if (result.delivered) {
+  await client.forwarding.configure(slug, { enabled: true });
+}
+```
+
+<ApiMethod method="PATCH" path="/endpoints/:slug" title="client.forwarding.configure">
+
+Change the primary destination's settings and return the updated endpoint. Only the options you pass change. Saving the first URL creates the endpoint's signing secret, so you can send a test delivery before turning forwarding on. Turning forwarding, or one kind of it, off marks the deliveries still waiting as failed. Throws when no option is given.
+
+```ts
+configure(endpointSlug: string, options: ConfigureForwardingOptions): Promise<Endpoint>
+```
+
+<ParamTable>
+
+| Param          | Type                                          | Required | Description                                                                                                                                  |
+| -------------- | --------------------------------------------- | -------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| `endpointSlug` | `string`                                      | yes      | Endpoint slug                                                                                                                                |
+| `url`          | `string \| null`                              | no       | An `https` URL on a public host name, or `null` to remove it (forwarding must be off)                                                        |
+| `enabled`      | `boolean`                                     | no       | Turn forwarding on or off. Turning it on needs a URL, sent now or saved before                                                               |
+| `http`         | `boolean`                                     | no       | Forward HTTP requests                                                                                                                        |
+| `email`        | `boolean`                                     | no       | Forward emails                                                                                                                               |
+| `format`       | `"auto" \| "as_received" \| "json" \| "chat"` | no       | How deliveries go out; `"auto"` picks chat for Slack and Discord URLs and as received otherwise. See [Formats](/docs/forwarding#formats)     |
+| `headers`      | `{ name: string; value: string \| null }[]`   | no       | Your own headers, at most 10, for relayed and signed JSON deliveries. Replaces the whole list; `null` keeps the value stored under that name |
+| `appendPath`   | `boolean`                                     | no       | Add the path after the slug to the URL for relayed requests (default `true`)                                                                 |
+| `retrySeconds` | `0 \| 3600 \| 86400`                          | no       | Retry failed deliveries for a day (default), an hour, or not at all                                                                          |
+| `keepOrder`    | `boolean`                                     | no       | One delivery at a time, in capture order (default `false`)                                                                                   |
+| `sentField`    | `string \| null`                              | no       | A JSON body field with the sender's own timestamp, such as `"publishedAt"` or `"data.publishedAt"`. See [Timing](/docs/forwarding#timing)    |
+
+</ParamTable>
+</ApiMethod>
+
+<ApiMethod method="GET" path="/endpoints/:slug/forwarding" title="client.forwarding.secret">
+
+The endpoint's signing secret (`whsec_...`). Throws `NotFoundError` until a URL has been saved.
+
+```ts
+secret(endpointSlug: string): Promise<string>
+```
+
+</ApiMethod>
+
+<ApiMethod method="POST" path="/endpoints/:slug/forwarding" title="client.forwarding.rotateSecret">
+
+Replace the signing secret and return the new one. Every delivery from then on, retries included, is signed with it, so update your handler right away.
+
+```ts
+rotateSecret(endpointSlug: string): Promise<string>
+```
+
+</ApiMethod>
+
+<ApiMethod method="POST" path="/endpoints/:slug/forwarding/test" title="client.forwarding.test">
+
+Send the newest captured request of a kind (or a sample, when none has arrived) to the saved URL once, exactly as a delivery would go out, and report the answer. `kind` defaults to `"http"` when HTTP requests are forwarded, otherwise `"email"`. Works with forwarding on or off; nothing is retried or logged. Fails with a 400 when no URL is saved. Rate limited to 10 per minute.
+
+```ts
+test(endpointSlug: string, options?: { kind?: "http" | "email" }): Promise<ForwardingTestResult>
+// Returns: { status, durationMs, excerpt, error, delivered, sample, kind, format, url, target, request, sender }
+```
+
+</ApiMethod>
+
+<ApiMethod method="GET" path="/endpoints/:slug/deliveries" title="client.forwarding.deliveries">
+
+The endpoint's delivery log, newest first. Each row has its `destination` (`{ id, name, url }`), the status, your server's last answer and time, the format, the request's method and path (or an email's subject), when it was received, and `senderAt` when the request carried the sender's own timestamp.
+
+```ts
+deliveries(endpointSlug: string, options?: ListDeliveriesOptions): Promise<DeliveryLogEntry[]>
+```
+
+<ParamTable>
+
+| Param           | Type                                          | Required | Description                                                                |
+| --------------- | --------------------------------------------- | -------- | -------------------------------------------------------------------------- |
+| `endpointSlug`  | `string`                                      | yes      | Endpoint slug                                                              |
+| `limit`         | `number`                                      | no       | 1 to 100 (default: 5)                                                      |
+| `status`        | `"all" \| "pending" \| "failed" \| "skipped"` | no       | `"pending"` is queued or retrying, `"skipped"` filtered out (default: all) |
+| `destinationId` | `string`                                      | no       | Only this destination's deliveries                                         |
+| `before`        | `string`                                      | no       | A row's `cursor`, to list the rows after it                                |
+
+</ParamTable>
+</ApiMethod>
+
+<ApiMethod method="GET" path="/endpoints/:slug/deliveries/summary" title="client.forwarding.summary">
+
+Delivered and failed among the last 24 hours, waiting now, and the failed and total counts the log's filters show. Each count stops at 100,000.
+
+```ts
+summary(endpointSlug: string): Promise<DeliverySummary>
+// Returns: { last24h: { delivered, failed }, pending, failed, total }
+```
+
+</ApiMethod>
+
+<ApiMethod method="GET" path="/requests/:id/deliveries" title="client.forwarding.requestDeliveries">
+
+Every delivery of one captured request or email, with each try in `attemptLog`. Anyone who can read the request can call this; team members get the destination's host without its path. `emailDeliveries()` is the older name for the same call.
+
+```ts
+requestDeliveries(requestId: string): Promise<ForwardingDelivery[]>
+```
+
+</ApiMethod>
+
+<ApiMethod method="POST" path="/requests/:id/deliveries" title="client.forwarding.redeliver">
+
+Queue a request or email for delivery again with the current settings, to every destination that takes it, and return the new delivery's id. It also sends one that was never forwarded. With `destinationId`, it goes to that destination only, whatever its filter says (the dashboard's **Send anyway**). Fails with a 409 when no destination takes it. Rate limited to 30 per minute.
+
+```ts
+redeliver(requestId: string, options?: { destinationId?: string }): Promise<{ id: string }>
+```
+
+</ApiMethod>
+
+<ApiMethod method="POST" path="/endpoints/:slug/deliveries/redeliver-failed" title="client.forwarding.redeliverFailed">
+
+Queue every request whose latest delivery failed again, oldest first, with each destination's current settings; with `destinationId`, only that destination's. At most 1,000 deliveries wait for a destination at a time, so `queued` can be lower than the failed count; call it again once those are through. Fails with a 409 when no destination is on. Rate limited to 10 per minute.
+
+```ts
+redeliverFailed(endpointSlug: string, options?: { destinationId?: string }): Promise<{ queued: number }>
+```
+
+</ApiMethod>
+
+## Destinations
+
+Each destination of an endpoint decides what it gets (`http`, `email`, a `filter`), how it is sent (`format`: `"as_received"`, `"json"`, `"template"` with your `bodyTemplate`, or `"chat"` with an optional `messageTemplate`, `"sheets"` rows in a Google Sheet, or `"file_drop"` files on your own server) and when (`throttleSeconds`, `delaySeconds`). See [Forwarding](/docs/forwarding) for what each does.
+
+```ts
+const zap = await client.destinations.create(slug, {
+  url: "https://hooks.zapier.com/hooks/catch/123/abc",
+  email: false,
+  filter: { conditions: [{ field: "body_path", op: "eq", path: "type", value: "invoice.paid" }] },
+  format: "template",
+  bodyTemplate: {
+    invoice: "{{ json.data.object.id }}",
+    amount: "{{ json.data.object.amount_paid }}",
+  },
+});
+const preview = await client.destinations.preview(slug, { destinationId: zap.id });
+// preview.filterPasses, preview.delivery?.body
+```
+
+<ApiMethod method="GET" path="/endpoints/:slug/destinations" title="client.destinations.list">
+
+The endpoint's destinations in order, header values masked. With `summary: true`, each has `summary`: its last 24 hours (`delivered`, `failed`, `skipped`) and what is waiting.
+
+```ts
+list(endpointSlug: string, options?: { summary?: boolean }): Promise<Destination[]>
+get(endpointSlug: string, destinationId: string): Promise<Destination>
+```
+
+</ApiMethod>
+
+<ApiMethod method="POST" path="/endpoints/:slug/destinations" title="client.destinations.create">
+
+Add a destination, up to 10 per endpoint. It is on unless `enabled: false`, and gets a signing secret of its own. Templates and filters are checked before the request is sent, so a mistake throws with the field it is in.
+
+```ts
+create(endpointSlug: string, input: DestinationCreateInput): Promise<Destination>
+// DestinationCreateInput: DestinationInput with a url, or a file drop's format and config
+```
+
+<ParamTable>
+
+| Param               | Type                                                         | Required | Description                                                                                                                                                                                                                                                                                                                                                           |
+| ------------------- | ------------------------------------------------------------ | -------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `url`               | `string`                                                     | yes      | An `https` URL on a public host name, or a Slack or Discord webhook (not for a file drop)                                                                                                                                                                                                                                                                             |
+| `name`              | `string \| null`                                             | no       | For the list and the log                                                                                                                                                                                                                                                                                                                                              |
+| `enabled`           | `boolean`                                                    | no       | Send to it (default `true`)                                                                                                                                                                                                                                                                                                                                           |
+| `http`, `email`     | `boolean`                                                    | no       | Which kinds it takes (default both)                                                                                                                                                                                                                                                                                                                                   |
+| `filter`            | `{ logic?: "and" \| "or"; conditions: Condition[] } \| null` | no       | Send only matching captures. See [Send only some captures](/docs/forwarding#send-only-some-captures)                                                                                                                                                                                                                                                                  |
+| `format`            | `DestinationFormat`                                          | no       | Default `"auto"`: chat for Slack and Discord URLs, as received otherwise. Also `"as_received"`, `"json"`, `"template"`, `"chat"`, `"sheets"` ([Google Sheets](/docs/forwarding#google-sheets)), `"file_drop"` ([File drops](/docs/forwarding#file-drops), Business), and for emails a mail provider's shape: `"postmark"`, `"sendgrid"`, `"mailgun"`, `"cloudmailin"` |
+| `mailgunSigningKey` | `string \| null`                                             | no       | With `"mailgun"`: your Mailgun signing key, so `signature` verifies (write-only; `hasMailgunSigningKey` says one is saved)                                                                                                                                                                                                                                            |
+| `bodyTemplate`      | JSON                                                         | no       | With `"template"`: the body; its strings hold `{{ placeholders }}` ([Your own JSON](/docs/forwarding#your-own-json))                                                                                                                                                                                                                                                  |
+| `messageTemplate`   | `string \| null`                                             | no       | With `"chat"`: your own message text; `null` sends the standard message                                                                                                                                                                                                                                                                                               |
+| `headers`           | `{ name: string; value: string \| null }[]`                  | no       | Your own headers, at most 10 (not for chat). Replaces the list; `null` keeps a stored value                                                                                                                                                                                                                                                                           |
+| `appendPath`        | `boolean`                                                    | no       | Add the captured path to the URL for relayed requests (default `true`)                                                                                                                                                                                                                                                                                                |
+| `retrySeconds`      | `0 \| 3600 \| 86400`                                         | no       | Retry failed deliveries for a day (default), an hour, or not at all                                                                                                                                                                                                                                                                                                   |
+| `keepOrder`         | `boolean`                                                    | no       | One delivery at a time, in capture order                                                                                                                                                                                                                                                                                                                              |
+| `sentField`         | `string \| null`                                             | no       | A JSON body field with the sender's own timestamp                                                                                                                                                                                                                                                                                                                     |
+| `throttleSeconds`   | `number`                                                     | no       | At most one delivery every so many seconds (0 to 3,600); the rest are not sent                                                                                                                                                                                                                                                                                        |
+| `delaySeconds`      | `number`                                                     | no       | Wait this long after the capture before sending (0 to 3,600)                                                                                                                                                                                                                                                                                                          |
+| `attachments`       | `"links" \| "inline" \| "none"`                              | no       | How a stored email's attachments travel: signed links (default), inline base64, or names only                                                                                                                                                                                                                                                                         |
+| `config`            | `SheetsConfig \| FileDropConfig \| null`                     | no       | With `"sheets"`: the spreadsheet, tab and columns; with `"file_drop"`: the server, folder and file layout                                                                                                                                                                                                                                                             |
+| `dropSecret`        | `{ password?, privateKey?, secretAccessKey? } \| null`       | no       | With `"file_drop"`: the login secret, write-only, needed again when the server or login changes                                                                                                                                                                                                                                                                       |
+| `position`          | `number`                                                     | no       | Its place in the list                                                                                                                                                                                                                                                                                                                                                 |
+
+</ParamTable>
+</ApiMethod>
+
+<ApiMethod method="PATCH" path="/endpoints/:slug/destinations/:id" title="client.destinations.update">
+
+Change a destination; only the fields you pass change. Switching it off or taking a kind away marks what is waiting for it as failed.
+
+```ts
+update(endpointSlug: string, destinationId: string, input: DestinationInput): Promise<Destination>
+```
+
+</ApiMethod>
+
+<ApiMethod method="DELETE" path="/endpoints/:slug/destinations/:id" title="client.destinations.delete">
+
+Remove a destination. Deliveries still waiting for it are marked failed; its log stays.
+
+```ts
+delete(endpointSlug: string, destinationId: string): Promise<void>
+```
+
+</ApiMethod>
+
+<ApiMethod method="PUT" path="/endpoints/:slug/destinations/order" title="client.destinations.reorder">
+
+Put the destinations in this order (every id, once) and return them. Captures are queued for destinations in this order.
+
+```ts
+reorder(endpointSlug: string, destinationIds: string[]): Promise<Destination[]>
+```
+
+</ApiMethod>
+
+<ApiMethod method="GET" path="/endpoints/:slug/destinations/:id/secret" title="client.destinations.secret">
+
+The destination's signing secret (`whsec_...`); `rotateSecret()` replaces it and returns the new one, used by every delivery from then on.
+
+```ts
+secret(endpointSlug: string, destinationId: string): Promise<string>
+rotateSecret(endpointSlug: string, destinationId: string): Promise<string>
+```
+
+</ApiMethod>
+
+<ApiMethod method="POST" path="/endpoints/:slug/destinations/:id/test" title="client.destinations.test">
+
+Send one delivery now, exactly as a real one would go out: `requestId`, or the newest request of `kind`, or a sample. Its filter is reported in `filterPasses`, not applied; nothing is retried or logged. Rate limited to 10 per minute.
+
+```ts
+test(
+  endpointSlug: string,
+  destinationId: string,
+  options?: { kind?: "http" | "email"; requestId?: string }
+): Promise<DestinationTestResult>
+// Returns what forwarding.test() does, plus filterPasses
+```
+
+</ApiMethod>
+
+<ApiMethod method="POST" path="/endpoints/:slug/destinations/preview" title="client.destinations.preview">
+
+A dry run against a captured request: whether the destination takes its kind (`takesKind`), whether its filter lets it through (`filterPasses`), and the exact request it would send (`delivery`: method, URL, headers with stored values masked, body), or an `error` such as a template that cannot be filled in. Pass a saved `destinationId`, unsaved fields in `destination` (on top of the saved ones, or with a `url` on their own), or both. Nothing is sent.
+
+```ts
+preview(endpointSlug: string, options: PreviewDestinationOptions): Promise<DestinationPreview>
+```
+
+</ApiMethod>
+
+## Alerts
+
+<ApiMethod method="GET" path="/endpoints/:slug/alerts" title="client.alerts">
+
+An endpoint's [alerts](/docs/forwarding#alerts): when its email fields stop finding values, mail stops arriving, or a delivery fails for good. `get()` returns the settings and the recent alerts, open (`resolvedAt: null`) or resolved; `update()` changes only the settings you pass and returns them.
+
+```ts
+get(slug: string): Promise<{ settings: AlertSettings; events: AlertEvent[] }>
+update(slug: string, settings: Partial<AlertSettings>): Promise<AlertSettings>
+// AlertSettings: { enabled, fieldFailures, fieldFailureShare, requiredFields, silenceHours,
+//                  destinationFailures, notifyEmail, notifyDestinationIds }
+```
+
+```ts
+await client.alerts.update(slug, { enabled: true, silenceHours: 24, notifyEmail: true });
+```
+
+</ApiMethod>
+
+## Templates
+
+<ApiMethod method="GET" path="(local)" title="client.templates.listProviders">
+
+List all supported webhook provider templates. No API call made.
+
+```ts
+listProviders(): TemplateProvider[]
+// Returns: ["stripe", "github", "shopify", "twilio", "slack", "paddle", "linear", "sendgrid", "clerk", "discord", "vercel", "gitlab", "typeform", "standard-webhooks", "meta", "lemonsqueezy", "coinbase-commerce", "razorpay", "cal", "intercom", "telegram", "square", "hubspot", "mailgun", "calendly", "mux", "sentry", "bitbucket", "docusign", "adyen", "paypal", "plaid", "resend", "workos"]
+```
+
+</ApiMethod>
+
+<ApiMethod method="GET" path="(local)" title="client.templates.get">
+
+Get metadata for a specific provider template.
+
+```ts
+get(provider: TemplateProvider): TemplateProviderInfo
+```
+
+</ApiMethod>

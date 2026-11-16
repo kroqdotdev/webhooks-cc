@@ -98,6 +98,11 @@ const FAQ: FAQItem[] = [
       "The mail-first side of webhooks.cc. It is the same account, the same endpoints and the same plans, for people who receive their data by email. Sign in on either site and you see the same endpoints.",
   },
   {
+    question: "Why does email need an account?",
+    answer:
+      "A guest endpoint on webhooks.cc is readable by anyone who knows its link, and mail often holds codes, receipts and personal details, so email addresses only exist for endpoints that belong to an account. Signing up is free and takes an email address.",
+  },
+  {
     question: "Do I have to change my email provider?",
     answer:
       "No. Forward the emails you want read to your endpoint's address with a forwarding rule in Gmail, Outlook or your mail server, or give the address straight to the sender.",
@@ -157,7 +162,9 @@ export default function MailhooksHome() {
                 </Link>
               </div>
               <p className="text-sm text-muted-foreground mt-4">
-                Free: 50 emails a day and 20 parsed attachment pages a month. No credit card.
+                Free: 50 emails a day and 20 parsed attachment pages a month. No credit card. Email
+                needs an account, because anyone who knows a guest endpoint&apos;s link can read
+                what it captured.
                 {/* On phones the gallery link joins this line, so the buttons stand alone. */}
                 <span className="md:hidden">
                   {" "}

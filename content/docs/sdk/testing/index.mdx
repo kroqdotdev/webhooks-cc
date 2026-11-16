@@ -188,7 +188,7 @@ it("sends a confirmation email on signup", async () => {
 });
 ```
 
-The action gets the address and the endpoint. The options take the [email criteria](/docs/sdk/api#emails) (`tag`, `subject`, `from`, `to`), `count` (default: 1), `timeout` (default: 60 seconds), `pollInterval` (default: 1 second), a `match` function, and the options of `endpoints.create()`. With `tag`, the action gets the tagged address and only mail to that tag counts. Every email the new endpoint received counts, so nothing from an earlier run can match.
+The action gets the address and the endpoint. The options take the [email criteria](/docs/sdk/api/emails) (`tag`, `subject`, `from`, `to`), `count` (default: 1), `timeout` (default: 60 seconds), `pollInterval` (default: 1 second), a `match` function, and the options of `endpoints.create()`. With `tag`, the action gets the tagged address and only mail to that tag counts. Every email the new endpoint received counts, so nothing from an earlier run can match.
 
 ### One endpoint, a tag per test
 

@@ -135,12 +135,21 @@ async function rewriteFor(
   return null;
 }
 
+describe("next.config.ts agent skills rewrite", () => {
+  it("serves the index at the directory URL, which Next reaches without its trailing slash", async () => {
+    expect(await rewriteFor("/.well-known/agent-skills")).toBe(
+      "/.well-known/agent-skills/index.json"
+    );
+  });
+});
+
 describe("next.config.ts markdown twin rewrites", () => {
   it.each([
     ["/docs/agents.md", "/docs.md/agents"],
     ["/docs/guides/test-stripe-webhooks.md", "/docs.md/guides/test-stripe-webhooks"],
     ["/docs/index.md", "/docs.md"],
     ["/docs/sdk/index.md", "/docs.md/sdk"],
+    ["/share/vite.md", "/share.md/vite"],
   ])("serves %s from %s", async (path, twin) => {
     expect(await rewriteFor(path)).toBe(twin);
   });
@@ -150,6 +159,7 @@ describe("next.config.ts markdown twin rewrites", () => {
     ["/docs", "/docs.md"],
     ["/docs/agents", "/docs.md/agents"],
     ["/docs/sdk/testing/stripe-vitest", "/docs.md/sdk/testing/stripe-vitest"],
+    ["/share/vite", "/share.md/vite"],
   ])("serves %s from %s when proxy.ts marked the request", async (path, twin) => {
     expect(await rewriteFor(path, { [MARKDOWN_TWIN_HEADER]: "1" })).toBe(twin);
     expect(await rewriteFor(path)).toBeNull();
@@ -251,6 +261,12 @@ describe("next.config.ts mailhooks.cc rewrites", () => {
 });
 
 describe("next.config.ts redirects", () => {
+  it("sends /docs/providers/<provider> to the provider's page", async () => {
+    const redirects = (await nextConfig.redirects?.()) ?? [];
+    const rule = redirects.find((r) => r.source === "/docs/providers/:provider");
+    expect(rule?.destination).toBe("/webhooks/:provider");
+  });
+
   it("serves /pricing as a page of its own, not a redirect to the landing page", async () => {
     const redirects = (await nextConfig.redirects?.()) ?? [];
     const matching = redirects.filter((rule) =>

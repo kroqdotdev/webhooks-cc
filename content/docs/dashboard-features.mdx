@@ -164,7 +164,7 @@ The **Schema** view next to **Tree** and **Formatted** turns a JSON or form body
 
 It learns from every recent request carrying the same payload: the same detected event (such as Stripe `invoice.paid`), or without one, the same method and path. A field missing from some of them is optional, a field that is sometimes `null` is nullable, and nested objects with the same shape share one type. Switch to **This request** to type only the selected one. The root type is named after the event, such as `InvoicePaidEvent`.
 
-AI agents get the same schemas from the MCP tool [`generate_payload_schema`](/docs/mcp/tools#generate_payload_schema), and code from `generateRequestSchema()` in the [SDK](/docs/sdk/api#payload-schemas).
+AI agents get the same schemas from the MCP tool [`generate_payload_schema`](/docs/mcp/tools#generate_payload_schema), and code from `generateRequestSchema()` in the [SDK](/docs/sdk/api/requests#payload-schemas).
 
 ### Export
 

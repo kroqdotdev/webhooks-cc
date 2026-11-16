@@ -267,6 +267,9 @@ body {
   /* Docs content spacing: no color opinions, inherits from theme.
      Uses descendant selectors (not >) so styles persist inside
      wrapper components like Tabs, Steps, FAQ, etc. */
+  .docs-content {
+    overflow-wrap: break-word;
+  }
   .docs-content h2 {
     @apply text-2xl font-bold mt-12 mb-4;
   }
@@ -294,8 +297,17 @@ body {
   .docs-content blockquote {
     @apply border-l-4 border-foreground/20 pl-4 my-4 italic text-muted-foreground;
   }
+  /* Long identifiers and URLs in inline code break anywhere, so a phone never scrolls sideways. */
   .docs-content :not(pre) > code {
     @apply text-sm font-mono bg-muted px-1.5 py-0.5 border border-foreground/20 rounded-sm;
+    overflow-wrap: anywhere;
+  }
+  /* Not in tables: there `anywhere` lowers the column's narrowest width, so
+     the name column would shrink and break `enabled` on a desktop. Tables
+     scroll sideways on phones instead. */
+  .docs-content :is(td, th) > code,
+  .docs-content :is(td, th) :not(pre) > code {
+    overflow-wrap: normal;
   }
 
   /* Card: a hairline on a white surface. One that can be clicked darkens
@@ -303,6 +315,8 @@ body {
   /* box-shadow is written out rather than applied as shadow-surface, so a
      focus ring utility on the element replaces it instead of adding to it. */
   .ui-card {
+    /* A long URL or call in a card's text wraps instead of widening the page. */
+    overflow-wrap: break-word;
     @apply border border-border rounded-lg bg-card p-6;
     box-shadow: var(--elevation-sm);
     transition: border-color 150ms;

@@ -225,7 +225,7 @@ const email = await client.emails.waitFor("my-endpoint", { tag: runId });
 const code = extractCode(email); // "482913"
 ```
 
-`waitFor` polls for up to 60 seconds by default and only takes mail sent to that tag. `extractLink(email)` returns the confirm, verify, reset, or sign-in link the same way. `client.emails.get(id)` adds your fields as `emailFields` and the reply as `replyText`, and `client.emails.toInbound(email, "postmark")` builds an email in a provider's shape to post to your handler. `client.emails` also lists emails, filters them by subject, sender, or recipient, and sends test emails, and `client.forwarding` manages [forwarding](/docs/forwarding). See [Emails in the SDK reference](/docs/sdk/api#emails), and [Testing emails](/docs/sdk/testing#testing-emails) for test patterns.
+`waitFor` polls for up to 60 seconds by default and only takes mail sent to that tag. `extractLink(email)` returns the confirm, verify, reset, or sign-in link the same way. `client.emails.get(id)` adds your fields as `emailFields` and the reply as `replyText`, and `client.emails.toInbound(email, "postmark")` builds an email in a provider's shape to post to your handler. `client.emails` also lists emails, filters them by subject, sender, or recipient, and sends test emails, and `client.forwarding` manages [forwarding](/docs/forwarding). See [Emails in the SDK reference](/docs/sdk/api/emails#emails), and [Testing emails](/docs/sdk/testing#testing-emails) for test patterns.
 
 ## In the API
 

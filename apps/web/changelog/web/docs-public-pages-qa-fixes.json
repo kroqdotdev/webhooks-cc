@@ -1,0 +1,13 @@
+{
+  "title": "Docs and public pages: phones, page weight, links",
+  "items": [
+    "Docs and comparison pages no longer scroll sideways on phones: breadcrumbs wrap, and long identifiers, URLs and calls in inline code and cards break instead of widening the page (and pushing the cookie banner's buttons off screen)",
+    "The SDK API reference is split by topic (requests, emails, forwarding, teams and sharing, types, helpers and errors) so each page loads quickly; links and bookmarks to the old sections still land on the right heading. Code blocks no longer carry their highlighted code a second time as client props, and neither the table of contents nor the announcement banner shifts the page when it arrives",
+    "The quick start begins with the guest endpoint the home page creates, and says what signing up adds; mailhooks.cc says why email needs an account",
+    "The forwarding docs show how to see a delivery succeed without a server of your own, with `whk share` or `whk tunnel`",
+    "`/docs/providers/<provider>` redirects to the provider's page, and the Coinbase Commerce page cites Coinbase's current documentation",
+    "`/.well-known/agent-skills` serves the skills index instead of a 404",
+    "The `/share/<framework>` guides have markdown twins, at `/share/<framework>.md` and for an `Accept: text/markdown` request",
+    "A test checks every markdown link to another docs page or heading in the docs"
+  ]
+}

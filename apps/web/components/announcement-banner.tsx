@@ -51,7 +51,11 @@ export function AnnouncementBanner() {
     setAnnOffset(show ? BANNER_HEIGHT : "0px");
   }, [announcementId, isDashboard]);
 
-  if (!visible || !announcement) return null;
+  // The spacer is there from the first render: layout.tsx's inline script has
+  // already set --ann-h before paint, so the page does not jump down when this
+  // component hydrates and the banner appears.
+  const spacer = <div style={{ height: "var(--ann-h, 0px)" }} />;
+  if (!visible || !announcement) return spacer;
 
   function dismiss() {
     try {
@@ -96,7 +100,7 @@ export function AnnouncementBanner() {
         </div>
       </div>
       {/* Spacer to push page content below the fixed banner */}
-      <div style={{ height: "var(--ann-h, 0px)" }} />
+      {spacer}
     </>
   );
 }

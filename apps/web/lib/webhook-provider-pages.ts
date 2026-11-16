@@ -1267,8 +1267,11 @@ const PROVIDER_SEO: Partial<Record<string, ProviderSeo>> = {
         ["charge:resolved", "An underpaid, overpaid, or delayed charge was resolved"],
       ],
       source: {
-        label: "Coinbase Commerce webhooks docs",
-        href: "https://docs.cdp.coinbase.com/commerce-onchain/docs/webhooks",
+        // Coinbase took the Commerce docs down when it moved merchants to
+        // Checkouts; its migration FAQ is the page that still says how Commerce
+        // webhooks behave.
+        label: "Coinbase: Commerce to Checkouts migration FAQ",
+        href: "https://docs.cdp.coinbase.com/coinbase-business/checkout-apis/migrate-from-commerce/faq",
       },
     },
     faq: [

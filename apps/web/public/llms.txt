@@ -55,6 +55,11 @@ Requests are captured by a Rust receiver, written directly to Postgres via a sin
 - CLI commands: https://webhooks.cc/docs/cli/commands
 - SDK docs: https://webhooks.cc/docs/sdk
 - SDK API reference: https://webhooks.cc/docs/sdk/api
+- SDK API: requests: https://webhooks.cc/docs/sdk/api/requests
+- SDK API: emails: https://webhooks.cc/docs/sdk/api/emails
+- SDK API: forwarding: https://webhooks.cc/docs/sdk/api/forwarding
+- SDK API: teams and sharing: https://webhooks.cc/docs/sdk/api/teams-sharing
+- SDK API: types: https://webhooks.cc/docs/sdk/api/types
 - SDK testing patterns: https://webhooks.cc/docs/sdk/testing
 - Python SDK: https://webhooks.cc/docs/sdk/python
 - Go SDK: https://webhooks.cc/docs/sdk/go

@@ -230,6 +230,7 @@ export const WEBHOOKS_TOP_LEVEL = [
   "robots.txt",
   "s",
   "share",
+  "share.md",
   "signup",
   "sitemap-index.xml",
   "sitemap.rss",

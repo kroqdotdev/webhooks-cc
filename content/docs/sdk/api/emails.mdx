@@ -1,0 +1,209 @@
+---
+title: "API Reference: Emails"
+description: "TypeScript SDK reference for email: waiting for mail, codes and links, parsed fields and attachments, sending test emails and the email entry point."
+section: sdk
+order: 2
+lastUpdated: 2026-11-16
+schema: none
+keywords: ["SDK API", "webhook SDK methods", "TypeScript API reference"]
+seo:
+  ogTitle: "TypeScript SDK API Reference: Emails"
+  ogDescription: "TypeScript SDK reference for email: waiting for mail, codes and links, parsed fields and attachments, sending test emails and the email entry point."
+---
+
+Part of the [TypeScript SDK API reference](/docs/sdk/api). The constructor, endpoints and direct delivery are on the [first page](/docs/sdk/api).
+
+## Emails
+
+Every endpoint on an account receives email at `<slug>@mailhooks.cc`, and at `<slug>+<tag>@mailhooks.cc` for any tag. Guest endpoints receive none. A captured email is a request with `kind: "email"`, `method: "EMAIL"`, the recipient address as `path`, the raw message as `body`, and the parsed message as `email`; the SDK types it as `EmailRequest`. Each email counts as one request against your quota. See [Email capture](/docs/email-capture) for what is stored.
+
+Use a fresh tag per test run, so each run finds its own email:
+
+```ts
+import { extractCode } from "@webhooks-cc/sdk";
+
+const runId = `signup-${Date.now()}`;
+await signUp(client.emails.address(slug, runId)); // your app sends the email
+
+const email = await client.emails.waitFor(slug, { tag: runId });
+const code = extractCode(email); // "482913"
+```
+
+`list`, `latest`, `waitFor` and `waitForAll` filter by the same criteria. Every criterion you pass must match:
+
+| Criterion | Type               | Matches                                                                                                           |
+| --------- | ------------------ | ----------------------------------------------------------------------------------------------------------------- |
+| `tag`     | `string \| null`   | The address's `+tag`, exactly (tags are case-sensitive). `null` matches untagged mail only                        |
+| `subject` | `string \| RegExp` | A string matches when the subject contains it; a RegExp is tested against the subject                             |
+| `from`    | `string \| RegExp` | Any From address. A string must equal the address (case-insensitive); a RegExp is tested against `Name <address>` |
+| `to`      | `string \| RegExp` | Any To or Cc address, or the address the email was delivered to, with the same rules as `from`                    |
+
+<ApiMethod method="GET" path="(local)" title="client.emails.address">
+
+The address an endpoint receives email at, with an optional tag. Pass the endpoint object (from `endpoints.create()` or `endpoints.get()`) to use the address the server reports; a slug builds the address with the client's `emailDomain`. Throws on an invalid slug or tag. A tag is printable ASCII without spaces, quotes, brackets, `@`, `,`, `;` or `:`, and the slug, the `+` and the tag together are at most 64 characters.
+
+```ts
+address(endpoint: string | Pick<Endpoint, "slug" | "emailAddress">, tag?: string): string
+```
+
+```ts
+client.emails.address("my-app"); // "my-app@mailhooks.cc"
+client.emails.address("my-app", "run-42"); // "my-app+run-42@mailhooks.cc"
+```
+
+</ApiMethod>
+
+<ApiMethod method="GET" path="/endpoints/:slug/requests?kind=email" title="client.emails.list">
+
+Emails an endpoint captured, newest first, filtered by the criteria above.
+
+```ts
+list(endpointSlug: string, options?: ListEmailsOptions): Promise<EmailRequest[]>
+```
+
+<ParamTable>
+
+| Param                          | Type     | Required | Description                                                           |
+| ------------------------------ | -------- | -------- | --------------------------------------------------------------------- |
+| `endpointSlug`                 | `string` | yes      | Endpoint slug                                                         |
+| `tag`, `subject`, `from`, `to` | criteria | no       | See the criteria table                                                |
+| `limit`                        | `number` | no       | How many of the newest emails to fetch before filtering (default: 50) |
+| `since`                        | `number` | no       | Only emails received after this timestamp (ms)                        |
+
+</ParamTable>
+</ApiMethod>
+
+<ApiMethod method="GET" path="/requests/:id" title="client.emails.get">
+
+One captured email by request ID, with the endpoint's [named fields](/docs/email-capture#fields-you-pick-out) as `emailFields` and the [reply text](/docs/email-capture#reply-text) as `replyText`. Throws `NotFoundError` when the request is not an email.
+
+```ts
+get(requestId: string): Promise<EmailRequest>
+```
+
+</ApiMethod>
+
+<ApiMethod method="GET" path="/endpoints/:slug/requests?kind=email" title="client.emails.latest">
+
+The newest email matching the criteria, or `null`. Looks at the 100 newest emails.
+
+```ts
+latest(endpointSlug: string, criteria?: EmailCriteria): Promise<EmailRequest | null>
+```
+
+</ApiMethod>
+
+<ApiMethod method="GET" path="/endpoints/:slug/requests?kind=email" title="client.emails.waitFor">
+
+Poll until an email matching the criteria arrives. Throws `TimeoutError` when none does.
+
+```ts
+waitFor(endpointSlug: string, options?: WaitForEmailOptions): Promise<EmailRequest>
+```
+
+<ParamTable>
+
+| Param                          | Type                               | Required | Description                                                              |
+| ------------------------------ | ---------------------------------- | -------- | ------------------------------------------------------------------------ |
+| `endpointSlug`                 | `string`                           | yes      | Endpoint slug                                                            |
+| `tag`, `subject`, `from`, `to` | criteria                           | no       | See the criteria table                                                   |
+| `timeout`                      | `number \| string`                 | no       | Max wait time, ms or a duration like `"30s"` (default: 60000)            |
+| `pollInterval`                 | `number \| string`                 | no       | Interval between polls (default: 1000)                                   |
+| `since`                        | `number`                           | no       | Only emails received after this timestamp in ms (default: 5 minutes ago) |
+| `match`                        | `(email: EmailRequest) => boolean` | no       | Extra filter on top of the criteria                                      |
+
+</ParamTable>
+
+The five-minute lookback finds an email that arrived just before the call. Use a fresh tag, or pass `since: Date.now()` before triggering the email, so an older email cannot match.
+
+</ApiMethod>
+
+<ApiMethod method="GET" path="/endpoints/:slug/requests?kind=email" title="client.emails.waitForAll">
+
+Poll until `count` matching emails have arrived. Returns them oldest first. Takes the same options as `waitFor`, plus `count`.
+
+```ts
+waitForAll(endpointSlug: string, options: WaitForEmailsOptions): Promise<EmailRequest[]>
+```
+
+</ApiMethod>
+
+<ApiMethod method="POST" path="/send-test-email" title="client.emails.sendTest">
+
+Deliver a sample email with a six-digit code and a link to an endpoint, optionally to a tagged address. It is captured and counted like any other email, but it does not travel over SMTP, so no sender checks run on it and `email.smtp.test` is `true`. Rate limited to 10 per minute.
+
+```ts
+sendTest(endpointSlug: string, options?: { tag?: string }): Promise<SendTestEmailResult>
+// Returns: { status: "captured", requestId: string | null }
+```
+
+</ApiMethod>
+
+<ApiMethod method="GET" path="(local)" title="client.emails.toJson">
+
+The `email.received` JSON that [forwarding](/docs/forwarding) would post for an email: an `EmailReceivedEvent`. No API call is made. Pass `endpoint` to fill in `data.endpoint.name`; without it the slug is read from the address and the name is `null`. Set `includeExtracts: false` to leave out `codes` and `links`, as forwarding does when the endpoint turned them off.
+
+```ts
+toJson(
+  email: EmailRequest,
+  options?: {
+    endpoint?: { slug: string; name?: string | null };
+    includeExtracts?: boolean;
+    fields?: Record<string, string | null> | null; // default: email.emailFields
+  }
+): EmailReceivedEvent
+```
+
+</ApiMethod>
+
+<ApiMethod method="GET" path="(local)" title="client.emails.toInbound">
+
+The email in the shape an inbound mail service posts it, to test the handler you wrote for that service: `postmark`, `sendgrid` (a multipart form), `mailgun` (a form, signed when you pass your Mailgun signing key) or `cloudmailin`. No API call is made. Post `body` with `contentType` to your handler. See [In a mail provider's shape](/docs/forwarding#in-a-mail-providers-shape).
+
+```ts
+toInbound(
+  email: EmailRequest,
+  format: "postmark" | "sendgrid" | "mailgun" | "cloudmailin",
+  options?: { mailgunSigningKey?: string }
+): Promise<{ contentType: string; body: string }>
+```
+
+</ApiMethod>
+
+<ApiMethod method="POST" path="/requests/:id/render" title="client.emails.render">
+
+The same, rendered by webhooks.cc (what `whk tunnel` and the Python and Go SDKs use), or the `email.received` JSON with `format: "json"`.
+
+```ts
+render(
+  requestId: string,
+  options: { format: "json" | "postmark" | "sendgrid" | "mailgun" | "cloudmailin"; mailgunSigningKey?: string }
+): Promise<{ format: string; method: "POST"; headers: Record<string, string>; body: string }>
+```
+
+</ApiMethod>
+
+### Codes and links
+
+`extractCode`, `extractLink` and `extractFromEmail` run the same finder as the dashboard's "Found in this email" strip and the `codes` and `links` of forwarded JSON. `extractCode` and `extractLink` take an `EmailRequest`, any `Request` (they return `null` for HTTP requests), or the parsed `email`; `extractFromEmail` takes the parsed `email`. None of them makes an API call.
+
+```ts
+import { extractCode, extractLink, extractFromEmail } from "@webhooks-cc/sdk";
+
+extractCode(email); // "482913", or null
+extractLink(email); // the confirm, verify, reset or sign-in link, else the first link worth keeping
+extractLink(email, { actionOnly: true }); // only an action link, or null
+extractFromEmail(email.email); // { codes: string[], links: { url, label, action }[] }
+```
+
+A code is only taken when a word like "code", "verification" or "sign in" sits next to it, so order numbers, prices and years stay out. See [Matchers & Helpers](/docs/sdk/matchers#email-helpers) for the rules.
+
+### The email entry point
+
+`@webhooks-cc/sdk/email` exports the email types, the code and link finder (`extractCode`, `extractLink`, `extractFromEmail`, `htmlToText`), `buildEmailJson`, `emailAddress` and `isValidEmailTag`. It has no network code and imports no other SDK module, so it is small enough for a browser bundle.
+
+```ts
+import { emailAddress, extractCode, type EmailReceivedEvent } from "@webhooks-cc/sdk/email";
+
+emailAddress("my-app", "run-42"); // "my-app+run-42@mailhooks.cc"
+```
