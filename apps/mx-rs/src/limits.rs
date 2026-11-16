@@ -174,7 +174,9 @@ impl Limiter {
 
     fn take_slot(self: &Arc<Self>, client: Client, slot: Slot) -> Option<SlotGuard> {
         let max = match (slot, client.trusted) {
-            // Trust is not known yet while the lookup runs (`start_lookup`).
+            // Not reached: lookup slots are taken only by `start_lookup`,
+            // which checks this per-client cap and the host cap together
+            // under one lock. Change both together.
             (Slot::Lookup, _) | (Slot::Session, false) => self.limits.sessions_per_client,
             (Slot::Session, true) => self.limits.trusted_sessions_per_client,
             (Slot::Data, false) => self.limits.data_per_client,

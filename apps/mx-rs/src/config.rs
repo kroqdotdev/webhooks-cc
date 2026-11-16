@@ -263,7 +263,11 @@ impl Config {
                 })
                 .unwrap_or_default(),
             limits: Limits {
-                reverse_lookups: parse_env_or("MX_MAX_REVERSE_LOOKUPS", 256).max(1),
+                reverse_lookups: parse_env_or(
+                    "MX_MAX_REVERSE_LOOKUPS",
+                    Limits::default().reverse_lookups,
+                )
+                .max(1),
                 ..Limits::default()
             },
             timeouts: Timeouts::default(),

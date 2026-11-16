@@ -300,6 +300,9 @@ async fn accept_loop(
                     // Every lookup the host allows is running: the session
                     // goes on with reverse DNS not checked (iprev temperror,
                     // neither a pass nor a fail), and nothing is cached.
+                    // Trust needs a confirmed name, so a trusted provider
+                    // arriving while the cap is full gets the untrusted
+                    // limits for this session: the price of the cap.
                     Lookup::Unchecked => {
                         server.note_lookup_cap();
                         (ReverseDns::incomplete(), None)

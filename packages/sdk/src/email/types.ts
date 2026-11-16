@@ -169,8 +169,8 @@ export interface EmailSenderSetup {
     resolves: boolean;
     /** The name is the server's forward-confirmed reverse DNS name. */
     matchesPtr: boolean;
-    /** Set when the name's addresses could not be looked up ("lookup failed"): whether it resolves is unknown. */
-    error: string | null;
+    /** Set when the name's addresses could not be looked up ("lookup failed"): whether it resolves is unknown. Absent on mail captured before it existed. */
+    error?: string | null;
   } | null;
   /** Set when the lookups could not finish ("timeout", "too large"). */
   error: string | null;
