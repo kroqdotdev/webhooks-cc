@@ -40,10 +40,10 @@ const ACTION =
   /(confirm|verif|activat|reset|magic|log-?in|sign-?in|signin|login|invit|accept|approve|validat|onboard|set-?up|password|token|auth)/i;
 /** Never worth a click in a test, whatever else the link says. */
 const UNSUBSCRIBE =
-  /(unsubscribe|opt-?out|preferences|manage[-_ ]?(?:email|notification|subscription)s?\b)/i;
+  /(unsubscribe|opt-?out|preferences|manage[-_ ]?(?:email|notification|subscription))/i;
 /**
- * Footer and help pages, anywhere in the URL or the label, dropped unless
- * the link's host or path asks for something (see `rescued`). `/track/` is
+ * Footer and help pages, anywhere in the URL or the label (see keepLink for
+ * the one rescue). `/track/` is
  * not here: order tracking is a link a test wants, and open-tracking pixels
  * are caught by their shape (PIXEL_PATH).
  */
@@ -251,23 +251,22 @@ function cleanUrl(url: string): string | null {
   }
 }
 
-/** A social network's profile or page link (a footer's "Follow us"), not a link to act on. */
-/**
- * Whether a link's host or path asks for something (confirm, verify, reset,
- * sign in): such a link is kept on any host, footer and social ones included
- * (github.com/login/device, support.acme.com/verify). Only the host and path
- * count: a campaign tag in the query (`?utm_campaign=password_reset`) is on
- * every link of a mail, and a label is the sender's to word.
- */
-function rescued(url: URL): boolean {
-  return ACTION.test(`${url.hostname}${url.pathname}`);
-}
+/** The first label of a help centre's or support site's host. */
+const HELP_HOST = /^(?:help|helpcenter|help-?cent(?:er|re)|support|faq|kb)$/i;
+/** A help centre's article or docs path (Zendesk's /hc/, /articles/, /docs/). */
+const ARTICLE_PATH = /\/(?:hc|articles?|docs?)(?:\/|$)/i;
 
 /**
- * Whether a link is worth listing: never an unsubscribe or preference link;
- * an action link (rescued) always otherwise; of the rest, not footer or
- * help pages, open-tracking pixels, or social sites' links unless their
- * label asks for something.
+ * Whether a link is worth listing. Main's rules, with three exceptions:
+ * - an unsubscribe or preference link is never kept, and an open-tracking
+ *   pixel never, whatever else its URL says;
+ * - a link the drop list catches (help, support, legal and similar words)
+ *   is kept only on a help or support host whose path asks for something
+ *   (support.acme.com/verify), and never for an article there;
+ * - a link on a social site is kept when its path or its label asks for
+ *   something (github.com/login/device, Discord's click-tracked Verify Email).
+ * Only the path counts, never the host's other labels or the query: a
+ * login.acme.com/terms footer or a utm tag on every link is no action.
  */
 function keepLink(url: string, label: string | null): boolean {
   if (UNSUBSCRIBE.test(url) || (label !== null && UNSUBSCRIBE.test(label))) return false;
@@ -277,12 +276,18 @@ function keepLink(url: string, label: string | null): boolean {
   } catch {
     return false;
   }
-  if (rescued(parsed)) return true;
-  if (DROP.test(url) || (label !== null && DROP.test(label))) return false;
   if (PIXEL_PATH.test(parsed.pathname)) return false;
-  // A social site's own mail: its action button is often click-tracked
-  // (click.discord.com/ls/click), so there its label may rescue it.
-  if (SOCIAL_HOSTS.test(parsed.hostname)) return label !== null && ACTION.test(label);
+  const pathAsks = ACTION.test(parsed.pathname);
+  if (DROP.test(url) || (label !== null && DROP.test(label))) {
+    return (
+      HELP_HOST.test(parsed.hostname.split(".")[0]) &&
+      pathAsks &&
+      !ARTICLE_PATH.test(parsed.pathname)
+    );
+  }
+  if (SOCIAL_HOSTS.test(parsed.hostname)) {
+    return pathAsks || (label !== null && ACTION.test(label));
+  }
   return true;
 }
 

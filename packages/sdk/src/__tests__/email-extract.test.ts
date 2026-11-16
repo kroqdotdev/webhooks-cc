@@ -226,6 +226,30 @@ describe("extractFromEmail", () => {
     expect(kept("https://acme.test/privacy?utm_campaign=password_reset", "Privacy")).toBe(false);
   });
 
+  it("never lets a footer, help article or pixel win over the mail's own link", () => {
+    const kept = (url: string, label = "Link") =>
+      extractFromEmail({ subject: null, text: null, html: `<a href="${url}">${label}</a>` }).links
+        .length > 0;
+    for (const url of [
+      "https://auth0.com/privacy",
+      "https://login.acme.test/terms",
+      "https://acme.test/legal/acceptable-use",
+      "https://acme.test/support/login",
+      "https://help.acme.test/articles/reset-password",
+      "https://support.acme.test/hc/en-us/articles/password-security",
+      "https://acme.test/manage_notifications_settings",
+      "https://auth.acme.test/open/abc.gif",
+    ]) {
+      expect(kept(url), url).toBe(false);
+    }
+    const receipt = extractFromEmail({
+      subject: "Your receipt",
+      text: null,
+      html: `<a href="https://pay.acme.test/receipts/77">View receipt</a> <a href="https://acme.test/legal/acceptable-use">Acceptable use</a>`,
+    });
+    expect(receipt.links.map((link) => link.url)).toEqual(["https://pay.acme.test/receipts/77"]);
+  });
+
   it("drops unsubscribe links even when they carry a token", () => {
     const found = extractFromEmail({
       subject: null,
