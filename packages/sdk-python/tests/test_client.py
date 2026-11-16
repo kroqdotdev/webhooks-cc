@@ -787,7 +787,9 @@ def test_destination_input_is_checked_before_sending() -> None:
     with pytest.raises(ValueError, match="filter"):
         destinations.update("acme", DESTINATION_ID, filter=[])  # type: ignore[arg-type]
     with pytest.raises(ValueError, match="Unknown destination field"):
-        destinations.preview("acme", destination={"bodyTemplate": {}})
+        destinations.preview("acme", destination={"body_tmpl": {}})
+    with pytest.raises(ValueError, match="given twice"):
+        destinations.preview("acme", destination={"bodyTemplate": {}, "body_template": {}})
     with pytest.raises(ValueError, match="destination id"):
         destinations.get("acme", "../secret")
     with pytest.raises(ValueError, match="slug"):
@@ -2184,7 +2186,7 @@ def test_an_invalid_cursor_has_its_own_error() -> None:
     with pytest.raises(errors.WebhooksCCError) as plain:
         other.requests.search_page(q="x")
     assert not isinstance(plain.value, errors.InvalidCursorError)
-    assert "invalid_q" in plain.value.message
+    assert plain.value.message == "Invalid search term: at most 1000 characters"
 
 
 def test_a_busy_search_is_retried_after_retry_after(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -2564,3 +2566,62 @@ def test_request_carries_endpoint_slug_when_read_by_id() -> None:
     )
     assert request.endpoint_slug == "acme"
     assert Request.from_dict({"id": "r2", "endpointId": "e1"}).endpoint_slug is None
+
+
+@pytest.mark.parametrize(
+    ("path", "hint"),
+    [
+        ("/api/endpoints/acme", "client.endpoints.list()"),
+        ("/api/endpoints/acme/destinations/d1", "client.destinations.list(slug)"),
+        ("/api/requests/r1", "client.requests.list(slug)"),
+        ("/api/billing/checkouts/c1", "client.billing.create_checkout()"),
+        ("/api/shares/s1", "client.shares.list()"),
+    ],
+)
+def test_a_short_404_points_at_the_resource_list(path: str, hint: str) -> None:
+    client = make_client(lambda request: httpx.Response(404, json={"error": "Not found"}))
+    with pytest.raises(errors.NotFoundError) as caught:
+        client._api("GET", path.removeprefix("/api"))
+    assert hint in str(caught.value)
+
+
+def test_destination_preview_takes_the_api_field_names_too() -> None:
+    bodies: list[Any] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        bodies.append(json.loads(request.content))
+        return httpx.Response(200, json={"filterPasses": True, "delivery": None})
+
+    destinations = make_client(handler).destinations
+    destinations.preview(
+        "acme",
+        destination={
+            "url": "https://hooks.acme.test/new",
+            "bodyTemplate": {"id": "{{ json.id }}"},
+            "appendPath": False,
+        },
+    )
+    destinations.preview(
+        "acme",
+        destination={
+            "url": "https://hooks.acme.test/new",
+            "body_template": {"id": "{{ json.id }}"},
+            "append_path": False,
+        },
+    )
+    assert bodies[0] == bodies[1]
+    assert bodies[0]["destination"] == {
+        "url": "https://hooks.acme.test/new",
+        "bodyTemplate": {"id": "{{ json.id }}"},
+        "appendPath": False,
+    }
+
+
+def test_paypal_templates_need_no_secret() -> None:
+    client = make_client(lambda request: httpx.Response(200))
+    built = client.build_request("https://example.com/hook", provider="paypal")
+    signature = built.headers["paypal-transmission-sig"]
+    assert signature
+    assert base64.urlsafe_b64decode(signature + "=" * (-len(signature) % 4)).startswith(
+        b"mock-paypal-signature:"
+    )

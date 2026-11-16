@@ -945,6 +945,48 @@ describe("tier-2 HubSpot verification (method + URI + body + timestamp scheme)",
         60 * 60 * 1000
       )
     ).toBe(true);
+    // A clock at signing time verifies it through the dispatcher.
+    await expect(
+      verifySignature(
+        {
+          body: built.body,
+          headers: { "x-hubspot-signature-v3": sig, "x-hubspot-request-timestamp": ts },
+        },
+        {
+          provider: "hubspot",
+          secret: "hs_app_client_secret",
+          url,
+          method: "POST",
+          now: staleSec * 1000 + 1000,
+        }
+      )
+    ).resolves.toEqual({ valid: true });
+  });
+});
+
+describe("unknown providers", () => {
+  it("throws a clear error instead of answering invalid", async () => {
+    await expect(
+      verifySignature({ body: "{}", headers: {} }, {
+        provider: "acme",
+        secret: "s",
+      } as unknown as VerifySignatureOptions)
+    ).rejects.toThrow('Unknown provider "acme". Supported providers: stripe, github');
+  });
+
+  it("names the provider in sendTemplate, buildRequest and templates.get", async () => {
+    await expect(
+      client.buildRequest("https://example.com/hook", { provider: "acme" as TemplateProvider })
+    ).rejects.toThrow('Unsupported provider "acme"');
+    await expect(
+      client.endpoints.sendTemplate("acme-orders", {
+        provider: "acme" as TemplateProvider,
+        secret: "s",
+      })
+    ).rejects.toThrow('Unsupported provider "acme"');
+    expect(() => client.templates.get("acme" as TemplateProvider)).toThrow(
+      'Unsupported provider "acme"'
+    );
   });
 });
 

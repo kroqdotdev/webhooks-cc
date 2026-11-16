@@ -514,7 +514,8 @@ export class SandboxClient {
       const limit = Math.min(100, waitListLimit(options.count));
       return collectMatchingRequests(
         (since) => this.requests.list(slug, { since, limit }),
-        options
+        options,
+        { noun: "request", slug }
       );
     },
   };

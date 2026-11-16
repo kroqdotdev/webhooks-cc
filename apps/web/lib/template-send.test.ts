@@ -137,7 +137,7 @@ describe("template-send UI helpers", () => {
     expect(isSecretRequired("github")).toBe(true);
     expect(isSecretRequired("sendgrid")).toBe(false);
     expect(isSecretRequired("discord")).toBe(false);
-    expect(isSecretRequired("paypal")).toBe(true);
+    expect(isSecretRequired("paypal")).toBe(false);
     expect(isSecretRequired("plaid")).toBe(false);
     expect(isSecretRequired("standard-webhooks")).toBe(true);
   });

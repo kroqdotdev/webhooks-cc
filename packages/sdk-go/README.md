@@ -38,6 +38,26 @@ func TestCheckoutSendsAWebhook(t *testing.T) {
 }
 ```
 
+The API allows 30 new endpoints per account in 10 minutes. When a suite uses them up, `whktest.Endpoint` (and `WithTemporaryEndpoint`) waits as the API's Retry-After asks, for up to a minute, then fails the test with one line saying so. A suite with more tests than that can share one endpoint, made in `TestMain`, and tell its tests apart with a `Match` or `Since`:
+
+```go
+var shared *webhookscc.Endpoint
+
+func TestMain(m *testing.M) {
+	client, err := webhookscc.New()
+	if err != nil {
+		os.Exit(m.Run()) // no key: the tests skip themselves
+	}
+	code := 1
+	_ = client.WithTemporaryEndpoint(context.Background(), webhookscc.CreateEndpointOptions{Name: "go test"}, func(endpoint *webhookscc.Endpoint) error {
+		shared = endpoint
+		code = m.Run()
+		return nil
+	})
+	os.Exit(code)
+}
+```
+
 ## Favourite endpoints
 
 ```go
@@ -93,6 +113,8 @@ response, err := client.SendTo(ctx, "http://localhost:8080/webhooks/stripe", web
 	Template: "checkout.session.completed",
 })
 ```
+
+Adyen's `Secret` is your HMAC key in hex, as Adyen shows it. PayPal templates need no `Secret`: PayPal signs with its own RSA key, so a template carries a placeholder signature that verifies nowhere; real PayPal deliveries verify against PayPal's certificate with your webhook ID (`verify.Verify` with provider `paypal`).
 
 ## Mock responses and response rules
 

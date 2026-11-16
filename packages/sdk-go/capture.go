@@ -17,9 +17,10 @@ const (
 
 // WithTemporaryEndpoint creates an endpoint, calls fn with it, and deletes it
 // when fn returns, however fn ends. In tests, whktest.Endpoint does the same
-// with t.Cleanup.
+// with t.Cleanup. When creating endpoints is rate limited it waits as the
+// API asks, up to DefaultRateLimitWait (see Endpoints.CreateWaiting).
 func (c *Client) WithTemporaryEndpoint(ctx context.Context, opts CreateEndpointOptions, fn func(*Endpoint) error) (err error) {
-	endpoint, err := c.Endpoints.Create(ctx, opts)
+	endpoint, err := c.Endpoints.CreateWaiting(ctx, opts, DefaultRateLimitWait)
 	if err != nil {
 		return err
 	}
@@ -61,6 +62,7 @@ func (c *Client) CaptureDuring(ctx context.Context, action func(*Endpoint) error
 	var captured []Request
 	err := c.WithTemporaryEndpoint(ctx, CreateEndpointOptions{Name: opts.Name}, func(endpoint *Endpoint) error {
 		started := time.Now()
+		seen, matchedCount := 0, 0
 		if err := action(endpoint); err != nil {
 			return err
 		}
@@ -76,6 +78,7 @@ func (c *Client) CaptureDuring(ctx context.Context, action func(*Endpoint) error
 				}
 			}
 			slices.SortStableFunc(matched, func(a, b Request) int { return a.ReceivedAt.Compare(b.ReceivedAt) })
+			seen, matchedCount = len(requests), len(matched)
 			if len(matched) >= wanted {
 				captured = matched[:wanted]
 				return nil
@@ -84,7 +87,8 @@ func (c *Client) CaptureDuring(ctx context.Context, action func(*Endpoint) error
 				return err
 			}
 		}
-		return &TimeoutError{After: timeout}
+		what := waiting{noun: "request", slug: endpoint.Slug, filtered: opts.Match != nil}
+		return &TimeoutError{After: timeout, message: what.timeoutMessage(timeout, wanted, matchedCount, seen)}
 	})
 	return captured, err
 }

@@ -1,0 +1,9 @@
+{
+  "title": "Rendered emails carry their attachments",
+  "items": [
+    "Rendering a captured email in an inbound provider's shape (`POST /api/requests/{id}/render`, the CLI's tunnel, `render_email`) includes its attachments' contents, up to 1 MB: Mailgun and SendGrid post an email with attachments as multipart/form-data with a file part each, and Postmark and CloudMailin carry them in their JSON",
+    "Forwarding in the Mailgun and SendGrid shapes sends attachments the destination sends inline as file parts too",
+    "Codes and links found in an email keep verify and sign-in links on GitHub, Discord and help or support hosts, and order tracking links",
+    "The changelog lists SDK 1.32.0 and the Python and Go SDKs 0.11.0"
+  ]
+}

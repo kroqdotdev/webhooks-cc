@@ -59,6 +59,7 @@ from .errors import (
     TimeoutError,
     UnauthorizedError,
     WebhooksCCError,
+    wait_timeout_message,
 )
 from .matchers import Matcher, is_email_request, match_email
 from .models import (
@@ -237,12 +238,21 @@ def _int_header(headers: httpx.Headers, name: str) -> int | None:
 
 
 def _not_found_hint(path: str) -> str:
-    """What to try after a short 404, by the route that answered: shares and
-    names have their own lists, everything else is about endpoints."""
+    """What to try after a short 404, by the route that answered: each resource
+    points at its own list, and endpoints are the default."""
+    if re.search(r"/api/endpoints/[^/]+/destinations", path):
+        return "use client.destinations.list(slug) to see the endpoint's destinations"
+    if "/api/requests" in path:
+        return (
+            "use client.requests.list(slug) to see an endpoint's requests; "
+            "requests past retention are gone"
+        )
     if "/api/shares" in path:
         return "use client.shares.list() to see your shares"
     if "/api/tunnel-names" in path:
         return "use client.names.list() to see the names you can use"
+    if "/api/billing/checkouts" in path:
+        return "use client.billing.create_checkout() to make a new checkout link"
     return "use client.endpoints.list() to see your endpoints"
 
 
@@ -260,7 +270,7 @@ def _map_error(
             else message
         )
     if status == 400 and _error_code(raw) == "invalid_cursor":
-        return InvalidCursorError("Invalid search cursor: start the search again without a cursor")
+        return InvalidCursorError(ERROR_CODE_SENTENCES["invalid_cursor"])
     if status == 404:
         return NotFoundError(f"{message}: {_not_found_hint(path)}" if generic else message)
     if status == 429:
@@ -313,10 +323,35 @@ def _status_text(status: int) -> str:
     return "Server error" if status >= 500 else f"Request failed with HTTP {status}"
 
 
+#: Sentences for the codes the request, search and email routes answer with
+#: alone, so a message says what to change rather than naming a code. The same
+#: table as the TypeScript SDK's ``ERROR_CODE_SENTENCES``; the shared error
+#: vectors check it.
+ERROR_CODE_SENTENCES: dict[str, str] = {
+    "invalid_cursor": "Invalid search cursor: start the search again without a cursor",
+    "invalid_since": "Invalid since: give a time in milliseconds since 1970, at least 0",
+    "invalid_limit": "Invalid limit: give a whole number of at least 1",
+    "invalid_kind": 'Invalid kind: give "http" or "email"',
+    "invalid_extracts": "Invalid extracts: give true or false",
+    "invalid_from": (
+        'Invalid from: give a time in milliseconds or a duration back from now, such as "1h"'
+    ),
+    "invalid_to": (
+        'Invalid to: give a time in milliseconds or a duration back from now, such as "1h"'
+    ),
+    "invalid_q": "Invalid search term: at most 1000 characters",
+    "invalid_index": "Invalid attachment index: give a whole number from 0",
+    "not_an_email": "The request is not an email",
+}
+
+
 def _code_text(status: int, code: str) -> str:
-    """The status in words for a body that names only ``code``: alone when the
-    code just names the status (``not_found`` on a 404), else with the code in
-    brackets, since it says what went wrong (``Bad request (invalid_since)``)."""
+    """The text for a body that names only ``code``: the code's sentence when it
+    has one (see ``ERROR_CODE_SENTENCES``), else the status in words, alone when
+    the code just names the status (``not_found`` on a 404), else with the code
+    in brackets, since it says what went wrong (``Conflict (slug_exists)``)."""
+    if code in ERROR_CODE_SENTENCES:
+        return ERROR_CODE_SENTENCES[code]
     words = _status_text(status)
     return words if code.replace("_", " ") == words.lower() else f"{words} ({code})"
 
@@ -1441,6 +1476,7 @@ class Requests:
             poll_interval=poll_interval,
             match=match,
             since=since,
+            slug=slug,
         )
 
     def search(
@@ -1878,6 +1914,10 @@ class Emails:
             poll_interval=poll_interval,
             match=lambda request: criteria(request) and (match is None or match(request)),
             since=since,
+            noun="email",
+            slug=slug,
+            criteria=_describe_email_criteria(tag=tag, subject=subject, from_=from_, to=to),
+            filtered=match is not None,
         )
 
     def send_test(self, slug: str, *, tag: str | None = None) -> SendTestEmailResult:
@@ -2341,15 +2381,25 @@ def _destination_filter(value: Any) -> dict[str, Any] | None:
     return out
 
 
+# The API's names for the destination fields, back to this SDK's.
+_DESTINATION_FIELDS_BY_WIRE = {wire: key for key, wire in _DESTINATION_FIELDS.items()}
+
+
 def _destination_body(fields: Mapping[str, Any]) -> dict[str, Any]:
-    """The JSON a destination's fields are sent as: those given, in camelCase."""
+    """The JSON a destination's fields are sent as: those given, in camelCase.
+
+    A mapping may name a field as :meth:`Destinations.create` does
+    (``body_template``) or as the API does (``bodyTemplate``)."""
     body: dict[str, Any] = {}
-    for key, value in fields.items():
+    for given, value in fields.items():
         if value is UNSET:
             continue
+        key = _DESTINATION_FIELDS_BY_WIRE.get(given, given)
         wire = _DESTINATION_FIELDS.get(key)
         if wire is None:
-            raise ValueError(f'Unknown destination field "{key}"')
+            raise ValueError(f'Unknown destination field "{given}"')
+        if wire in body:
+            raise ValueError(f'Destination field "{key}" is given twice')
         if key == "filter":
             value = _destination_filter(value)
         elif key == "headers" and value is not None:
@@ -2617,8 +2667,9 @@ class Destinations:
         and the exact request it would send. Nothing is sent.
 
         ``destination_id`` starts from a saved destination; ``destination`` holds
-        unsaved fields, with the names :meth:`create` takes (on top of the saved
-        destination, or on their own with a ``url``). It runs against
+        unsaved fields, named as :meth:`create` takes them (``body_template``) or
+        as the API does (``bodyTemplate``), on top of the saved destination, or on
+        their own with a ``url``. It runs against
         ``request_id``, or the newest request of a kind the destination takes, or
         a sample.
         """
@@ -2638,6 +2689,29 @@ class Destinations:
 # --- waiting ---------------------------------------------------------------------------
 
 
+def _describe_email_criteria(
+    *,
+    tag: object,
+    subject: str | re.Pattern[str] | None,
+    from_: str | re.Pattern[str] | None,
+    to: str | re.Pattern[str] | None,
+) -> str | None:
+    """An email wait's criteria in words: ``tag "run1", subject "Confirm"``."""
+
+    def quoted(value: str | re.Pattern[str]) -> str:
+        return json.dumps(value) if isinstance(value, str) else f"/{value.pattern}/"
+
+    parts: list[str] = []
+    if isinstance(tag, str):
+        parts.append(f"tag {quoted(tag)}")
+    elif tag is None:
+        parts.append("no tag")
+    for name, value in (("subject", subject), ("from", from_), ("to", to)):
+        if value is not None:
+            parts.append(f"{name} {quoted(value)}")
+    return ", ".join(parts) or None
+
+
 def _wait_list_limit(count: int) -> int:
     """The page size a wait polls with: twice the count, between 100 and 1000."""
     return min(1000, max(100, max(1, int(count)) * 2))
@@ -2651,7 +2725,14 @@ def _collect(
     poll_interval: Duration,
     match: Matcher | None,
     since: float | None,
+    noun: Literal["request", "email"] = "request",
+    slug: str = "",
+    criteria: str | None = None,
+    filtered: bool | None = None,
 ) -> list[Request]:
+    """Poll until ``wanted`` requests pass ``match``. ``noun``, ``slug``,
+    ``criteria`` and ``filtered`` (default: whether there is a ``match``) only
+    word the timeout."""
     timeout_ms = parse_duration(timeout)
     poll_ms = min(_MAX_POLL_INTERVAL_MS, max(_MIN_POLL_INTERVAL_MS, parse_duration(poll_interval)))
     wanted = max(1, int(count))
@@ -2697,7 +2778,19 @@ def _collect(
         remaining = timeout_ms - (_now_ms() - start)
         _sleep_ms(min(poll_ms, max(0.0, remaining)))
 
-    raise TimeoutError(timeout_ms)
+    raise TimeoutError(
+        timeout_ms,
+        wait_timeout_message(
+            timeout_ms,
+            noun=noun,
+            slug=slug,
+            wanted=wanted,
+            matched=len(collected),
+            seen=len(seen),
+            criteria=criteria,
+            filtered=match is not None if filtered is None else filtered,
+        ),
+    )
 
 
 # --- searching -------------------------------------------------------------------------

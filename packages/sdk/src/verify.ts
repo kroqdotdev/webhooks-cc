@@ -18,6 +18,8 @@ import {
   hmacSignRaw,
   toBase64,
   toHex,
+  TEMPLATE_PROVIDERS,
+  VERIFY_PROVIDERS,
 } from "./templates";
 
 type VerifyableRequest =
@@ -743,14 +745,15 @@ export async function verifyHubSpotSignature(
   signatureHeader: string | null | undefined,
   timestamp: string | null | undefined,
   secret: string,
-  maxAgeMs = 5 * 60 * 1000
+  maxAgeMs = 5 * 60 * 1000,
+  now: number = Date.now()
 ): Promise<boolean> {
   requireSecret(secret, "verifyHubSpotSignature");
   if (!signatureHeader || !timestamp) {
     return false;
   }
   const ts = Number(timestamp);
-  if (!Number.isFinite(ts) || Math.abs(Date.now() - ts) > maxAgeMs) {
+  if (!Number.isFinite(ts) || Math.abs(now - ts) > maxAgeMs) {
     return false;
   }
   const base = `${method.toUpperCase()}${decodeHubSpotUri(url)}${normalizeBody(body)}${timestamp}`;
@@ -1496,6 +1499,12 @@ export async function verifySignature(
   request: VerifyableRequest,
   options: VerifySignatureOptions
 ): Promise<SignatureVerificationResult> {
+  // SendGrid and Plaid are known, and refused below with the reason.
+  if (!(TEMPLATE_PROVIDERS as readonly string[]).includes(options.provider)) {
+    throw new Error(
+      `Unknown provider "${String(options.provider)}". Supported providers: ${VERIFY_PROVIDERS.join(", ")}`
+    );
+  }
   let valid = false;
 
   if (options.provider === "stripe") {
@@ -1674,7 +1683,9 @@ export async function verifySignature(
       request.body,
       getHeader(request.headers, "x-hubspot-signature-v3"),
       getHeader(request.headers, "x-hubspot-request-timestamp"),
-      options.secret
+      options.secret,
+      undefined,
+      options.now
     );
   }
 

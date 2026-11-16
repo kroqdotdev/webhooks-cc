@@ -257,7 +257,7 @@ Agent: Captured POST request detected as Typeform / form_response
 
 The same flow works for Stripe, GitHub, Shopify, Twilio, Slack, Paddle, Linear, SendGrid templates, Clerk, Discord templates, Vercel, GitLab, Typeform, Standard Webhooks, DocuSign, Adyen, PayPal templates, and Plaid templates.
 
-For provider templates in `send_webhook`, `secret` is required for every signed provider (only `sendgrid`, `discord`, and `plaid` templates are unsigned and need no secret). The MCP server does not inject a default secret.
+For provider templates in `send_webhook`, `secret` is required for every signed provider (only `sendgrid`, `discord`, `paypal`, and `plaid` templates are unsigned and need no secret). The MCP server does not inject a default secret.
 
 ## Request inspector
 

@@ -7,7 +7,7 @@
       "routes": ["POST /api/endpoints"],
       "sdk": ["endpoints.create"],
       "python": ["endpoints.create"],
-      "go": ["Endpoints.Create"],
+      "go": ["Endpoints.Create", "Endpoints.CreateWaiting"],
       "cli": ["create"],
       "mcp": ["create_endpoint", "create_endpoints"]
     },

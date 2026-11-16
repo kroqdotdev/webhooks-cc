@@ -95,6 +95,76 @@ describe("extractFromEmail", () => {
     ]);
   });
 
+  it("keeps verify and sign-in links on GitHub and Discord, and drops their footers", () => {
+    const github = extractFromEmail({
+      subject: "[GitHub] Please verify your device",
+      text: [
+        "Enter the code at https://github.com/login/device",
+        "Or verify your address: https://github.com/users/octo-dev/emails/88213/confirm_verification/Zk3q9v?via_launch_code_email=true",
+        "See what changed: https://github.com/acme/widgets/pull/42",
+        "GitHub: https://github.com/github",
+        "Support: https://support.github.com",
+      ].join("\n"),
+      html: null,
+    });
+    expect(github.links.map((link) => [link.url, link.action])).toEqual([
+      ["https://github.com/login/device", true],
+      [
+        "https://github.com/users/octo-dev/emails/88213/confirm_verification/Zk3q9v?via_launch_code_email=true",
+        true,
+      ],
+      ["https://github.com/acme/widgets/pull/42", false],
+    ]);
+
+    const discord = extractFromEmail({
+      subject: "Verify Email Address for Discord",
+      text: null,
+      html: `<p><a href="https://click.discord.com/ls/click?upn=u001.Qw81xk">Verify Email</a></p>
+<p><a href="https://discord.com/">Discord</a> <a href="https://twitter.com/discord">Twitter</a>
+<a href="https://support.discord.com/hc">Help Center</a>
+<a href="https://discord.com/settings/notifications">Notification preferences</a></p>`,
+    });
+    expect(discord.links.map((link) => [link.url, link.label, link.action])).toEqual([
+      ["https://click.discord.com/ls/click?upn=u001.Qw81xk", "Verify Email", true],
+    ]);
+  });
+
+  it("keeps action links on help and support hosts, and order tracking links", () => {
+    const found = extractFromEmail({
+      subject: "Your order has shipped",
+      text: [
+        "Track your order: https://shop.acme.test/orders/1043/track/",
+        "Verify your support account: https://support.acme.test/verify?token=Qw81xk",
+        "Click tracking: https://links.acme.test/track/click?id=9f2",
+        "Need help? https://acme.test/help",
+        "Help center: https://help.acme.test/articles/12",
+        "Privacy: https://acme.test/legal/privacy",
+        "https://mail.acme.test/wf/open?upn=8f3a",
+        "https://mail.acme.test/track/open.php?u=8f3a",
+        "https://mail.acme.test/o.gif",
+        "https://www.linkedin.com/in/jane-doe",
+        "https://www.youtube.com/@acme",
+      ].join("\n"),
+      html: null,
+    });
+    expect(found.links.map((link) => [link.url, link.action])).toEqual([
+      ["https://support.acme.test/verify?token=Qw81xk", true],
+      ["https://shop.acme.test/orders/1043/track/", false],
+      ["https://links.acme.test/track/click?id=9f2", false],
+    ]);
+  });
+
+  it("drops unsubscribe links even when they carry a token", () => {
+    const found = extractFromEmail({
+      subject: null,
+      text: null,
+      html: `<a href="https://acme.test/email/unsubscribe?token=Zk3q9v">Unsubscribe</a>
+<a href="https://acme.test/account?auth=Qw81xk">Manage email preferences</a>
+<a href="https://acme.test/confirm?token=Zk3q9v">Confirm</a>`,
+    });
+    expect(found.links.map((link) => link.url)).toEqual(["https://acme.test/confirm?token=Zk3q9v"]);
+  });
+
   it("does not list a link twice when it is in both parts", () => {
     const found = extractFromEmail({
       subject: null,

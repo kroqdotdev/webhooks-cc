@@ -9,9 +9,16 @@ import type { EmailAddress, EmailJsonSource } from "./types";
  * form (signed when you give your Mailgun signing key) and CloudMailin's
  * JSON Normalized format.
  *
- * Attachment contents are never stored, so none of these carry attachment
- * files; the email's JSON lists them. The text and HTML are those webhooks.cc
- * kept (up to 256 KB each).
+ * Attachments go as each provider sends them, for the attachments whose
+ * contents the source carries (`content`, base64): Postmark and CloudMailin
+ * put them in their JSON, and SendGrid and Mailgun post multipart/form-data
+ * with a file part per attachment, as they do for mail with attachments. A
+ * body is text, so a file part whose contents are not UTF-8 text (a PDF, an
+ * image) goes base64 with `Content-Transfer-Encoding: base64`; text files
+ * (CSV, JSON, plain text) go as they are. Attachments with only a download
+ * link (`url`) are left out of every shape but CloudMailin's, which has a
+ * field for the link. The text and HTML are those webhooks.cc kept (up to
+ * 256 KB each).
  */
 
 export const INBOUND_EMAIL_FORMATS = ["postmark", "sendgrid", "mailgun", "cloudmailin"] as const;
@@ -234,16 +241,79 @@ function randomString(length: number): string {
     .slice(0, length);
 }
 
-/** A multipart/form-data body of text fields. */
-function multipart(fields: [string, string][], boundary: string): InboundEmailPayload {
+/** A file part of a multipart/form-data body. */
+interface FilePart {
+  name: string;
+  filename: string;
+  contentType: string;
+  /** Base64. */
+  content: string;
+}
+
+function base64Bytes(value: string): Uint8Array | null {
+  try {
+    const binary = atob(value.replace(/\s+/g, ""));
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    return bytes;
+  } catch {
+    return null;
+  }
+}
+
+/** The contents as text when they are UTF-8, else null. */
+function utf8Text(bytes: Uint8Array): string | null {
+  try {
+    return new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+  } catch {
+    return null;
+  }
+}
+
+/** A quoted-string for a Content-Disposition parameter: no quotes, backslashes or line breaks. */
+function dispositionValue(value: string): string {
+  return value.replace(/[\r\n]+/g, " ").replace(/["\\]/g, "_");
+}
+
+/** A multipart/form-data body of text fields, then file parts. */
+function multipart(
+  fields: [string, string][],
+  boundary: string,
+  files: FilePart[] = []
+): InboundEmailPayload {
   const parts = fields.map(
     ([name, value]) =>
       `--${boundary}\r\nContent-Disposition: form-data; name="${name}"\r\n\r\n${value}\r\n`
   );
+  for (const file of files) {
+    const bytes = base64Bytes(file.content);
+    const asText = bytes ? utf8Text(bytes) : null;
+    const head =
+      `--${boundary}\r\nContent-Disposition: form-data; name="${file.name}"; ` +
+      `filename="${dispositionValue(file.filename)}"\r\n` +
+      `Content-Type: ${file.contentType.replace(/[\r\n]+/g, " ")}\r\n`;
+    parts.push(
+      asText !== null
+        ? `${head}\r\n${asText}\r\n`
+        : `${head}Content-Transfer-Encoding: base64\r\n\r\n${file.content.replace(/\s+/g, "")}\r\n`
+    );
+  }
   return {
     contentType: `multipart/form-data; boundary=${boundary}`,
     body: `${parts.join("")}--${boundary}--\r\n`,
   };
+}
+
+/** The attachments whose contents the source carries, numbered from 1 as both providers do. */
+function attachmentFiles(source: EmailJsonSource, name: (index: number) => string): FilePart[] {
+  return source.email.attachments
+    .filter((attachment) => attachment.content !== undefined)
+    .map((attachment, index) => ({
+      name: name(index + 1),
+      filename: attachment.filename ?? `attachment-${index + 1}`,
+      contentType: attachment.contentType || "application/octet-stream",
+      content: attachment.content!,
+    }));
 }
 
 function sendgrid(source: EmailJsonSource, options: InboundEmailOptions): InboundEmailPayload {
@@ -256,6 +326,10 @@ function sendgrid(source: EmailJsonSource, options: InboundEmailOptions): Inboun
     .map((check) => `@${check.domain ?? ""} : ${check.result}`)
     .join(", ");
   const spam = email.spam;
+  const attachmentsWithContent = email.attachments.filter(
+    (attachment) => attachment.content !== undefined
+  );
+  const files = attachmentFiles(source, (index) => `attachment${index}`);
   const fields: [string, string][] = [
     ["headers", headerBlock],
     ["dkim", dkim ? `{${dkim}}` : "{}"],
@@ -281,7 +355,30 @@ function sendgrid(source: EmailJsonSource, options: InboundEmailOptions): Inboun
         from: smtp?.envelopeFrom ?? email.from[0]?.address ?? "",
       }),
     ],
-    ["attachments", "0"],
+    ["attachments", String(files.length)],
+    ...(files.length > 0
+      ? ([
+          [
+            "attachment-info",
+            JSON.stringify(
+              Object.fromEntries(
+                files.map((file, index) => {
+                  const attachment = attachmentsWithContent[index];
+                  return [
+                    file.name,
+                    {
+                      filename: file.filename,
+                      name: file.filename,
+                      type: file.contentType,
+                      ...(attachment.contentId ? { "content-id": attachment.contentId } : {}),
+                    },
+                  ];
+                })
+              )
+            ),
+          ],
+        ] as [string, string][])
+      : []),
     [
       "charsets",
       JSON.stringify({
@@ -295,7 +392,7 @@ function sendgrid(source: EmailJsonSource, options: InboundEmailOptions): Inboun
     ["SPF", email.auth?.spf?.result ?? "none"],
     ["subject", email.subject ?? ""]
   );
-  return multipart(fields, options.boundary ?? `xYzZY${randomString(24)}`);
+  return multipart(fields, options.boundary ?? `xYzZY${randomString(24)}`, files);
 }
 
 async function hmacSha256Hex(key: string, message: string): Promise<string> {
@@ -338,7 +435,14 @@ function mailgun(source: EmailJsonSource, options: InboundSyncOptions): InboundE
   params.set("timestamp", timestamp);
   params.set("token", token);
   params.set("signature", signature);
-  return { contentType: "application/x-www-form-urlencoded", body: params.toString() };
+  const files = attachmentFiles(source, (index) => `attachment-${index}`);
+  if (files.length === 0) {
+    return { contentType: "application/x-www-form-urlencoded", body: params.toString() };
+  }
+  // Mail with attachments comes as multipart/form-data, the files as
+  // attachment-1 to attachment-N after attachment-count.
+  params.set("attachment-count", String(files.length));
+  return multipart([...params.entries()], options.boundary ?? randomString(30), files);
 }
 
 /** For `inboundEmailPayload()`: a synchronous HMAC-SHA256, hex, to sign a Mailgun form with. */

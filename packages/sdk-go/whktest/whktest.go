@@ -50,6 +50,13 @@ func Client(t testing.TB, opts ...webhookscc.Option) *webhookscc.Client {
 // Endpoint creates an endpoint named after the test and deletes it when the
 // test ends. Pass options to configure it; an empty Name is replaced by the
 // test's name.
+//
+// The API allows 30 new endpoints per account in 10 minutes by default.
+// When that is used up, Endpoint waits as the API's Retry-After asks, for up
+// to a minute in all (webhookscc.DefaultRateLimitWait), and otherwise fails
+// the test with one line saying so. A suite with more tests than that can
+// share one endpoint: create it in TestMain with Client.WithTemporaryEndpoint
+// and tell tests apart by what they send (a Match) or by Since.
 func Endpoint(t testing.TB, client *webhookscc.Client, opts ...webhookscc.CreateEndpointOptions) *webhookscc.Endpoint {
 	t.Helper()
 	var options webhookscc.CreateEndpointOptions
@@ -63,7 +70,7 @@ func Endpoint(t testing.TB, client *webhookscc.Client, opts ...webhookscc.Create
 			options.Name = string(runes[:maxNameLength])
 		}
 	}
-	endpoint, err := client.Endpoints.Create(context.Background(), options)
+	endpoint, err := client.Endpoints.CreateWaiting(context.Background(), options, webhookscc.DefaultRateLimitWait)
 	if err != nil {
 		t.Fatalf("creating a webhooks.cc endpoint: %v", err)
 	}

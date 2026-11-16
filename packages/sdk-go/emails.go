@@ -209,7 +209,31 @@ func (s *EmailsService) WaitForAll(ctx context.Context, slug string, count int, 
 	limit := waitListLimit(count)
 	return collect(ctx, func(ctx context.Context, since time.Time) ([]Request, error) {
 		return s.c.Requests.List(ctx, slug, ListOptions{Since: since, Limit: limit, Kind: KindEmail})
-	}, count, durationOr(q.Timeout, defaultEmailTimeout), durationOr(q.PollInterval, defaultEmailPoll), q.matcher(), q.Since)
+	}, count, durationOr(q.Timeout, defaultEmailTimeout), durationOr(q.PollInterval, defaultEmailPoll), q.matcher(), q.Since,
+		waiting{noun: "email", slug: slug, criteria: q.describe(), filtered: q.Match != nil})
+}
+
+// describe is the query's criteria in words: `tag "run1", subject "Confirm"`.
+func (q EmailQuery) describe() string {
+	var parts []string
+	switch {
+	case q.Tag != "":
+		parts = append(parts, fmt.Sprintf("tag %q", q.Tag))
+	case q.Untagged:
+		parts = append(parts, "no tag")
+	}
+	text := func(name, value string, pattern *regexp.Regexp) {
+		if value != "" {
+			parts = append(parts, fmt.Sprintf("%s %q", name, value))
+		}
+		if pattern != nil {
+			parts = append(parts, fmt.Sprintf("%s /%s/", name, pattern))
+		}
+	}
+	text("subject", q.Subject, q.SubjectPattern)
+	text("from", q.From, q.FromPattern)
+	text("to", q.To, q.ToPattern)
+	return strings.Join(parts, ", ")
 }
 
 // SendTest delivers a sample email, with a code and a link, to an endpoint.

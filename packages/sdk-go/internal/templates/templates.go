@@ -154,8 +154,10 @@ var signingByProvider = map[string]signing{
 	"bitbucket": {true, "x-hub-signature", "hmac-sha256"},
 	"docusign":  {true, "x-docusign-signature-1", "hmac-sha256"},
 	// Adyen standard notifications carry additionalData.hmacSignature in the body.
-	"adyen":  {true, "", "hmac-sha256"},
-	"paypal": {true, "paypal-transmission-sig", "rsa-sha256"},
+	"adyen": {true, "", "hmac-sha256"},
+	// PayPal signs with its own RSA key: templates carry a placeholder
+	// signature and need no secret.
+	"paypal": {false, "paypal-transmission-sig", "rsa-sha256"},
 	"plaid":  {false, "plaid-verification", "jwt-es256"},
 	// Resend delivers through Svix and sends only the svix-* headers.
 	"resend": {true, "svix-signature", "hmac-sha256"},
@@ -360,9 +362,12 @@ func Build(url string, p Params) (*Request, error) {
 		return finish(headers, payload), nil
 	}
 
-	secret, err := requireSecret()
-	if err != nil {
-		return nil, err
+	// PayPal's placeholder signature takes no secret.
+	secret := ""
+	if provider != "paypal" {
+		if secret, err = requireSecret(); err != nil {
+			return nil, err
+		}
 	}
 	template, err := ensureTemplate(provider, p.Template)
 	if err != nil {
@@ -534,8 +539,9 @@ func Build(url string, p Params) (*Request, error) {
 		out["paypal-cert-url"] = "https://api.sandbox.paypal.com/v1/notifications/certs/CERT-" + randomHex(16)
 		out["paypal-auth-algo"] = "SHA256withRSA"
 		// PayPal signs with its own private key, which a test cannot hold. This
-		// placeholder keeps generated requests provider-shaped for detection.
-		out["paypal-transmission-sig"] = sigutil.Base64URL([]byte("mock:" + secret + ":" + payload))
+		// placeholder keeps generated requests provider-shaped for detection and
+		// never verifies; real PayPal signatures verify against PayPal's certificate.
+		out["paypal-transmission-sig"] = sigutil.Base64URL([]byte("mock-paypal-signature:" + out["paypal-transmission-id"]))
 	}
 
 	return finish(out, payload), nil

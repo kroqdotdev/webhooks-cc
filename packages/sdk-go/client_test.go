@@ -1035,7 +1035,7 @@ func TestAnInvalidCursorHasItsOwnError(t *testing.T) {
 		t.Errorf("count page: %v", err)
 	}
 	// Another 400 is not an invalid cursor.
-	if _, err := client.Requests.SearchPage(ctx, webhookscc.SearchOptions{Query: "x"}, ""); err == nil || errors.Is(err, webhookscc.ErrInvalidCursor) || !strings.Contains(err.Error(), "invalid_q") {
+	if _, err := client.Requests.SearchPage(ctx, webhookscc.SearchOptions{Query: "x"}, ""); err == nil || errors.Is(err, webhookscc.ErrInvalidCursor) || !strings.Contains(err.Error(), "Invalid search term") {
 		t.Errorf("another 400: %v", err)
 	}
 }

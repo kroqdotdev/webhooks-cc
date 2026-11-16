@@ -11,7 +11,7 @@
  */
 import { createHmac } from "node:crypto";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { WebhooksCC } from "../client";
+import { ERROR_CODE_SENTENCES, WebhooksCC } from "../client";
 import { WebhookVerificationError, WebhooksCCError } from "../errors";
 import {
   isEmailRequest,
@@ -616,7 +616,8 @@ function buildVerifyCases(signing: SigningVector[]): VerifyVector[] {
 }
 
 async function runVerify(vector: VerifyVector): Promise<boolean> {
-  vi.spyOn(Date, "now").mockReturnValue(vector.now);
+  // The clock goes in as an option, as a port passes it; Date.now() is never read.
+  vi.spyOn(Date, "now").mockReturnValue(0);
   const options = (
     vector.provider === "discord"
       ? { provider: "discord", publicKey: vector.publicKey }
@@ -625,6 +626,7 @@ async function runVerify(vector: VerifyVector): Promise<boolean> {
           secret: vector.secret,
           url: vector.url,
           method: vector.method,
+          now: vector.now,
           ...(vector.certificate
             ? { fetchCertificate: async () => vector.certificate as string }
             : {}),
@@ -1611,12 +1613,12 @@ const ERROR_CASES: ErrorCase[] = [
     code: "request_failed_with_http_410",
     hinted: false,
   },
-  // A code that says more than the status stays, in brackets.
+  // A code with a sentence of its own reads as that sentence.
   {
     name: "400 invalid_since",
     status: 400,
     body: '{"error":"invalid_since"}',
-    message: "Bad request (invalid_since)",
+    message: "Invalid since: give a time in milliseconds since 1970, at least 0",
     code: "invalid_since",
     hinted: false,
   },
@@ -1624,10 +1626,11 @@ const ERROR_CASES: ErrorCase[] = [
     name: "400 invalid_cursor",
     status: 400,
     body: '{"error":"invalid_cursor"}',
-    message: "Bad request (invalid_cursor)",
+    message: "Invalid search cursor: start the search again without a cursor",
     code: "invalid_cursor",
     hinted: false,
   },
+  // Any other code that says more than the status stays, in brackets.
   {
     name: "409 slug_exists",
     status: 409,
@@ -2088,6 +2091,19 @@ const ERROR_CASES: ErrorCase[] = [
   },
 ];
 
+// Every code with a sentence of its own, on the status its route answers with.
+for (const [code, sentence] of Object.entries(ERROR_CODE_SENTENCES)) {
+  if (ERROR_CASES.some((testCase) => testCase.body === `{"error":"${code}"}`)) continue;
+  ERROR_CASES.push({
+    name: `400 ${code} reads as a sentence`,
+    status: 400,
+    body: `{"error":"${code}"}`,
+    message: sentence,
+    code,
+    hinted: false,
+  });
+}
+
 /** The error a call fails with when the API answers `status` with `body`. */
 async function errorFor(status: number, body: string): Promise<WebhooksCCError> {
   const client = new WebhooksCC({
@@ -2232,7 +2248,7 @@ describe("conformance vectors", () => {
     }
     await expect(
       file(
-        "Error messages made from API answers. A call (GET /api/endpoints/acme) answered with status and body (exactly these characters, as UTF-8) fails with an error whose text before any hint the SDK adds is expected.message: the body's string message, else its string error (a blank one, as JavaScript's trim() sees it, gives way), cut to 1000 characters with ... after it; a message that is only a code (lower-case ASCII letters, digits and underscores, starting with a letter) becomes the status in words, alone when the code only names the status, else with the code in brackets; a body that is not a JSON object with either is kept as it came, cut to 200 characters. Characters are code points, so a cut never splits a surrogate pair. expected.hinted says whether the SDK adds its recovery hint, which only a 401 or 404 message under 30 characters (UTF-16 units) gets; the hint's wording is each SDK's own. On any status but 401, 404 and 429 (whose message is each SDK's rate-limit text) the error's message is expected.message itself. expected.code is the API's error code as the TypeScript SDK reads it: error when it is a code, wherever it sits in the object, else a code field that is a code, else null; a sentence is never a code. A port lists in its test the vectors where it differs, and why.",
+        "Error messages made from API answers. A call (GET /api/endpoints/acme) answered with status and body (exactly these characters, as UTF-8) fails with an error whose text before any hint the SDK adds is expected.message: the body's string message, else its string error (a blank one, as JavaScript's trim() sees it, gives way), cut to 1000 characters with ... after it; a message that is only a code (lower-case ASCII letters, digits and underscores, starting with a letter) becomes the code's sentence when the vectors give it one (the \"reads as a sentence\" cases, and invalid_since and invalid_cursor: a port keeps the same table), else the status in words, alone when the code only names the status, else with the code in brackets; a body that is not a JSON object with either is kept as it came, cut to 200 characters. Characters are code points, so a cut never splits a surrogate pair. expected.hinted says whether the SDK adds its recovery hint, which only a 401 or 404 message under 30 characters (UTF-16 units) gets; the hint's wording is each SDK's own. On any status but 401, 404 and 429 (whose message is each SDK's rate-limit text) the error's message is expected.message itself. expected.code is the API's error code as the TypeScript SDK reads it: error when it is a code, wherever it sits in the object, else a code field that is a code, else null; a sentence is never a code. A port lists in its test the vectors where it differs, and why.",
         buildErrorVectors()
       )
     ).toMatchFileSnapshot("../../conformance/errors.json");

@@ -236,7 +236,8 @@ func (s *RequestsService) WaitForAll(ctx context.Context, slug string, count int
 	limit := waitListLimit(count)
 	return collect(ctx, func(ctx context.Context, since time.Time) ([]Request, error) {
 		return s.List(ctx, slug, ListOptions{Since: since, Limit: limit})
-	}, count, durationOr(opts.Timeout, defaultWaitTimeout), durationOr(opts.PollInterval, defaultWaitPoll), opts.Match, opts.Since)
+	}, count, durationOr(opts.Timeout, defaultWaitTimeout), durationOr(opts.PollInterval, defaultWaitPoll), opts.Match, opts.Since,
+		waiting{noun: "request", slug: slug, filtered: opts.Match != nil})
 }
 
 func durationOr(value, fallback time.Duration) time.Duration {
@@ -251,6 +252,47 @@ func waitListLimit(count int) int {
 	return min(1000, max(100, max(1, count)*2))
 }
 
+// waiting says what a wait is for, so its timeout can say so.
+type waiting struct {
+	noun string // "request" or "email"
+	slug string
+	// criteria in words, such as `tag "run1", subject "Confirm"`.
+	criteria string
+	// filtered: a match function of the caller's chose among arrivals.
+	filtered bool
+}
+
+// timeoutMessage is a wait's timeout in words: `timed out after 30s waiting
+// for 2 emails with subject "Confirm" on endpoint "acme" (1 arrived, 3 did
+// not match)`.
+func (w waiting) timeoutMessage(timeout time.Duration, wanted, matched, seen int) string {
+	what := fmt.Sprintf("%d %ss", wanted, w.noun)
+	if wanted == 1 {
+		article := "a"
+		if w.noun == "email" {
+			article = "an"
+		}
+		what = article + " " + w.noun
+	}
+	if w.criteria != "" {
+		what += " with " + w.criteria
+	}
+	if w.filtered {
+		what += " accepted by Match"
+	}
+	var notes []string
+	if matched > 0 {
+		notes = append(notes, fmt.Sprintf("%d arrived", matched))
+	}
+	if unmatched := seen - matched; unmatched > 0 {
+		notes = append(notes, fmt.Sprintf("%d did not match", unmatched))
+	}
+	if seen == 0 {
+		notes = append(notes, "none arrived")
+	}
+	return fmt.Sprintf("timed out after %s waiting for %s on endpoint %q (%s)", timeout, what, w.slug, strings.Join(notes, ", "))
+}
+
 func collect(
 	ctx context.Context,
 	fetch func(context.Context, time.Time) ([]Request, error),
@@ -258,6 +300,7 @@ func collect(
 	timeout, pollInterval time.Duration,
 	match Matcher,
 	since time.Time,
+	what waiting,
 ) ([]Request, error) {
 	poll := min(maxPollInterval, max(minPollInterval, pollInterval))
 	wanted := max(1, count)
@@ -316,7 +359,7 @@ func collect(
 			return nil, err
 		}
 	}
-	return nil, &TimeoutError{After: timeout}
+	return nil, &TimeoutError{After: timeout, message: what.timeoutMessage(timeout, wanted, len(collected), len(seen))}
 }
 
 // SearchOptions narrow Requests.Search, SearchPage, Count and CountPage. All

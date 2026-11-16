@@ -655,3 +655,18 @@ func TestASlowTokenRefreshInsideASearchEndsAtItsDeadline(t *testing.T) {
 		t.Errorf("own timeout: count = %d, %v", count, err)
 	}
 }
+
+func TestNotFoundHintNamesTheResourceList(t *testing.T) {
+	for path, want := range map[string]string{
+		"/endpoints/acme":                 "Endpoints.List",
+		"/endpoints/acme/destinations/d1": "Destinations.List",
+		"/requests/r1/raw":                "Requests.List",
+		"/billing/checkouts/c1":           "Billing.CreateCheckout",
+		"/shares/s1":                      "Shares.List",
+		"/tunnel-names/n1":                "Names.List",
+	} {
+		if got := notFoundHint(path); !strings.Contains(got, want) {
+			t.Errorf("notFoundHint(%q) = %q, want it to name %s", path, got, want)
+		}
+	}
+}

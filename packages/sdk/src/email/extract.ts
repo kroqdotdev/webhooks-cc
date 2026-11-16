@@ -38,10 +38,33 @@ const URL_IN_TEXT = /\bhttps?:\/\/[^\s<>"'`)\]]+/gi;
 const HREF = /\bhref\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>"']+))/i;
 const ACTION =
   /(confirm|verif|activat|reset|magic|log-?in|sign-?in|signin|login|invit|accept|approve|validat|onboard|set-?up|password|token|auth)/i;
-const DROP =
-  /(unsubscribe|opt-?out|preferences|manage[-_ ]?(?:email|notification|subscription)|privacy|terms|legal|help|support|\/track\/|\/open\/|\/pixel)/i;
+/**
+ * Never worth a click in a test: unsubscribe and preference pages, wherever
+ * the URL or the label says so, even when the link carries a token.
+ */
+const UNSUBSCRIBE =
+  /(unsubscribe|opt-?out|preferences|manage[-_ ]?(?:email|notification|subscription)s?\b)/i;
+/**
+ * Footer pages, matched as a whole path segment or as the first label of
+ * the host (help.acme.com), never as any substring: support.acme.com/verify
+ * and /orders/123/track are links a test wants. Only links that are not
+ * action links are dropped for these.
+ */
+const FOOTER_WORDS =
+  /^(?:privacy(?:-policy)?|terms(?:-of-(?:service|use))?|tos|legal|help|help-center|helpcenter|support|faq|contact(?:-us)?)$/i;
+const FOOTER_LABEL =
+  /^(?:privacy(?: policy)?|terms(?: of (?:service|use))?|legal|help(?: center)?|support|contact(?: us| support)?|faq|get help|help & support)$/i;
+/**
+ * The shape of an open-tracking pixel's path: a last segment like `open`,
+ * `pixel.gif` or `o.gif`, or a `/pixel/` segment anywhere. Click-tracking
+ * redirects (`/ls/click`, `/track/click`) lead to the real link and stay.
+ */
+const PIXEL_PATH =
+  /(?:\/(?:open|opened|pixel|beacon|spacer|blank)(?:\.(?:gif|png|jpe?g|php))?\/?$|\/[a-z]\.(?:gif|png)$|\/pixel\/)/i;
 const SOCIAL_HOSTS =
-  /(^|\.)(facebook|twitter|x|linkedin|instagram|youtube|tiktok|github|discord|medium)\.com$/i;
+  /(^|\.)((facebook|twitter|x|linkedin|instagram|youtube|tiktok|github|discord|medium|threads|pinterest)\.com|discord\.gg|youtu\.be|bsky\.app)$/i;
+/** First segments of a social profile's path: linkedin.com/company/acme, youtube.com/channel/... */
+const PROFILE_PREFIX = /^(?:company|in|channel|c|user|users|school|showcase|pages|groups|orgs|r)$/i;
 const MAX_LINKS = 20;
 
 const ENTITIES: Record<string, string> = {
@@ -236,13 +259,43 @@ function cleanUrl(url: string): string | null {
   }
 }
 
-function keepLink(url: string, label: string | null): boolean {
-  if (DROP.test(url) || (label !== null && DROP.test(label))) return false;
+/** A social network's profile or page link (a footer's "Follow us"), not a link to act on. */
+function isSocialProfile(url: URL): boolean {
+  if (!SOCIAL_HOSTS.test(url.hostname)) return false;
+  const segments = url.pathname.split("/").filter(Boolean);
+  return segments.length <= 1 || (segments.length === 2 && PROFILE_PREFIX.test(segments[0]));
+}
+
+function isFooterLink(url: URL, label: string | null): boolean {
+  if (label !== null && FOOTER_LABEL.test(label.trim())) return true;
+  if (FOOTER_WORDS.test(url.hostname.split(".")[0])) {
+    // help.acme.com or support.acme.com itself, not a page on it that asks for something.
+    return true;
+  }
+  return url.pathname.split("/").some((segment) => FOOTER_WORDS.test(segment));
+}
+
+/**
+ * Whether a link is worth listing. Unsubscribe and preference links never
+ * are. Action links (confirm, verify, reset, sign in) always are otherwise,
+ * whatever host they are on (github.com/login/device, support.acme.com/verify).
+ * Of the rest, footer pages (help, support, privacy, terms), open-tracking
+ * pixels and social profiles are dropped.
+ */
+function keepLink(url: string, label: string | null, action: boolean): boolean {
+  if (UNSUBSCRIBE.test(url) || (label !== null && UNSUBSCRIBE.test(label))) return false;
+  if (action) return true;
+  let parsed: URL;
   try {
-    return !SOCIAL_HOSTS.test(new URL(url).hostname);
+    parsed = new URL(url);
   } catch {
     return false;
   }
+  return !(
+    PIXEL_PATH.test(parsed.pathname) ||
+    isSocialProfile(parsed) ||
+    isFooterLink(parsed, label)
+  );
 }
 
 function findLinks(text: string | null, html: string | null): ExtractedLink[] {
@@ -250,9 +303,11 @@ function findLinks(text: string | null, html: string | null): ExtractedLink[] {
   const links: ExtractedLink[] = [];
   const add = (rawUrl: string, label: string | null) => {
     const url = cleanUrl(rawUrl);
-    if (!url || seen.has(url) || !keepLink(url, label)) return;
+    if (!url || seen.has(url)) return;
+    const action = ACTION.test(url) || (label !== null && ACTION.test(label));
+    if (!keepLink(url, label, action)) return;
     seen.add(url);
-    links.push({ url, label, action: ACTION.test(url) || (label !== null && ACTION.test(label)) });
+    links.push({ url, label, action });
   };
   if (html) {
     for (const anchor of findAnchors(html)) {

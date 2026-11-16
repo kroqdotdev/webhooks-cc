@@ -156,6 +156,38 @@ class WebhookVerificationError(Exception):
         return (_rebuild, (type(self), self.__dict__.copy()))
 
 
+def wait_timeout_message(
+    timeout_ms: float,
+    *,
+    noun: Literal["request", "email"],
+    slug: str,
+    wanted: int,
+    matched: int,
+    seen: int,
+    criteria: str | None = None,
+    filtered: bool = False,
+) -> str:
+    """A wait's timeout in words: ``Timed out after 30000ms waiting for 2 emails
+    with subject "Confirm" on endpoint "acme" (1 arrived, 3 did not match)``."""
+    article = "an" if noun == "email" else "a"
+    what = f"{article} {noun}" if wanted == 1 else f"{wanted} {noun}s"
+    if criteria:
+        what += f" with {criteria}"
+    if filtered:
+        what += " accepted by match"
+    notes: list[str] = []
+    if matched > 0:
+        notes.append(f"{matched} arrived")
+    if seen - matched > 0:
+        notes.append(f"{seen - matched} did not match")
+    if seen == 0:
+        notes.append("none arrived")
+    return (
+        f"Timed out after {_format_ms(timeout_ms)}ms waiting for {what} "
+        f'on endpoint "{slug}" ({", ".join(notes)})'
+    )
+
+
 def _rebuild(cls: type[Exception], state: dict[str, Any]) -> Exception:
     error = cls.__new__(cls)
     Exception.__init__(error, state.get("message", ""))

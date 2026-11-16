@@ -54,6 +54,8 @@ def test_sends_a_receipt_webhook(webhooks_cc, webhooks_cc_endpoint):
 
 `webhooks_cc` is a client for the session; `webhooks_cc_endpoint` is a new endpoint for each test, deleted afterwards. Outside pytest, `temporary_endpoint(client)` is the same as a context manager, and `capture_during(client, action)` runs `action(endpoint)` and returns what it sent.
 
+The API allows 30 new endpoints per account in 10 minutes. When a suite uses them up, `webhooks_cc_endpoint` (and `temporary_endpoint`) waits as the API's Retry-After asks, for up to a minute (`rate_limit_wait`), then fails the test with one line saying so. A suite with more tests than that can use `webhooks_cc_session_endpoint`, one endpoint for the whole run: its tests share it, so each waits only for what it sent (a `match`, or a `since` taken before it acts).
+
 ## Test email: codes and links
 
 Every endpoint receives email at `{slug}@mailhooks.cc`, and at `{slug}+{tag}@mailhooks.cc` for any tag. Use a fresh tag per test run to find your own email. webhooks.cc finds the one-time codes and links in each email, the same ones its dashboard shows.
@@ -114,6 +116,8 @@ assert response.status_code == 200
 ```
 
 Leave out `body` to send the provider's sample payload, or pass your own: a string or bytes go as they are, anything else as JSON. `timestamp` (seconds) and `message_id` make the signature repeatable. `build_request()` returns the method, URL, headers and body without sending. Redirects are never followed, even by an `http_client` of your own, so signed requests only reach the host you named. `client.endpoints.send_template(slug, ...)` sends the same to a webhooks.cc endpoint. `TEMPLATE_PROVIDERS` lists the 34 providers.
+
+Adyen's `secret` is your HMAC key in hex, as Adyen shows it. PayPal templates need no `secret`: PayPal signs with its own RSA key, so a template carries a placeholder signature that verifies nowhere; real PayPal deliveries verify against PayPal's certificate with your webhook ID (`verify_signature("paypal", ..., secret=webhook_id)`).
 
 ## Verify signatures
 

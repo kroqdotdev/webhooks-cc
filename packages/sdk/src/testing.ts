@@ -1,6 +1,7 @@
 import type { WebhooksCC } from "./client";
 import { diffRequests, type DiffResult } from "./diff";
-import { NotFoundError, TimeoutError } from "./errors";
+import { waitTimeoutMessage } from "./client";
+import { NotFoundError, RateLimitError, TimeoutError } from "./errors";
 import type {
   CreateEndpointOptions,
   EmailCriteria,
@@ -33,7 +34,17 @@ export interface AssertRequestResult {
   diff: DiffResult;
 }
 
-export interface CaptureDuringOptions extends CreateEndpointOptions {
+export interface WithEndpointOptions extends CreateEndpointOptions {
+  /**
+   * How long, in all, to wait when creating endpoints is rate limited
+   * (default 60 seconds). Each wait is what the API's Retry-After asks; when
+   * that would run past this, the helper fails at once with a
+   * RateLimitError that says so.
+   */
+  rateLimitWait?: number | string;
+}
+
+export interface CaptureDuringOptions extends WithEndpointOptions {
   timeout?: number | string;
   pollInterval?: number | string;
   count?: number;
@@ -93,12 +104,66 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+/** Waits between tries when a 429 named no Retry-After. */
+const RATE_LIMIT_FALLBACK_WAIT_MS = 5000;
+
+/**
+ * Creates an endpoint for a test. A test suite that makes one per test can
+ * reach the API's limit on new endpoints (30 per account in 10 minutes by
+ * default); this waits as the API's Retry-After asks, for up to
+ * `rateLimitWait` in all, and otherwise fails with one line that says what
+ * to do. For large suites, share one endpoint between tests (create it in
+ * `beforeAll`, and tell tests apart by what they send or by `since`).
+ */
+export async function createTestEndpoint(
+  client: Pick<WebhooksCC, "endpoints">,
+  options: WithEndpointOptions = {}
+): Promise<Endpoint> {
+  const { rateLimitWait = 60_000, ...createOptions } = options;
+  const budgetMs = parseDuration(rateLimitWait);
+  const startedAt = Date.now();
+  for (;;) {
+    try {
+      return await client.endpoints.create(createOptions);
+    } catch (error) {
+      if (!(error instanceof RateLimitError)) throw error;
+      const waitMs =
+        error.retryAfter !== undefined ? error.retryAfter * 1000 : RATE_LIMIT_FALLBACK_WAIT_MS;
+      if (Date.now() - startedAt + waitMs > budgetMs) {
+        throw endpointRateLimitError(error);
+      }
+      await sleep(waitMs);
+    }
+  }
+}
+
+/** The 429 from creating an endpoint, saying what to do about it. */
+function endpointRateLimitError(error: RateLimitError): RateLimitError {
+  const limited = new RateLimitError(
+    error.retryAfter,
+    error.limit !== undefined && error.remaining !== undefined && error.reset !== undefined
+      ? { limit: error.limit, remaining: error.remaining, reset: error.reset }
+      : undefined
+  );
+  const allowance =
+    error.limit !== undefined ? `: the limit is ${error.limit} in a rolling window` : "";
+  const next =
+    error.retryAfter !== undefined ? `; the next one is free in ${error.retryAfter}s` : "";
+  limited.message =
+    `webhooks.cc: too many new endpoints${allowance}${next}. ` +
+    "Share one endpoint between tests (create it in beforeAll), or run fewer tests that create one.";
+  limited.apiMessage = error.apiMessage;
+  limited.code = error.code;
+  limited.path = error.path;
+  return limited;
+}
+
 export async function withEndpoint<T>(
   client: TestingClient,
   callback: (endpoint: Endpoint) => Promise<T>,
-  options: CreateEndpointOptions = {}
+  options: WithEndpointOptions = {}
 ): Promise<T> {
-  const endpoint = await client.endpoints.create(options);
+  const endpoint = await createTestEndpoint(client, options);
   try {
     return await callback(endpoint);
   } finally {
@@ -109,7 +174,7 @@ export async function withEndpoint<T>(
 export async function withEphemeralEndpoint<T>(
   client: TestingClient,
   callback: (endpoint: Endpoint) => Promise<T>,
-  options: Omit<CreateEndpointOptions, "ephemeral"> = {}
+  options: Omit<WithEndpointOptions, "ephemeral"> = {}
 ): Promise<T> {
   return withEndpoint(client, callback, {
     ...options,
@@ -135,6 +200,8 @@ export async function captureDuring(
       const startedAt = Date.now();
       await action(endpoint);
 
+      let seen = 0;
+      let matchedCount = 0;
       while (Date.now() - startedAt < timeoutMs) {
         const requests = await client.requests.list(endpoint.slug, { limit: requestLimit });
         const matched = (match ? requests.filter(match) : requests)
@@ -144,17 +211,26 @@ export async function captureDuring(
         if (matched.length >= expectedCount) {
           return matched.slice(0, expectedCount);
         }
+        seen = requests.length;
+        matchedCount = matched.length;
 
         await sleep(pollIntervalMs);
       }
 
-      throw new TimeoutError(timeoutMs);
+      throw new TimeoutError(
+        timeoutMs,
+        waitTimeoutMessage(
+          timeoutMs,
+          { noun: "request", slug: endpoint.slug },
+          { wanted: expectedCount, matched: matchedCount, seen, filtered: match !== undefined }
+        )
+      );
     },
     createOptions
   );
 }
 
-export interface CaptureEmailDuringOptions extends CreateEndpointOptions, EmailCriteria {
+export interface CaptureEmailDuringOptions extends WithEndpointOptions, EmailCriteria {
   /** Maximum time to wait for the emails (default: 60000) */
   timeout?: number | string;
   /** Interval between polls (default: 1000) */

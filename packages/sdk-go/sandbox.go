@@ -537,7 +537,8 @@ func (r *SandboxRequestsService) WaitForAll(ctx context.Context, slug string, co
 	limit := min(sandboxMaxList, waitListLimit(count))
 	return collect(ctx, func(ctx context.Context, since time.Time) ([]Request, error) {
 		return r.List(ctx, slug, SandboxListOptions{Since: since, Limit: limit})
-	}, count, durationOr(opts.Timeout, defaultWaitTimeout), durationOr(opts.PollInterval, defaultWaitPoll), opts.Match, opts.Since)
+	}, count, durationOr(opts.Timeout, defaultWaitTimeout), durationOr(opts.PollInterval, defaultWaitPoll), opts.Match, opts.Since,
+		waiting{noun: "request", slug: slug, filtered: opts.Match != nil})
 }
 
 // sandboxErrorFromResponse reads a sandbox refusal's { error,

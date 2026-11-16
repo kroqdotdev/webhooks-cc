@@ -86,9 +86,13 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
         body: JSON.stringify(json),
       });
     }
+    // With the attachments' contents (up to the inline budget of a
+    // delivery, the rest as links), so the shapes carry the files as the
+    // providers post them.
+    const withFiles = await withAttachmentPayloads(captured, "inline");
     const payload = inboundEmailPayload(
       format,
-      { ...captured, email: captured.email },
+      { ...withFiles, email: withFiles.email ?? captured.email },
       {
         raw: captured.bodyRaw ? null : (captured.body ?? null),
         mailgunSigningKey: typeof key === "string" && key ? key : null,
