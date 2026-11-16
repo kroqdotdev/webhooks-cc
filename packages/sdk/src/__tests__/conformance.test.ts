@@ -11,7 +11,8 @@
  */
 import { createHmac } from "node:crypto";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { WebhookVerificationError } from "../errors";
+import { WebhooksCC } from "../client";
+import { WebhookVerificationError, WebhooksCCError } from "../errors";
 import {
   isEmailRequest,
   matchAll,
@@ -1526,6 +1527,597 @@ function buildDurationVectors() {
 }
 
 // ---------------------------------------------------------------------------
+// Error messages
+// ---------------------------------------------------------------------------
+
+interface ErrorCase {
+  name: string;
+  status: number;
+  /** The answer's body, exactly as sent. */
+  body: string;
+  /** The API's text before any hint the SDK adds (TypeScript's `apiMessage`). */
+  message: string;
+  /** The API's error code as this SDK reads it (`WebhooksCCError.code`), or null. */
+  code: string | null;
+  /** Whether the SDK adds its recovery hint (401 and 404 under 30 characters). */
+  hinted: boolean;
+}
+
+const LONG_CODE = "a".repeat(1200);
+
+const ERROR_CASES: ErrorCase[] = [
+  // A bare code says the status in words, alone when the code only names it.
+  {
+    name: "404 not_found",
+    status: 404,
+    body: '{"error":"not_found"}',
+    message: "Not found",
+    code: "not_found",
+    hinted: true,
+  },
+  {
+    name: "401 unauthorized",
+    status: 401,
+    body: '{"error":"unauthorized"}',
+    message: "Unauthorized",
+    code: "unauthorized",
+    hinted: true,
+  },
+  {
+    name: "403 forbidden",
+    status: 403,
+    body: '{"error":"forbidden"}',
+    message: "Forbidden",
+    code: "forbidden",
+    hinted: false,
+  },
+  {
+    name: "409 conflict",
+    status: 409,
+    body: '{"error":"conflict"}',
+    message: "Conflict",
+    code: "conflict",
+    hinted: false,
+  },
+  {
+    name: "400 bad_request",
+    status: 400,
+    body: '{"error":"bad_request"}',
+    message: "Bad request",
+    code: "bad_request",
+    hinted: false,
+  },
+  {
+    name: "429 too_many_requests",
+    status: 429,
+    body: '{"error":"too_many_requests"}',
+    message: "Too many requests",
+    code: "too_many_requests",
+    hinted: false,
+  },
+  {
+    name: "500 server_error",
+    status: 500,
+    body: '{"error":"server_error"}',
+    message: "Server error",
+    code: "server_error",
+    hinted: false,
+  },
+  {
+    name: "410 names its own status words",
+    status: 410,
+    body: '{"error":"request_failed_with_http_410"}',
+    message: "Request failed with HTTP 410",
+    code: "request_failed_with_http_410",
+    hinted: false,
+  },
+  // A code that says more than the status stays, in brackets.
+  {
+    name: "400 invalid_since",
+    status: 400,
+    body: '{"error":"invalid_since"}',
+    message: "Bad request (invalid_since)",
+    code: "invalid_since",
+    hinted: false,
+  },
+  {
+    name: "400 invalid_cursor",
+    status: 400,
+    body: '{"error":"invalid_cursor"}',
+    message: "Bad request (invalid_cursor)",
+    code: "invalid_cursor",
+    hinted: false,
+  },
+  {
+    name: "409 slug_exists",
+    status: 409,
+    body: '{"error":"slug_exists"}',
+    message: "Conflict (slug_exists)",
+    code: "slug_exists",
+    hinted: false,
+  },
+  {
+    name: "401 invalid_token",
+    status: 401,
+    body: '{"error":"invalid_token"}',
+    message: "Unauthorized (invalid_token)",
+    code: "invalid_token",
+    hinted: true,
+  },
+  {
+    name: "401 invalid_api_key is 30 characters, no hint",
+    status: 401,
+    body: '{"error":"invalid_api_key"}',
+    message: "Unauthorized (invalid_api_key)",
+    code: "invalid_api_key",
+    hinted: false,
+  },
+  {
+    name: "404 a code with digits",
+    status: 404,
+    body: '{"error":"e404"}',
+    message: "Not found (e404)",
+    code: "e404",
+    hinted: true,
+  },
+  {
+    name: "400 a code with digits and an underscore",
+    status: 400,
+    body: '{"error":"v2_bad"}',
+    message: "Bad request (v2_bad)",
+    code: "v2_bad",
+    hinted: false,
+  },
+  {
+    name: "429 search_busy",
+    status: 429,
+    body: '{"error":"search_busy"}',
+    message: "Too many requests (search_busy)",
+    code: "search_busy",
+    hinted: false,
+  },
+  {
+    name: "500 internal_error",
+    status: 500,
+    body: '{"error":"internal_error"}',
+    message: "Server error (internal_error)",
+    code: "internal_error",
+    hinted: false,
+  },
+  {
+    name: "503 unavailable",
+    status: 503,
+    body: '{"error":"unavailable"}',
+    message: "Server error (unavailable)",
+    code: "unavailable",
+    hinted: false,
+  },
+  {
+    name: "410 expired",
+    status: 410,
+    body: '{"error":"expired"}',
+    message: "Request failed with HTTP 410 (expired)",
+    code: "expired",
+    hinted: false,
+  },
+  {
+    name: "418 teapot",
+    status: 418,
+    body: '{"error":"im_a_teapot"}',
+    message: "Request failed with HTTP 418 (im_a_teapot)",
+    code: "im_a_teapot",
+    hinted: false,
+  },
+  {
+    name: "410 a message that is only a code",
+    status: 410,
+    body: '{"message":"expired"}',
+    message: "Request failed with HTTP 410 (expired)",
+    code: null,
+    hinted: false,
+  },
+  {
+    name: "409 a message that is only a code, beside another code",
+    status: 409,
+    body: '{"error":"invalid_input","message":"name_taken"}',
+    message: "Conflict (name_taken)",
+    code: "invalid_input",
+    hinted: false,
+  },
+  {
+    name: "400 a 1000-character code is whole",
+    status: 400,
+    body: JSON.stringify({ error: "a".repeat(1000) }),
+    message: `Bad request (${"a".repeat(1000)})`,
+    code: "a".repeat(1000),
+    hinted: false,
+  },
+  {
+    name: "400 a 1200-character code is cut and kept as text",
+    status: 400,
+    body: JSON.stringify({ error: LONG_CODE }),
+    message: `${"a".repeat(1000)}...`,
+    code: LONG_CODE,
+    hinted: false,
+  },
+  // Text that is not a code is kept as it is.
+  {
+    name: "404 a bare number is no code",
+    status: 404,
+    body: '{"error":"404"}',
+    message: "404",
+    code: null,
+    hinted: true,
+  },
+  {
+    name: "404 a hyphen is no code",
+    status: 404,
+    body: '{"error":"not-found"}',
+    message: "not-found",
+    code: null,
+    hinted: true,
+  },
+  {
+    name: "404 a capital letter is no code",
+    status: 404,
+    body: '{"error":"Not_found"}',
+    message: "Not_found",
+    code: null,
+    hinted: true,
+  },
+  {
+    name: "404 a letter past ASCII is no code",
+    status: 404,
+    body: '{"error":"nöt_found"}',
+    message: "nöt_found",
+    code: null,
+    hinted: true,
+  },
+  {
+    name: "404 a padded code is no code",
+    status: 404,
+    body: '{"error":" not_found "}',
+    message: " not_found ",
+    code: null,
+    hinted: true,
+  },
+  {
+    name: "404 a code with a line break after it is no code",
+    status: 404,
+    body: '{"error":"not_found\\n"}',
+    message: "not_found\n",
+    code: null,
+    hinted: true,
+  },
+  {
+    name: "404 a sentence",
+    status: 404,
+    body: '{"error":"Request not found"}',
+    message: "Request not found",
+    code: null,
+    hinted: true,
+  },
+  {
+    name: "429 a sentence",
+    status: 429,
+    body: '{"error":"Rate limit exceeded"}',
+    message: "Rate limit exceeded",
+    code: null,
+    hinted: false,
+  },
+  {
+    name: "429 the status words as a sentence",
+    status: 429,
+    body: '{"error":"Too many requests"}',
+    message: "Too many requests",
+    code: null,
+    hinted: false,
+  },
+  {
+    name: "503 a sentence",
+    status: 503,
+    body: '{"error":"Service unavailable"}',
+    message: "Service unavailable",
+    code: null,
+    hinted: false,
+  },
+  // message wins over error; a blank or non-string message gives way.
+  {
+    name: "404 message beside a code",
+    status: 404,
+    body: '{"error":"not_found","message":"Request not found"}',
+    message: "Request not found",
+    code: "not_found",
+    hinted: true,
+  },
+  {
+    name: "400 message beside invalid_cursor",
+    status: 400,
+    body: '{"error":"invalid_cursor","message":"The cursor is not one this search returned"}',
+    message: "The cursor is not one this search returned",
+    code: "invalid_cursor",
+    hinted: false,
+  },
+  {
+    name: "400 message before invalid_cursor",
+    status: 400,
+    body: '{"message":"The cursor is not one this search returned","error":"invalid_cursor"}',
+    message: "The cursor is not one this search returned",
+    code: "invalid_cursor",
+    hinted: false,
+  },
+  {
+    name: "409 message beside a sentence",
+    status: 409,
+    body: '{"message":"Name is taken","error":"Conflict"}',
+    message: "Name is taken",
+    code: null,
+    hinted: false,
+  },
+  {
+    name: "400 a blank message gives way",
+    status: 400,
+    body: '{"message":"  ","error":"name is too long"}',
+    message: "name is too long",
+    code: null,
+    hinted: false,
+  },
+  {
+    name: "400 a message only trim() calls blank (U+FEFF) gives way",
+    status: 400,
+    body: '{"message":"\\ufeff ","error":"name is too long"}',
+    message: "name is too long",
+    code: null,
+    hinted: false,
+  },
+  {
+    name: "404 a message that is not a string gives way",
+    status: 404,
+    body: '{"message":5,"error":"Endpoint not found"}',
+    message: "Endpoint not found",
+    code: null,
+    hinted: true,
+  },
+  {
+    name: "400 a message over 200 characters is read whole",
+    status: 400,
+    body: JSON.stringify({ error: "invalid_input", message: "y ".repeat(125) }),
+    message: "y ".repeat(125),
+    code: "invalid_input",
+    hinted: false,
+  },
+  {
+    name: "400 a message over 1000 characters is cut",
+    status: 400,
+    body: JSON.stringify({ message: "m".repeat(1500) }),
+    message: `${"m".repeat(1000)}...`,
+    code: null,
+    hinted: false,
+  },
+  {
+    name: "400 a cut never splits a surrogate pair",
+    status: 400,
+    body: JSON.stringify({
+      error: "invalid_input",
+      message: "a".repeat(999) + "\u{1F600}".repeat(5),
+    }),
+    message: "a".repeat(999) + "\u{1F600}...",
+    code: "invalid_input",
+    hinted: false,
+  },
+  // A code field beside the error.
+  {
+    name: "502 a code field beside a sentence",
+    status: 502,
+    body: '{"error":"Polar did not answer","code":"outcome_unknown"}',
+    message: "Polar did not answer",
+    code: "outcome_unknown",
+    hinted: false,
+  },
+  {
+    name: "429 search_busy as a code field",
+    status: 429,
+    body: '{"error":"Search busy","code":"search_busy"}',
+    message: "Search busy",
+    code: "search_busy",
+    hinted: false,
+  },
+  {
+    name: "400 a code field that is no code",
+    status: 400,
+    body: '{"error":"Bad things","code":"Not-A-Code"}',
+    message: "Bad things",
+    code: null,
+    hinted: false,
+  },
+  // Bodies that are not a JSON object with text are kept, cut at 200 characters.
+  {
+    name: "502 plain text",
+    status: 502,
+    body: "Bad gateway",
+    message: "Bad gateway",
+    code: null,
+    hinted: false,
+  },
+  {
+    name: "404 plain text that looks like a code",
+    status: 404,
+    body: "not_found",
+    message: "not_found",
+    code: null,
+    hinted: true,
+  },
+  {
+    name: "404 a JSON string",
+    status: 404,
+    body: '"not_found"',
+    message: '"not_found"',
+    code: null,
+    hinted: true,
+  },
+  {
+    name: "404 a JSON array",
+    status: 404,
+    body: '["not_found"]',
+    message: '["not_found"]',
+    code: null,
+    hinted: true,
+  },
+  { name: "404 JSON null", status: 404, body: "null", message: "null", code: null, hinted: true },
+  {
+    name: "400 an error that is an object",
+    status: 400,
+    body: '{"error":{"code":"x"}}',
+    message: '{"error":{"code":"x"}}',
+    code: null,
+    hinted: false,
+  },
+  {
+    name: "400 empty message and error",
+    status: 400,
+    body: '{"message":"","error":""}',
+    message: '{"message":"","error":""}',
+    code: null,
+    hinted: false,
+  },
+  {
+    name: "400 an object without either",
+    status: 400,
+    body: '{"detail":"x"}',
+    message: '{"detail":"x"}',
+    code: null,
+    hinted: false,
+  },
+  {
+    name: "503 HTML",
+    status: 503,
+    body: "<html><body>Service Unavailable</body></html>",
+    message: "<html><body>Service Unavailable</body></html>",
+    code: null,
+    hinted: false,
+  },
+  { name: "404 an empty body", status: 404, body: "", message: "", code: null, hinted: true },
+  {
+    name: "500 a 200-character body is whole",
+    status: 500,
+    body: "z".repeat(200),
+    message: "z".repeat(200),
+    code: null,
+    hinted: false,
+  },
+  {
+    name: "500 a long body is cut",
+    status: 500,
+    body: "z".repeat(400),
+    message: `${"z".repeat(200)}...`,
+    code: null,
+    hinted: false,
+  },
+  {
+    name: "502 a cut body never splits a surrogate pair",
+    status: 502,
+    body: "b".repeat(199) + "\u{1F600}".repeat(50),
+    message: "b".repeat(199) + "\u{1F600}...",
+    code: null,
+    hinted: false,
+  },
+  {
+    name: "400 unterminated JSON is plain text",
+    status: 400,
+    body: `{"error":"${"x".repeat(300)}`,
+    message: `{"error":"${"x".repeat(190)}...`,
+    code: null,
+    hinted: false,
+  },
+  // The hint: 401 and 404 under 30 characters (UTF-16 units here).
+  {
+    name: "404 29 characters get a hint",
+    status: 404,
+    body: '{"error":"This endpoint does not exist."}',
+    message: "This endpoint does not exist.",
+    code: null,
+    hinted: true,
+  },
+  {
+    name: "404 30 characters get none",
+    status: 404,
+    body: '{"error":"This endpoint does not exist!!"}',
+    message: "This endpoint does not exist!!",
+    code: null,
+    hinted: false,
+  },
+  {
+    name: "401 a short sentence",
+    status: 401,
+    body: '{"error":"Invalid API key"}',
+    message: "Invalid API key",
+    code: null,
+    hinted: true,
+  },
+  {
+    name: "401 a long sentence",
+    status: 401,
+    body: '{"error":"This API key was revoked by its owner."}',
+    message: "This API key was revoked by its owner.",
+    code: null,
+    hinted: false,
+  },
+  {
+    name: "404 20 accented letters",
+    status: 404,
+    body: JSON.stringify({ error: "é".repeat(20) }),
+    message: "é".repeat(20),
+    code: null,
+    hinted: true,
+  },
+  {
+    name: "404 a lone surrogate counts as one character",
+    status: 404,
+    body: '{"error":"\\ud800"}',
+    message: "\ud800",
+    code: null,
+    hinted: true,
+  },
+  {
+    name: "404 20 emoji",
+    status: 404,
+    body: JSON.stringify({ error: "\u{1F600}".repeat(20) }),
+    message: "\u{1F600}".repeat(20),
+    code: null,
+    hinted: false,
+  },
+];
+
+/** The error a call fails with when the API answers `status` with `body`. */
+async function errorFor(status: number, body: string): Promise<WebhooksCCError> {
+  const client = new WebhooksCC({
+    apiKey: "whcc_conformance",
+    baseUrl: "https://webhooks.test",
+    fetch: (async () =>
+      new Response(body, {
+        status,
+        headers: { "content-type": "application/json" },
+      })) as typeof globalThis.fetch,
+  });
+  try {
+    await client.endpoints.get("acme");
+  } catch (error) {
+    expect(error).toBeInstanceOf(WebhooksCCError);
+    return error as WebhooksCCError;
+  }
+  throw new Error("expected the call to fail");
+}
+
+function buildErrorVectors() {
+  return ERROR_CASES.map(({ name, status, body, message, code, hinted }) => ({
+    name,
+    status,
+    body,
+    expected: { message, code, hinted },
+  }));
+}
+
+// ---------------------------------------------------------------------------
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -1619,5 +2211,30 @@ describe("conformance vectors", () => {
         buildDurationVectors()
       )
     ).toMatchFileSnapshot("../../conformance/durations.json");
+  });
+
+  it("errors.json", async () => {
+    const names = new Set<string>();
+    for (const testCase of ERROR_CASES) {
+      expect(names.has(testCase.name), testCase.name).toBe(false);
+      names.add(testCase.name);
+      const error = await errorFor(testCase.status, testCase.body);
+      expect(error.statusCode, testCase.name).toBe(testCase.status);
+      expect(error.apiMessage, testCase.name).toBe(testCase.message);
+      expect(error.code ?? null, testCase.name).toBe(testCase.code);
+      const hintable = testCase.status === 401 || testCase.status === 404;
+      expect(hintable && error.message !== error.apiMessage, testCase.name).toBe(testCase.hinted);
+      if (testCase.hinted) {
+        expect(error.message.startsWith(testCase.message), testCase.name).toBe(true);
+      } else if (testCase.status !== 429) {
+        expect(error.message, testCase.name).toBe(testCase.message);
+      }
+    }
+    await expect(
+      file(
+        "Error messages made from API answers. A call (GET /api/endpoints/acme) answered with status and body (exactly these characters, as UTF-8) fails with an error whose text before any hint the SDK adds is expected.message: the body's string message, else its string error (a blank one, as JavaScript's trim() sees it, gives way), cut to 1000 characters with ... after it; a message that is only a code (lower-case ASCII letters, digits and underscores, starting with a letter) becomes the status in words, alone when the code only names the status, else with the code in brackets; a body that is not a JSON object with either is kept as it came, cut to 200 characters. Characters are code points, so a cut never splits a surrogate pair. expected.hinted says whether the SDK adds its recovery hint, which only a 401 or 404 message under 30 characters (UTF-16 units) gets; the hint's wording is each SDK's own. On any status but 401, 404 and 429 (whose message is each SDK's rate-limit text) the error's message is expected.message itself. expected.code is the API's error code as the TypeScript SDK reads it: error when it is a code, wherever it sits in the object, else a code field that is a code, else null; a sentence is never a code. A port lists in its test the vectors where it differs, and why.",
+        buildErrorVectors()
+      )
+    ).toMatchFileSnapshot("../../conformance/errors.json");
   });
 });

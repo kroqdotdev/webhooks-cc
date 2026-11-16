@@ -40,7 +40,8 @@ type Error struct {
 	RetryAfter time.Duration
 	// RateLimit is set on a 429 that carried all the X-RateLimit headers.
 	RateLimit *RateLimit
-	// code is the "error" of a JSON error body ("search_busy", "invalid_cursor").
+	// code is the "error" of a JSON error body when it is a code (lower case,
+	// digits, underscores: "search_busy", "invalid_cursor"), never a sentence.
 	code string
 }
 
