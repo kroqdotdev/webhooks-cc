@@ -336,18 +336,25 @@ def _error_text(body: str) -> str | None:
     return None
 
 
+def _plain_error_text(status: int, text: str) -> str:
+    """What the API said, as plain text, before any hint: the text of a JSON
+    error body (see ``_error_text``), else the body itself cut to 200 characters."""
+    plain = _error_text(text)
+    if plain is None:
+        return text[:200] + "..." if len(text) > 200 else text
+    if _BARE_CODE.fullmatch(plain):
+        # A bare code ({"error": "not_found"}) is no sentence: say the status (see _code_text).
+        return _code_text(status, plain)
+    return plain
+
+
 def _error_from_response(response: httpx.Response) -> WebhooksCCError:
     text = response.text
     try:
         path = response.request.url.path
     except RuntimeError:  # a response built without its request
         path = ""
-    plain = _error_text(text)
-    if plain is None:
-        plain = text[:200] + "..." if len(text) > 200 else text
-    elif _BARE_CODE.fullmatch(plain):
-        # A bare code ({"error": "not_found"}) is no sentence: say the status (see _code_text).
-        plain = _code_text(response.status_code, plain)
+    plain = _plain_error_text(response.status_code, text)
     return _map_error(response.status_code, plain, response.headers, path, text)
 
 

@@ -576,17 +576,25 @@ func withHint(message, separator, hint string) string {
 	return message + separator + hint
 }
 
-func errorFromResponse(response *apiResponse, path string) *Error {
-	message, ok := errorText(response.body)
+// plainErrorText is what the API said, as plain text, before any hint: the
+// text of a JSON error body (see errorText), else the body itself cut to 200
+// characters.
+func plainErrorText(status int, body []byte) string {
+	message, ok := errorText(body)
 	if !ok {
-		message = string(response.body)
+		message = string(body)
 		if utf8.RuneCountInString(message) > 200 {
 			message = string([]rune(message)[:200]) + "..."
 		}
 	} else if bareCode.MatchString(message) {
 		// A bare code ({"error": "not_found"}) is no sentence: say the status (see codeText).
-		message = codeText(response.status, message)
+		message = codeText(status, message)
 	}
+	return message
+}
+
+func errorFromResponse(response *apiResponse, path string) *Error {
+	message := plainErrorText(response.status, response.body)
 	generic := len(message) < 30
 	apiErr := &Error{StatusCode: response.status, Message: message}
 	var coded struct {

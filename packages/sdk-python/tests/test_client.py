@@ -851,6 +851,8 @@ def test_errors_are_typed(status: int, error_type: type[Exception]) -> None:
     assert caught.value.status_code == status
 
 
+# What the API said, in every case, is in the shared vectors
+# (test_errors_conformance.py); these pin this SDK's own hint wording.
 @pytest.mark.parametrize(
     ("status", "body", "message"),
     [
@@ -860,68 +862,22 @@ def test_errors_are_typed(status: int, error_type: type[Exception]) -> None:
             "Endpoint not found: use client.endpoints.list() to see your endpoints",
         ),
         (
-            400,
-            '{"error":"invalid_input","message":"name is too long"}',
-            "name is too long",
-        ),
-        (502, "Bad gateway", "Bad gateway"),
-        (400, json.dumps({"error": "invalid_input", "message": "y " * 125}), "y " * 125),
-        (500, "z" * 400, "z" * 200 + "..."),
-        # A message only JavaScript's trim() calls blank (U+FEFF) gives way to the error.
-        (400, '{"message":"\\ufeff ","error":"name is too long"}', "name is too long"),
-        # A bare code is no sentence: the status is said in words instead.
-        (
             404,
             '{"error":"not_found"}',
             "Not found: use client.endpoints.list() to see your endpoints",
-        ),
-        (
-            404,
-            '{"error":"Request not found"}',
-            "Request not found: use client.endpoints.list() to see your endpoints",
-        ),
-        (
-            404,
-            '{"error":"not_found","message":"Request not found"}',
-            "Request not found: use client.endpoints.list() to see your endpoints",
         ),
         (
             401,
             '{"error":"unauthorized"}',
             "Unauthorized. Get an API key at https://webhooks.cc/account/api-keys",
         ),
-        (403, '{"error":"forbidden"}', "Forbidden"),
-        (409, '{"error":"conflict"}', "Conflict"),
-        # A code that says more than the status stays, in brackets.
-        (400, '{"error":"invalid_since"}', "Bad request (invalid_since)"),
-        (409, '{"error":"slug_exists"}', "Conflict (slug_exists)"),
-        (500, '{"error":"internal_error"}', "Server error (internal_error)"),
-        (410, '{"error":"expired"}', "Request failed with HTTP 410 (expired)"),
-        (410, '{"message":"expired"}', "Request failed with HTTP 410 (expired)"),
     ],
 )
-def test_error_messages_are_the_plain_text_of_the_body(
-    status: int, body: str, message: str
-) -> None:
+def test_short_401_and_404_messages_get_a_hint(status: int, body: str, message: str) -> None:
     client = make_client(lambda request: httpx.Response(status, text=body))
     with pytest.raises(errors.WebhooksCCError) as caught:
         client.endpoints.get("acme")
     assert caught.value.message == message
-    assert not caught.value.message.startswith("{")
-
-
-def test_a_bare_code_keeps_its_meaning() -> None:
-    cursor = make_client(lambda request: httpx.Response(400, json={"error": "invalid_cursor"}))
-    with pytest.raises(errors.InvalidCursorError):
-        cursor.endpoints.get("acme")
-    busy = make_client(lambda request: httpx.Response(429, json={"error": "search_busy"}))
-    with pytest.raises(errors.RateLimitError) as caught:
-        busy.endpoints.get("acme")
-    assert caught.value.code == "search_busy"
-    plain = make_client(lambda request: httpx.Response(400, json={"error": "invalid_input"}))
-    with pytest.raises(errors.WebhooksCCError) as other:
-        plain.endpoints.get("acme")
-    assert other.value.message == "Bad request (invalid_input)"
 
 
 def test_rate_limit_error_carries_the_headers() -> None:

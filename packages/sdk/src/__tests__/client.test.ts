@@ -2660,16 +2660,8 @@ describe("WebhooksCC", () => {
       expect(error.code).toBeUndefined();
     });
 
-    it("prefers a JSON body's message to its error code", async () => {
-      const error = await failWith(
-        400,
-        '{"error":"invalid_cursor","message":"The cursor is not one this search returned"}'
-      );
-      expect(error.message).toBe("The cursor is not one this search returned");
-      expect(error.apiMessage).toBe("The cursor is not one this search returned");
-      expect(error.code).toBe("invalid_cursor");
-    });
-
+    // What the API said, in every case, is in conformance/errors.json
+    // (conformance.test.ts); this pins the hint a bare code gets.
     it("says the status in words when the body names only a code", async () => {
       const error = await failWith(404, '{"error":"not_found"}');
       expect(error).toBeInstanceOf(NotFoundError);
@@ -2678,59 +2670,6 @@ describe("WebhooksCC", () => {
         "Not found: Use client.endpoints.list() to see available endpoints."
       );
       expect(error.code).toBe("not_found");
-      for (const [status, code, text] of [
-        [401, "unauthorized", "Unauthorized"],
-        [403, "forbidden", "Forbidden"],
-        [409, "conflict", "Conflict"],
-        [429, "too_many_requests", "Too many requests"],
-        [400, "invalid_since", "Bad request (invalid_since)"],
-        [409, "slug_exists", "Conflict (slug_exists)"],
-        [500, "internal_error", "Server error (internal_error)"],
-        [503, "unavailable", "Server error (unavailable)"],
-        [410, "expired", "Request failed with HTTP 410 (expired)"],
-      ] as const) {
-        const coded = await failWith(status, JSON.stringify({ error: code }));
-        expect(coded.apiMessage, String(status)).toBe(text);
-        expect(coded.code, String(status)).toBe(code);
-      }
-      // A message that is only a code keeps it too.
-      const message = await failWith(410, '{"message":"expired"}');
-      expect(message.apiMessage).toBe("Request failed with HTTP 410 (expired)");
-    });
-
-    it("keeps an error that is a sentence, and a message beside a code", async () => {
-      const sentence = await failWith(404, '{"error":"Request not found"}');
-      expect(sentence.apiMessage).toBe("Request not found");
-      expect(sentence.code).toBeUndefined();
-      const both = await failWith(404, '{"error":"not_found","message":"Request not found"}');
-      expect(both.apiMessage).toBe("Request not found");
-      expect(both.code).toBe("not_found");
-    });
-
-    it("lets a message only trim() calls blank (U+FEFF) give way to the error", async () => {
-      const error = await failWith(400, '{"message":"\\ufeff ","error":"name is too long"}');
-      expect(error.apiMessage).toBe("name is too long");
-    });
-
-    it("keeps a body that is not JSON as it came", async () => {
-      const error = await failWith(502, "Bad gateway");
-      expect(error.apiMessage).toBe("Bad gateway");
-      expect(error.message).toBe("Bad gateway");
-    });
-
-    it("reads the whole JSON body even when it is over 200 characters", async () => {
-      const long = "y ".repeat(125);
-      const error = await failWith(400, JSON.stringify({ error: "invalid_input", message: long }));
-      expect(error.message).toBe(long);
-      expect(error.message.startsWith("{")).toBe(false);
-      expect(error.code).toBe("invalid_input");
-    });
-
-    it("never splits a surrogate pair when it cuts a long message", async () => {
-      // 999 plain characters, then emoji: the cut falls on the first emoji.
-      const message = "a".repeat(999) + "\u{1F600}".repeat(5);
-      const error = await failWith(400, JSON.stringify({ error: "invalid_input", message }));
-      expect(error.apiMessage).toBe("a".repeat(999) + "\u{1F600}...");
     });
 
     it("names the stream's path on a refused stream", async () => {
@@ -2745,18 +2684,6 @@ describe("WebhooksCC", () => {
       expect(error).toBeInstanceOf(NotFoundError);
       expect(error.path).toBe("/stream/acme");
       expect(error.apiMessage).toBe("Endpoint not found");
-    });
-
-    it("cuts a long body that is not JSON by code point, never splitting an emoji", async () => {
-      // 199 plain characters, then emoji: the cut at 200 falls on the first emoji.
-      const error = await failWith(502, "b".repeat(199) + "\u{1F600}".repeat(50));
-      expect(error.apiMessage).toBe("b".repeat(199) + "\u{1F600}...");
-      expect(error.message).toBe("b".repeat(199) + "\u{1F600}...");
-    });
-
-    it("cuts a long body that is not JSON short", async () => {
-      const error = await failWith(500, "z".repeat(400));
-      expect(error.apiMessage).toBe("z".repeat(200) + "...");
     });
   });
 
