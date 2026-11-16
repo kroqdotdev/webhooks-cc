@@ -7,10 +7,15 @@
 -- strips it on read, and this removes it from rows already stored, because
 -- team members can read their team's requests through PostgREST too.
 --
--- signature_error is text holding JSON. A plain update: when this shipped,
--- production held no such rows, so the per-row Realtime signal that
--- requests_broadcast_signature sends for a changed signature_error stays
--- far below the tenant's rate limits. Rows that are not valid JSON are left
+-- Apply it AFTER the release with the new receiver is deployed (or apply it
+-- again then): until then the old receiver keeps writing "expected". The
+-- update is idempotent.
+--
+-- signature_error is text holding JSON. A plain update: production held no
+-- such rows when this was written; count them before applying, since
+-- requests_broadcast_signature sends one Realtime signal per changed row and
+-- the tenant has rate limits. It scans requests once (no index on the
+-- column); that lock does not block captures. Rows that are not valid JSON are left
 -- alone (the receiver only ever wrote JSON with "expected").
 update public.requests
    set signature_error = (signature_error::jsonb - 'expected')::text

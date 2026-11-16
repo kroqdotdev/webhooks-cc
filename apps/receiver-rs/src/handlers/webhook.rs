@@ -1143,7 +1143,9 @@ fn quota_exceeded_response(
         .and_then(|key| key.split_once(':'))
         .map(|(kind, _)| kind)
         .unwrap_or("");
-    let retry_after_ms = retry_after_ms.filter(|ms| *ms > 0);
+    // Zero is a reset under half a second away (the database rounds to whole
+    // seconds), not a missing one.
+    let retry_after_ms = retry_after_ms.filter(|ms| *ms >= 0);
     let resets_at = retry_after_ms.map(|ms| {
         (now + chrono::TimeDelta::milliseconds(ms)).to_rfc3339_opts(SecondsFormat::Secs, true)
     });
@@ -1233,6 +1235,13 @@ mod tests {
         let body = quota_body(response).await;
         assert!(body["message"].as_str().unwrap().contains("team's owner"));
         assert!(body["resetsAt"].is_string());
+    }
+
+    #[tokio::test]
+    async fn a_reset_about_to_happen_is_not_mistaken_for_a_missing_one() {
+        let response = quota_exceeded_response(Some("user:u1"), Some(0), Utc::now());
+        assert_eq!(retry_after(&response), Some("1"));
+        assert!(quota_body(response).await["resetsAt"].is_string());
     }
 
     #[tokio::test]
