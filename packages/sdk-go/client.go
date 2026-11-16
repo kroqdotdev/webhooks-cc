@@ -16,6 +16,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf16"
 	"unicode/utf8"
 
 	"webhooks.cc/go/agent"
@@ -564,10 +565,7 @@ func errorText(body []byte) (string, bool) {
 // withHint adds a recovery hint to a short message: "Not found: Use
 // Endpoints.List ...", with the separators the TypeScript and Python SDKs
 // use. Unlike them, Go trims the message (as JavaScript's trim() does)
-// before it adds the hint, and errorFromResponse calls a message short
-// when it is under 30 bytes, where they count characters (UTF-16 units in
-// TypeScript, code points in Python), so a short message with non-ASCII
-// text can get no hint here and one there.
+// before it adds the hint.
 func withHint(message, separator, hint string) string {
 	message = webtext.JSTrim(message)
 	if message == "" {
@@ -595,12 +593,14 @@ func plainErrorText(status int, body []byte) string {
 
 func errorFromResponse(response *apiResponse, path string) *Error {
 	message := plainErrorText(response.status, response.body)
-	generic := len(message) < 30
+	// Short in UTF-16 units, as the TypeScript SDK counts them.
+	generic := len(utf16.Encode([]rune(message))) < 30
 	apiErr := &Error{StatusCode: response.status, Message: message}
 	var coded struct {
 		Error string `json:"error"`
 	}
-	if json.Unmarshal(response.body, &coded) == nil {
+	// Only a code (invalid_cursor), never a sentence.
+	if json.Unmarshal(response.body, &coded) == nil && bareCode.MatchString(coded.Error) {
 		apiErr.code = coded.Error
 	}
 	switch response.status {

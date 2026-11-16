@@ -367,20 +367,22 @@ function cutText(text: string, max: number): string {
 
 /**
  * The API's error code in a JSON error body, when it names one: the error
- * itself as a code (`{ "error": "invalid_cursor" }`), or a `code` beside the
- * message (`{ "error": "...", "code": "outcome_unknown" }`).
+ * itself as a code (`{ "error": "invalid_cursor" }`, wherever it sits in the
+ * object), or a `code` beside the message (`{ "error": "...", "code":
+ * "outcome_unknown" }`).
  */
 function errorCodeOf(body: string): string | undefined {
-  // Matched rather than parsed first: a body may arrive here cut short.
-  const bare = /^\{\s*"error"\s*:\s*"([a-z][a-z0-9_]*)"/.exec(body)?.[1];
-  if (bare !== undefined) return bare;
+  let parsed: unknown;
   try {
-    const parsed = JSON.parse(body) as { code?: unknown } | null;
-    const code = parsed && typeof parsed === "object" ? parsed.code : undefined;
-    return typeof code === "string" && BARE_CODE.test(code) ? code : undefined;
+    parsed = JSON.parse(body);
   } catch {
-    return undefined;
+    // A body cut short is no JSON: a leading bare code is still read.
+    return /^\{\s*"error"\s*:\s*"([a-z][a-z0-9_]*)"/.exec(body)?.[1];
   }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return undefined;
+  const { error, code } = parsed as { error?: unknown; code?: unknown };
+  if (typeof error === "string" && BARE_CODE.test(error)) return error;
+  return typeof code === "string" && BARE_CODE.test(code) ? code : undefined;
 }
 
 function statusError(

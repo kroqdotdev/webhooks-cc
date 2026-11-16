@@ -1,7 +1,7 @@
 {
   "version": 1,
   "generatedBy": "packages/sdk/src/__tests__/conformance.test.ts",
-  "description": "Error messages made from API answers. A call (GET /api/endpoints/acme) answered with status and body (exactly these characters, as UTF-8) fails with an error whose text before any hint the SDK adds is expected.message: the body's string message, else its string error (a blank one, as JavaScript's trim() sees it, gives way), cut to 1000 characters with ... after it; a message that is only a code (lower-case ASCII letters, digits and underscores, starting with a letter) becomes the status in words, alone when the code only names the status, else with the code in brackets; a body that is not a JSON object with either is kept as it came, cut to 200 characters. Characters are code points, so a cut never splits a surrogate pair. expected.hinted says whether the SDK adds its recovery hint, which only a 401 or 404 message under 30 characters (UTF-16 units) gets; the hint's wording is each SDK's own. On any status but 401, 404 and 429 (whose message is each SDK's rate-limit text) the error's message is expected.message itself. expected.code is the API's error code as the TypeScript SDK reads it: error when it is the body's first key and a code, else a code field that is a code, else null. A port lists in its test the vectors where it differs, and why.",
+  "description": "Error messages made from API answers. A call (GET /api/endpoints/acme) answered with status and body (exactly these characters, as UTF-8) fails with an error whose text before any hint the SDK adds is expected.message: the body's string message, else its string error (a blank one, as JavaScript's trim() sees it, gives way), cut to 1000 characters with ... after it; a message that is only a code (lower-case ASCII letters, digits and underscores, starting with a letter) becomes the status in words, alone when the code only names the status, else with the code in brackets; a body that is not a JSON object with either is kept as it came, cut to 200 characters. Characters are code points, so a cut never splits a surrogate pair. expected.hinted says whether the SDK adds its recovery hint, which only a 401 or 404 message under 30 characters (UTF-16 units) gets; the hint's wording is each SDK's own. On any status but 401, 404 and 429 (whose message is each SDK's rate-limit text) the error's message is expected.message itself. expected.code is the API's error code as the TypeScript SDK reads it: error when it is a code, wherever it sits in the object, else a code field that is a code, else null; a sentence is never a code. A port lists in its test the vectors where it differs, and why.",
   "vectors": [
     {
       "name": "404 not_found",
@@ -324,6 +324,16 @@
       }
     },
     {
+      "name": "429 the status words as a sentence",
+      "status": 429,
+      "body": "{\"error\":\"Too many requests\"}",
+      "expected": {
+        "message": "Too many requests",
+        "code": null,
+        "hinted": false
+      }
+    },
+    {
       "name": "503 a sentence",
       "status": 503,
       "body": "{\"error\":\"Service unavailable\"}",
@@ -359,7 +369,7 @@
       "body": "{\"message\":\"The cursor is not one this search returned\",\"error\":\"invalid_cursor\"}",
       "expected": {
         "message": "The cursor is not one this search returned",
-        "code": null,
+        "code": "invalid_cursor",
         "hinted": false
       }
     },
@@ -649,6 +659,16 @@
       "body": "{\"error\":\"éééééééééééééééééééé\"}",
       "expected": {
         "message": "éééééééééééééééééééé",
+        "code": null,
+        "hinted": true
+      }
+    },
+    {
+      "name": "404 a lone surrogate counts as one character",
+      "status": 404,
+      "body": "{\"error\":\"\\ud800\"}",
+      "expected": {
+        "message": "\ud800",
         "code": null,
         "hinted": true
       }

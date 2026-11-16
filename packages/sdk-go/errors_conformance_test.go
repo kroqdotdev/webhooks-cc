@@ -1,8 +1,10 @@
 package webhookscc
 
 import (
+	"context"
 	"errors"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
@@ -10,21 +12,16 @@ import (
 	"webhooks.cc/go/internal/webtext"
 )
 
-// Where this SDK differs from the TypeScript one on purpose, by vector name.
-var (
-	// Go counts bytes for the 30-character hint threshold, TypeScript UTF-16
-	// units, so a short message with non-ASCII text can get no hint here.
-	errorHintDiffers = map[string]string{
-		"404 20 accented letters": "20 letters are 40 bytes, over 30 here; TypeScript counts 20 UTF-16 units",
-	}
-	// Go reads a code only from "error", wherever it is in the body;
-	// TypeScript only from a leading "error" that is a code, or a "code" field.
-	errorCodeDiffers = map[string]string{
-		"502 a code field beside a sentence": "the code field is not read",
-		"429 search_busy as a code field":    "the code field is not read",
-		"400 message before invalid_cursor":  "error is read wherever it is in the body",
-	}
-)
+// Where this SDK differs from the TypeScript one, and why, by vector name.
+// Go reads a code only from "error", never from a "code" field.
+var errorCodeDiffers = map[string]string{
+	"502 a code field beside a sentence": "the code field is not read",
+	"429 search_busy as a code field":    "the code field is not read",
+}
+
+// Not compared at all: a 429's message is this SDK's own rate-limit text.
+// Go trims a message, as JavaScript's trim() does, before its hint, so a
+// hinted message starts with the trimmed text.
 
 func TestErrorsConformance(t *testing.T) {
 	var file struct {
@@ -57,37 +54,46 @@ func TestErrorsConformance(t *testing.T) {
 				t.Fatalf("message %q, want %q", plain, want.Message)
 			}
 
-			apiErr := errorFromResponse(&apiResponse{status: status, header: http.Header{}, body: body}, "/endpoints/acme")
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path != "/api/endpoints/acme" {
+					t.Errorf("path %s", r.URL.Path)
+				}
+				w.WriteHeader(status)
+				_, _ = w.Write(body)
+			}))
+			defer server.Close()
+			client, err := New(WithAPIKey("whcc_conformance"), WithBaseURL(server.URL+"/"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, err = client.Endpoints.Get(context.Background(), "acme")
+			var apiErr *Error
+			if !errors.As(err, &apiErr) {
+				t.Fatalf("error %v", err)
+			}
 			if apiErr.StatusCode != status {
 				t.Errorf("status %d", apiErr.StatusCode)
 			}
+
 			code := ""
 			if want.Code != nil {
 				code = *want.Code
 			}
-			codeAgrees := (want.Code == nil || apiErr.code == code) &&
-				errors.Is(apiErr, ErrInvalidCursor) == (status == http.StatusBadRequest && code == "invalid_cursor") &&
-				isBusySearch(apiErr) == (status == http.StatusTooManyRequests && code == "search_busy")
+			codeAgrees := apiErr.code == code &&
+				errors.Is(apiErr, ErrInvalidCursor) == (status == http.StatusBadRequest && apiErr.code == "invalid_cursor") &&
+				isBusySearch(apiErr) == (status == http.StatusTooManyRequests && apiErr.code == "search_busy")
 			// A listed difference that no longer differs fails too, so the list stays true.
 			if _, differs := errorCodeDiffers[vector.Name]; codeAgrees == differs {
-				t.Errorf("code %q agrees %v, listed as a difference %v", apiErr.code, codeAgrees, differs)
+				t.Errorf("code %q, want %q, listed as a difference %v", apiErr.code, code, differs)
 			}
 
-			// A 429's message is this SDK's own rate-limit text.
 			if status == http.StatusTooManyRequests {
 				return
 			}
 			hinted := (status == http.StatusUnauthorized || status == http.StatusNotFound) && apiErr.Message != plain
-			if _, differs := errorHintDiffers[vector.Name]; differs {
-				if hinted == want.Hinted {
-					t.Errorf("hinted %v, listed as a difference", hinted)
-				}
-				return
-			}
 			if hinted != want.Hinted {
 				t.Fatalf("hinted %v, want %v (message %q)", hinted, want.Hinted, apiErr.Message)
 			}
-			// Go trims the message, as JavaScript's trim() does, before its hint.
 			if hinted && !strings.HasPrefix(apiErr.Message, webtext.JSTrim(plain)) {
 				t.Errorf("message %q does not start with %q", apiErr.Message, plain)
 			}
@@ -96,11 +102,9 @@ func TestErrorsConformance(t *testing.T) {
 			}
 		})
 	}
-	for _, list := range []map[string]string{errorHintDiffers, errorCodeDiffers} {
-		for name := range list {
-			if !names[name] {
-				t.Errorf("no vector named %q", name)
-			}
+	for name := range errorCodeDiffers {
+		if !names[name] {
+			t.Errorf("no vector named %q", name)
 		}
 	}
 }

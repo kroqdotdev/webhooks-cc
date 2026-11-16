@@ -31,9 +31,9 @@ const RELEASE = release as { version: string | null; entries: ChangelogEntry[] }
 
 export const APP_VERSION: string = RELEASE.version ?? "dev";
 export const CLI_VERSION = "1.20.1";
-export const SDK_VERSION = "1.31.1";
-export const PYTHON_SDK_VERSION = "0.10.1";
-export const GO_SDK_VERSION = "0.10.1";
+export const SDK_VERSION = "1.31.2";
+export const PYTHON_SDK_VERSION = "0.10.2";
+export const GO_SDK_VERSION = "0.10.2";
 export const MCP_VERSION = "2.5.0";
 
 export const CHANGELOG: ChangelogEntry[] = [
@@ -2547,6 +2547,15 @@ export const CHANGELOG: ChangelogEntry[] = [
 
   // ─── SDK ────────────────────────────────────────────────────────────
   {
+    version: "1.31.2",
+    date: "2026-11-16",
+    title: "Error Codes Read Wherever They Sit",
+    track: "sdk",
+    items: [
+      'An error\'s `code` is read from the body\'s `error` wherever it sits in the JSON object, not only when it comes first, so `{ "message": "...", "error": "invalid_cursor" }` still has the code `invalid_cursor`',
+    ],
+  },
+  {
     version: "1.31.1",
     date: "2026-11-16",
     title: "Readable Errors For Bare Codes",
@@ -3043,6 +3052,16 @@ export const CHANGELOG: ChangelogEntry[] = [
 
   // ─── Python SDK ─────────────────────────────────────────────────────
   {
+    version: "0.10.2",
+    date: "2026-11-16",
+    title: "Error Codes And Hints Match The TypeScript SDK",
+    track: "python",
+    items: [
+      '`RateLimitError.code` (and the code behind `InvalidCursorError`) is only ever a code such as `search_busy`, never a sentence: a 429 answering `{"error": "Too many requests"}` has no code',
+      "A short 401 or 404 message gets its recovery hint below 30 UTF-16 units, as in the TypeScript SDK, so messages with emoji get the same hint in both",
+    ],
+  },
+  {
     version: "0.10.1",
     date: "2026-11-16",
     title: "Plain Error Messages",
@@ -3195,6 +3214,16 @@ export const CHANGELOG: ChangelogEntry[] = [
   },
 
   // ─── Go SDK ─────────────────────────────────────────────────────────
+  {
+    version: "0.10.2",
+    date: "2026-11-16",
+    title: "Error Codes And Hints Match The TypeScript SDK",
+    track: "go",
+    items: [
+      "The code behind `errors.Is(err, ErrInvalidCursor)` and a busy search is only ever a code such as `invalid_cursor`, never a sentence",
+      "A short 401 or 404 message gets its recovery hint below 30 UTF-16 units, as in the TypeScript SDK, rather than 30 bytes, so a short message with accented letters gets its hint",
+    ],
+  },
   {
     version: "0.10.1",
     date: "2026-11-16",

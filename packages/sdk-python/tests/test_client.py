@@ -2295,7 +2295,8 @@ def test_an_ordinary_rate_limit_is_not_waited_out(monkeypatch: pytest.MonkeyPatc
     client = make_client(handler)
     with pytest.raises(errors.RateLimitError) as caught:
         client.requests.search(q="x")
-    assert caught.value.code == "Too many requests"
+    # A sentence is no code: only search_busy and the like are.
+    assert caught.value.code is None
     with pytest.raises(errors.RateLimitError):
         client.requests.count(q="x")
     assert (len(calls), slept) == (2, [])
