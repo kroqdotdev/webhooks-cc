@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import type { WebhooksCC } from "@webhooks-cc/sdk";
+import { NotFoundError, type WebhooksCC } from "@webhooks-cc/sdk";
 import { registerTools, type ToolCall, type ToolResult, type ToolServer } from "../tools";
 import { sdkToolResult } from "../sdk-call";
 
@@ -33,9 +33,16 @@ describe("approvals opened by the client (URL elicitation)", () => {
   it("answers with text and no approval for a client that cannot open a link", async () => {
     const remove = vi.fn(async () => pending);
     const handlers = tools({ domains: { remove } as unknown as WebhooksCC["domains"] });
-    const result = await handlers.remove_domain({ id: "d1" }, { urlElicitation: false });
-    expect(result.approval).toBeUndefined();
-    expect(result.content[0].text).toContain(pending.url);
+    for (const call of [{ urlElicitation: false }, undefined]) {
+      const result = await handlers.remove_domain({ id: "d1" }, call);
+      expect(result.approval).toBeUndefined();
+      expect(result.content[0].text).toContain(pending.url);
+      expect(result.content[0].text).toContain("ABCD-EFGH");
+      expect(result.content[0].text).toContain(pending.summary);
+      expect(result.content[0].text).toContain(`wait_for_approval with id ${ID}`);
+      // Plain text for the SDK too: no input request.
+      expect(sdkToolResult(result)).toEqual({ content: result.content });
+    }
   });
 
   it("asks a client that can open a link to open it, then finishes on the retry", async () => {
@@ -65,20 +72,86 @@ describe("approvals opened by the client (URL elicitation)", () => {
     expect(done.approval).toBeUndefined();
   });
 
-  it("says how to go on when the person closed the link, and refuses state it did not make", async () => {
-    const wait = vi.fn();
-    const handlers = tools({ approvals: { wait } as unknown as WebhooksCC["approvals"] });
-    const closed = await handlers.remove_domain(
+  it.each(["decline", "cancel"])(
+    "hands the agent the link, code and summary when the client answers %s",
+    async (urlAnswer) => {
+      const wait = vi.fn();
+      const { wait: _unused, ...view } = pending;
+      void _unused;
+      const get = vi.fn(async () => ({ approval: view }));
+      const handlers = tools({ approvals: { wait, get } as unknown as WebhooksCC["approvals"] });
+      const closed = await handlers.create_api_key(
+        { name: "ci" },
+        { urlElicitation: true, requestState: ID, urlAnswer }
+      );
+      const text = closed.content[0].text;
+      expect(get).toHaveBeenCalledWith(ID, { timeout: 5_000 });
+      expect(text).toContain(pending.url);
+      expect(text).toContain("ABCD-EFGH");
+      expect(text).toContain(pending.summary);
+      expect(text).toContain(`wait_for_approval with id ${ID}`);
+      expect(closed.approval).toBeUndefined();
+      expect(wait).not.toHaveBeenCalled();
+    }
+  );
+
+  it("answers a declined request with what the approval already granted or why it ended", async () => {
+    const { wait: _unused, ...view } = pending;
+    void _unused;
+    const get = vi
+      .fn()
+      .mockResolvedValueOnce({
+        approval: { ...view, status: "completed" },
+        result: { key: "whcc_test", name: "ci", expiresAt: "2027-01-01T00:00:00.000Z" },
+      })
+      .mockResolvedValueOnce({ approval: { ...view, status: "denied" } })
+      .mockResolvedValueOnce({ approval: { ...view, status: "expired" } })
+      .mockRejectedValueOnce(new Error("network"))
+      .mockRejectedValueOnce(new NotFoundError("Approval not found"));
+    const handlers = tools({ approvals: { get } as unknown as WebhooksCC["approvals"] });
+    const call = { urlElicitation: true, requestState: ID, urlAnswer: "decline" };
+    expect((await handlers.create_api_key({}, call)).content[0].text).toContain("whcc_test");
+    expect((await handlers.create_api_key({}, call)).content[0].text).toContain("refused");
+    expect((await handlers.create_api_key({}, call)).content[0].text).toContain("expired");
+    // Unreadable for now: never an error, and wait_for_approval shows the link.
+    const failed = await handlers.create_api_key({}, call);
+    expect(failed.isError).toBeUndefined();
+    expect(failed.content[0].text).toContain(`wait_for_approval with id ${ID}`);
+    // Not found for this connection: asking again would loop, so it says so.
+    const missing = await handlers.create_api_key({}, call);
+    expect(missing.content[0].text).toContain("was not found");
+    expect(missing.content[0].text).not.toContain("call wait_for_approval");
+  });
+
+  it("shows the link and code when a wait times out, since the client may have shown them only to the person", async () => {
+    const { TimeoutError } = await import("@webhooks-cc/sdk");
+    const { wait: _unused, ...view } = pending;
+    void _unused;
+    const wait = vi.fn().mockRejectedValue(new TimeoutError(45_000));
+    const get = vi.fn(async () => ({ approval: view }));
+    const handlers = tools({ approvals: { wait, get } as unknown as WebhooksCC["approvals"] });
+    const retried = await handlers.remove_domain(
       { id: "d1" },
-      { urlElicitation: true, requestState: ID, urlAnswer: "decline" }
+      { urlElicitation: true, requestState: ID, urlAnswer: "accept" }
     );
-    expect(closed.content[0].text).toContain(`wait_for_approval with id ${ID}`);
+    expect(retried.content[0].text).toContain("Not answered yet.");
+    expect(retried.content[0].text).toContain(pending.url);
+    expect(retried.content[0].text).toContain("ABCD-EFGH");
+    const waited = await handlers.wait_for_approval({ id: ID, timeout: "1s" });
+    expect(waited.content[0].text).toContain(pending.url);
+  });
+
+  it("refuses state it did not make", async () => {
+    const wait = vi.fn();
+    const get = vi.fn();
+    const handlers = tools({ approvals: { wait, get } as unknown as WebhooksCC["approvals"] });
     const forged = await handlers.remove_domain(
       { id: "d1" },
-      { urlElicitation: true, requestState: "../../api/keys" }
+      { urlElicitation: true, requestState: "../../api/keys", urlAnswer: "decline" }
     );
     expect(forged.isError).toBe(true);
     expect(wait).not.toHaveBeenCalled();
+    expect(get).not.toHaveBeenCalled();
   });
 
   it("finishes approvals only for the tools that ask for them", async () => {
@@ -156,17 +229,46 @@ describe("checkout links opened by the client (URL elicitation)", () => {
     expect(waitForCheckout).toHaveBeenCalledWith(CHECKOUT, { timeout: 45_000 });
     expect(done.content[0].text).toContain("Paid: The Pro plan");
 
-    const closed = await handlers.create_checkout(
-      { kind: "plan", plan: "pro" },
-      { urlElicitation: true, requestState: CHECKOUT, urlAnswer: "decline" }
-    );
-    expect(closed.content[0].text).toContain(`wait_for_checkout with id ${CHECKOUT}`);
     const forged = await handlers.create_checkout(
       { kind: "plan", plan: "pro" },
       { urlElicitation: true, requestState: "../../api/keys" }
     );
     expect(forged.isError).toBe(true);
     expect(waitForCheckout).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(["decline", "cancel"])(
+    "hands the agent the checkout link when the client answers %s",
+    async (urlAnswer) => {
+      const getCheckout = vi.fn(async () => link);
+      const waitForCheckout = vi.fn();
+      const handlers = tools({
+        billing: { getCheckout, waitForCheckout } as unknown as WebhooksCC["billing"],
+      });
+      const closed = await handlers.create_checkout(
+        { kind: "plan", plan: "pro" },
+        { urlElicitation: true, requestState: CHECKOUT, urlAnswer }
+      );
+      const text = closed.content[0].text;
+      expect(getCheckout).toHaveBeenCalledWith(CHECKOUT);
+      expect(text).toContain(link.url);
+      expect(text).toContain(link.summary);
+      expect(text).toContain(`wait_for_checkout with id ${CHECKOUT}`);
+      expect(waitForCheckout).not.toHaveBeenCalled();
+    }
+  );
+
+  it("answers a declined checkout that is no longer open as a wait would", async () => {
+    const getCheckout = vi.fn(async () => ({ ...link, status: "paid", url: null }));
+    const waitForCheckout = vi.fn(async () => ({ ...link, status: "paid", url: null }));
+    const handlers = tools({
+      billing: { getCheckout, waitForCheckout } as unknown as WebhooksCC["billing"],
+    });
+    const closed = await handlers.create_checkout(
+      { kind: "plan", plan: "pro" },
+      { urlElicitation: true, requestState: CHECKOUT, urlAnswer: "cancel" }
+    );
+    expect(closed.content[0].text).toContain("Paid: The Pro plan");
   });
 
   it("tells the agent when the link expired, was superseded or is not paid yet", async () => {

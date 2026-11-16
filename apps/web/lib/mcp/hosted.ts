@@ -10,7 +10,7 @@ import { WebhooksCC } from "@webhooks-cc/sdk";
 import {
   defaultToolGroups,
   errorResult,
-  listedInputSchema,
+  toolInputSchema,
   parseToolGroups,
   registerTools,
   sdkToolResult,
@@ -159,7 +159,7 @@ const NOTED_TOOL = "describe";
 function toolServer(server: McpServer, account: string, note: string | null): ToolServer {
   return {
     tool(name, description, shape, handler, annotations, meta) {
-      const schema = listedInputSchema(z.object(shape));
+      const schema = toolInputSchema(z.object(shape), Object.keys(shape));
       return server.registerTool(
         name,
         {

@@ -283,16 +283,34 @@ describe("the size of the hosted tool lists", () => {
     const { WebhooksCC } = await import("@webhooks-cc/sdk");
     const { describeSection } = await import("../tools");
     const description = new WebhooksCC(SERVER).describe();
+    const { VERSION } = await import("../version");
     const overview = describeSection(description, undefined) as {
-      version: string;
+      mcpVersion: string;
+      sdkVersion: string;
       sections: Record<string, string[]>;
+      operations: string[];
     };
     expect(JSON.stringify(overview, null, 2).length).toBeLessThanOrEqual(4 * 1024);
-    expect(overview.version).toBe(description.version);
+    expect(overview).not.toHaveProperty("version");
+    expect(overview.mcpVersion).toBe(VERSION);
+    expect(overview.sdkVersion).toBe(description.version);
     expect(overview.sections.endpoints).toContain("create");
-    expect(overview.sections.usage).toEqual([]);
-    const endpoints = describeSection(description, "endpoints") as { operations: unknown };
+    // A section that is one operation is named under operations, never an empty list.
+    for (const [name, operations] of Object.entries(overview.sections)) {
+      expect(operations.length, name).toBeGreaterThan(0);
+    }
+    expect(overview.sections).not.toHaveProperty("usage");
+    expect(overview.operations).toEqual(expect.arrayContaining(["usage", "flow", "sendTo"]));
+    const usage = describeSection(description, "usage") as { operations: unknown };
+    expect(usage.operations).toEqual(description.usage);
+    const endpoints = describeSection(description, "endpoints") as {
+      operations: unknown;
+      mcpVersion: string;
+      sdkVersion: string;
+    };
     expect(endpoints.operations).toEqual(description.endpoints);
+    expect(endpoints.mcpVersion).toBe(VERSION);
+    expect(endpoints.sdkVersion).toBe(description.version);
     expect(() => describeSection(description, "nope")).toThrow(/Sections: .*endpoints/);
   });
 });

@@ -1,0 +1,9 @@
+{
+  "title": "Approval links reach agents whose client declines them",
+  "items": [
+    "The hosted MCP server answers a declined or closed approval or checkout request with the link, the code and what is asked, so the agent can show them, and a wait that ends unanswered repeats them",
+    "Tools that take an endpoint's slug take it as slug or endpointSlug, and describe reports the MCP server's version beside the SDK's",
+    "The MCP docs state the current tool counts (104 local, 101 hosted) and give change_plan, set_seats, change_addons, cancel_subscription, resume_subscription, get_agent_budget and set_agent_budget sections of their own",
+    "The changelog lists MCP 2.6.0"
+  ]
+}

@@ -12,6 +12,7 @@ import {
   MAX_CONDITION_PATH_LEN,
   MAX_RULE_NAME_LEN,
   AgentRegisterError,
+  type Approval,
   ApprovalDeniedError,
   ApprovalExpiredError,
   CheckoutExpiredError,
@@ -64,6 +65,7 @@ import {
 } from "./compact";
 import { TOOL_CATALOG, toolAnnotations, type ToolGroup } from "./catalog";
 import { appToolMeta, DASHBOARD_URL_META, dashboardRequestUrl, type DashboardOrigins } from "./app";
+import { VERSION } from "./version";
 
 const MAX_BODY_SIZE = MAX_OUTPUT;
 const HTTP_METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"] as const;
@@ -154,16 +156,26 @@ function filterConditionsSchema() {
 
 const ruleConditionSchema = conditionSchema("response");
 
-const emailFieldSchema = z.object({
-  name: z.string().describe("Letters, digits and _, starting with a letter: {{ fields.name }}"),
-  from: z
-    .enum(["subject", "text", "html", "from", "to", "header"])
-    .describe("What it reads; html is the HTML as text"),
-  header: z.string().optional().describe('The header name, for from "header"'),
-  pattern: z
-    .string()
-    .describe("RE2 regular expression; the first group is the value (no lookarounds)"),
-});
+/**
+ * A named value read from an email by a pattern. An endpoint's emailFields
+ * are read as {{ fields.name }}; a layout's fields land in its parse and are
+ * read as {{ parsed.fields.name }} (content/docs/layouts.mdx).
+ */
+function fieldSchema(placeholder: string) {
+  return z.object({
+    name: z.string().describe(`Letters, digits and _, starting with a letter: ${placeholder}`),
+    from: z
+      .enum(["subject", "text", "html", "from", "to", "header"])
+      .describe("What it reads; html is the HTML as text"),
+    header: z.string().optional().describe('The header name, for from "header"'),
+    pattern: z
+      .string()
+      .describe("RE2 regular expression; the first group is the value (no lookarounds)"),
+  });
+}
+
+const emailFieldSchema = fieldSchema("{{ fields.name }}");
+const layoutFieldSchema = fieldSchema("{{ parsed.fields.name }}");
 
 const layoutSchema = z.object({
   id: z.string().describe("Stable id: 1 to 40 letters, digits, - or _"),
@@ -176,7 +188,13 @@ const layoutSchema = z.object({
     })
     .optional()
     .describe("When it applies, e.g. the sender or subject; no conditions: every email"),
-  fields: z.array(emailFieldSchema).max(20).optional().describe("Named values, as emailFields"),
+  fields: z
+    .array(layoutFieldSchema)
+    .max(20)
+    .optional()
+    .describe(
+      "Named values found by pattern, like emailFields, but read as {{ parsed.fields.name }} (not {{ fields.name }})"
+    ),
   lineItems: z
     .object({
       from: z.enum(["text", "html", "attachment"]),
@@ -827,6 +845,12 @@ function approvalResultText(result: Record<string, unknown>): string {
   return `Approved and done: ${JSON.stringify(result)}`;
 }
 
+const APPROVAL_REFUSED =
+  "The person refused it on the approval page. Do not ask again unless they tell you to.";
+const APPROVAL_BUDGET_CHANGED =
+  "Refused: the agent budget changed while this raise waited for approval. Read it again with get_agent_budget, and ask again only if the raise is still needed.";
+const APPROVAL_EXPIRED = "The approval expired. Ask again if the person still wants it.";
+
 /** Waits for an approval's answer and says what it granted or did. */
 async function waitForApprovalText(client: WebhooksCC, id: string, ms: number): Promise<string> {
   try {
@@ -834,18 +858,67 @@ async function waitForApprovalText(client: WebhooksCC, id: string, ms: number): 
     return approvalResultText(result);
   } catch (error) {
     if (error instanceof ApprovalDeniedError) {
-      if (error.code === "budget_changed") {
-        return "Refused: the agent budget changed while this raise waited for approval. Read it again with get_agent_budget, and ask again only if the raise is still needed.";
-      }
-      return "The person refused it on the approval page. Do not ask again unless they tell you to.";
+      return error.code === "budget_changed" ? APPROVAL_BUDGET_CHANGED : APPROVAL_REFUSED;
     }
-    if (error instanceof ApprovalExpiredError) {
-      return "The approval expired. Ask again if the person still wants it.";
-    }
+    if (error instanceof ApprovalExpiredError) return APPROVAL_EXPIRED;
     if (error instanceof TimeoutError) {
-      return `Not answered yet. Remind the person of the link if needed, and call wait_for_approval with id ${id} again.`;
+      // A client that opened the link itself (URL elicitation) never showed
+      // the agent the link or the code: hand them over now, so it can remind
+      // the person.
+      return approvalLinkText(client, id, "Not answered yet.");
     }
     throw error;
+  }
+}
+
+/**
+ * Where an approval stands, read once, with its link, code and summary while
+ * the person can still answer it. For an approval whose link the agent may
+ * never have seen: a client that can open links (URL elicitation) shows them
+ * only to the person, and one that declined or closed the request showed
+ * them to nobody. Only the key or agent that asked may read an approval, and
+ * a read may collect what it granted (handed over once), so every outcome is
+ * answered here.
+ */
+async function approvalLinkText(client: WebhooksCC, id: string, lead: string): Promise<string> {
+  let read: { approval: Approval; result?: Record<string, unknown> };
+  try {
+    // Kept short: this read may collect what an approval granted (a new API
+    // key, handed over once), so it must answer while the caller still waits.
+    read = await client.approvals.get<Record<string, unknown>>(id, { timeout: 5_000 });
+  } catch (error) {
+    if (error instanceof NotFoundError) {
+      // Only the key or agent that asked can read it, and answered
+      // approvals are cleaned up a day after they expire: asking again
+      // will not find it either.
+      return `${lead} Approval ${id} was not found for this connection: it was asked for by another key or agent, or it ended and was cleaned up. Ask for the change again if it is still wanted.`;
+    }
+    return `${lead} The approval could not be read just now; call wait_for_approval with id ${id} again for its link and code.`;
+  }
+  const { approval, result } = read;
+  switch (approval.status) {
+    case "completed":
+      return result !== undefined
+        ? approvalResultText(result)
+        : "This approval was already collected; what it granted is only handed over once.";
+    case "denied":
+      return result?.code === "budget_changed" ? APPROVAL_BUDGET_CHANGED : APPROVAL_REFUSED;
+    case "expired":
+      return APPROVAL_EXPIRED;
+    case "approved":
+      // Approved and still running, or waiting to be collected by a wait.
+      return `Approved. Call wait_for_approval with id ${id} for what it granted or did.`;
+    default:
+      return [
+        lead,
+        approvalAskText({
+          id,
+          summary: approval.summary,
+          url: approval.url,
+          code: approval.code,
+          expiresAt: approval.expiresAt,
+        }),
+      ].join("\n");
   }
 }
 
@@ -855,7 +928,12 @@ async function waitForApprovalText(client: WebhooksCC, id: string, ms: number): 
  * 20 minutes after it expired (a late payment can still turn it paid);
  * `matches` null is not known yet, never a mismatch.
  */
-async function waitForCheckoutText(client: WebhooksCC, id: string, ms: number): Promise<string> {
+async function waitForCheckoutText(
+  client: WebhooksCC,
+  id: string,
+  ms: number,
+  linkOnTimeout = true
+): Promise<string> {
   try {
     const paid = await client.billing.waitForCheckout(id, { timeout: ms });
     const differs =
@@ -874,10 +952,44 @@ async function waitForCheckoutText(client: WebhooksCC, id: string, ms: number): 
       return `The checkout link expired before it was paid. If the person still wants it, make a new one with create_checkout. If they say they did pay, call wait_for_checkout with id ${id} once more first: a payment confirmed late still turns the link paid.`;
     }
     if (error instanceof TimeoutError) {
-      return `Not paid yet. Remind the person of the link if needed, and call wait_for_checkout with id ${id} again.`;
+      return linkOnTimeout
+        ? checkoutLinkText(client, id, "Not paid yet.")
+        : `Not paid yet. Call wait_for_checkout with id ${id} again.`;
     }
     throw error;
   }
+}
+
+/**
+ * A checkout link's state, read once, with the link while it can still be
+ * paid: for a link the agent may never have seen (a client that opened it
+ * itself, or declined or closed it). Any other state is answered as a wait
+ * for it would be.
+ */
+async function checkoutLinkText(client: WebhooksCC, id: string, lead: string): Promise<string> {
+  let link: Awaited<ReturnType<WebhooksCC["billing"]["getCheckout"]>>;
+  try {
+    link = await client.billing.getCheckout(id);
+  } catch (error) {
+    if (error instanceof NotFoundError) {
+      return `${lead} Checkout link ${id} was not found for this account. Make a new one with create_checkout if the person still wants to buy.`;
+    }
+    return `${lead} The checkout link could not be read just now; call wait_for_checkout with id ${id} again for the link.`;
+  }
+  if (link.status === "open" && link.url) {
+    return [
+      lead,
+      `The checkout link: ${link.summary}`,
+      `Show the person this link to pay: ${link.url}`,
+      `They open it signed in to webhooks.cc as the account's owner${link.teamId ? " (the team's owner)" : ""}, and nothing is charged until they pay on Polar's page with their own card. The link expires at ${link.expiresAt}.`,
+      `Then call wait_for_checkout with id ${id}.`,
+    ].join("\n");
+  }
+  if (link.status === "open") {
+    return `${lead} Call wait_for_checkout with id ${id} again.`;
+  }
+  // Paid, superseded or expired: a short wait says which, as it would have.
+  return waitForCheckoutText(client, id, 1_500, false);
 }
 
 /** What a paid link's order or subscription holds, in a few words. */
@@ -1747,9 +1859,19 @@ function toolTarget(
             );
           }
           if (call.urlAnswer === "decline" || call.urlAnswer === "cancel") {
-            return textContent(
-              `The person closed the checkout. The link works until it expires: if they still want it, show it to them again and call wait_for_checkout with id ${id}.`
-            );
+            // The link went only into the request the client turned down,
+            // so it reached nobody: hand it to the agent to show.
+            return withErrorHandling(
+              async () =>
+                textContent(
+                  await checkoutLinkText(
+                    client,
+                    id,
+                    "The client did not open the checkout link for the person (it declined or closed the request), so show it to them yourself."
+                  )
+                ),
+              { remote }
+            )(undefined);
           }
           return withErrorHandling(
             async () => textContent(await waitForCheckoutText(client, id, APPROVAL_RETRY_WAIT_MS)),
@@ -1765,9 +1887,20 @@ function toolTarget(
             );
           }
           if (call.urlAnswer === "decline" || call.urlAnswer === "cancel") {
-            return textContent(
-              `The person closed the approval link. It works until it expires: if they still want this, show them the link again and call wait_for_approval with id ${id}.`
-            );
+            // The link and the code went only into the request the client
+            // turned down (some decline every URL request on their own), so
+            // they reached nobody: read the approval and hand them over.
+            return withErrorHandling(
+              async () =>
+                textContent(
+                  await approvalLinkText(
+                    client,
+                    id,
+                    "The client did not open the approval link for the person (it declined or closed the request), so show it to them yourself."
+                  )
+                ),
+              { remote }
+            )(undefined);
           }
           return withErrorHandling(
             async () => textContent(await waitForApprovalText(client, id, APPROVAL_RETRY_WAIT_MS)),
@@ -1959,35 +2092,43 @@ function isOperation(value: unknown): boolean {
 }
 
 /**
- * describe's answer: without a section, the SDK version and each section's
- * operation names (a section that is one operation lists none), so the
- * whole description, tens of kilobytes, never lands in a context at once;
- * with one, that section as the SDK describes it.
+ * describe's answer: without a section, the versions (this MCP server's and
+ * the SDK's it runs, labelled), each section's operation names, and the
+ * sections that are one operation by themselves (usage, flow, ...) by name,
+ * so the whole description, tens of kilobytes, never lands in a context at
+ * once; with one, that section as the SDK describes it.
  */
 export function describeSection(
   description: ReturnType<WebhooksCC["describe"]>,
   section: string | undefined
 ): unknown {
-  const { version, ...sections } = description as unknown as Record<string, unknown>;
+  const { version: sdkVersion, ...sections } = description as unknown as Record<string, unknown>;
+  const versions = { mcpVersion: VERSION, sdkVersion };
   if (section === undefined || section.trim() === "") {
+    const groups: Record<string, string[]> = {};
+    const operations: string[] = [];
+    for (const [name, value] of Object.entries(sections)) {
+      if (value === undefined || value === null) continue;
+      if (isOperation(value)) operations.push(name);
+      else {
+        const names = Object.keys(value as Record<string, unknown>);
+        if (names.length > 0) groups[name] = names;
+      }
+    }
     return {
-      version,
-      sections: Object.fromEntries(
-        Object.entries(sections).map(([name, value]) => [
-          name,
-          isOperation(value) ? [] : Object.keys(value as Record<string, unknown>),
-        ])
-      ),
-      note: "Call describe with section for its operations' parameters and types.",
+      ...versions,
+      sections: groups,
+      ...(operations.length > 0 ? { operations } : {}),
+      note: "Call describe with section (a section, or one of operations) for its parameters and types.",
     };
   }
   const name = section.trim();
-  if (!Object.prototype.hasOwnProperty.call(sections, name)) {
+  if (!Object.prototype.hasOwnProperty.call(sections, name) || sections[name] == null) {
     throw new Error(
       `No section "${name}" in the SDK's description. Sections: ${Object.keys(sections).join(", ")}.`
     );
   }
-  return { version, section: name, operations: sections[name] };
+  return { ...versions, section: name, operations: sections[name] };
 }
 
 /**
@@ -2182,7 +2323,7 @@ export function registerTools(
 
   server.tool(
     "create_team",
-    "Create a team you own, to share endpoints with its members under a pooled quota. It does nothing until it has a subscription, which the person starts in the browser (Account > Teams); until then it is suspended.",
+    "Create a team you own, to share endpoints with its members under a pooled quota. It does nothing until it has a subscription; until then it is suspended. To start one, create_checkout with kind team_plan and its teamId makes a checkout link (2 seats or more) for the person to pay.",
     { name: z.string().trim().min(1).max(100).describe("The team's name") },
     withErrorHandling(async ({ name }) => jsonContent(await client.teams.create(name)))
   );
@@ -3189,7 +3330,7 @@ export function registerTools(
 
   server.tool(
     "change_plan",
-    `Change the plan or its interval: pro or business for the account, team or team_business with teamId. A monthly move up a tier (Pro to Business, Teams to Team Business, or a team to annual) applies at once and charges the difference now; anything else waits for the renewal. keep: true instead drops a plan change waiting for the renewal. A first plan is a checkout the person starts in the browser. ${BILLING_APPROVAL}`,
+    `Change the plan or its interval: pro or business for the account, team or team_business with teamId. A monthly move up a tier (Pro to Business, Teams to Team Business, or a team to annual) applies at once and charges the difference now; anything else waits for the renewal. keep: true instead drops a plan change waiting for the renewal. A first plan is a checkout instead: create_checkout with kind plan (or team_plan for a team) makes the link for the person to pay. ${BILLING_APPROVAL}`,
     {
       plan: z
         .enum(["pro", "business", "team", "team_business"])
@@ -4521,7 +4662,7 @@ export function registerTools(
 
   server.tool(
     "describe",
-    "Describe the SDK's operations. Without section: the SDK version and each section's operation names; with section: that section's operations, their parameters and types.",
+    "Describe the SDK's operations. Without section: this server's and the SDK's versions and each section's operation names; with section: that section's operations, their parameters and types.",
     {
       section: z
         .string()
@@ -4547,6 +4688,6 @@ export {
   type ToolGroup,
 } from "./catalog";
 
-export { listedInputSchema, sdkToolResult, toolCallFrom } from "./sdk-call";
+export { listedInputSchema, sdkToolResult, toolCallFrom, toolInputSchema } from "./sdk-call";
 export { attachSkill } from "./skills";
 export { attachInspector, INSPECTOR_URI, INSPECTOR_URI_TEMPLATE, APP_MIME_TYPE } from "./app";

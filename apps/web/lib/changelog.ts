@@ -34,7 +34,7 @@ export const CLI_VERSION = "1.20.1";
 export const SDK_VERSION = "1.31.3";
 export const PYTHON_SDK_VERSION = "0.10.2";
 export const GO_SDK_VERSION = "0.10.2";
-export const MCP_VERSION = "2.5.0";
+export const MCP_VERSION = "2.6.0";
 
 export const CHANGELOG: ChangelogEntry[] = [
   ...RELEASE.entries,
@@ -3363,6 +3363,20 @@ export const CHANGELOG: ChangelogEntry[] = [
   },
 
   // ─── MCP ────────────────────────────────────────────────────────────
+  {
+    version: "2.6.0",
+    date: "2026-11-16",
+    title: "Approval Links Reach The Agent",
+    track: "mcp",
+    items: [
+      "When a client declines or closes the request to open an approval or checkout link (some decline every one on their own), the tool answers with the link, the code and what is asked, read from the approval, so the agent can show them; before, it only said the person closed a link it had never seen",
+      "A wait for an approval or a checkout that ends unanswered says where it stands with the link and the code, since a client that opened the link itself showed them only to the person",
+      "Every tool that takes an endpoint's slug takes it as `slug` or `endpointSlug`; each tool keeps listing the name it had, and two different slugs under the two names are refused",
+      "A layout's `fields` are described as read with `{{ parsed.fields.name }}`, not `{{ fields.name }}`, which is the endpoint's own `emailFields`",
+      "`describe` answers this server's version (`mcpVersion`) beside the SDK's (`sdkVersion`), lists only sections that have operations, and names the sections that are one operation (`usage`, `flow`, `sendTo`, `buildRequest`) under `operations`",
+      "`create_team` and `change_plan` say a subscription is started with a checkout link from `create_checkout`, not in the browser",
+    ],
+  },
   {
     version: "2.5.0",
     date: "2026-11-16",

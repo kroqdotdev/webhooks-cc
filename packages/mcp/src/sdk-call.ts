@@ -96,3 +96,72 @@ export function listedInputSchema(schema: StandardSchemaWithJSON): StandardSchem
     },
   };
 }
+
+/**
+ * The two names the tools give an endpoint's slug: `slug` (the endpoint and
+ * send tools) and `endpointSlug` (the tools about its requests, emails and
+ * deliveries). Each tool keeps listing the name it always had, so clients
+ * and prompts written against it keep working, and takes the other name as
+ * well, so a call that guessed the other one is not refused.
+ */
+const SLUG_NAMES = ["slug", "endpointSlug"] as const;
+
+/** `value` with an endpoint's slug under the name the tool lists, when it came under the other. */
+function slugUnderListedName(
+  value: unknown,
+  keys: readonly string[]
+): { value: unknown } | { issue: string; path: string } {
+  const listed = SLUG_NAMES.filter((name) => keys.includes(name));
+  if (listed.length !== 1 || typeof value !== "object" || value === null || Array.isArray(value)) {
+    return { value };
+  }
+  const own = listed[0];
+  const other = own === "slug" ? "endpointSlug" : "slug";
+  const absent = (v: unknown) => v === undefined || v === null || v === "";
+  const input = value as Record<string, unknown>;
+  // A client that fills unlisted fields with null or "" has not named a
+  // second endpoint: drop it, as the schema used to.
+  if (absent(input[other])) {
+    if (input[other] === undefined) return { value };
+    const rest = { ...input };
+    delete rest[other];
+    return { value: rest };
+  }
+  // Nor has one that left its own name null or "" and named the endpoint
+  // under the other.
+  if (!absent(input[own]) && input[own] !== input[other]) {
+    return {
+      issue: `${own} and ${other} name different endpoints; pass only ${own}.`,
+      path: other,
+    };
+  }
+  const renamed = { ...input, [own]: input[other] };
+  delete renamed[other];
+  return { value: renamed };
+}
+
+/**
+ * A tool's input schema as the adapters register it: listed as JSON Schema
+ * without `$schema` (listedInputSchema), and taking an endpoint's slug under
+ * either name (SLUG_NAMES).
+ */
+export function toolInputSchema(
+  schema: StandardSchemaWithJSON,
+  keys: readonly string[]
+): StandardSchemaWithJSON {
+  const listed = listedInputSchema(schema);
+  if (!SLUG_NAMES.some((name) => keys.includes(name))) return listed;
+  const standard = listed["~standard"];
+  return {
+    "~standard": {
+      ...standard,
+      validate(value) {
+        const renamed = slugUnderListedName(value, keys);
+        if ("issue" in renamed) {
+          return { issues: [{ message: renamed.issue, path: [renamed.path] }] };
+        }
+        return standard.validate(renamed.value);
+      },
+    },
+  };
+}

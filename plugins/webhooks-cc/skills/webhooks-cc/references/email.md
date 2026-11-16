@@ -38,7 +38,9 @@ When one endpoint gets several kinds of mail, give it `layouts` (with
 its `fields`, `lineItems` (an RE2 pattern with named groups over the text, or
 a spreadsheet attachment's columns) and `parseAttachments` (CSV, TSV, XLSX,
 XLS, ODS, PDF text, text). The result is `parsed` on the email, and
-deliveries wait for it.
+deliveries wait for it. Templates read a layout's fields as
+`{{ parsed.fields.<name> }}`, not `{{ fields.<name> }}` (that is
+`emailFields`).
 
 - (Layouts group.) `preview_layouts` with draft `layouts` and a `requestId` shows what matches
   and what it finds, without saving or using pages.
