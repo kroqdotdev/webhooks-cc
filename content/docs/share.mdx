@@ -68,7 +68,7 @@ Your dev server gets each request as if it came from your own machine: `Host: lo
 | [Next.js](/share/nextjs)                   | `whk share 3000` | Nothing to add; redirect with paths rather than URLs built from `request.url`              |
 | [Vite](/share/vite) (React, Vue, Svelte)   | `whk share 5173` | Nothing to add; HMR connects through the link                                              |
 | [Nuxt](/share/nuxt)                        | `whk share 3000` | Nothing to add; `useRequestURL()` needs `xForwardedHost` on the server                     |
-| [SvelteKit](/share/sveltekit)              | `whk share 5173` | Nothing in dev; a shared production preview needs `paths.origin`                           |
+| [SvelteKit](/share/sveltekit)              | `whk share 5173` | Nothing in dev; a shared production preview needs `paths.origin` (SvelteKit 2: `csrf.trustedOrigins`) |
 | [Astro](/share/astro)                      | `whk share 4321` | Nothing to add; `security.allowedDomains` makes `Astro.url` the public address             |
 | [Angular](/share/angular)                  | `whk share 4200` | Nothing to add; SSR apps log a notice about proxy headers                                  |
 | [Express](/share/express)                  | `whk share 3000` | `app.set('trust proxy', 'loopback')` for the protocol, hostname and secure cookies         |
