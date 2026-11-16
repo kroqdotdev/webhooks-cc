@@ -110,7 +110,9 @@ describe("webhook provider pages", () => {
     const withSeo = pages.filter((page) => page.seo);
     expect(withSeo.map((page) => page.slug).sort()).toEqual([
       "adyen",
+      "bigcommerce",
       "cal",
+      "chargebee",
       "checkout-com",
       "clerk",
       "coinbase-commerce",
@@ -147,6 +149,7 @@ describe("webhook provider pages", () => {
           "2026-10-26T00:00:00.000Z",
           "2026-11-10T00:00:00.000Z",
           "2026-11-12T00:00:00.000Z",
+          "2026-11-16T00:00:00.000Z",
           `${SHARED_COPY_CHANGED}T00:00:00.000Z`,
         ],
         page.slug

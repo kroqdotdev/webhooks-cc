@@ -1,0 +1,8 @@
+{
+  "title": "Chargebee and BigCommerce webhook pages",
+  "items": [
+    "The Chargebee page lists the common webhook events, Test Gateway card numbers, the retry schedule and how to test deliveries locally",
+    "The BigCommerce page lists the common webhook scopes, how to create a hook through the API, the retry schedule and how to verify callbacks",
+    "The share docs name paths.origin for a shared SvelteKit production preview"
+  ]
+}
