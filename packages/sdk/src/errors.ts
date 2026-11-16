@@ -1,3 +1,5 @@
+import type { CheckoutExpiredReason } from "./types";
+
 /**
  * Base error class for all webhooks.cc SDK errors.
  * Extends the standard Error with an HTTP status code.
@@ -89,22 +91,25 @@ const UNSETTLED_CHECKOUT_MESSAGE =
  * still want it. `reason` is "unsettled" when it expired while Polar never
  * said it was unpaid (a payment still being confirmed a day later, or
  * Polar not answering): the person may have paid, and a payment that
- * lands still turns the link paid, so check billing first.
+ * lands still turns the link paid, so check billing first. It is
+ * "cancelled" when the asker cancelled the link before it was opened.
  */
 export class CheckoutExpiredError extends WebhooksCCError {
-  public readonly reason: "unsettled" | null;
+  public readonly reason: CheckoutExpiredReason | null;
 
   constructor(
     public readonly checkoutId: string,
     message?: string,
-    reason: "unsettled" | null = null
+    reason: CheckoutExpiredReason | null = null
   ) {
     super(
       0,
       message ??
         (reason === "unsettled"
           ? UNSETTLED_CHECKOUT_MESSAGE
-          : "The checkout link expired before it was paid. Make a new one if the person still wants it.")
+          : reason === "cancelled"
+            ? "The checkout link was cancelled before it was opened. Make a new one if the person still wants it."
+            : "The checkout link expired before it was paid. Make a new one if the person still wants it.")
     );
     this.name = "CheckoutExpiredError";
     this.reason = reason;

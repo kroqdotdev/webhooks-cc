@@ -262,6 +262,15 @@ def test_wait_for_checkout_says_an_unsettled_link_may_have_been_paid() -> None:
     assert plain.value.reason is None
 
 
+def test_wait_for_checkout_says_a_cancelled_link_was_cancelled() -> None:
+    answer = link("expired", opened=False, expiredReason="cancelled")
+    with pytest.raises(CheckoutExpiredError) as expired:
+        client_for(Api([(200, answer)])).billing.wait_for_checkout(ID)
+    assert expired.value.reason == "cancelled"
+    assert "cancelled before it was opened" in str(expired.value)
+    assert CheckoutLink.from_dict(answer["checkout"]).expired_reason == "cancelled"
+
+
 def test_cancel_checkout_expires_a_link_nobody_opened() -> None:
     api = Api([(200, link("expired"))])
     cancelled = client_for(api).billing.cancel_checkout(ID)

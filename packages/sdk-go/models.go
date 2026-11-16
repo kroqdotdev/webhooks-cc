@@ -1602,9 +1602,23 @@ type RenderedEmail struct {
 	Method string `json:"method"`
 	// Headers are the content-type and user-agent to send it with.
 	Headers map[string]string `json:"headers"`
-	Body    string            `json:"body"`
+	// Body is the body, in base64 when BodyEncoding is "base64" (Bytes
+	// decodes it).
+	Body string `json:"body"`
+	// BodyEncoding is "base64" when RenderEmailOptions asked for it, else
+	// empty (a text body).
+	BodyEncoding string `json:"bodyEncoding,omitempty"`
 	// Raw is the JSON the result was read from.
 	Raw json.RawMessage `json:"-"`
+}
+
+// Bytes returns the body to post as it is: decoded from base64 when it came
+// that way, else the text.
+func (e *RenderedEmail) Bytes() ([]byte, error) {
+	if e.BodyEncoding == "base64" {
+		return base64.StdEncoding.DecodeString(e.Body)
+	}
+	return []byte(e.Body), nil
 }
 
 // UnmarshalJSON reads a rendered email as the API returns it.
@@ -1618,11 +1632,12 @@ func (e *RenderedEmail) UnmarshalJSON(data []byte) error {
 		method = "POST"
 	}
 	*e = RenderedEmail{
-		Format:  DestinationFormat(o.str("format")),
-		Method:  method,
-		Headers: o.strMap("headers"),
-		Body:    o.str("body"),
-		Raw:     bytes.Clone(data),
+		Format:       DestinationFormat(o.str("format")),
+		Method:       method,
+		Headers:      o.strMap("headers"),
+		Body:         o.str("body"),
+		BodyEncoding: o.str("bodyEncoding"),
+		Raw:          bytes.Clone(data),
 	}
 	return nil
 }

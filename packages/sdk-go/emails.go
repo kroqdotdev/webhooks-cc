@@ -270,6 +270,12 @@ type RenderEmailOptions struct {
 	// FormatMailgun form the way Mailgun does, so your handler's check
 	// passes. Optional.
 	MailgunSigningKey string
+	// BodyEncoding "base64" asks for the body as the exact bytes in base64,
+	// so SendGrid and Mailgun forms carry binary attachments (a PDF, an
+	// image) with their real contents; RenderedEmail.Bytes decodes it.
+	// Empty gives a text body, from which those forms leave binary files
+	// out.
+	BodyEncoding string
 }
 
 // Render returns a captured email in an inbound mail provider's shape,
@@ -298,6 +304,13 @@ func (s *EmailsService) Render(ctx context.Context, id string, opts RenderEmailO
 	body := map[string]any{"format": opts.Format}
 	if opts.MailgunSigningKey != "" {
 		body["mailgunSigningKey"] = opts.MailgunSigningKey
+	}
+	switch opts.BodyEncoding {
+	case "":
+	case "base64":
+		body["bodyEncoding"] = opts.BodyEncoding
+	default:
+		return nil, fmt.Errorf("webhooks.cc: body encoding %q: use \"base64\" or leave it empty", opts.BodyEncoding)
 	}
 	var rendered RenderedEmail
 	if err := s.c.api(ctx, http.MethodPost, "/requests/"+id+"/render", nil, body, &rendered); err != nil {

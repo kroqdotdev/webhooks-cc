@@ -5,6 +5,8 @@ import {
   emailFieldIssues,
   emailHeaderList,
   extractEmailFields,
+  inboundEmailPayload,
+  inboundEmailPayloadBytes,
   parseReply,
   renderInboundEmail,
   replyText,
@@ -440,6 +442,47 @@ describe("inbound shapes", () => {
         attachment1: { filename: "order.csv", name: "order.csv", type: "text/csv" },
       });
       expect(await (form.get("attachment1") as File).text()).toBe(csv);
+    });
+
+    it("carries binary files with their real bytes in the bytes form", async () => {
+      for (const [format, name, count] of [
+        ["mailgun", "attachment-2", "attachment-count"],
+        ["sendgrid", "attachment2", "attachments"],
+      ] as const) {
+        const out = inboundEmailPayloadBytes(format, withFiles(), {
+          raw: RAW,
+          token: "t".repeat(50),
+          boundary: "bin",
+        });
+        expect(out.body).toBeInstanceOf(Uint8Array);
+        const form = await new Response(out.body as Uint8Array<ArrayBuffer>, {
+          headers: { "content-type": out.contentType },
+        }).formData();
+        expect(form.get(count), format).toBe("2");
+        const file = form.get(name) as File;
+        expect(file.name).toBe("invoice.pdf");
+        expect(file.type).toBe("application/pdf");
+        expect(new Uint8Array(await file.arrayBuffer())).toEqual(pdf);
+      }
+      const info = await new Response(
+        inboundEmailPayloadBytes("sendgrid", withFiles(), { boundary: "bin" })
+          .body as Uint8Array<ArrayBuffer>,
+        { headers: { "content-type": "multipart/form-data; boundary=bin" } }
+      ).formData();
+      expect(JSON.parse(info.get("attachment-info") as string)).toMatchObject({
+        attachment1: { filename: "order.csv" },
+        attachment2: { filename: "invoice.pdf", type: "application/pdf" },
+      });
+    });
+
+    it("gives the bytes form the text form's bytes when nothing is binary", () => {
+      const options = { raw: RAW, token: "t".repeat(50), boundary: "same", now: 1_793_000_000_000 };
+      for (const format of ["postmark", "cloudmailin", "sendgrid", "mailgun"] as const) {
+        const text = inboundEmailPayload(format, source(), options);
+        const bytes = inboundEmailPayloadBytes(format, source(), options);
+        expect(bytes.contentType).toBe(text.contentType);
+        expect(new TextDecoder().decode(bytes.body), format).toBe(text.body);
+      }
     });
 
     it("puts contents in Postmark's JSON and links in CloudMailin's", async () => {

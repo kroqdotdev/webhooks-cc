@@ -35,6 +35,7 @@ from webhooks_cc.models import (
     LineItemColumn,
     LineItemsSpec,
     ParsedSheet,
+    RenderedEmail,
     Request,
 )
 from webhooks_cc.testing import capture_during, temporary_endpoint
@@ -1242,12 +1243,20 @@ def test_emails_render_posts_the_format() -> None:
     assert calls[-1][2] == {"format": "mailgun", "mailgunSigningKey": "key-acme-test"}
     emails.render("m1", format="json", mailgun_signing_key="")
     assert calls[-1][2] == {"format": "json"}
+    emails.render("m1", format="sendgrid", body_encoding="base64")
+    assert calls[-1][2] == {"format": "sendgrid", "bodyEncoding": "base64"}
 
     with pytest.raises(ValueError, match="Unknown inbound format"):
         emails.render("m1", format="resend")  # type: ignore[arg-type]
     with pytest.raises(ValueError, match="request id"):
         emails.render("../m1", format="json")
-    assert len(calls) == 3
+    assert len(calls) == 4
+    assert rendered.content == b'{"Subject":"Hi"}'
+    binary = RenderedEmail.from_dict(
+        {"format": "sendgrid", "body": "LS1iDQr/ACU=", "bodyEncoding": "base64"}
+    )
+    assert binary.body_encoding == "base64"
+    assert binary.content == b"--b\r\n\xff\x00%"
 
 
 def test_extract_code_needs_extracts() -> None:

@@ -3057,7 +3057,7 @@ export class WebhooksCC {
      * opened that expired under 20 minutes ago, after polling for
      * `expiredGrace`, a minute by default, since a late payment can still
      * turn it paid; at once otherwise; its `reason` "unsettled" when the
-     * person may have paid), CheckoutSupersededError when its purchase was
+     * person may have paid, "cancelled" when the link was cancelled), CheckoutSupersededError when its purchase was
      * undone as a duplicate, TimeoutError when `timeout` passes first, and
      * the signal's reason when it is aborted (the poll in flight and the
      * wait between polls included). A poll that fails for now (a 5xx, a
@@ -3085,7 +3085,9 @@ export class WebhooksCC {
         new CheckoutExpiredError(
           id,
           undefined,
-          checkout?.expiredReason === "unsettled" ? "unsettled" : null
+          checkout?.expiredReason === "unsettled" || checkout?.expiredReason === "cancelled"
+            ? checkout.expiredReason
+            : null
         );
       const timedOut = () =>
         expiredAt !== null
@@ -3956,6 +3958,9 @@ export class WebhooksCC {
      * The same, rendered by webhooks.cc (what the CLI tunnels and the other
      * SDKs use): the method, headers and body to send. `format: "json"` gives
      * the `email.received` JSON, unsigned, with the endpoint's named fields.
+     * With `bodyEncoding: "base64"` the body is the exact bytes in base64,
+     * binary attachments included in SendGrid and Mailgun forms; decode it
+     * (`Buffer.from(rendered.body, "base64")`) before posting.
      */
     render: async (requestId: string, options: RenderEmailOptions): Promise<RenderedEmail> => {
       validatePathSegment(requestId, "requestId");
@@ -3965,6 +3970,7 @@ export class WebhooksCC {
       return this.request<RenderedEmail>("POST", `/requests/${requestId}/render`, {
         format: options.format,
         ...(options.mailgunSigningKey ? { mailgunSigningKey: options.mailgunSigningKey } : {}),
+        ...(options.bodyEncoding ? { bodyEncoding: options.bodyEncoding } : {}),
       });
     },
   };
@@ -4072,10 +4078,24 @@ export class WebhooksCC {
       );
     },
 
-    /** Delivered and failed in the last 24 hours, waiting now, and the log's totals. */
-    summary: async (endpointSlug: string): Promise<DeliverySummary> => {
+    /**
+     * Delivered and failed in the last 24 hours, waiting now, and the log's
+     * totals; with `destinationId`, that destination's alone, matching a log
+     * listed with the same option.
+     */
+    summary: async (
+      endpointSlug: string,
+      options: { destinationId?: string } = {}
+    ): Promise<DeliverySummary> => {
       validatePathSegment(endpointSlug, "endpointSlug");
-      return this.request<DeliverySummary>("GET", `/endpoints/${endpointSlug}/deliveries/summary`);
+      const query =
+        options.destinationId !== undefined
+          ? `?${new URLSearchParams({ destination: options.destinationId }).toString()}`
+          : "";
+      return this.request<DeliverySummary>(
+        "GET",
+        `/endpoints/${endpointSlug}/deliveries/summary${query}`
+      );
     },
 
     /** Every delivery of one captured request or email, with each try. */

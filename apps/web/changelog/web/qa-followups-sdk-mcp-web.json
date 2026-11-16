@@ -1,0 +1,9 @@
+{
+  "title": "Binary attachments in rendered forms, one destination's delivery counts",
+  "items": [
+    "Rendering a captured email (`POST /api/requests/{id}/render`) takes `\"bodyEncoding\": \"base64\"`: the body then comes as its exact bytes, and the SendGrid and Mailgun forms carry binary attachments (a PDF, an image) with their real contents. Without it the answer is as before",
+    "The delivery counts above a log filtered to one destination are that destination's, not the whole endpoint's",
+    "A team with Team Business given by staff, and an account given its plan without a subscription, read that add-ons are not offered for want of a subscription, not that they come with an upgrade; the capacity state says so as `noSubscription`",
+    "The changelog lists SDK 1.33.0, MCP 2.6.1 and the Python and Go SDKs 0.12.0"
+  ]
+}

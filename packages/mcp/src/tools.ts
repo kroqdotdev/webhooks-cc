@@ -102,6 +102,12 @@ const httpUrlSchema = z
     },
     { message: "Only http and https URLs are supported" }
   );
+// Taken from the SDK's template metadata, so a provider that stops needing a
+// secret (PayPal, which signs with its own RSA key) is named here at once.
+const SECRETLESS_TEMPLATE_PROVIDERS = TEMPLATE_PROVIDERS.filter(
+  (provider) => TEMPLATE_METADATA[provider]?.secretRequired === false
+);
+const SECRET_DESCRIPTION = `Signing secret. Required for signed provider templates; omit for secretless providers (${SECRETLESS_TEMPLATE_PROVIDERS.join(", ")}).`;
 const methodSchema = z.enum(HTTP_METHODS).default("POST").describe("HTTP method (default: POST)");
 const kindSchema = z
   .enum(["http", "email"])
@@ -2767,12 +2773,7 @@ export function registerTools(
         .describe("Optional provider template to send with signed headers"),
       template: z.string().optional().describe("Provider-specific template preset"),
       event: z.string().optional().describe("Provider event or topic name"),
-      secret: z
-        .string()
-        .optional()
-        .describe(
-          "Signing secret. Required for signed provider templates; omit for secretless providers (sendgrid, discord, plaid)."
-        ),
+      secret: z.string().optional().describe(SECRET_DESCRIPTION),
     },
     withErrorHandling(
       async ({ slug, method, headers, body, provider, template, event, secret }) => {
@@ -3003,7 +3004,7 @@ export function registerTools(
 
   server.tool(
     "render_email",
-    `A captured email in the shape an inbound mail provider posts it (postmark, sendgrid, mailgun, cloudmailin), to test the inbound handler you wrote for that provider against real mail. Returns the method, headers and body${remote ? "" : "; with targetUrl (your local handler), posts it there and returns the answer"}. A Mailgun form is signed when you pass the signing key your handler checks.`,
+    `A captured email in the shape an inbound mail provider posts it (postmark, sendgrid, mailgun, cloudmailin), to test the inbound handler you wrote for that provider against real mail. Returns the method, headers and body (SendGrid and Mailgun forms leave binary attachments out)${remote ? "" : "; with targetUrl (your local handler), posts it there with every attachment and returns the answer"}. A Mailgun form is signed when you pass the signing key your handler checks.`,
     {
       requestId: z.string().describe("The captured email's request ID"),
       format: z
@@ -3018,19 +3019,27 @@ export function registerTools(
         .describe("Post it here, e.g. http://localhost:3000/api/inbound/postmark"),
     },
     withErrorHandling(async ({ requestId, format, mailgunSigningKey, targetUrl }) => {
-      const rendered = await client.emails.render(requestId, {
-        format,
-        ...(mailgunSigningKey ? { mailgunSigningKey } : {}),
-      });
       if (!targetUrl) {
+        const rendered = await client.emails.render(requestId, {
+          format,
+          ...(mailgunSigningKey ? { mailgunSigningKey } : {}),
+        });
         return jsonContent(
           shrinkRendered(rendered as unknown as Record<string, unknown>, MAX_BODY_SIZE)
         );
       }
+      // Posted to a handler, the body is the exact bytes, so SendGrid and
+      // Mailgun forms carry binary attachments as the providers post them.
+      const rendered = await client.emails.render(requestId, {
+        format,
+        ...(mailgunSigningKey ? { mailgunSigningKey } : {}),
+        bodyEncoding: "base64",
+      });
       const response = await fetch(targetUrl, {
         method: "POST",
         headers: { "content-type": rendered.headers["content-type"] },
-        body: rendered.body,
+        body:
+          rendered.bodyEncoding === "base64" ? Buffer.from(rendered.body, "base64") : rendered.body,
         redirect: "manual",
       });
       return jsonContent({ format, ...(await summarizeResponse(response)) });
@@ -3198,12 +3207,7 @@ export function registerTools(
         .describe("Optional provider template for signing"),
       template: z.string().optional().describe("Provider-specific template preset"),
       event: z.string().optional().describe("Provider event or topic name"),
-      secret: z
-        .string()
-        .optional()
-        .describe(
-          "Signing secret. Required for signed provider templates; omit for secretless providers (sendgrid, discord, plaid)."
-        ),
+      secret: z.string().optional().describe(SECRET_DESCRIPTION),
     },
     withErrorHandling(async ({ url, method, headers, body, provider, template, event, secret }) => {
       const response = await client.sendTo(url, {
@@ -3233,12 +3237,7 @@ export function registerTools(
         .describe("Optional provider template for signing"),
       template: z.string().optional().describe("Provider-specific template preset"),
       event: z.string().optional().describe("Provider event or topic name"),
-      secret: z
-        .string()
-        .optional()
-        .describe(
-          "Signing secret. Required for signed provider templates; omit for secretless providers (sendgrid, discord, plaid)."
-        ),
+      secret: z.string().optional().describe(SECRET_DESCRIPTION),
     },
     withErrorHandling(async ({ url, method, headers, body, provider, template, event, secret }) => {
       const preview = await client.buildRequest(url, {
@@ -3970,7 +3969,7 @@ export function registerTools(
 
   server.tool(
     "list_deliveries",
-    "List forwarding deliveries: an endpoint's delivery log with its counts (endpointSlug), or every delivery and try of one captured request or email (requestId). Rows carry senderAt when the request had the sender's own timestamp, so receivedAt - senderAt is the time to reach webhooks.cc.",
+    "List forwarding deliveries: an endpoint's delivery log with its counts (endpointSlug; with destinationId, that destination's log and counts), or every delivery and try of one captured request or email (requestId). Rows carry senderAt when the request had the sender's own timestamp, so receivedAt - senderAt is the time to reach webhooks.cc.",
     {
       endpointSlug: z.string().optional().describe("List the endpoint's delivery log"),
       requestId: z.string().optional().describe("List every delivery and try of this request"),
@@ -3993,7 +3992,7 @@ export function registerTools(
       }
       if (requestId) return jsonContent(await client.forwarding.requestDeliveries(requestId));
       const [summary, deliveries] = await Promise.all([
-        client.forwarding.summary(endpointSlug!),
+        client.forwarding.summary(endpointSlug!, destinationId ? { destinationId } : {}),
         client.forwarding.deliveries(endpointSlug!, {
           limit,
           status,
@@ -4122,7 +4121,15 @@ export function registerTools(
     "list_api_keys",
     "List the account's API keys: id, name, prefix, when they were made, when they expire and when they were last used. The keys themselves are never listed.",
     {},
-    withErrorHandling(async () => jsonContent(await client.apiKeys.list()))
+    withErrorHandling(async () =>
+      jsonContent(
+        (await client.apiKeys.list()).map(
+          // The SDK keeps snake_case copies for older code; the model needs each field once.
+          // eslint-disable-next-line @typescript-eslint/no-unused-vars
+          ({ key_prefix, created_at, expires_at, last_used_at, ...key }) => key
+        )
+      )
+    )
   );
 
   server.tool(

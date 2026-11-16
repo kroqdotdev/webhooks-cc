@@ -1839,6 +1839,13 @@ export interface RenderEmailOptions {
   format: InboundEmailFormat | "json";
   /** For "mailgun": the signing key to sign `signature` with */
   mailgunSigningKey?: string;
+  /**
+   * "base64": the body comes as the exact bytes in base64, and SendGrid and
+   * Mailgun forms carry binary attachments (a PDF, an image) with their real
+   * contents. Without it the body is text, and those forms leave binary
+   * files out.
+   */
+  bodyEncoding?: "base64";
 }
 
 /** An email in an inbound provider's shape, as `emails.render()` returns it: post it to your handler. */
@@ -1847,7 +1854,10 @@ export interface RenderedEmail {
   method: "POST";
   /** Content-Type and the rest a provider would send */
   headers: Record<string, string>;
+  /** The body, in base64 when `bodyEncoding` is "base64" (decode it before posting). */
   body: string;
+  /** "base64" when it was asked for; absent for a text body. */
+  bodyEncoding?: "base64";
 }
 
 /** Options for `endpoints.previewLayouts()`. */
@@ -2192,12 +2202,13 @@ export interface CheckoutLink {
   expiresAt: string;
   paidAt: string | null;
   /**
-   * Why an expired link expired, when it may have been paid: "unsettled"
+   * Why an expired link expired: "unsettled" when it may have been paid
    * (Polar was still confirming a payment a day later, or could not be read
-   * about it). A payment that lands still turns it paid, and webhooks.cc
-   * has been alerted. Null otherwise; absent from servers released before it.
+   * about it; a payment that lands still turns it paid, and webhooks.cc has
+   * been alerted), "cancelled" when the asker cancelled it before it was
+   * opened. Null otherwise; absent from servers released before it.
    */
-  expiredReason?: "unsettled" | null;
+  expiredReason?: CheckoutExpiredReason | null;
   /** Once paid: what the order or subscription holds. */
   bought: CheckoutBought | null;
   /**
@@ -2207,6 +2218,9 @@ export interface CheckoutLink {
    */
   matches: boolean | null;
 }
+
+/** Why an expired checkout link expired (`CheckoutLink.expiredReason`). */
+export type CheckoutExpiredReason = "unsettled" | "cancelled";
 
 export interface WaitForCheckoutOptions {
   /**
@@ -2232,10 +2246,19 @@ export interface WaitForCheckoutOptions {
  * (`GET /api/billing/capacity`). Fields beyond these may appear.
  */
 export interface CapacityState {
+  /** What the counts count: requests, parsed pages or custom domains. Absent from older servers. */
+  unit?: CapacityResource;
   /** False until the add-on products are configured. */
   offered: boolean;
   /** The account has a live plan that allows add-ons. */
   eligible: boolean;
+  /**
+   * The plan allows these add-ons but is held without a subscription (a
+   * complimentary staff team, or a staff account given its plan), so there
+   * is nothing to add them to: the reason `eligible` is false, rather than
+   * the plan. Absent from older servers.
+   */
+  noSubscription?: boolean;
   /** The plan is set to end; add-ons end with it. */
   planEnding: boolean;
   periodStart: string | null;
@@ -2248,7 +2271,13 @@ export interface CapacityState {
     pastDue: boolean;
     periodEnd: string | null;
   } | null;
-  /** One-time blocks left, in the resource's units */
+  /** What the plan itself includes this period, in `unit`s. Absent from older servers. */
+  planUnits?: number;
+  /** What monthly blocks add this period, in `unit`s. Absent from older servers. */
+  blockUnits?: number;
+  /** One-time blocks left, in `unit`s. Absent from older servers. */
+  creditUnits?: number;
+  /** One-time blocks left, in the resource's units (the older name of `creditUnits`) */
   creditRequests?: number;
   /** Metered overage */
   overage?: {
@@ -2256,8 +2285,14 @@ export interface CapacityState {
     active: boolean;
     cancelAtPeriodEnd: boolean;
     pastDue: boolean;
+    /** The cap this period, in the resource's units (the older name of `maxUnits`) */
     maxRequests: number;
+    /** Used this period, in the resource's units (the older name of `usedUnits`) */
     usedRequests: number;
+    /** The cap this period, in `unit`s. Absent from older servers. */
+    maxUnits?: number;
+    /** Used this period, in `unit`s. Absent from older servers. */
+    usedUnits?: number;
   };
   [field: string]: unknown;
 }

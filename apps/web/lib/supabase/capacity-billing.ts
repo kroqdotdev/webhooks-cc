@@ -201,6 +201,13 @@ export class CapacityError extends Error {
 export interface CapacityState extends CapacityStateCore {
   /** What the counts below count: requests, parsed pages or custom domains. */
   unit: CapacityResource;
+  /**
+   * The plan allows these add-ons but is held without a Polar subscription
+   * (a complimentary staff team, or a staff account given its plan), so
+   * there is nothing to add them to and `eligible` is false. The reason to
+   * show is that, not an upgrade.
+   */
+  noSubscription: boolean;
   /** planRequests, named for any resource: what the plan itself includes. */
   planUnits: number;
   /** blockRequests: what monthly blocks add this period. */
@@ -588,14 +595,25 @@ export async function getCapacityState(
       : resource === "domains"
         ? await domainState(account, row)
         : await requestState(account, row);
-  return withUnits(core, resource);
+  const planAllows =
+    resource === "pages"
+      ? row.pages_active
+      : resource === "domains"
+        ? row.domains_active
+        : row.plan_active;
+  return withUnits(core, resource, (row.complimentary && planAllows) || row.unsubscribed[resource]);
 }
 
 /** The state with its unit and the neutral names beside the request ones. */
-function withUnits(core: CapacityStateCore, unit: CapacityResource): CapacityState {
+function withUnits(
+  core: CapacityStateCore,
+  unit: CapacityResource,
+  noSubscription: boolean
+): CapacityState {
   return {
     ...core,
     unit,
+    noSubscription,
     planUnits: core.planRequests,
     blockUnits: core.blockRequests,
     creditUnits: core.creditRequests,

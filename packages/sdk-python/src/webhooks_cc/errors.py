@@ -81,25 +81,34 @@ class CheckoutExpiredError(WebhooksCCError):
     ``reason`` is ``"unsettled"`` when it expired while Polar never said it was
     unpaid (a payment still being confirmed a day later, or Polar not answering):
     the person may have paid, a payment that lands still turns the link paid, and
-    webhooks.cc has been alerted, so check billing before making a new link."""
+    webhooks.cc has been alerted, so check billing before making a new link. It is
+    ``"cancelled"`` when the asker cancelled the link before it was opened."""
 
     def __init__(
         self,
         checkout_id: str,
         message: str | None = None,
         *,
-        reason: Literal["unsettled"] | None = None,
+        reason: Literal["unsettled", "cancelled"] | None = None,
     ) -> None:
         if message is None:
-            message = (
-                "The checkout link expired before Polar confirmed a payment for it. "
-                "If the person paid, it is still applied to the account once Polar "
-                "confirms it, and webhooks.cc has been alerted; check billing before "
-                "making a new link."
-                if reason == "unsettled"
-                else "The checkout link expired before it was paid. "
-                "Make a new one if the person still wants it."
-            )
+            if reason == "unsettled":
+                message = (
+                    "The checkout link expired before Polar confirmed a payment for it. "
+                    "If the person paid, it is still applied to the account once Polar "
+                    "confirms it, and webhooks.cc has been alerted; check billing before "
+                    "making a new link."
+                )
+            elif reason == "cancelled":
+                message = (
+                    "The checkout link was cancelled before it was opened. "
+                    "Make a new one if the person still wants it."
+                )
+            else:
+                message = (
+                    "The checkout link expired before it was paid. "
+                    "Make a new one if the person still wants it."
+                )
         super().__init__(0, message)
         self.checkout_id = checkout_id
         self.reason = reason
