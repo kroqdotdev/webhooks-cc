@@ -104,9 +104,6 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-/** Waits between tries when a 429 named no Retry-After. */
-const RATE_LIMIT_FALLBACK_WAIT_MS = 5000;
-
 /**
  * Creates an endpoint for a test. A test suite that makes one per test can
  * reach the API's limit on new endpoints (30 per account in 10 minutes by
@@ -127,8 +124,11 @@ export async function createTestEndpoint(
       return await client.endpoints.create(createOptions);
     } catch (error) {
       if (!(error instanceof RateLimitError)) throw error;
-      const waitMs =
-        error.retryAfter !== undefined ? error.retryAfter * 1000 : RATE_LIMIT_FALLBACK_WAIT_MS;
+      // The per-account limit names when to come back. A 429 without
+      // Retry-After is another limit (the site-wide cap on demo endpoints),
+      // whose own message says what happened: passed on as it is.
+      if (error.retryAfter === undefined) throw error;
+      const waitMs = error.retryAfter * 1000;
       if (Date.now() - startedAt + waitMs > budgetMs) {
         throw endpointRateLimitError(error);
       }

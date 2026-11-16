@@ -277,7 +277,12 @@ function isFooterLink(url: URL, label: string | null): boolean {
     // help.acme.com or support.acme.com itself, not a page on it that asks for something.
     return true;
   }
-  return url.pathname.split("/").some((segment) => FOOTER_WORDS.test(segment));
+  // Only the first or last segment: /privacy, /legal/terms, /pages/contact
+  // are footers; /contacts/123/contact/456 or /forms/contact/submissions/77
+  // are an app's own pages.
+  const segments = url.pathname.split("/").filter(Boolean);
+  if (segments.length === 0) return false;
+  return FOOTER_WORDS.test(segments[0]) || FOOTER_WORDS.test(segments[segments.length - 1]);
 }
 
 /**

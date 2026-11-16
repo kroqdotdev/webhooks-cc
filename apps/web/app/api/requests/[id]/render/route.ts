@@ -91,9 +91,10 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     // providers post them.
     // A storage read that fails renders the email with links instead of
     // failing the whole answer.
-    const withFiles = await withAttachmentPayloads(captured, "inline").catch(() =>
-      withAttachmentPayloads(captured, "links").catch(() => captured)
-    );
+    const withFiles = await withAttachmentPayloads(captured, "inline").catch((error) => {
+      reportError("Could not read an email's attachments for a render", error);
+      return withAttachmentPayloads(captured, "links").catch(() => captured);
+    });
     const payload = inboundEmailPayload(
       format,
       { ...withFiles, email: withFiles.email ?? captured.email },

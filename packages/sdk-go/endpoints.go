@@ -76,10 +76,6 @@ func (s *EndpointsService) Create(ctx context.Context, opts CreateEndpointOption
 // whktest.Endpoint wait out the limit on new endpoints.
 const DefaultRateLimitWait = time.Minute
 
-// rateLimitFallbackWait is the wait between tries when a 429 named no
-// Retry-After.
-const rateLimitFallbackWait = 5 * time.Second
-
 // CreateWaiting creates an endpoint like Create, waiting out the API's
 // limit on new endpoints (30 per account in 10 minutes by default) as its
 // Retry-After asks, for up to maxWait in all. When the next wait would run
@@ -95,9 +91,11 @@ func (s *EndpointsService) CreateWaiting(ctx context.Context, opts CreateEndpoin
 		if err == nil || !errors.As(err, &apiErr) || apiErr.StatusCode != http.StatusTooManyRequests {
 			return endpoint, err
 		}
+		// A 429 without Retry-After is another limit (the site-wide cap on
+		// demo endpoints), whose own message says what happened.
 		wait := apiErr.RetryAfter
 		if wait <= 0 {
-			wait = rateLimitFallbackWait
+			return nil, err
 		}
 		if time.Since(started)+wait > maxWait {
 			return nil, endpointRateLimitError(apiErr)

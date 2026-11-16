@@ -22,8 +22,6 @@ _CAPTURE_LIMIT = 100
 
 #: How long, in all, the helpers wait out the limit on new endpoints.
 DEFAULT_RATE_LIMIT_WAIT_MS = 60_000
-# The wait between tries when a 429 named no Retry-After.
-_RATE_LIMIT_FALLBACK_WAIT_MS = 5_000
 
 
 def create_test_endpoint(
@@ -49,11 +47,11 @@ def create_test_endpoint(
         try:
             return client.endpoints.create(name, **options)
         except RateLimitError as error:
-            wait_ms = (
-                error.retry_after * 1000
-                if error.retry_after is not None
-                else _RATE_LIMIT_FALLBACK_WAIT_MS
-            )
+            # A 429 without Retry-After is another limit (the site-wide cap
+            # on demo endpoints), whose own message says what happened.
+            if error.retry_after is None:
+                raise
+            wait_ms = error.retry_after * 1000
             if (time.monotonic() - started) * 1000 + wait_ms > budget_ms:
                 raise _endpoint_rate_limit_error(error) from None
             time.sleep(wait_ms / 1000)

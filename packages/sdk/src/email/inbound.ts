@@ -12,10 +12,10 @@ import type { EmailAddress, EmailJsonSource } from "./types";
  * Attachments go as each provider sends them, for the attachments whose
  * contents the source carries (`content`, base64): Postmark and CloudMailin
  * put them in their JSON, and SendGrid and Mailgun post multipart/form-data
- * with a file part per attachment, as they do for mail with attachments. A
- * body is text, so a file part whose contents are not UTF-8 text (a PDF, an
- * image) goes base64 with `Content-Transfer-Encoding: base64`; text files
- * (CSV, JSON, plain text) go as they are. Attachments with only a download
+ * with a file part per attachment, as they do for mail with attachments.
+ * The body is text, so only UTF-8 text files (CSV, JSON, plain text) go as
+ * file parts; a binary file (a PDF, an image) is left out of those two forms
+ * (see attachmentFiles). Attachments with only a download
  * link (`url`) are left out of every shape but CloudMailin's, which has a
  * field for the link. The text and HTML are those webhooks.cc kept (up to
  * 256 KB each).

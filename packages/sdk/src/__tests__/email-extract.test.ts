@@ -194,6 +194,26 @@ describe("extractFromEmail", () => {
     ]);
   });
 
+  it("keeps an app's own pages that name contact or faq inside the path", () => {
+    const found = extractFromEmail({
+      subject: null,
+      text: [
+        "View contact: https://app.hubspot.com/contacts/123/contact/456",
+        "View submission: https://app.acme.test/forms/contact/submissions/77",
+        "Edit: https://admin.acme.test/kb/faq/42/edit",
+        "https://acme.test/privacy",
+        "https://acme.test/legal/terms",
+        "https://shop.acme.test/pages/contact",
+      ].join("\n"),
+      html: null,
+    });
+    expect(found.links.map((link) => link.url)).toEqual([
+      "https://app.hubspot.com/contacts/123/contact/456",
+      "https://app.acme.test/forms/contact/submissions/77",
+      "https://admin.acme.test/kb/faq/42/edit",
+    ]);
+  });
+
   it("drops unsubscribe links even when they carry a token", () => {
     const found = extractFromEmail({
       subject: null,
