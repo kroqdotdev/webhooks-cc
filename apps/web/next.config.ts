@@ -130,6 +130,12 @@ const nextConfig: NextConfig = {
     "/blog/**": ["./assets/og/*"],
   },
   transpilePackages: ["@webhooks-cc/sdk"],
+  // Polar's SDK (from 1.1) imports its Outpost client lazily, and that client
+  // imports OpenTelemetry exporters and ioredis, optional peers we never
+  // install because we never use Outpost. Bundling follows the lazy import
+  // and fails on the missing modules; loaded by Node at runtime instead, the
+  // chunk is only read if Outpost is used.
+  serverExternalPackages: ["@polar-sh/sdk"],
   experimental: {
     // simple-icons is a huge barrel package; rewrite named imports to direct
     // per-icon paths so client bundles only carry the icons actually used.

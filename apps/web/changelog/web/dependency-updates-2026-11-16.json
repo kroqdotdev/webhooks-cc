@@ -1,0 +1,7 @@
+{
+  "title": "Dependency updates",
+  "items": [
+    "Updated the Polar, Anthropic, PostHog, nodemailer, re2js and lucide-react libraries",
+    "The attachment parser reads spreadsheets and PDFs with newer calamine, lopdf, cfb and zip releases, and opens a few XLSX files it used to call malformed"
+  ]
+}
