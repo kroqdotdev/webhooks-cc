@@ -21,40 +21,70 @@ const MALFORMED: Failure = Failure::malformed("the file is not a readable XLSX w
 /// pages of thirty columns is three million cells.
 pub(crate) const MAX_CELLS_VISITED: u64 = 5_000_000;
 
-/// The archive bytes calamine may read, as a multiple of the file's size
-/// plus a margin: a workbook reads each part once (and the directory a few
-/// times), so honest files stay far below it, while sheets that make
-/// calamine inflate one large part again and again run out of it, however
-/// they name the part. The parse then stops, marked truncated, as for any
-/// budget.
-const READ_BUDGET_FACTOR: u64 = 3;
-const READ_BUDGET_MARGIN: u64 = 1 << 20;
+/// What calamine may inflate past the entries' declared sizes: a workbook
+/// opens each part once (and the zip crate never inflates past a declared
+/// size), so honest files stay far below it, while sheets that make calamine
+/// reopen one part again and again run out of it, however they name the part
+/// and however well it compresses. The parse then stops, marked truncated.
+const REREAD_MARGIN: u64 = 1 << 20;
 
-/// The input as calamine reads it, counting the bytes read; past the budget
-/// every read fails, and `exceeded` says why.
+/// The input as calamine reads it. The zip crate opens an entry by seeking to
+/// the start of its data; each such seek is charged the entry's declared
+/// (inflated) size, and past the budget the seek fails and `exceeded` says
+/// why. So the total inflated is bounded by the declared total plus a margin.
 struct Metered<'a> {
     inner: Cursor<&'a [u8]>,
-    read: u64,
+    /// Declared inflated size by data start, for every entry.
+    sizes: std::collections::HashMap<u64, u64>,
+    charged: u64,
     budget: u64,
     exceeded: std::rc::Rc<std::cell::Cell<bool>>,
 }
 
+impl<'a> Metered<'a> {
+    fn new(input: &'a [u8], exceeded: std::rc::Rc<std::cell::Cell<bool>>) -> Self {
+        let mut sizes = std::collections::HashMap::new();
+        let mut total: u64 = 0;
+        if let Ok(mut archive) = zip::ZipArchive::new(Cursor::new(input)) {
+            for i in 0..archive.len() {
+                if let Ok(entry) = archive.by_index_raw(i)
+                    && let Some(start) = entry.data_start()
+                {
+                    sizes.insert(start, entry.size());
+                    total = total.saturating_add(entry.size());
+                }
+            }
+        }
+        Self {
+            inner: Cursor::new(input),
+            sizes,
+            charged: 0,
+            budget: total.saturating_add(REREAD_MARGIN),
+            exceeded,
+        }
+    }
+}
+
 impl std::io::Read for Metered<'_> {
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
-        if self.read >= self.budget {
-            self.exceeded.set(true);
-            return Err(std::io::Error::other("read budget spent"));
+        if self.exceeded.get() {
+            return Err(std::io::Error::other("reread budget spent"));
         }
-        let room = usize::try_from(self.budget - self.read).unwrap_or(usize::MAX);
-        let take = buf.len().min(room);
-        let n = std::io::Read::read(&mut self.inner, &mut buf[..take])?;
-        self.read += n as u64;
-        Ok(n)
+        std::io::Read::read(&mut self.inner, buf)
     }
 }
 
 impl std::io::Seek for Metered<'_> {
     fn seek(&mut self, pos: std::io::SeekFrom) -> std::io::Result<u64> {
+        if let std::io::SeekFrom::Start(at) = pos
+            && let Some(size) = self.sizes.get(&at)
+        {
+            self.charged = self.charged.saturating_add(*size);
+            if self.charged > self.budget {
+                self.exceeded.set(true);
+                return Err(std::io::Error::other("reread budget spent"));
+            }
+        }
         self.inner.seek(pos)
     }
 }
@@ -62,14 +92,7 @@ impl std::io::Seek for Metered<'_> {
 pub(crate) fn parse(input: &[u8], max_pages: u64) -> Result<(Vec<Sheet>, u64, bool), Failure> {
     zipguard::check(input)?;
     let exceeded = std::rc::Rc::new(std::cell::Cell::new(false));
-    let metered = Metered {
-        inner: Cursor::new(input),
-        read: 0,
-        budget: (input.len() as u64)
-            .saturating_mul(READ_BUDGET_FACTOR)
-            .saturating_add(READ_BUDGET_MARGIN),
-        exceeded: exceeded.clone(),
-    };
+    let metered = Metered::new(input, exceeded.clone());
     let mut book: Xlsx<_> = match Xlsx::new(metered) {
         Ok(book) => book,
         Err(XlsxError::Password) => {
@@ -183,10 +206,15 @@ pub(crate) fn parse(input: &[u8], max_pages: u64) -> Result<(Vec<Sheet>, u64, bo
             break;
         }
     }
-    sheets.finish().ok_or(Failure::new(
-        ErrorCode::Empty,
-        "the workbook has no cells with values",
-    ))
+    sheets.finish().ok_or(if exceeded.get() {
+        // Stopped by the reread budget before any cell: a crafted workbook.
+        Failure::new(
+            ErrorCode::TooLarge,
+            "the workbook reads the same parts over and over; parsing stopped",
+        )
+    } else {
+        Failure::new(ErrorCode::Empty, "the workbook has no cells with values")
+    })
 }
 
 /// Which part each sheet names, by sheet name, from the workbook and its
@@ -515,6 +543,65 @@ mod tests {
             !sheets.is_empty(),
             "what was read before the budget ran out stays"
         );
+    }
+
+    #[test]
+    fn a_tiny_part_that_inflates_far_cannot_be_reread_many_times() {
+        use crate::testutil::zip_entries;
+        // 1 MB of whitespace deflates to a few KB, under the zip guard's
+        // ratio floor; 200 sheets name it in letter cases the name guard does
+        // not merge. Only the inflated-bytes budget stops the rereads.
+        let sheet = format!(
+            r#"<?xml version="1.0" encoding="UTF-8"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData><row r="1"><c r="A1"><v>1</v></c></row>{}</sheetData></worksheet>"#,
+            " ".repeat(1_000_000)
+        );
+        let mut workbook = String::from(
+            r#"<?xml version="1.0" encoding="UTF-8"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets>"#,
+        );
+        let mut rels = String::from(
+            r#"<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">"#,
+        );
+        for i in 1..=200u32 {
+            workbook.push_str(&format!(
+                r#"<sheet name="S{i}" sheetId="{i}" r:id="rId{i}"/>"#
+            ));
+            let name: String = "onesheet"
+                .chars()
+                .enumerate()
+                .map(|(k, ch)| {
+                    if (i >> k) & 1 == 1 {
+                        ch.to_ascii_uppercase()
+                    } else {
+                        ch
+                    }
+                })
+                .collect();
+            rels.push_str(&format!(r#"<Relationship Id="rId{i}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/{name}.xml"/>"#));
+        }
+        workbook.push_str("</sheets></workbook>");
+        rels.push_str("</Relationships>");
+        let types = r#"<?xml version="1.0" encoding="UTF-8"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/></Types>"#;
+        let root = r#"<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>"#;
+        let input = zip_entries(
+            &[
+                ("[Content_Types].xml", types.as_bytes()),
+                ("_rels/.rels", root.as_bytes()),
+                ("xl/workbook.xml", workbook.as_bytes()),
+                ("xl/_rels/workbook.xml.rels", rels.as_bytes()),
+                ("xl/worksheets/onesheet.xml", sheet.as_bytes()),
+            ],
+            false,
+        );
+        assert!(
+            input.len() < 200_000,
+            "the file is small: {} bytes",
+            input.len()
+        );
+        let started = std::time::Instant::now();
+        let (sheets, _, truncated) = parse(&input, 100).unwrap();
+        assert!(truncated);
+        assert!(sheets.len() <= 2, "read {} times", sheets.len());
+        assert!(started.elapsed() < std::time::Duration::from_secs(5));
     }
 
     #[test]
