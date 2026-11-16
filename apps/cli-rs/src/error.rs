@@ -365,6 +365,27 @@ pub fn is_broken_pipe(error: &anyhow::Error) -> bool {
         })
 }
 
+/// Whether stdout's reader has gone (a pipe whose other end closed), so a
+/// broken pipe in a command's error came from stdout and not from a note on
+/// stderr or a socket. Where it cannot be told, assumes it has.
+pub fn stdout_closed() -> bool {
+    #[cfg(unix)]
+    {
+        let mut fd = libc::pollfd {
+            fd: libc::STDOUT_FILENO,
+            events: libc::POLLOUT,
+            revents: 0,
+        };
+        // SAFETY: one valid pollfd, no wait.
+        let ready = unsafe { libc::poll(&mut fd, 1, 0) };
+        ready > 0 && fd.revents & (libc::POLLERR | libc::POLLHUP) != 0
+    }
+    #[cfg(not(unix))]
+    {
+        true
+    }
+}
+
 /// Whether a panic's message is `println!` (or `print!`) failing
 /// because the pipe it wrote to was closed. Rust ignores SIGPIPE, so a
 /// closed pipe comes back as an error, and the print macros panic on it.

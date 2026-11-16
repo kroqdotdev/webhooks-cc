@@ -17,8 +17,9 @@ pub fn confirm(question: &str, yes: bool) -> Result<()> {
     }
     decide(question, interactive(), || {
         // The question goes to stderr, so stdout stays clean for --json.
-        eprint!("  {question} [y/N] ");
-        io::stderr().flush()?;
+        let mut err = io::stderr();
+        let _ = write!(err, "  {question} [y/N] ");
+        let _ = err.flush();
         let mut input = String::new();
         io::stdin().lock().read_line(&mut input)?;
         Ok(input)

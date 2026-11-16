@@ -52,7 +52,11 @@ async fn main() -> ExitCode {
         Ok(()) => ExitCode::SUCCESS,
         // A write to a pipe whose reader has gone, through `write!` rather
         // than `println!`: the same quiet exit.
-        Err(error) if whk::error::is_broken_pipe(&error) => ExitCode::SUCCESS,
+        // Only when stdout itself is the closed pipe: a broken stderr must not
+        // turn a failure into a success.
+        Err(error) if whk::error::is_broken_pipe(&error) && whk::error::stdout_closed() => {
+            ExitCode::SUCCESS
+        }
         Err(error) => {
             let c = classify(&error);
             // Written without panicking: a closed stderr must not change
