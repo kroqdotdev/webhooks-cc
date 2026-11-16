@@ -44,6 +44,11 @@ const SHUTDOWN_GRACE: Duration = Duration::from_secs(30);
 const REFUSAL_LOG_EVERY: Duration = Duration::from_secs(60);
 /// How long a reverse-DNS answer is reused for later connections.
 const REVERSE_DNS_CACHE_FOR: Duration = Duration::from_secs(600);
+/// How long a lookup that did not finish is remembered: long enough that a
+/// sender behind a slow reverse zone does not wait the full lookup budget
+/// (and take a lookup slot) on every connection, short enough that the next
+/// minute asks again.
+const REVERSE_DNS_TEMPERROR_FOR: Duration = Duration::from_secs(60);
 /// Most entries kept in each of the per-client caches.
 const CACHE_CAP: usize = 50_000;
 
@@ -330,7 +335,14 @@ impl Server {
         let cache = self.reverse_dns.lock().unwrap_or_else(|e| e.into_inner());
         cache
             .get(&ip)
-            .filter(|(_, at)| at.elapsed() < REVERSE_DNS_CACHE_FOR)
+            .filter(|(found, at)| {
+                let keep = if found.temporary_error {
+                    REVERSE_DNS_TEMPERROR_FOR
+                } else {
+                    REVERSE_DNS_CACHE_FOR
+                };
+                at.elapsed() < keep
+            })
             .map(|(found, _)| found.clone())
     }
 
@@ -350,12 +362,9 @@ impl Server {
         receiver
     }
 
-    /// A lookup that did not finish is not remembered: the next connection
-    /// asks again.
+    /// A lookup that did not finish is remembered only briefly
+    /// (REVERSE_DNS_TEMPERROR_FOR), so a later minute asks again.
     fn remember_reverse_dns(&self, ip: IpAddr, found: &ReverseDns) {
-        if found.temporary_error {
-            return;
-        }
         let now = Instant::now();
         let mut cache = self.reverse_dns.lock().unwrap_or_else(|e| e.into_inner());
         cache.insert(ip, (found.clone(), now), |_, (_, at)| {

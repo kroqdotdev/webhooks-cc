@@ -488,14 +488,14 @@ impl LiveRelay {
         let started = Instant::now();
         let busy = || {
             metrics::live("receiver_busy");
-            let mut response = (StatusCode::SERVICE_UNAVAILABLE, "retry").into_response();
+            let mut response = failed(BUSY);
             response.headers_mut().insert(
                 "retry-after",
                 HeaderValue::from_static(BUSY_RETRY_AFTER_SECS),
             );
             (
                 response,
-                Ok(stand_in(503, "busy", started)),
+                Ok(stand_in(503, "busy", BUSY, started)),
                 Reach::NotTried,
             )
         };
@@ -525,8 +525,13 @@ impl LiveRelay {
         ) else {
             metrics::live("bad_path");
             return (
-                (StatusCode::BAD_REQUEST, "bad path").into_response(),
-                Ok(stand_in(400, "refused", started)),
+                (
+                    StatusCode::BAD_REQUEST,
+                    [(axum::http::header::CONTENT_TYPE, "application/json")],
+                    reason_body(BAD_PATH),
+                )
+                    .into_response(),
+                Ok(stand_in(400, "refused", BAD_PATH, started)),
                 Reach::NotTried,
             );
         };
@@ -580,14 +585,14 @@ impl LiveRelay {
                 // no head at all is the edge gone, a timeout included.
                 return if timed_out {
                     (
-                        failed("The live tunnel did not answer in time."),
-                        Ok(stand_in(503, "timeout", started)),
+                        failed(NO_ANSWER),
+                        Ok(stand_in(503, "timeout", NO_ANSWER, started)),
                         Reach::Down,
                     )
                 } else {
                     (
                         failed(UNREACHABLE),
-                        Ok(stand_in(503, "unreachable", started)),
+                        Ok(stand_in(503, "unreachable", UNREACHABLE, started)),
                         Reach::Down,
                     )
                 };
@@ -604,7 +609,7 @@ impl LiveRelay {
             tracing::error!("live relay: the edge refused the relay (check EDGE_SECRET)");
             return (
                 failed(UNREACHABLE),
-                Ok(stand_in(503, "unreachable", started)),
+                Ok(stand_in(503, "unreachable", UNREACHABLE, started)),
                 Reach::Down,
             );
         }
@@ -653,7 +658,7 @@ impl LiveRelay {
             Ok(response) => (response, Err(rx), reach),
             Err(_) => (
                 failed(UNREACHABLE),
-                Ok(stand_in(503, "unreachable", started)),
+                Ok(stand_in(503, "unreachable", UNREACHABLE, started)),
                 reach,
             ),
         }
@@ -1083,23 +1088,40 @@ fn outcome_of(value: Option<&HeaderValue>) -> &'static str {
 }
 
 const UNREACHABLE: &str = "The live tunnel could not be reached.";
+const NO_ANSWER: &str = "The live tunnel did not answer in time.";
+const BUSY: &str = "webhooks.cc is busy relaying to this live tunnel; try again in a few seconds.";
+const BAD_PATH: &str = "The request path cannot be relayed to the live tunnel.";
 
 /// What the receiver answers in the app's place when the edge cannot: a 503
 /// with the reason, as the edge's own answers are.
+/// The answer when the relay task itself failed: the tunnel could not be
+/// reached, as far as the sender can tell.
+pub(crate) fn relay_failed_response() -> Response {
+    failed(UNREACHABLE)
+}
+
+/// The JSON body every answer that stands in for the app carries.
+fn reason_body(reason: &str) -> String {
+    serde_json::json!({ "error": reason }).to_string()
+}
+
 fn failed(reason: &str) -> Response {
     (
         StatusCode::SERVICE_UNAVAILABLE,
-        axum::Json(serde_json::json!({ "error": reason })),
+        [(axum::http::header::CONTENT_TYPE, "application/json")],
+        reason_body(reason),
     )
         .into_response()
 }
 
-fn stand_in(status: u16, outcome: &'static str, started: Instant) -> LiveRecord {
+/// The record of an answer that stood in for the app, with the same body
+/// the sender got, so the stored request shows what was answered.
+fn stand_in(status: u16, outcome: &'static str, reason: &str, started: Instant) -> LiveRecord {
     LiveRecord {
         status,
         ms: elapsed_ms(started),
         outcome,
-        ..recorded_body(b"")
+        ..recorded_body(reason_body(reason).as_bytes())
     }
 }
 
@@ -1113,6 +1135,18 @@ mod tests {
     use axum::Router;
     use axum::extract::Request;
     use axum::routing::any;
+
+    #[tokio::test]
+    async fn a_stand_in_records_the_body_the_sender_got() {
+        let record = stand_in(503, "busy", BUSY, Instant::now());
+        let sent = axum::body::to_bytes(failed(BUSY).into_body(), 4096)
+            .await
+            .unwrap();
+        assert_eq!(record.body.as_bytes(), &sent[..]);
+        let parsed: serde_json::Value = serde_json::from_slice(&sent).unwrap();
+        assert_eq!(parsed["error"], BUSY);
+        assert_eq!(record.body_encoding, "utf8");
+    }
 
     #[test]
     fn the_path_after_the_slug_keeps_its_encoding() {

@@ -1057,8 +1057,9 @@ async fn handle_webhook_inner(
                             Ok(None) => {}
                             Err(e) => {
                                 tracing::error!(error = %e, "live relay task failed");
-                                return (StatusCode::BAD_GATEWAY, "live tunnel unreachable")
-                                    .into_response();
+                                // A 503 with the reason, as every live stand-in:
+                                // Cloudflare replaces a 502 with its own page.
+                                return crate::handlers::live::relay_failed_response();
                             }
                         }
                     }

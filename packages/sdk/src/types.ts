@@ -261,10 +261,10 @@ export interface LiveResponse {
   ms: number | null;
   /**
    * "answered" when the app answered; otherwise what the sender got instead:
-   * "offline" (502, whk tunnel --live not connected), "timeout" (504),
-   * "unreachable" (502, nothing on the local port), "busy" (503) or
-   * "refused": the app's answer was not passed back as it was. 400 when
-   * the path left the endpoint; 502 when the answer was refused (a
+   * a 503 with the reason as JSON: "offline" (whk tunnel --live not
+   * connected), "timeout", "unreachable" (nothing on the local port), "busy"
+   * or "refused": the app's answer was not passed back as it was. 400 when
+   * the path left the endpoint; 503 when the answer was refused (a
    * download, a script or another type an API does not answer with, or a
    * stated size over 1 MB); or the app's own status when the answer
    * streamed past 1 MB and was cut off, so the sender got a broken stream.
