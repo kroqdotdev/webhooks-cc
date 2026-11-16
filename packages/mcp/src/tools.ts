@@ -884,7 +884,13 @@ async function approvalLinkText(client: WebhooksCC, id: string, lead: string): P
   let read: { approval: Approval; result?: Record<string, unknown> };
   try {
     read = await client.approvals.get<Record<string, unknown>>(id);
-  } catch {
+  } catch (error) {
+    if (error instanceof NotFoundError) {
+      // Only the key or agent that asked can read it, and answered
+      // approvals are cleaned up a day after they expire: asking again
+      // will not find it either.
+      return `${lead} Approval ${id} was not found for this connection: it was asked for by another key or agent, or it ended and was cleaned up. Ask for the change again if it is still wanted.`;
+    }
     return `${lead} The approval could not be read just now; call wait_for_approval with id ${id} again for its link and code.`;
   }
   const { approval, result } = read;

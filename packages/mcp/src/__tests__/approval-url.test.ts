@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import type { WebhooksCC } from "@webhooks-cc/sdk";
+import { NotFoundError, type WebhooksCC } from "@webhooks-cc/sdk";
 import { registerTools, type ToolCall, type ToolResult, type ToolServer } from "../tools";
 import { sdkToolResult } from "../sdk-call";
 
@@ -106,7 +106,8 @@ describe("approvals opened by the client (URL elicitation)", () => {
       })
       .mockResolvedValueOnce({ approval: { ...view, status: "denied" } })
       .mockResolvedValueOnce({ approval: { ...view, status: "expired" } })
-      .mockRejectedValueOnce(new Error("network"));
+      .mockRejectedValueOnce(new Error("network"))
+      .mockRejectedValueOnce(new NotFoundError("Approval not found"));
     const handlers = tools({ approvals: { get } as unknown as WebhooksCC["approvals"] });
     const call = { urlElicitation: true, requestState: ID, urlAnswer: "decline" };
     expect((await handlers.create_api_key({}, call)).content[0].text).toContain("whcc_test");
@@ -116,6 +117,10 @@ describe("approvals opened by the client (URL elicitation)", () => {
     const failed = await handlers.create_api_key({}, call);
     expect(failed.isError).toBeUndefined();
     expect(failed.content[0].text).toContain(`wait_for_approval with id ${ID}`);
+    // Not found for this connection: asking again would loop, so it says so.
+    const missing = await handlers.create_api_key({}, call);
+    expect(missing.content[0].text).toContain("was not found");
+    expect(missing.content[0].text).not.toContain("call wait_for_approval");
   });
 
   it("shows the link and code when a wait times out, since the client may have shown them only to the person", async () => {

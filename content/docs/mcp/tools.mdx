@@ -920,6 +920,10 @@ Ask for proposals from 1 to 5 of an endpoint's emails. The emails go to Anthropi
 
 ## Utilities
 
+### enable_tools
+
+Local server only. Loads more tool groups into the session: the server lists its core tools by default, and `enable_tools` takes `groups`, an array of group names (`forwarding`, `layouts`, `extras`, `teams`, `account`, `domains`, `sheets`, `names`, or `"all"`). Its description lists the groups and which are loaded; it goes away once every group is. The hosted server takes groups from its address instead (see [tool groups](/docs/mcp#tool-groups)).
+
 ### get_usage
 
 Your plan's request usage, remaining quota, and period end; `parsedPages`, `previewData` and `aiAssists`, each with when it resets (null where it is not offered); and a `teams` array with the pooled quota of every subscribed team you belong to. No parameters.

@@ -6,6 +6,7 @@ import type { WebhooksCC } from "@webhooks-cc/sdk";
 import { asToolServer } from "../local-tools";
 import { registerSandboxTools } from "../sandbox-tools";
 import { registerTools, type RegisterToolsOptions } from "../tools";
+import { ENABLE_TOOLS } from "../catalog";
 
 // The docs, the README and the pages that compare us state how many tools
 // the servers have, and /docs/mcp/tools documents each one. The tools are
@@ -85,13 +86,23 @@ describe("the tool reference", () => {
   );
 
   it("has a section of its own for every tool, sandbox tools included", () => {
-    const all = new Set([...tools(), ...toolNames((server) => registerSandboxTools(server, {}))]);
+    // enable_tools is the local server's own (local-tools.ts), outside registerTools.
+    const all = new Set([
+      ...tools(),
+      ...toolNames((server) => registerSandboxTools(server, {})),
+      ENABLE_TOOLS,
+    ]);
     const missing = [...all].filter((name) => !sections.has(name));
     expect(missing).toEqual([]);
   });
 
   it("documents no tool the servers do not have", () => {
-    const all = new Set([...tools(), ...toolNames((server) => registerSandboxTools(server, {}))]);
+    // enable_tools is the local server's own (local-tools.ts), outside registerTools.
+    const all = new Set([
+      ...tools(),
+      ...toolNames((server) => registerSandboxTools(server, {})),
+      ENABLE_TOOLS,
+    ]);
     expect([...sections].filter((name) => !all.has(name))).toEqual([]);
   });
 });

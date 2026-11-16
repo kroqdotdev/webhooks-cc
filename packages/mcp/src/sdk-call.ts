@@ -118,7 +118,14 @@ function slugUnderListedName(
   const own = listed[0];
   const other = own === "slug" ? "endpointSlug" : "slug";
   const input = value as Record<string, unknown>;
-  if (input[other] === undefined) return { value };
+  // A client that fills unlisted fields with null or "" has not named a
+  // second endpoint: drop it, as the schema used to.
+  if (input[other] === undefined || input[other] === null || input[other] === "") {
+    if (input[other] === undefined) return { value };
+    const rest = { ...input };
+    delete rest[other];
+    return { value: rest };
+  }
   if (input[own] !== undefined && input[own] !== input[other]) {
     return {
       issue: `${own} and ${other} name different endpoints; pass only ${own}.`,
