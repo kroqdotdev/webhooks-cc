@@ -234,7 +234,14 @@ begin
   select count(*) into lost_paid
     from public.ops_snapshot_paid p
    where p.taken_at = snapshot_at
-     and not exists (select 1 from public.ops_paid_now() n where n.account = p.account);
+     and not exists (select 1 from public.ops_paid_now() n where n.account = p.account)
+     -- An account made staff or internal since the snapshot left the count,
+     -- it did not stop paying.
+     and not exists (select 1 from public.ops_excluded_users() x
+                      where p.account = 'u:' || x.user_id::text)
+     and not exists (select 1 from public.teams t
+                       join public.ops_excluded_users() x on x.user_id = t.created_by
+                      where p.account = 't:' || t.id::text);
 
   return next;
 end;
@@ -242,3 +249,5 @@ $$;
 
 revoke all on function public.ops_last_24h() from public, anon, authenticated;
 grant execute on function public.ops_last_24h() to service_role;
+
+notify pgrst, 'reload schema';
