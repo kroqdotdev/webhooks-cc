@@ -798,7 +798,7 @@ const PROVIDER_SEO: Partial<Record<string, ProviderSeo>> = {
       {
         question: "Can I test Clerk webhooks without a public server?",
         answer:
-          "Yes. Point the Clerk endpoint at a webhooks.cc URL to see each user.created or session.created payload as it arrives, and run whk tunnel <port> to forward the deliveries to your app on localhost.",
+          "Yes. Point the Clerk endpoint at a webhooks.cc URL to see each user.created or session.created payload as it arrives, and run whk tunnel <port> --endpoint <slug> to forward the deliveries to your app on localhost.",
       },
     ],
   },
@@ -1213,7 +1213,7 @@ const PROVIDER_SEO: Partial<Record<string, ProviderSeo>> = {
       {
         question: "How do I test Square webhooks on localhost?",
         answer:
-          "Create a free webhooks.cc endpoint, paste its URL into Square Developer Dashboard -> Webhooks -> Subscriptions, and click Send Test Event or run whk tunnel <port> to forward live sandbox deliveries to your local server.",
+          "Create a free webhooks.cc endpoint, paste its URL into Square Developer Dashboard -> Webhooks -> Subscriptions, and click Send Test Event or run whk tunnel <port> --endpoint <slug> to forward live sandbox deliveries to your local server.",
       },
     ],
   },
@@ -1342,7 +1342,7 @@ const PROVIDER_SEO: Partial<Record<string, ProviderSeo>> = {
         ["store/product/created", "A product is created"],
         ["store/product/updated", "A product is edited"],
         ["store/product/deleted", "A product is deleted"],
-        ["store/product/inventory/updated", "A product's inventory is set to a new level"],
+        ["store/product/inventory/updated", "Inventory levels change for a base product"],
         ["store/cart/created", "A cart is created"],
         ["store/cart/updated", "A cart's line items change"],
         ["store/cart/abandoned", "A cart has had no changes for at least an hour"],
@@ -1367,17 +1367,17 @@ const PROVIDER_SEO: Partial<Record<string, ProviderSeo>> = {
       {
         question: "How do I test BigCommerce webhooks?",
         answer:
-          "Create a free webhooks.cc endpoint and use its URL as the destination when you create the hook, then make the change the scope watches, such as placing an order on the store. Each callback appears on the endpoint with its headers and payload, so you can see the scope, the hash and the ids in data before writing a handler. To run your own code on it, run whk tunnel <port> and every callback is forwarded to localhost as well.",
+          "Create a free webhooks.cc endpoint and use its URL as the destination when you create the hook, then make the change the scope watches, such as placing an order on the store. Each callback appears on the endpoint with its headers and payload, so you can see the scope, the hash and the ids in data before writing a handler. To run your own code on it, run whk tunnel <port> --endpoint <slug> with that endpoint's slug and every callback is forwarded to localhost as well.",
       },
       {
         question: "How do I verify a BigCommerce webhook?",
         answer:
-          "BigCommerce documents signature checks with the Standard Webhooks libraries, verified with your app's client secret, which use the webhook-id, webhook-timestamp and webhook-signature headers; the timestamp guards against replays. You can also pass a headers object when creating the hook, and BigCommerce sends those headers with every callback, for example as a shared secret your handler checks.",
+          "BigCommerce documents signature checks with the Standard Webhooks libraries, verified with your app's client secret (base64-encoded first, as BigCommerce's samples do), which use the webhook-id, webhook-timestamp and webhook-signature headers; the timestamp guards against replays. You can also pass a headers object when creating the hook, and BigCommerce sends those headers with every callback, for example as a shared secret your handler checks.",
       },
       {
         question: "What is the BigCommerce webhook retry schedule?",
         answer:
-          "A 2xx response counts as success; no response or a timeout counts as a failure. Failed callbacks are retried after 60, 180, 300, 600, 900, 1800, 3600, 7200, 21600, 50400 and 86400 seconds. After the last retry, 48 hours after the first attempt, the hook is deactivated and an email goes to the address registered for the app; set is_active back to true to turn it on again. Separately, a destination whose success rate falls below 90% within two minutes is blocklisted for three minutes, and a hook with no activity for 90 days is deactivated.",
+          "A 2xx response counts as success; no response or a timeout counts as a failure. Failed callbacks are retried after 60, 180, 300, 600, 900, 1800, 3600, 7200, 21600, 50400 and 86400 seconds. After the last retry, 48 hours after the first attempt, the hook is deactivated and an email goes to the address registered for the app; set is_active back to true to turn it on again. Separately, once at least 100 callbacks go out within two minutes, a destination domain whose success rate falls below 90% is blocklisted for that app for three minutes, and a hook with no activity for 90 days is deactivated.",
       },
       {
         question: "Why does the BigCommerce payload only contain an id?",
@@ -1426,7 +1426,7 @@ const PROVIDER_SEO: Partial<Record<string, ProviderSeo>> = {
       {
         heading: "Chargebee Test Gateway cards",
         intro:
-          "The Chargebee Test Gateway is available on your test site only. Use any valid future expiry date and any 3 or 4 digit CVV. Each test charge fires the same webhooks a live one does.",
+          "The Chargebee Test Gateway is available on your test site only. Use any valid future expiry date and any 3 or 4 digit CVV.",
         columns: ["Card", "Number"],
         codeColumn: 1,
         rows: [
@@ -1447,7 +1447,7 @@ const PROVIDER_SEO: Partial<Record<string, ProviderSeo>> = {
       {
         question: "How do I test Chargebee webhooks locally?",
         answer:
-          "Create a free webhooks.cc endpoint and add its URL as a webhook on your Chargebee test site (Settings, Configure Chargebee, API Keys and Webhooks, Webhooks tab). Click Test Webhook on the webhook's card and pick an event, or make a test purchase with a Test Gateway card, and the delivery appears on the endpoint with its headers and body. To reach code on your machine, run whk tunnel <port> and every delivery is forwarded to localhost as well as kept on the endpoint.",
+          "Create a free webhooks.cc endpoint and add its URL as a webhook on your Chargebee test site (Settings, Configure Chargebee, API Keys and Webhooks, Webhooks tab). Click Test Webhook on the webhook's card and pick an event, or make a test purchase with a Test Gateway card, and the delivery appears on the endpoint with its headers and body. To reach code on your machine, run whk tunnel <port> --endpoint <slug> with that endpoint's slug and every delivery is forwarded to localhost as well as kept on the endpoint.",
       },
       {
         question: "Does Chargebee sign its webhooks?",
