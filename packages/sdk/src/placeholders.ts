@@ -44,9 +44,13 @@ export type TemplatePart =
  * - `text` as they are;
  * - `json` for a JSON body: strings escaped for a JSON string (the template
  *   supplies the quotes), other values as JSON;
- * - `html` HTML-escaped.
+ * - `html` HTML-escaped;
+ * - `header` for an HTTP header value, which carries printable ASCII only:
+ *   every other character (a line break, a tab, `é`) is percent-encoded as
+ *   its UTF-8 bytes (`%C3%A9`), and `truncate` ends with `...` rather than
+ *   `…`. Only filled-in values are changed; the template's own text is not.
  */
-export type TemplateMode = "text" | "json" | "html";
+export type TemplateMode = "text" | "json" | "html" | "header";
 
 export interface RenderOptions {
   mode?: TemplateMode;
@@ -270,10 +274,32 @@ interface Filled {
   raw: boolean;
 }
 
-function truncate(text: string, max: number): string {
+/**
+ * At most `max` characters. The cut ends with `…`, or in a header value with
+ * `...` (when `max` leaves room for it).
+ */
+function truncate(text: string, max: number, mode: TemplateMode): string {
   const chars = Array.from(text);
   if (chars.length <= max) return text;
-  return `${chars.slice(0, max - 1).join("")}…`;
+  if (mode !== "header") return `${chars.slice(0, max - 1).join("")}…`;
+  if (max <= 3) return chars.slice(0, max).join("");
+  return `${chars.slice(0, max - 3).join("")}...`;
+}
+
+/** Percent-encodes, as UTF-8, every character a header value cannot carry. */
+function headerSafe(text: string): string {
+  let out = "";
+  for (const ch of text) {
+    const code = ch.codePointAt(0)!;
+    if (code >= 0x20 && code <= 0x7e) {
+      out += ch;
+      continue;
+    }
+    for (const byte of encoder.encode(ch)) {
+      out += `%${byte.toString(16).toUpperCase().padStart(2, "0")}`;
+    }
+  }
+  return out;
 }
 
 function lookup(context: Context, keys: readonly string[]): unknown {
@@ -286,7 +312,7 @@ function lookup(context: Context, keys: readonly string[]): unknown {
   return walkPath(context, adjusted);
 }
 
-function fill(placeholder: Placeholder, context: Context): Filled {
+function fill(placeholder: Placeholder, context: Context, mode: TemplateMode): Filled {
   let value = lookup(context, placeholder.keys);
   let raw = false;
   for (const filter of placeholder.filters) {
@@ -306,7 +332,7 @@ function fill(placeholder: Placeholder, context: Context): Filled {
         value = valueToText(value).toUpperCase();
         break;
       case "truncate":
-        value = truncate(valueToText(value), filter.arg);
+        value = truncate(valueToText(value), filter.arg, mode);
         break;
     }
   }
@@ -329,6 +355,7 @@ function jsonEscape(text: string): string {
 /** How a filled-in value is written in each mode. */
 function write(filled: Filled, mode: TemplateMode): string {
   const { value, raw } = filled;
+  if (mode === "header") return headerSafe(raw ? (value as string) : valueToText(value));
   if (raw) return mode === "html" ? htmlEscape(value as string) : (value as string);
   if (mode === "json") {
     if (value === undefined) return "";
@@ -400,7 +427,7 @@ function renderParts(
   for (const part of parts) {
     if (part.type === "text") out.push(part.text);
     else if (!known(part.placeholder, context)) out.push(part.source);
-    else out.push(write(fill(part.placeholder, context), mode));
+    else out.push(write(fill(part.placeholder, context, mode), mode));
     if (out.full) break;
   }
   return out.text;
@@ -457,7 +484,7 @@ export function renderJsonTemplate(
       if (parts.length === 1 && parts[0].type === "placeholder") {
         const { placeholder, source } = parts[0];
         if (!known(placeholder, ctx)) return source;
-        const filled = fill(placeholder, ctx);
+        const filled = fill(placeholder, ctx, "text");
         const value = filled.value === undefined ? null : filled.value;
         spend(value);
         return value;
@@ -466,7 +493,7 @@ export function renderJsonTemplate(
       for (const part of parts) {
         if (part.type === "text") out.push(part.text);
         else if (!known(part.placeholder, ctx)) out.push(part.source);
-        else out.push(write(fill(part.placeholder, ctx), "text"));
+        else out.push(write(fill(part.placeholder, ctx, "text"), "text"));
         if (out.full) throw new TemplateTooLargeError(maxBytes);
       }
       spend(out.text);

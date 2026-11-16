@@ -31,7 +31,7 @@ const RELEASE = release as { version: string | null; entries: ChangelogEntry[] }
 
 export const APP_VERSION: string = RELEASE.version ?? "dev";
 export const CLI_VERSION = "1.20.1";
-export const SDK_VERSION = "1.31.2";
+export const SDK_VERSION = "1.31.3";
 export const PYTHON_SDK_VERSION = "0.10.2";
 export const GO_SDK_VERSION = "0.10.2";
 export const MCP_VERSION = "2.5.0";
@@ -2546,6 +2546,15 @@ export const CHANGELOG: ChangelogEntry[] = [
   },
 
   // ─── SDK ────────────────────────────────────────────────────────────
+  {
+    version: "1.31.3",
+    date: "2026-11-16",
+    title: "Header-Safe Placeholders",
+    track: "sdk",
+    items: [
+      '`renderTemplate()` takes the mode `"header"` for an HTTP header value: what a placeholder fills in is percent-encoded as UTF-8 wherever a header cannot carry it (a line break, a tab, `\u00e9` becomes `%C3%A9`), and `| truncate` ends with `...` instead of `\u2026`, as the receiver now fills in mock response headers',
+    ],
+  },
   {
     version: "1.31.2",
     date: "2026-11-16",

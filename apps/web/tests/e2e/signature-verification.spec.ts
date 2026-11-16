@@ -363,6 +363,10 @@ test("invalid signature shows mismatch details", async ({ page }) => {
   await expect(
     page.locator("text=Signature Mismatch").or(page.locator("text=Signature Invalid")).first()
   ).toBeVisible({ timeout: 5000 });
+  await expect(page.locator("text=received-signature").first()).toBeVisible();
+  // Rows stored before the receiver stopped writing it still carry the
+  // computed signature; the dashboard never shows it.
+  await expect(page.locator("text=expected-signature")).toHaveCount(0);
 });
 
 // ── Verification Badges ──

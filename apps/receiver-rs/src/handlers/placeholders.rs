@@ -46,6 +46,10 @@ pub(crate) enum Mode {
     Json,
     /// HTML-escaped.
     Html,
+    /// An HTTP header value, which carries printable ASCII only: every other
+    /// character is percent-encoded as its UTF-8 bytes, and `truncate` ends
+    /// with `...` rather than `…`. The template's own text is not changed.
+    Header,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -323,12 +327,39 @@ struct Filled {
     raw: bool,
 }
 
-fn truncate(text: &str, max: usize) -> String {
+/// At most `max` characters. The cut ends with `…`, or in a header value
+/// with `...` (when `max` leaves room for it).
+fn truncate(text: &str, max: usize, mode: Mode) -> String {
     if text.chars().count() <= max {
         return text.to_string();
     }
-    let mut out: String = text.chars().take(max - 1).collect();
-    out.push('…');
+    if mode != Mode::Header {
+        let mut out: String = text.chars().take(max - 1).collect();
+        out.push('…');
+        return out;
+    }
+    if max <= 3 {
+        return text.chars().take(max).collect();
+    }
+    let mut out: String = text.chars().take(max - 3).collect();
+    out.push_str("...");
+    out
+}
+
+/// Percent-encodes, as UTF-8, every character a header value cannot carry.
+fn header_safe(text: &str) -> String {
+    use std::fmt::Write as _;
+    let mut out = String::with_capacity(text.len());
+    for ch in text.chars() {
+        if (' '..='~').contains(&ch) {
+            out.push(ch);
+            continue;
+        }
+        let mut buf = [0u8; 4];
+        for byte in ch.encode_utf8(&mut buf).bytes() {
+            let _ = write!(out, "%{byte:02X}");
+        }
+    }
     out
 }
 
@@ -339,7 +370,7 @@ fn text_of(value: &Option<Value>) -> String {
         .unwrap_or_default()
 }
 
-fn fill(placeholder: &Placeholder, request: &TemplateRequest<'_>) -> Filled {
+fn fill(placeholder: &Placeholder, request: &TemplateRequest<'_>, mode: Mode) -> Filled {
     let mut value = lookup(request, &placeholder.keys);
     let mut raw = false;
     for filter in &placeholder.filters {
@@ -358,7 +389,7 @@ fn fill(placeholder: &Placeholder, request: &TemplateRequest<'_>) -> Filled {
             }
             Filter::Lower => Some(Value::String(text_of(&value).to_lowercase())),
             Filter::Upper => Some(Value::String(text_of(&value).to_uppercase())),
-            Filter::Truncate(max) => Some(Value::String(truncate(&text_of(&value), *max))),
+            Filter::Truncate(max) => Some(Value::String(truncate(&text_of(&value), *max, mode))),
         };
     }
     Filled { value, raw }
@@ -382,10 +413,10 @@ fn html_escape(text: &str) -> String {
 fn write(filled: &Filled, mode: Mode) -> String {
     if filled.raw {
         let text = text_of(&filled.value);
-        return if mode == Mode::Html {
-            html_escape(&text)
-        } else {
-            text
+        return match mode {
+            Mode::Html => html_escape(&text),
+            Mode::Header => header_safe(&text),
+            Mode::Text | Mode::Json => text,
         };
     }
     match mode {
@@ -399,6 +430,7 @@ fn write(filled: &Filled, mode: Mode) -> String {
         },
         Mode::Text => text_of(&filled.value),
         Mode::Html => html_escape(&text_of(&filled.value)),
+        Mode::Header => header_safe(&text_of(&filled.value)),
     }
 }
 
@@ -454,7 +486,7 @@ pub(crate) fn render(
             Part::Text(text) => out.push(text),
             Part::Placeholder(placeholder, written) => {
                 if ROOTS.contains(&placeholder.keys[0].as_str()) {
-                    out.push(&write(&fill(&placeholder, request), mode));
+                    out.push(&write(&fill(&placeholder, request, mode), mode));
                 } else {
                     out.push(written);
                 }
@@ -545,6 +577,7 @@ mod tests {
         match name {
             "json" => Mode::Json,
             "html" => Mode::Html,
+            "header" => Mode::Header,
             _ => Mode::Text,
         }
     }

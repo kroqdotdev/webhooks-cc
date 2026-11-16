@@ -58,13 +58,50 @@ describe("previewResponse", () => {
     });
   });
 
-  it("drops a header over 8192 bytes in UTF-8, as the receiver does", () => {
+  it("fills in header values as ASCII, as the receiver does", () => {
     const preview = previewResponse(
       {
         mockResponse: {
           status: 200,
           body: "",
-          headers: { "x-fits": "\u00e9".repeat(4096), "x-long": "\u00e9".repeat(4097) },
+          headers: { "x-type": "{{ json.type | truncate: 8 }}", "x-path": "{{ path }}" },
+        },
+        responseRules: null,
+      },
+      { ...request, body: '{"type":"invoice.paid \u00e9t\u00e9"}' },
+      endpoint,
+      generated
+    );
+    // The header's own text stays ASCII here: the receiver answers a plain 200
+    // when a header's own text is not, which the preview does not model.
+    expect(preview.response?.headers).toEqual({ "x-type": "invoi...", "x-path": "/billing" });
+  });
+
+  it("answers a plain 200 when a header's own text is not ASCII, as the receiver does", () => {
+    const preview = previewResponse(
+      {
+        mockResponse: {
+          status: 201,
+          body: "made",
+          headers: { "x-path": "{{ path }}\u00e9" },
+          delay: 20,
+        },
+        responseRules: null,
+      },
+      request,
+      endpoint,
+      generated
+    );
+    expect(preview.response).toEqual({ status: 200, headers: {}, body: "OK", delay: 20 });
+  });
+
+  it("drops a header over 8192 bytes, as the receiver does", () => {
+    const preview = previewResponse(
+      {
+        mockResponse: {
+          status: 200,
+          body: "",
+          headers: { "x-fits": "a".repeat(8192), "x-long": "a".repeat(8193) },
         },
         responseRules: null,
       },

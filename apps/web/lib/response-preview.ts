@@ -32,6 +32,8 @@ export interface ResponsePreview {
 /** The largest body placeholders may produce (as in the receiver). */
 const MAX_FILLED_BODY_BYTES = 1024 * 1024;
 const MAX_HEADER_VALUE_BYTES = 8192;
+const HEADER_NAME = /^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/;
+const HEADER_VALUE = /^[\t\x20-\x7e]*$/;
 
 const encoder = new TextEncoder();
 
@@ -48,12 +50,28 @@ function fill(
   for (const [name, value] of Object.entries(mock.headers ?? {})) {
     const filled = renderTemplate(value, context, {
       ...generated,
-      mode: "text",
+      mode: "header",
       maxBytes: MAX_HEADER_VALUE_BYTES + 1,
     });
-    // The receiver drops headers that end up too long (in UTF-8 bytes) or hold a line break.
+    // The receiver drops headers that end up too long (in UTF-8 bytes) or hold a line break
+    // (header mode encodes one a placeholder fills in, so only the template's own text can).
     if (utf8Bytes(filled) > MAX_HEADER_VALUE_BYTES || /[\r\n]/.test(filled)) continue;
     headers[name] = filled;
+  }
+  // A kept header the receiver cannot send (a name that is not a token, or a
+  // value with anything but tab and printable ASCII, which only the header's
+  // own text can hold) makes it answer a plain 200 "OK" instead of the mock,
+  // after the same delay.
+  const sendable = Object.entries(headers).every(
+    ([name, value]) => HEADER_NAME.test(name) && HEADER_VALUE.test(value)
+  );
+  if (!sendable) {
+    return {
+      status: 200,
+      headers: {},
+      body: "OK",
+      delay: Math.min(Math.max(mock.delay ?? 0, 0), 30_000),
+    };
   }
   return {
     status: mock.status,

@@ -1,5 +1,6 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { grantActive, VIEW_SESSION_MINUTES } from "@/lib/support/shared";
+import { redactSignatureError } from "@/lib/signature-error";
 
 /**
  * Read-only views of an account for support, opened from a ticket the user
@@ -224,7 +225,10 @@ export async function viewRequest(staffId: string, session: ViewSession, request
     signature:
       row.signature_verified === null
         ? null
-        : { verified: row.signature_verified, error: row.signature_error },
+        : {
+            verified: row.signature_verified,
+            error: redactSignatureError(row.signature_error),
+          },
     email: emailValue
       ? {
           subject: emailValue.subject ?? null,

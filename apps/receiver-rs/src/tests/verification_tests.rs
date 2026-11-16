@@ -771,11 +771,32 @@ fn stripe_multiple_v1_signatures() {
 
 #[test]
 fn signature_error_serializes_to_json() {
-    let err = SignatureError::mismatch("expected_abc", "received_xyz");
+    let err = SignatureError::mismatch("received_xyz");
     let json = serde_json::to_string(&err).unwrap();
     assert!(json.contains("\"code\":\"mismatch\""));
-    assert!(json.contains("\"expected\":\"expected_abc\""));
     assert!(json.contains("\"received\":\"received_xyz\""));
+    assert!(!json.contains("expected"));
+}
+
+/// A mismatch never stores the signature the endpoint's secret makes for the
+/// body: whoever can send to the endpoint and read its captures would get a
+/// signing oracle for the stored provider secret.
+#[test]
+fn mismatch_never_carries_the_computed_signature() {
+    let secret = "whsec_oracle_test";
+    let body = br#"{"id":"evt_1"}"#;
+    let computed = make_hmac_sha256(secret, std::str::from_utf8(body).unwrap());
+    let h = headers(&[("x-hub-signature-256", "sha256=00ff")]);
+    match verify_github(secret.as_bytes(), &h, body) {
+        VerificationResult::Invalid(err) => {
+            let json = serde_json::to_string(&err).unwrap();
+            assert!(!json.contains(&computed[..16]), "{json}");
+            assert!(!json.contains("expected"), "{json}");
+            assert_eq!(err.code, "mismatch");
+            assert!(err.message.is_some());
+        }
+        other => panic!("expected Invalid(mismatch), got {other:?}"),
+    }
 }
 
 // ── Tier-1 providers ──

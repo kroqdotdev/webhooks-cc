@@ -583,6 +583,56 @@ const PLACEHOLDER_VECTORS: PlaceholderVector[] = [
     "<p>say &quot;hi&quot;\t&lt;b&gt;&amp;&lt;/b&gt;</p>",
     "html"
   ),
+  p(
+    "header mode truncate ends with dots",
+    "order",
+    "{{ body | truncate: 10 }}",
+    '{"type"...',
+    "header"
+  ),
+  p(
+    "header mode truncate too short for dots",
+    "order",
+    "{{ json.type | truncate: 3 }}",
+    "ord",
+    "header"
+  ),
+  p("header mode truncate shorter text", "order", "{{ method | truncate: 10 }}", "POST", "header"),
+  p(
+    "header mode encodes what a header cannot carry",
+    "text",
+    "v={{ body }}",
+    "v=line one%0Aline two caf%C3%A9",
+    "header"
+  ),
+  p(
+    "header mode truncate counts characters before encoding",
+    "text",
+    "{{ body | truncate: 21 }}",
+    "line one%0Aline two ...",
+    "header"
+  ),
+  p(
+    "header mode encodes a tab and keeps quotes",
+    "order",
+    "{{ headers.x-note }}",
+    'say "hi"%09<b>&</b>',
+    "header"
+  ),
+  p(
+    "header mode json filter",
+    "text",
+    "{{ body | json }}",
+    '"line one\\nline two caf%C3%A9"',
+    "header"
+  ),
+  p(
+    "header mode leaves template text alone",
+    "order",
+    "caf\u00e9 {{ method }}",
+    "caf\u00e9 POST",
+    "header"
+  ),
   p("generated values", "order", "{{ uuid }} {{ now }}", `${UUID} ${NOW}`),
   p("one uuid per render", "order", "{{ uuid }}={{ uuid }}", `${UUID}=${UUID}`),
   p(

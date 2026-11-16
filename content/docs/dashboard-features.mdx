@@ -238,7 +238,7 @@ For automatic verification on every request, configure a signing secret in endpo
 
 **Verification badges** appear in the request list: a shield icon shows verified (cyan) or invalid (red) at a glance. The summary bar also shows a clickable badge that jumps to the Signature tab.
 
-When server-side verification is configured, the Signature tab shows the stored result with detailed error info for failures, including expected vs. received signatures, timestamp analysis, and provider-specific debugging tips.
+When server-side verification is configured, the Signature tab shows the stored result with detailed error info for failures, including the signature received (never the one expected, which would let anyone who reads the request sign with your secret), timestamp analysis, and provider-specific debugging tips.
 
 <Callout type="tip">
   Start with the client-side Signature tab for quick debugging. If you find yourself pasting the
