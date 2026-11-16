@@ -21,9 +21,56 @@ const MALFORMED: Failure = Failure::malformed("the file is not a readable XLSX w
 /// pages of thirty columns is three million cells.
 pub(crate) const MAX_CELLS_VISITED: u64 = 5_000_000;
 
+/// The archive bytes calamine may read, as a multiple of the file's size
+/// plus a margin: a workbook reads each part once (and the directory a few
+/// times), so honest files stay far below it, while sheets that make
+/// calamine inflate one large part again and again run out of it, however
+/// they name the part. The parse then stops, marked truncated, as for any
+/// budget.
+const READ_BUDGET_FACTOR: u64 = 3;
+const READ_BUDGET_MARGIN: u64 = 1 << 20;
+
+/// The input as calamine reads it, counting the bytes read; past the budget
+/// every read fails, and `exceeded` says why.
+struct Metered<'a> {
+    inner: Cursor<&'a [u8]>,
+    read: u64,
+    budget: u64,
+    exceeded: std::rc::Rc<std::cell::Cell<bool>>,
+}
+
+impl std::io::Read for Metered<'_> {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        if self.read >= self.budget {
+            self.exceeded.set(true);
+            return Err(std::io::Error::other("read budget spent"));
+        }
+        let room = usize::try_from(self.budget - self.read).unwrap_or(usize::MAX);
+        let take = buf.len().min(room);
+        let n = std::io::Read::read(&mut self.inner, &mut buf[..take])?;
+        self.read += n as u64;
+        Ok(n)
+    }
+}
+
+impl std::io::Seek for Metered<'_> {
+    fn seek(&mut self, pos: std::io::SeekFrom) -> std::io::Result<u64> {
+        self.inner.seek(pos)
+    }
+}
+
 pub(crate) fn parse(input: &[u8], max_pages: u64) -> Result<(Vec<Sheet>, u64, bool), Failure> {
     zipguard::check(input)?;
-    let mut book: Xlsx<_> = match Xlsx::new(Cursor::new(input)) {
+    let exceeded = std::rc::Rc::new(std::cell::Cell::new(false));
+    let metered = Metered {
+        inner: Cursor::new(input),
+        read: 0,
+        budget: (input.len() as u64)
+            .saturating_mul(READ_BUDGET_FACTOR)
+            .saturating_add(READ_BUDGET_MARGIN),
+        exceeded: exceeded.clone(),
+    };
+    let mut book: Xlsx<_> = match Xlsx::new(metered) {
         Ok(book) => book,
         Err(XlsxError::Password) => {
             return Err(Failure::new(
@@ -61,6 +108,12 @@ pub(crate) fn parse(input: &[u8], max_pages: u64) -> Result<(Vec<Sheet>, u64, bo
             // A part that turns out not to be a worksheet (a chart or a
             // dialog sheet listed as one) has no cells to give.
             Err(XlsxError::NotAWorksheet(_)) => continue,
+            // The read budget, spent by sheets that read the same data again:
+            // what was read stays, marked truncated.
+            Err(_) if exceeded.get() => {
+                sheets.give_up();
+                break;
+            }
             Err(_) => return Err(MALFORMED),
         };
         if sheets.start_sheet(Some(name)) == Flow::Stop {
@@ -72,6 +125,13 @@ pub(crate) fn parse(input: &[u8], max_pages: u64) -> Result<(Vec<Sheet>, u64, bo
             let cell = match reader.next_cell() {
                 Ok(Some(cell)) => cell,
                 Ok(None) => break,
+                Err(_) if exceeded.get() => {
+                    if row_index.is_some() {
+                        sheets.push_row(std::mem::take(&mut row));
+                    }
+                    sheets.give_up();
+                    break;
+                }
                 Err(_) => return Err(MALFORMED),
             };
             visited += 1;
@@ -391,6 +451,70 @@ mod tests {
             ],
             false,
         )
+    }
+
+    #[test]
+    fn rereading_one_part_runs_out_of_the_read_budget() {
+        use crate::testutil::zip_entries;
+        // One part of ~300 KB of hard-to-compress text, named by 40 sheets in
+        // letter cases the name guard does not merge (calamine finds parts
+        // case-insensitively): only the read budget stops the rereads.
+        let mut seed: u64 = 0x2545_f491_4f6c_dd1d;
+        let filler: String = (0..300_000)
+            .map(|_| {
+                seed ^= seed << 13;
+                seed ^= seed >> 7;
+                seed ^= seed << 17;
+                char::from(b'a' + (seed % 26) as u8)
+            })
+            .collect();
+        let sheet = format!(
+            r#"<?xml version="1.0" encoding="UTF-8"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData><row r="1"><c r="A1" t="inlineStr"><is><t>{filler}</t></is></c></row></sheetData></worksheet>"#
+        );
+        let mut workbook = String::from(
+            r#"<?xml version="1.0" encoding="UTF-8"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets>"#,
+        );
+        let mut rels = String::from(
+            r#"<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">"#,
+        );
+        for i in 1..=40 {
+            workbook.push_str(&format!(
+                r#"<sheet name="S{i}" sheetId="{i}" r:id="rId{i}"/>"#
+            ));
+            let name: String = "onesheet"
+                .chars()
+                .enumerate()
+                .map(|(k, ch)| {
+                    if (i >> k) & 1 == 1 {
+                        ch.to_ascii_uppercase()
+                    } else {
+                        ch
+                    }
+                })
+                .collect();
+            rels.push_str(&format!(r#"<Relationship Id="rId{i}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/{name}.xml"/>"#));
+        }
+        workbook.push_str("</sheets></workbook>");
+        rels.push_str("</Relationships>");
+        let types = r#"<?xml version="1.0" encoding="UTF-8"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/></Types>"#;
+        let root = r#"<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>"#;
+        let input = zip_entries(
+            &[
+                ("[Content_Types].xml", types.as_bytes()),
+                ("_rels/.rels", root.as_bytes()),
+                ("xl/workbook.xml", workbook.as_bytes()),
+                ("xl/_rels/workbook.xml.rels", rels.as_bytes()),
+                ("xl/worksheets/onesheet.xml", sheet.as_bytes()),
+            ],
+            false,
+        );
+        let (sheets, _, truncated) = parse(&input, 100).unwrap();
+        assert!(truncated, "the budget stops the rereads and says so");
+        assert!(sheets.len() < 40, "read {} of 40 sheets", sheets.len());
+        assert!(
+            !sheets.is_empty(),
+            "what was read before the budget ran out stays"
+        );
     }
 
     #[test]
