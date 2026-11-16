@@ -1,22 +1,36 @@
-/// `println!` that never panics: a reader that went away (`| head -1`) is
-/// ignored, so the command's own result still decides its exit status.
+/// `println!` that ignores a reader that went away (`| head -1`), so the
+/// command's own result still decides its exit status. Any other failed
+/// write (a full disk, an I/O error) still fails as `println!` does: a
+/// cut-short file must never read as success.
 #[macro_export]
 macro_rules! outln {
     ($($arg:tt)*) => {{
         use std::io::Write as _;
-        let _ = writeln!(std::io::stdout().lock(), $($arg)*);
+        $crate::stdout_written(writeln!(std::io::stdout().lock(), $($arg)*));
     }};
 }
 
-/// `print!` that never panics, for output without a trailing newline.
+/// `print!` with the same rule as `outln!`, for output without a trailing
+/// newline.
 #[macro_export]
 macro_rules! out {
     ($($arg:tt)*) => {{
         use std::io::Write as _;
         let mut out = std::io::stdout().lock();
-        let _ = write!(out, $($arg)*);
-        let _ = out.flush();
+        $crate::stdout_written(write!(out, $($arg)*).and_then(|()| out.flush()));
     }};
+}
+
+/// The result of a write to stdout from `outln!` or `out!`: a closed pipe
+/// is ignored, anything else panics with `println!`'s own message, which
+/// the panic handler reports as a failure (only a broken pipe reads as 0).
+#[doc(hidden)]
+pub fn stdout_written(result: std::io::Result<()>) {
+    if let Err(error) = result
+        && error.kind() != std::io::ErrorKind::BrokenPipe
+    {
+        panic!("failed printing to stdout: {error}");
+    }
 }
 
 /// `println!` that reports a failed write, for output that streams until
@@ -52,3 +66,21 @@ pub mod util;
 // Only Unix tests send or handle SIGINT today.
 #[cfg(all(test, unix))]
 pub(crate) mod test_support;
+
+#[cfg(test)]
+mod stdout_tests {
+    use super::stdout_written;
+    use std::io::{Error, ErrorKind};
+
+    #[test]
+    fn a_closed_pipe_is_ignored() {
+        stdout_written(Err(Error::from(ErrorKind::BrokenPipe)));
+        stdout_written(Ok(()));
+    }
+
+    #[test]
+    #[should_panic(expected = "failed printing to stdout")]
+    fn any_other_failed_write_fails() {
+        stdout_written(Err(Error::from(ErrorKind::StorageFull)));
+    }
+}
