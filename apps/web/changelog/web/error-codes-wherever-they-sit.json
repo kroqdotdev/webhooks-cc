@@ -1,7 +1,7 @@
 {
   "title": "Error codes read wherever they sit",
   "items": [
-    "The hosted MCP server, through SDK 1.31.2, reads an API error's code from its `error` wherever it sits in the JSON body, so a cursor or busy-search hint still shows when `message` comes first",
+    "The hosted MCP server, through SDK 1.31.2, reads an API error's code from its `error` wherever it sits in the JSON body, should an answer ever put `message` first, so its cursor and busy-search hints keep working",
     "The changelog lists SDK 1.31.2 and the Python and Go SDKs 0.10.2"
   ]
 }

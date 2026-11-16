@@ -376,7 +376,7 @@ function errorCodeOf(body: string): string | undefined {
   try {
     parsed = JSON.parse(body);
   } catch {
-    // A body cut short is no JSON: a leading bare code is still read.
+    // A body that is not valid JSON (a proxy cut it short): a leading bare code is still read.
     return /^\{\s*"error"\s*:\s*"([a-z][a-z0-9_]*)"/.exec(body)?.[1];
   }
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return undefined;
