@@ -2788,6 +2788,37 @@ describe("subscription event guards", () => {
     expect(teamsUpdates()).toEqual([]);
   });
 
+  test("a new live subscription takes a complimentary team over", async () => {
+    const complimentary = {
+      data: {
+        polar_subscription_id: null,
+        subscription_status: "active",
+        seats: 10,
+        period_start: "2026-08-01T00:00:00.000Z",
+        business: true,
+        billing_interval: "month",
+      },
+    };
+    mockFns.createAdminClient.mockReturnValue(
+      createFakeAdmin({
+        "teams:select": [complimentary, complimentary],
+        "teams:update": [{ data: [{ id: "team_1" }] }, {}],
+      })
+    );
+
+    await applyTeamPolarWebhookEvent(
+      "subscription.created",
+      "team_1",
+      subscriptionEvent("sub_new")
+    );
+
+    expect(teamsUpdates()[0].payload).toMatchObject({
+      polar_subscription_id: "sub_new",
+      subscription_status: "active",
+      seats: 3,
+    });
+  });
+
   test("a write that lost to another fails, so Polar delivers the event again", async () => {
     mockFns.createAdminClient.mockReturnValue(
       createFakeAdmin({

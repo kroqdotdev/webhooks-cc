@@ -2067,9 +2067,11 @@ async function applyTeamSubscriptionState(
   // unbilled. Trade-off: if Polar never delivers `created` for a new
   // subscription, the team stays visibly inactive (activation-wait timeout on
   // the team page) until redelivery, a loud failure instead of a silent
-  // unbilled reactivation. Mixed states (one of id/status set, the other not)
-  // fall through: they only arise from manual intervention, and the full-state
-  // upsert below is the correct repair.
+  // unbilled reactivation. A live status with no stored id is a complimentary
+  // (staff) team, or a row edited by hand: it too takes only
+  // subscription.created, so repairing such a row means redelivering
+  // `created`. A stored id with no status (manual intervention only) falls
+  // through, and the full-state upsert below is the correct repair.
   // Nor may a subscription that has already ended, or that is still waiting
   // for its first payment: it would open the team with nothing paid. Its
   // next event says what it became.
