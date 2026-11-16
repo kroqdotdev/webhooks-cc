@@ -48,10 +48,11 @@ function fill(
   for (const [name, value] of Object.entries(mock.headers ?? {})) {
     const filled = renderTemplate(value, context, {
       ...generated,
-      mode: "text",
+      mode: "header",
       maxBytes: MAX_HEADER_VALUE_BYTES + 1,
     });
-    // The receiver drops headers that end up too long (in UTF-8 bytes) or hold a line break.
+    // The receiver drops headers that end up too long (in UTF-8 bytes) or hold a line break
+    // (header mode encodes one a placeholder fills in, so only the template's own text can).
     if (utf8Bytes(filled) > MAX_HEADER_VALUE_BYTES || /[\r\n]/.test(filled)) continue;
     headers[name] = filled;
   }

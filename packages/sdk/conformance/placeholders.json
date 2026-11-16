@@ -275,6 +275,62 @@
       "expected": "<p>say &quot;hi&quot;\t&lt;b&gt;&amp;&lt;/b&gt;</p>"
     },
     {
+      "name": "header mode truncate ends with dots",
+      "request": "order",
+      "template": "{{ body | truncate: 10 }}",
+      "mode": "header",
+      "expected": "{\"type\"..."
+    },
+    {
+      "name": "header mode truncate too short for dots",
+      "request": "order",
+      "template": "{{ json.type | truncate: 3 }}",
+      "mode": "header",
+      "expected": "ord"
+    },
+    {
+      "name": "header mode truncate shorter text",
+      "request": "order",
+      "template": "{{ method | truncate: 10 }}",
+      "mode": "header",
+      "expected": "POST"
+    },
+    {
+      "name": "header mode encodes what a header cannot carry",
+      "request": "text",
+      "template": "v={{ body }}",
+      "mode": "header",
+      "expected": "v=line one%0Aline two caf%C3%A9"
+    },
+    {
+      "name": "header mode truncate counts characters before encoding",
+      "request": "text",
+      "template": "{{ body | truncate: 21 }}",
+      "mode": "header",
+      "expected": "line one%0Aline two ..."
+    },
+    {
+      "name": "header mode encodes a tab and keeps quotes",
+      "request": "order",
+      "template": "{{ headers.x-note }}",
+      "mode": "header",
+      "expected": "say \"hi\"%09<b>&</b>"
+    },
+    {
+      "name": "header mode json filter",
+      "request": "text",
+      "template": "{{ body | json }}",
+      "mode": "header",
+      "expected": "\"line one\\nline two caf%C3%A9\""
+    },
+    {
+      "name": "header mode leaves template text alone",
+      "request": "order",
+      "template": "café {{ method }}",
+      "mode": "header",
+      "expected": "café POST"
+    },
+    {
       "name": "generated values",
       "request": "order",
       "template": "{{ uuid }} {{ now }}",

@@ -12,6 +12,7 @@ import {
 import { emailFieldValues, storedEmailFields } from "@/lib/email-fields";
 import type { RequestKind } from "@/lib/supabase/search";
 import { retentionDays } from "@/lib/entitlements";
+import { redactSignatureError } from "@/lib/signature-error";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const MAX_LIST_LIMIT = 1000;
@@ -250,7 +251,7 @@ function normalizeRequest(row: SelectedRequestRowWithQuery): RequestRecord {
     size: row.size,
     receivedAt: parseMillis(row.received_at),
     signatureVerified: row.signature_verified ?? null,
-    signatureError: row.signature_error ?? null,
+    signatureError: redactSignatureError(row.signature_error),
     signingProvider: row.signing_provider ?? null,
     responseStatus: row.response_status ?? null,
     responseRule: row.response_rule ?? null,

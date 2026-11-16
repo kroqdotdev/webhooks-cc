@@ -284,7 +284,7 @@ describe("Signature Verification Integration", () => {
     expect(request!.signatureError).toBeNull();
   });
 
-  it("requests with failed verification include error", async () => {
+  it("requests with failed verification include the error, never the computed signature", async () => {
     const errorJson = JSON.stringify({
       code: "mismatch",
       expected: "abc123",
@@ -320,7 +320,11 @@ describe("Signature Verification Integration", () => {
 
     const err = JSON.parse(request!.signatureError!);
     expect(err.code).toBe("mismatch");
-    expect(err.expected).toBe("abc123");
+    expect(err.received).toBe("xyz789");
+    // A row stored before the receiver stopped writing the computed
+    // signature still holds it; reads never return it.
+    expect(err).not.toHaveProperty("expected");
+    expect(request!.signatureError).not.toContain("abc123");
   });
 
   it("list requests includes verification fields", async () => {

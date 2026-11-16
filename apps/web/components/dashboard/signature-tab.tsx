@@ -47,7 +47,6 @@ function buildVerificationUrl(slug: string | undefined, request: DisplayableRequ
 /** Parsed structured signature error from JSON string. */
 interface SignatureErrorData {
   code?: string;
-  expected?: string;
   received?: string;
   timestamp?: number;
   header?: string;
@@ -197,11 +196,13 @@ function ServerSideResult({
         )}
       </div>
 
-      {(errorData?.expected || errorData?.received) && (
+      {errorData?.message && <p className="text-sm text-muted-foreground">{errorData.message}</p>}
+
+      {(errorData?.received || errorData?.header || errorData?.timestamp != null) && (
         <CodeBox className="p-3 text-sm space-y-1">
           <table className="font-mono w-full">
             <tbody>
-              {errorData?.expected && <CopyableRow label="Expected" value={errorData.expected} />}
+              {errorData?.header && <Row label="Header" value={errorData.header} />}
               {errorData?.received && <CopyableRow label="Received" value={errorData.received} />}
               {errorData?.timestamp != null && (
                 <Row
@@ -212,10 +213,6 @@ function ServerSideResult({
             </tbody>
           </table>
         </CodeBox>
-      )}
-
-      {errorData?.message && !errorData.expected && (
-        <p className="text-sm text-muted-foreground">{errorData.message}</p>
       )}
 
       {tip && (

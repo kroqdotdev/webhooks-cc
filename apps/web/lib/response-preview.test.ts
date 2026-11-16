@@ -58,6 +58,23 @@ describe("previewResponse", () => {
     });
   });
 
+  it("fills in header values as ASCII, as the receiver does", () => {
+    const preview = previewResponse(
+      {
+        mockResponse: {
+          status: 200,
+          body: "",
+          headers: { "x-type": "{{ json.type | truncate: 8 }}", "x-path": "{{ path }}\u00e9" },
+        },
+        responseRules: null,
+      },
+      { ...request, body: '{"type":"invoice.paid \u00e9t\u00e9"}' },
+      endpoint,
+      generated
+    );
+    expect(preview.response?.headers).toEqual({ "x-type": "invoi...", "x-path": "/billing\u00e9" });
+  });
+
   it("drops a header over 8192 bytes in UTF-8, as the receiver does", () => {
     const preview = previewResponse(
       {

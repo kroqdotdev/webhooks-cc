@@ -66,7 +66,17 @@ Endpoints created by logged-in users, on any plan, **never expire**. They persis
 
 ## Request quotas
 
-Quotas limit how many webhook requests your endpoints can capture within a billing period. When your quota is exhausted, the receiver returns `429 Too Many Requests` with a `Retry-After` header indicating when the quota resets.
+Quotas limit how many webhook requests your endpoints can capture within a billing period. When your quota is exhausted, the receiver returns `429 Too Many Requests` with a `Retry-After` header indicating when the quota resets, and a JSON body the sender can log:
+
+```json
+{
+  "error": "quota_exceeded",
+  "message": "The account that owns this endpoint has used all of its requests for this period, so this request was not captured. They reset at 2026-11-17T09:12:00Z. The account's owner can see usage, and upgrade or add requests, at webhooks.cc/account/plan.",
+  "resetsAt": "2026-11-17T09:12:00Z"
+}
+```
+
+The body never names the account. A guest endpoint's requests do not reset, so its `429` has no `resetsAt` and asks senders to wait an hour (`Retry-After: 3600`) before trying again.
 
 When it runs out, we email you that webhooks are being rejected, with the endpoints that have rejected any so far: on Free at most once a week, on Pro and Business at most once per billing period, after any [extra requests](#extra-requests) are used up too.
 

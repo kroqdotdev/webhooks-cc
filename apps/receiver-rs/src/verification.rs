@@ -71,9 +71,6 @@ pub enum VerificationResult {
 pub struct SignatureError {
     /// Error code: mismatch, missing_header, invalid_encoding, timestamp_expired, unsupported.
     pub code: &'static str,
-    /// Computed (expected) signature, truncated to 64 chars.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub expected: Option<String>,
     /// Signature received from the header, truncated to 64 chars.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub received: Option<String>,
@@ -92,7 +89,6 @@ impl SignatureError {
     fn missing_header(header: &str) -> Self {
         Self {
             code: "missing_header",
-            expected: None,
             received: None,
             timestamp: None,
             header: Some(header.to_string()),
@@ -100,21 +96,26 @@ impl SignatureError {
         }
     }
 
-    fn mismatch(expected: &str, received: &str) -> Self {
+    /// A signature that does not match. Never carries the computed value: a
+    /// captured request is readable by whoever reads the endpoint, so the
+    /// signature our stored secret makes for a body they sent would let them
+    /// sign any payload as the provider.
+    fn mismatch(received: &str) -> Self {
         Self {
             code: "mismatch",
-            expected: Some(truncate(expected, 64)),
             received: Some(truncate(received, 64)),
             timestamp: None,
             header: None,
-            message: Some("Computed signature does not match the received signature".to_string()),
+            message: Some(
+                "The signature does not match the one the endpoint's secret makes for this request"
+                    .to_string(),
+            ),
         }
     }
 
     fn invalid_encoding(msg: &str) -> Self {
         Self {
             code: "invalid_encoding",
-            expected: None,
             received: None,
             timestamp: None,
             header: None,
@@ -395,7 +396,6 @@ pub fn verify_signature(
         "adyen" => verify_adyen(secret, body),
         "paypal" => VerificationResult::Skipped(SignatureError {
             code: "unsupported",
-            expected: None,
             received: None,
             timestamp: None,
             header: None,
@@ -406,7 +406,6 @@ pub fn verify_signature(
         }),
         "plaid" => VerificationResult::Skipped(SignatureError {
             code: "unsupported",
-            expected: None,
             received: None,
             timestamp: None,
             header: None,
@@ -418,7 +417,6 @@ pub fn verify_signature(
         "generic-hmac" => verify_generic_hmac(secret, headers, body, signing_header),
         "sendgrid" => VerificationResult::Skipped(SignatureError {
             code: "unsupported",
-            expected: None,
             received: None,
             timestamp: None,
             header: None,
@@ -429,7 +427,6 @@ pub fn verify_signature(
         }),
         _ => VerificationResult::Skipped(SignatureError {
             code: "unsupported",
-            expected: None,
             received: None,
             timestamp: None,
             header: None,
@@ -449,7 +446,6 @@ async fn verify_paypal(
     if !is_allowed_paypal_cert_url(cert_url) {
         return VerificationResult::Skipped(SignatureError {
             code: "unsupported",
-            expected: None,
             received: Some(truncate(cert_url, 64)),
             timestamp: None,
             header: Some("paypal-cert-url".to_string()),
@@ -469,7 +465,6 @@ async fn verify_paypal(
         let cert_fetch_failed = |message: String| {
             VerificationResult::Skipped(SignatureError {
                 code: "cert_fetch_failed",
-                expected: None,
                 received: None,
                 timestamp: None,
                 header: Some("paypal-cert-url".to_string()),
@@ -514,7 +509,6 @@ pub(crate) fn verify_paypal_with_certificate(
         _ => {
             return VerificationResult::Skipped(SignatureError {
                 code: "missing_secret",
-                expected: None,
                 received: None,
                 timestamp: None,
                 header: None,
@@ -543,7 +537,6 @@ pub(crate) fn verify_paypal_with_certificate(
     if !is_allowed_paypal_cert_url(cert_url) {
         return VerificationResult::Skipped(SignatureError {
             code: "unsupported",
-            expected: None,
             received: Some(truncate(cert_url, 64)),
             timestamp: None,
             header: Some("paypal-cert-url".to_string()),
@@ -583,11 +576,13 @@ pub(crate) fn verify_paypal_with_certificate(
     } else {
         VerificationResult::Invalid(SignatureError {
             code: "mismatch",
-            expected: Some("RSA-SHA256 signature over PayPal transmission message".to_string()),
             received: Some(truncate(signature_header, 64)),
             timestamp: None,
             header: Some("paypal-transmission-sig".to_string()),
-            message: Some("Computed PayPal signature does not match".to_string()),
+            message: Some(
+                "The RSA-SHA256 signature does not match the PayPal transmission message"
+                    .to_string(),
+            ),
         })
     }
 }
@@ -774,7 +769,7 @@ fn verify_stripe(
         VerificationResult::Valid
     } else {
         let received = signatures.first().map(|s| s.as_str()).unwrap_or("");
-        let mut err = SignatureError::mismatch(&expected, received);
+        let mut err = SignatureError::mismatch(received);
         err.timestamp = timestamp.parse::<i64>().ok();
         err.header = Some(header_name.to_string());
         VerificationResult::Invalid(err)
@@ -845,7 +840,7 @@ fn verify_github_with_header(
     if ct_str_eq(&hex_sig.to_lowercase(), &expected) {
         VerificationResult::Valid
     } else {
-        let mut err = SignatureError::mismatch(&expected, &hex_sig.to_lowercase());
+        let mut err = SignatureError::mismatch(&hex_sig.to_lowercase());
         err.header = Some(header_name.to_string());
         VerificationResult::Invalid(err)
     }
@@ -868,7 +863,7 @@ fn verify_docusign(
     if ct_str_eq(received, &expected) {
         VerificationResult::Valid
     } else {
-        let mut err = SignatureError::mismatch(&expected, received);
+        let mut err = SignatureError::mismatch(received);
         err.header = Some(header_name.to_string());
         VerificationResult::Invalid(err)
     }
@@ -892,7 +887,7 @@ fn verify_shopify(
     if ct_str_eq(received, &expected) {
         VerificationResult::Valid
     } else {
-        let mut err = SignatureError::mismatch(&expected, received);
+        let mut err = SignatureError::mismatch(received);
         err.header = Some(header_name.to_string());
         VerificationResult::Invalid(err)
     }
@@ -914,7 +909,6 @@ fn verify_twilio(
     let Some(url) = request_url else {
         return VerificationResult::Skipped(SignatureError {
             code: "missing_header",
-            expected: None,
             received: None,
             timestamp: None,
             header: None,
@@ -942,7 +936,7 @@ fn verify_twilio(
     if ct_str_eq(received, &expected) {
         VerificationResult::Valid
     } else {
-        let mut err = SignatureError::mismatch(&expected, received);
+        let mut err = SignatureError::mismatch(received);
         err.header = Some(header_name.to_string());
         VerificationResult::Invalid(err)
     }
@@ -979,7 +973,7 @@ fn verify_slack(
     if ct_str_eq(&hex_sig.to_lowercase(), &expected) {
         VerificationResult::Valid
     } else {
-        let mut err = SignatureError::mismatch(&expected, &hex_sig.to_lowercase());
+        let mut err = SignatureError::mismatch(&hex_sig.to_lowercase());
         err.timestamp = timestamp.parse::<i64>().ok();
         err.header = Some(sig_header_name.to_string());
         VerificationResult::Invalid(err)
@@ -1016,7 +1010,7 @@ fn verify_paddle(
         VerificationResult::Valid
     } else {
         let received = signatures.first().map(|s| s.as_str()).unwrap_or("");
-        let mut err = SignatureError::mismatch(&expected, received);
+        let mut err = SignatureError::mismatch(received);
         err.timestamp = timestamp.parse::<i64>().ok();
         err.header = Some(header_name.to_string());
         VerificationResult::Invalid(err)
@@ -1070,7 +1064,7 @@ fn verify_linear(
     if ct_str_eq(&hex_sig.to_lowercase(), &expected) {
         VerificationResult::Valid
     } else {
-        let mut err = SignatureError::mismatch(&expected, &hex_sig.to_lowercase());
+        let mut err = SignatureError::mismatch(&hex_sig.to_lowercase());
         err.header = Some(header_name.to_string());
         VerificationResult::Invalid(err)
     }
@@ -1093,7 +1087,7 @@ fn verify_vercel(
     if ct_str_eq(&received, &expected) {
         VerificationResult::Valid
     } else {
-        let mut err = SignatureError::mismatch(&expected, &received);
+        let mut err = SignatureError::mismatch(&received);
         err.header = Some(header_name.to_string());
         VerificationResult::Invalid(err)
     }
@@ -1111,7 +1105,6 @@ fn verify_gitlab(secret: &[u8], headers: &HashMap<String, String>) -> Verificati
     } else {
         let mut err = SignatureError {
             code: "mismatch",
-            expected: None, // Don't leak the expected token
             received: None,
             timestamp: None,
             header: Some(header_name.to_string()),
@@ -1150,7 +1143,7 @@ fn verify_typeform(
     if ct_str_eq(received, &expected) {
         VerificationResult::Valid
     } else {
-        let mut err = SignatureError::mismatch(&expected, received);
+        let mut err = SignatureError::mismatch(received);
         err.header = Some(header_name.to_string());
         VerificationResult::Invalid(err)
     }
@@ -1248,7 +1241,6 @@ fn verify_discord(
         Err(_) => {
             let mut err = SignatureError {
                 code: "mismatch",
-                expected: None,
                 received: Some(truncate(sig_header.trim(), 64)),
                 timestamp: None,
                 header: Some(sig_header_name.to_string()),
@@ -1302,7 +1294,7 @@ fn verify_standard_webhooks(
         VerificationResult::Valid
     } else {
         let received = signatures.first().map(|s| s.as_str()).unwrap_or("");
-        let mut err = SignatureError::mismatch(&expected, received);
+        let mut err = SignatureError::mismatch(received);
         err.timestamp = timestamp.parse::<i64>().ok();
         err.header = Some("webhook-signature".to_string());
         VerificationResult::Invalid(err)
@@ -1347,7 +1339,6 @@ fn verify_generic_hmac(
         _ => {
             return VerificationResult::Skipped(SignatureError {
                 code: "missing_header",
-                expected: None,
                 received: None,
                 timestamp: None,
                 header: None,
@@ -1383,7 +1374,7 @@ fn verify_generic_hmac(
         return VerificationResult::Valid;
     }
 
-    let mut err = SignatureError::mismatch(&expected_hex, &received.to_lowercase());
+    let mut err = SignatureError::mismatch(&received.to_lowercase());
     err.header = Some(header_name.to_string());
     VerificationResult::Invalid(err)
 }
@@ -1418,7 +1409,7 @@ fn verify_hex_sha256(
     if ct_str_eq(&hex_sig.to_lowercase(), &expected) {
         VerificationResult::Valid
     } else {
-        let mut err = SignatureError::mismatch(&expected, &hex_sig.to_lowercase());
+        let mut err = SignatureError::mismatch(&hex_sig.to_lowercase());
         err.header = Some(header_name.to_string());
         VerificationResult::Invalid(err)
     }
@@ -1449,7 +1440,7 @@ fn verify_intercom(
     if ct_str_eq(&hex_sig.to_lowercase(), &expected) {
         VerificationResult::Valid
     } else {
-        let mut err = SignatureError::mismatch(&expected, &hex_sig.to_lowercase());
+        let mut err = SignatureError::mismatch(&hex_sig.to_lowercase());
         err.header = Some(header_name.to_string());
         VerificationResult::Invalid(err)
     }
@@ -1467,7 +1458,6 @@ fn verify_telegram(secret: &[u8], headers: &HashMap<String, String>) -> Verifica
     } else {
         let err = SignatureError {
             code: "mismatch",
-            expected: None,                     // Don't leak the expected token
             received: Some(truncate(token, 8)), // Show first 8 chars only
             timestamp: None,
             header: Some(header_name.to_string()),
@@ -1495,7 +1485,6 @@ fn verify_square(
     let Some(url) = request_url else {
         return VerificationResult::Skipped(SignatureError {
             code: "missing_header",
-            expected: None,
             received: None,
             timestamp: None,
             header: None,
@@ -1513,7 +1502,7 @@ fn verify_square(
     if ct_str_eq(received, &expected) {
         VerificationResult::Valid
     } else {
-        let mut err = SignatureError::mismatch(&expected, received);
+        let mut err = SignatureError::mismatch(received);
         err.header = Some(header_name.to_string());
         VerificationResult::Invalid(err)
     }
@@ -1548,7 +1537,6 @@ fn verify_hubspot(
     let Some(url) = request_url else {
         return VerificationResult::Skipped(SignatureError {
             code: "missing_header",
-            expected: None,
             received: None,
             timestamp: None,
             header: None,
@@ -1575,7 +1563,6 @@ fn verify_hubspot(
     if (now_ms - ts_ms).abs() > HUBSPOT_MAX_AGE_MS {
         let mut err = SignatureError {
             code: "timestamp_expired",
-            expected: None,
             received: None,
             timestamp: Some(ts_ms),
             header: Some(ts_header_name.to_string()),
@@ -1601,7 +1588,7 @@ fn verify_hubspot(
     if ct_str_eq(received, &expected) {
         VerificationResult::Valid
     } else {
-        let mut err = SignatureError::mismatch(&expected, received);
+        let mut err = SignatureError::mismatch(received);
         err.timestamp = Some(ts_ms);
         err.header = Some(sig_header_name.to_string());
         VerificationResult::Invalid(err)
@@ -1672,7 +1659,6 @@ fn verify_adyen(secret: &[u8], body: &[u8]) -> VerificationResult {
         Err(_) => {
             return VerificationResult::Skipped(SignatureError {
                 code: "missing_header",
-                expected: None,
                 received: None,
                 timestamp: None,
                 header: None,
@@ -1687,7 +1673,6 @@ fn verify_adyen(secret: &[u8], body: &[u8]) -> VerificationResult {
     else {
         return VerificationResult::Skipped(SignatureError {
             code: "missing_header",
-            expected: None,
             received: None,
             timestamp: None,
             header: Some("notificationItems".to_string()),
@@ -1718,7 +1703,7 @@ fn verify_adyen(secret: &[u8], body: &[u8]) -> VerificationResult {
             Err(err) => return VerificationResult::Invalid(*err),
         };
         if !ct_str_eq(signature, &expected) {
-            let mut err = SignatureError::mismatch(&expected, signature);
+            let mut err = SignatureError::mismatch(signature);
             err.header = Some("additionalData.hmacSignature".to_string());
             return VerificationResult::Invalid(err);
         }
@@ -1727,7 +1712,6 @@ fn verify_adyen(secret: &[u8], body: &[u8]) -> VerificationResult {
     if signed_items == 0 {
         return VerificationResult::Skipped(SignatureError {
             code: "missing_header",
-            expected: None,
             received: None,
             timestamp: None,
             header: Some("additionalData.hmacSignature".to_string()),
@@ -1738,7 +1722,6 @@ fn verify_adyen(secret: &[u8], body: &[u8]) -> VerificationResult {
     if unsigned_items > 0 {
         return VerificationResult::Invalid(SignatureError {
             code: "mismatch",
-            expected: None,
             received: None,
             timestamp: None,
             header: Some("additionalData.hmacSignature".to_string()),
@@ -1766,7 +1749,6 @@ fn verify_mailgun(
         Err(_) => {
             return VerificationResult::Skipped(SignatureError {
                 code: "missing_header",
-                expected: None,
                 received: None,
                 timestamp: None,
                 header: None,
@@ -1787,7 +1769,6 @@ fn verify_mailgun(
         _ => {
             return VerificationResult::Skipped(SignatureError {
                 code: "missing_header",
-                expected: None,
                 received: None,
                 timestamp: None,
                 header: Some("signature".to_string()),
@@ -1804,7 +1785,7 @@ fn verify_mailgun(
     if ct_str_eq(&signature.to_lowercase(), &expected) {
         VerificationResult::Valid
     } else {
-        let mut err = SignatureError::mismatch(&expected, &signature.to_lowercase());
+        let mut err = SignatureError::mismatch(&signature.to_lowercase());
         err.timestamp = timestamp.parse::<i64>().ok();
         err.header = Some("signature".to_string());
         VerificationResult::Invalid(err)
@@ -1840,7 +1821,7 @@ fn verify_t_v1_header(
         VerificationResult::Valid
     } else {
         let received = signatures.first().map(|s| s.as_str()).unwrap_or("");
-        let mut err = SignatureError::mismatch(&expected, received);
+        let mut err = SignatureError::mismatch(received);
         err.timestamp = timestamp.parse::<i64>().ok();
         err.header = Some(header_name.to_string());
         VerificationResult::Invalid(err)

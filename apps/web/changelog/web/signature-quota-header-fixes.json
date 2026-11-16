@@ -1,0 +1,8 @@
+{
+  "title": "Safer signature results, clearer quota answers",
+  "items": [
+    "A failed signature check no longer records the signature the endpoint's secret makes for the body, only what arrived and why it failed, so reading an endpoint's captures can never be used to sign payloads as the provider; requests captured earlier no longer return it either",
+    "A capture refused for quota answers with a message that says whose requests ran out and when they reset (`resetsAt`), and where the account's owner can see usage; guest and sandbox endpoints now send `Retry-After` too. The `error` code stays `quota_exceeded`",
+    "Placeholders in mock response headers fill in printable ASCII only: other characters are percent-encoded and `| truncate` ends with `...`, so a header no longer turns the whole mock response into a plain 200"
+  ]
+}

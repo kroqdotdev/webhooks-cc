@@ -326,8 +326,9 @@ const MAX_FILLED_BODY_BYTES: usize = 1024 * 1024;
 
 /// The response with its placeholders filled in from the request: the body
 /// in the mode its Content-Type (or its first character) calls for, header
-/// values as text. Headers that end up too long or holding a line break are
-/// dropped by `build_mock_response`.
+/// values in header mode (what a placeholder fills in is percent-encoded
+/// where a header cannot carry it). Headers that end up too long or holding
+/// a line break are dropped by `build_mock_response`.
 fn fill_mock_response(mut mock: MockResponse, request: &TemplateRequest<'_>) -> MockResponse {
     if placeholders::may_have_placeholders(&mock.body) {
         let mode = placeholders::response_mode(&mock.body, &mock.headers);
@@ -335,7 +336,7 @@ fn fill_mock_response(mut mock: MockResponse, request: &TemplateRequest<'_>) -> 
     }
     for value in mock.headers.values_mut() {
         if placeholders::may_have_placeholders(value) {
-            *value = placeholders::render(value, request, Mode::Text, MAX_HEADER_VALUE_LEN + 1);
+            *value = placeholders::render(value, request, Mode::Header, MAX_HEADER_VALUE_LEN + 1);
         }
     }
     mock
@@ -1099,22 +1100,11 @@ async fn handle_webhook_inner(
                     if let Some(suppressed) = quota_log_throttle().check(&slug, Instant::now()) {
                         tracing::info!(slug, ip = %ip, suppressed, "quota exceeded");
                     }
-                    let mut response = (
-                        StatusCode::TOO_MANY_REQUESTS,
-                        axum::Json(serde_json::json!({"error": "quota_exceeded"})),
+                    quota_exceeded_response(
+                        capture.billing_key.as_deref(),
+                        capture.retry_after,
+                        Utc::now(),
                     )
-                        .into_response();
-
-                    if let Some(retry_after_ms) = capture.retry_after {
-                        let retry_after_secs = (retry_after_ms + 999) / 1000; // ceil to seconds
-                        if let Ok(val) =
-                            axum::http::HeaderValue::from_str(&retry_after_secs.to_string())
-                        {
-                            response.headers_mut().insert("retry-after", val);
-                        }
-                    }
-
-                    response
                 }
                 unknown => {
                     metrics::capture_result("unknown");
@@ -1130,9 +1120,122 @@ async fn handle_webhook_inner(
     }
 }
 
+/// How long a sender is asked to wait when nothing will free a request: a
+/// guest endpoint's or an agent sandbox's requests never reset, so this only
+/// keeps a sender from retrying in a tight loop.
+const QUOTA_BACKOFF_SECS: i64 = 3600;
+
+/// The 429 a sender gets when the quota the capture bills is used up. The
+/// `error` code stays `quota_exceeded` for clients that match on it; the
+/// message says whose requests ran out (by kind only, never naming the
+/// account) and when they come back, and `Retry-After` is always set.
+fn quota_exceeded_response(
+    billing_key: Option<&str>,
+    retry_after_ms: Option<i64>,
+    now: chrono::DateTime<Utc>,
+) -> Response {
+    let kind = billing_key
+        .and_then(|key| key.split_once(':'))
+        .map(|(kind, _)| kind)
+        .unwrap_or("");
+    let retry_after_ms = retry_after_ms.filter(|ms| *ms > 0);
+    let resets_at = retry_after_ms.map(|ms| {
+        (now + chrono::TimeDelta::milliseconds(ms)).to_rfc3339_opts(SecondsFormat::Secs, true)
+    });
+    let resets = resets_at
+        .as_ref()
+        .map(|at| format!(" They reset at {at}."))
+        .unwrap_or_default();
+    let message = match kind {
+        "team" => format!(
+            "The team this endpoint is shared with has used all of its requests for this \
+             period, so this request was not captured.{resets} The team's owner can see \
+             usage and add requests on the team's page at webhooks.cc."
+        ),
+        "endpoint" => "This guest endpoint has used all of its requests, so this request was \
+                       not captured. A guest endpoint's requests do not reset; a free \
+                       account at webhooks.cc gets endpoints whose requests reset every day."
+            .to_string(),
+        "agent" => "This sandbox endpoint has used all of its requests, so this request was \
+                    not captured. Sandbox requests do not reset."
+            .to_string(),
+        _ => format!(
+            "The account that owns this endpoint has used all of its requests for this \
+             period, so this request was not captured.{resets} The account's owner can \
+             see usage, and upgrade or add requests, at webhooks.cc/account/plan."
+        ),
+    };
+    // Rounded up, so a sender never comes back before the reset.
+    let retry_after_secs = retry_after_ms.map_or(QUOTA_BACKOFF_SECS, |ms| (ms + 999) / 1000);
+    let mut body = serde_json::json!({ "error": "quota_exceeded", "message": message });
+    if let Some(at) = resets_at {
+        body["resetsAt"] = serde_json::Value::String(at);
+    }
+    let mut response = (StatusCode::TOO_MANY_REQUESTS, axum::Json(body)).into_response();
+    if let Ok(val) = axum::http::HeaderValue::from_str(&retry_after_secs.to_string()) {
+        response.headers_mut().insert("retry-after", val);
+    }
+    response
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    async fn quota_body(response: Response) -> serde_json::Value {
+        let body = axum::body::to_bytes(response.into_body(), 4096)
+            .await
+            .unwrap();
+        serde_json::from_slice(&body).unwrap()
+    }
+
+    fn retry_after(response: &Response) -> Option<&str> {
+        response
+            .headers()
+            .get("retry-after")
+            .and_then(|v| v.to_str().ok())
+    }
+
+    #[tokio::test]
+    async fn an_account_over_quota_hears_when_it_resets_and_where_to_look() {
+        let now = chrono::DateTime::parse_from_rfc3339("2026-11-16T10:00:00Z")
+            .unwrap()
+            .with_timezone(&Utc);
+        let response = quota_exceeded_response(Some("user:abc"), Some(90_500), now);
+        assert_eq!(response.status(), StatusCode::TOO_MANY_REQUESTS);
+        assert_eq!(retry_after(&response), Some("91"));
+        let body = quota_body(response).await;
+        assert_eq!(body["error"], "quota_exceeded");
+        assert_eq!(body["resetsAt"], "2026-11-16T10:01:30Z");
+        let message = body["message"].as_str().unwrap();
+        assert!(message.contains("2026-11-16T10:01:30Z"), "{message}");
+        assert!(message.contains("webhooks.cc/account/plan"), "{message}");
+        assert!(!message.contains("abc"), "{message}");
+        assert!(message.is_ascii());
+    }
+
+    #[tokio::test]
+    async fn a_team_over_quota_points_at_the_team() {
+        let now = Utc::now();
+        let response = quota_exceeded_response(Some("team:t1"), Some(5_000), now);
+        assert_eq!(retry_after(&response), Some("5"));
+        let body = quota_body(response).await;
+        assert!(body["message"].as_str().unwrap().contains("team's owner"));
+        assert!(body["resetsAt"].is_string());
+    }
+
+    #[tokio::test]
+    async fn a_guest_or_sandbox_over_quota_still_gets_retry_after() {
+        for key in ["endpoint:e1", "agent:a1"] {
+            let response = quota_exceeded_response(Some(key), None, Utc::now());
+            assert_eq!(response.status(), StatusCode::TOO_MANY_REQUESTS);
+            assert_eq!(retry_after(&response), Some("3600"), "{key}");
+            let body = quota_body(response).await;
+            assert_eq!(body["error"], "quota_exceeded");
+            assert!(body.get("resetsAt").is_none(), "{key}");
+            assert!(body["message"].as_str().unwrap().contains("do not reset"));
+        }
+    }
 
     #[tokio::test]
     async fn every_capture_url_reaches_a_handler() {
@@ -1275,7 +1378,7 @@ mod tests {
     }
 
     #[test]
-    fn a_filled_in_header_with_a_line_break_is_dropped() {
+    fn a_filled_in_header_with_a_line_break_cannot_add_a_header() {
         let mock = MockResponse {
             status: 200,
             body: String::new(),
@@ -1284,8 +1387,36 @@ mod tests {
         };
         let out = filled(mock, "a\r\nset-cookie: x=1", Some("text/plain"));
         let response = build_mock_response(&out);
-        assert!(response.headers().get("x-echo").is_none());
+        assert_eq!(response.headers()["x-echo"], "a%0D%0Aset-cookie: x=1");
         assert!(response.headers().get("set-cookie").is_none());
+    }
+
+    #[test]
+    fn filled_in_header_values_stay_ascii() {
+        // A non-ASCII header value fails the whole mock (a plain 200), so
+        // truncate ends with dots and other characters are percent-encoded.
+        let mock = MockResponse {
+            status: 201,
+            body: String::new(),
+            headers: HashMap::from([
+                (
+                    "x-short".to_string(),
+                    "{{ json.name | truncate: 6 }}".to_string(),
+                ),
+                ("x-name".to_string(), "{{ json.name }}".to_string()),
+            ]),
+            delay: None,
+        };
+        let out = filled(
+            mock,
+            r#"{"name":"Zo\u00eb Lindqvist"}"#,
+            Some("application/json"),
+        );
+        assert_eq!(mock_status(&out), StatusCode::CREATED);
+        let response = build_mock_response(&out);
+        assert_eq!(response.status(), StatusCode::CREATED);
+        assert_eq!(response.headers()["x-short"], "Zo%C3%AB...");
+        assert_eq!(response.headers()["x-name"], "Zo%C3%AB Lindqvist");
     }
 
     #[test]
