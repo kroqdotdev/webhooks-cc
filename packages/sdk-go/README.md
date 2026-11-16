@@ -49,11 +49,14 @@ func TestMain(m *testing.M) {
 		os.Exit(m.Run()) // no key: the tests skip themselves
 	}
 	code := 1
-	_ = client.WithTemporaryEndpoint(context.Background(), webhookscc.CreateEndpointOptions{Name: "go test"}, func(endpoint *webhookscc.Endpoint) error {
+	err = client.WithTemporaryEndpoint(context.Background(), webhookscc.CreateEndpointOptions{Name: "go test"}, func(endpoint *webhookscc.Endpoint) error {
 		shared = endpoint
 		code = m.Run()
 		return nil
 	})
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "webhooks.cc:", err) // e.g. rate limited past the wait
+	}
 	os.Exit(code)
 }
 ```

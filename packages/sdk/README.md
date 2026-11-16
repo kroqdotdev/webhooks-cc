@@ -797,7 +797,7 @@ The API allows 30 new endpoints per account in 10 minutes. When a suite uses the
 that create one (`createTestEndpoint`, `withEndpoint`, `captureDuring`, `captureEmailDuring`) wait
 as the API's Retry-After asks, for up to `rateLimitWait` in all (default 60 s), then throw a
 `RateLimitError` with one line saying so. A suite with more tests than that can share one endpoint:
-create it in `beforeAll` with `createTestEndpoint()`, and tell tests apart with `match` or `since`.
+create it in `beforeAll` with `createTestEndpoint()`, and tell tests apart with `match` or `since`. Vitest and Jest end a test after 5 s and a hook after 10 s by default, so raise the timeout of a test or hook that creates endpoints (for example `beforeAll(fn, 90_000)`), or lower `rateLimitWait`, so the one-line message arrives instead of a generic timeout.
 
 A wait that runs out says what it waited for: `Timed out after 30000ms waiting for an email with
 subject "Confirm" on endpoint "acme" (2 did not match)`.

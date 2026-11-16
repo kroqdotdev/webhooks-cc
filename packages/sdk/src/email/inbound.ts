@@ -246,8 +246,9 @@ interface FilePart {
   name: string;
   filename: string;
   contentType: string;
-  /** Base64. */
-  content: string;
+  /** The file's text (only UTF-8 files are carried; see attachmentFiles). */
+  text: string;
+  contentId?: string;
 }
 
 function base64Bytes(value: string): Uint8Array | null {
@@ -286,16 +287,10 @@ function multipart(
       `--${boundary}\r\nContent-Disposition: form-data; name="${name}"\r\n\r\n${value}\r\n`
   );
   for (const file of files) {
-    const bytes = base64Bytes(file.content);
-    const asText = bytes ? utf8Text(bytes) : null;
-    const head =
-      `--${boundary}\r\nContent-Disposition: form-data; name="${file.name}"; ` +
-      `filename="${dispositionValue(file.filename)}"\r\n` +
-      `Content-Type: ${file.contentType.replace(/[\r\n]+/g, " ")}\r\n`;
     parts.push(
-      asText !== null
-        ? `${head}\r\n${asText}\r\n`
-        : `${head}Content-Transfer-Encoding: base64\r\n\r\n${file.content.replace(/\s+/g, "")}\r\n`
+      `--${boundary}\r\nContent-Disposition: form-data; name="${file.name}"; ` +
+        `filename="${dispositionValue(file.filename)}"\r\n` +
+        `Content-Type: ${file.contentType.replace(/[\r\n]+/g, " ")}\r\n\r\n${file.text}\r\n`
     );
   }
   return {
@@ -304,16 +299,31 @@ function multipart(
   };
 }
 
-/** The attachments whose contents the source carries, numbered from 1 as both providers do. */
+/**
+ * The attachments the payload carries as file parts, numbered from 1 as both
+ * providers do: those whose contents the source has and that are UTF-8 text
+ * (CSV, JSON, XML, plain text). The body is text, so a binary file (a PDF, an
+ * image) could only go as base64 marked with Content-Transfer-Encoding, which
+ * RFC 7578 forbids and most form parsers ignore, handing a handler base64 in
+ * place of the file. Such files are left out; the email JSON's attachment
+ * links still reach them.
+ */
 function attachmentFiles(source: EmailJsonSource, name: (index: number) => string): FilePart[] {
-  return source.email.attachments
-    .filter((attachment) => attachment.content !== undefined)
-    .map((attachment, index) => ({
-      name: name(index + 1),
-      filename: attachment.filename ?? `attachment-${index + 1}`,
+  const files: FilePart[] = [];
+  for (const attachment of source.email.attachments) {
+    if (attachment.content === undefined) continue;
+    const bytes = base64Bytes(attachment.content);
+    const text = bytes ? utf8Text(bytes) : null;
+    if (text === null) continue;
+    files.push({
+      name: name(files.length + 1),
+      filename: attachment.filename ?? `attachment-${files.length + 1}`,
       contentType: attachment.contentType || "application/octet-stream",
-      content: attachment.content!,
-    }));
+      text,
+      ...(attachment.contentId ? { contentId: attachment.contentId } : {}),
+    });
+  }
+  return files;
 }
 
 function sendgrid(source: EmailJsonSource, options: InboundEmailOptions): InboundEmailPayload {
@@ -326,9 +336,6 @@ function sendgrid(source: EmailJsonSource, options: InboundEmailOptions): Inboun
     .map((check) => `@${check.domain ?? ""} : ${check.result}`)
     .join(", ");
   const spam = email.spam;
-  const attachmentsWithContent = email.attachments.filter(
-    (attachment) => attachment.content !== undefined
-  );
   const files = attachmentFiles(source, (index) => `attachment${index}`);
   const fields: [string, string][] = [
     ["headers", headerBlock],
@@ -362,18 +369,15 @@ function sendgrid(source: EmailJsonSource, options: InboundEmailOptions): Inboun
             "attachment-info",
             JSON.stringify(
               Object.fromEntries(
-                files.map((file, index) => {
-                  const attachment = attachmentsWithContent[index];
-                  return [
-                    file.name,
-                    {
-                      filename: file.filename,
-                      name: file.filename,
-                      type: file.contentType,
-                      ...(attachment.contentId ? { "content-id": attachment.contentId } : {}),
-                    },
-                  ];
-                })
+                files.map((file) => [
+                  file.name,
+                  {
+                    filename: file.filename,
+                    name: file.filename,
+                    type: file.contentType,
+                    ...(file.contentId ? { "content-id": file.contentId } : {}),
+                  },
+                ])
               )
             ),
           ],

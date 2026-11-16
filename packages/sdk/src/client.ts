@@ -951,7 +951,8 @@ function quoted(value: string | RegExp): string {
 /** An email wait's criteria in words: `tag "run1", subject "Confirm"`. */
 export function describeEmailCriteria(criteria: EmailCriteria): string | undefined {
   const parts: string[] = [];
-  if (criteria.tag !== undefined) parts.push(`tag ${quoted(criteria.tag ?? "")}`);
+  if (criteria.tag !== undefined)
+    parts.push(criteria.tag === null ? "no tag" : `tag ${quoted(criteria.tag)}`);
   if (criteria.subject !== undefined) parts.push(`subject ${quoted(criteria.subject)}`);
   if (criteria.from !== undefined) parts.push(`from ${quoted(criteria.from)}`);
   if (criteria.to !== undefined) parts.push(`to ${quoted(criteria.to)}`);

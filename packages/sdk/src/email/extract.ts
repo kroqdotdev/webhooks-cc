@@ -54,15 +54,18 @@ const FOOTER_WORDS =
   /^(?:privacy(?:-policy)?|terms(?:-of-(?:service|use))?|tos|legal|help|help-center|helpcenter|support|faq|contact(?:-us)?)$/i;
 const FOOTER_LABEL =
   /^(?:privacy(?: policy)?|terms(?: of (?:service|use))?|legal|help(?: center)?|support|contact(?: us| support)?|faq|get help|help & support)$/i;
+/** Footer phrases anywhere in a label: "Visit our Help Center", "Privacy Notice". */
+const FOOTER_PHRASE =
+  /\b(?:privacy (?:policy|notice|statement)|terms of (?:service|use)|help cent(?:er|re)|help & support|contact us|frequently asked questions)\b/i;
 /**
  * The shape of an open-tracking pixel's path: a last segment like `open`,
  * `pixel.gif` or `o.gif`, or a `/pixel/` segment anywhere. Click-tracking
  * redirects (`/ls/click`, `/track/click`) lead to the real link and stay.
  */
 const PIXEL_PATH =
-  /(?:\/(?:open|opened|pixel|beacon|spacer|blank)(?:\.(?:gif|png|jpe?g|php))?\/?$|\/[a-z]\.(?:gif|png)$|\/pixel\/)/i;
+  /(?:\/(?:pixel|beacon|spacer|blank)(?:\.(?:gif|png|jpe?g|php))?\/?$|\/(?:open|opened)\.(?:gif|png|jpe?g|php)$|\/wf\/open\/?$|\/[a-z]\.(?:gif|png)$|\/pixel\/)/i;
 const SOCIAL_HOSTS =
-  /(^|\.)((facebook|twitter|x|linkedin|instagram|youtube|tiktok|github|discord|medium|threads|pinterest)\.com|discord\.gg|youtu\.be|bsky\.app)$/i;
+  /(^|\.)((facebook|twitter|x|linkedin|instagram|youtube|tiktok|github|discord|medium|threads|pinterest)\.com|bsky\.app)$/i;
 /** First segments of a social profile's path: linkedin.com/company/acme, youtube.com/channel/... */
 const PROFILE_PREFIX = /^(?:company|in|channel|c|user|users|school|showcase|pages|groups|orgs|r)$/i;
 const MAX_LINKS = 20;
@@ -267,7 +270,9 @@ function isSocialProfile(url: URL): boolean {
 }
 
 function isFooterLink(url: URL, label: string | null): boolean {
-  if (label !== null && FOOTER_LABEL.test(label.trim())) return true;
+  if (label !== null && (FOOTER_LABEL.test(label.trim()) || FOOTER_PHRASE.test(label))) {
+    return true;
+  }
   if (FOOTER_WORDS.test(url.hostname.split(".")[0])) {
     // help.acme.com or support.acme.com itself, not a page on it that asks for something.
     return true;
@@ -298,14 +303,29 @@ function keepLink(url: string, label: string | null, action: boolean): boolean {
   );
 }
 
+/** The URL without its query and fragment. */
+function withoutQuery(url: string): string {
+  try {
+    const parsed = new URL(url);
+    return `${parsed.host}${parsed.pathname}`;
+  } catch {
+    return url;
+  }
+}
+
 function findLinks(text: string | null, html: string | null): ExtractedLink[] {
   const seen = new Set<string>();
   const links: ExtractedLink[] = [];
   const add = (rawUrl: string, label: string | null) => {
     const url = cleanUrl(rawUrl);
     if (!url || seen.has(url)) return;
+    // Ranked as an action by anything in it, the query included (a magic
+    // link's ?token=), but only the label or the host and path rescue a
+    // footer, social or pixel link: `utm_campaign=password_reset` on every
+    // link of a mail must not keep its help, privacy and social links.
     const action = ACTION.test(url) || (label !== null && ACTION.test(label));
-    if (!keepLink(url, label, action)) return;
+    const rescues = (label !== null && ACTION.test(label)) || ACTION.test(withoutQuery(url));
+    if (!keepLink(url, label, rescues)) return;
     seen.add(url);
     links.push({ url, label, action });
   };

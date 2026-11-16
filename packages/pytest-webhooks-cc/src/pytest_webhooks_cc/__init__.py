@@ -12,7 +12,9 @@ Installing ``pytest-webhooks-cc`` gives every test the ``webhooks_cc`` and
 
 The fixtures are the ones the ``webhooks-cc`` SDK ships
 (:mod:`webhooks_cc.pytest_plugin`); the plugin itself is in
-:mod:`pytest_webhooks_cc.plugin`.
+:mod:`pytest_webhooks_cc.plugin`. With ``webhooks-cc`` 0.11 or later there is
+also ``webhooks_cc_session_endpoint``, one endpoint shared by the whole run,
+for suites larger than the account's endpoint-create limit.
 """
 
 __version__ = "0.1.0"

@@ -508,6 +508,7 @@ class SandboxRequests:
             poll_interval=poll_interval,
             match=match,
             since=since,
+            slug=slug,
         )
 
 

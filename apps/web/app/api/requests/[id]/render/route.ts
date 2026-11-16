@@ -89,7 +89,11 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     // With the attachments' contents (up to the inline budget of a
     // delivery, the rest as links), so the shapes carry the files as the
     // providers post them.
-    const withFiles = await withAttachmentPayloads(captured, "inline");
+    // A storage read that fails renders the email with links instead of
+    // failing the whole answer.
+    const withFiles = await withAttachmentPayloads(captured, "inline").catch(() =>
+      withAttachmentPayloads(captured, "links").catch(() => captured)
+    );
     const payload = inboundEmailPayload(
       format,
       { ...withFiles, email: withFiles.email ?? captured.email },

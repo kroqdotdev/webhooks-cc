@@ -406,23 +406,22 @@ describe("inbound shapes", () => {
         headers: { "content-type": out.contentType },
       }).formData();
       expect(form.get("recipient")).toBe("acme-orders+inv@mailhooks.cc");
-      expect(form.get("attachment-count")).toBe("2");
+      // Only text files are carried (the body is text; see attachmentFiles).
+      expect(form.get("attachment-count")).toBe("1");
       const file = form.get("attachment-1") as File;
       expect(file.name).toBe("order.csv");
       expect(file.type).toBe("text/csv");
       expect(await file.text()).toBe(csv);
-      expect((form.get("attachment-2") as File).name).toBe("invoice.pdf");
-      expect(form.get("attachment-3")).toBeNull();
+      expect(form.get("attachment-2")).toBeNull();
       // The signature covers the timestamp and token only, as Mailgun's does.
       expect(form.get("signature")).toBe(
         createHmac("sha256", "key-acme-test")
           .update(`1793000000${"t".repeat(50)}`)
           .digest("hex")
       );
-      // A binary file goes base64, marked so.
-      expect(out.body).toContain(
-        `filename="invoice.pdf"\r\nContent-Type: application/pdf\r\nContent-Transfer-Encoding: base64\r\n\r\n${Buffer.from(pdf).toString("base64")}\r\n`
-      );
+      // A binary file is left out rather than sent as base64 text.
+      expect(out.body).not.toContain("invoice.pdf");
+      expect(out.body).not.toContain("Content-Transfer-Encoding");
     });
 
     it("keeps a Mailgun form without attachment contents url-encoded", async () => {
@@ -436,10 +435,9 @@ describe("inbound shapes", () => {
       const form = await new Response(out.body, {
         headers: { "content-type": out.contentType },
       }).formData();
-      expect(form.get("attachments")).toBe("2");
+      expect(form.get("attachments")).toBe("1");
       expect(JSON.parse(form.get("attachment-info") as string)).toEqual({
         attachment1: { filename: "order.csv", name: "order.csv", type: "text/csv" },
-        attachment2: { filename: "invoice.pdf", name: "invoice.pdf", type: "application/pdf" },
       });
       expect(await (form.get("attachment1") as File).text()).toBe(csv);
     });

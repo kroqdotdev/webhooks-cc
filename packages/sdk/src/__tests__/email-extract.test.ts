@@ -154,6 +154,46 @@ describe("extractFromEmail", () => {
     ]);
   });
 
+  it("does not let a query string rescue footer, social or help links", () => {
+    // Campaign tags put an action word on every link of a mail.
+    const utm = "?utm_campaign=password_reset";
+    const found = extractFromEmail({
+      subject: "Reset your password",
+      text: null,
+      html: [
+        `<a href="https://acme.test/reset/k3y${utm}">Reset password</a>`,
+        `<a href="https://help.acme.test/${utm}">Help</a>`,
+        `<a href="https://twitter.com/acme${utm}">Twitter</a>`,
+        `<a href="https://acme.test/privacy${utm}">Privacy</a>`,
+        `<a href="https://support.acme.test/?ref=auth">Support</a>`,
+        `<a href="https://acme.test/orders/123">View your order</a>`,
+      ].join(""),
+    });
+    expect(found.links.map((link) => link.url)).toEqual([
+      `https://acme.test/reset/k3y${utm}`,
+      "https://acme.test/orders/123",
+    ]);
+  });
+
+  it("keeps invites, short video links and ticket pages, and drops footer phrases", () => {
+    const found = extractFromEmail({
+      subject: null,
+      text: null,
+      html: [
+        `<a href="https://discord.gg/abcdef">Join the server</a>`,
+        `<a href="https://youtu.be/dQw4w9WgXcQ">Watch the demo</a>`,
+        `<a href="https://acme.zendesk.com/agent/tickets/123/open">View ticket</a>`,
+        `<a href="https://ct.sendgrid.net/ls/click?upn=1">Visit our Help Center</a>`,
+        `<a href="https://ct.sendgrid.net/ls/click?upn=2">Privacy Notice</a>`,
+      ].join(""),
+    });
+    expect(found.links.map((link) => link.url)).toEqual([
+      "https://discord.gg/abcdef",
+      "https://youtu.be/dQw4w9WgXcQ",
+      "https://acme.zendesk.com/agent/tickets/123/open",
+    ]);
+  });
+
   it("drops unsubscribe links even when they carry a token", () => {
     const found = extractFromEmail({
       subject: null,
