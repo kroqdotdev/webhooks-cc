@@ -268,7 +268,7 @@ const ARTICLE_PATH = /\/(?:hc|articles?|docs?)(?:\/|$)/i;
  * Only the path counts, never the host's other labels or the query: a
  * login.acme.com/terms footer or a utm tag on every link is no action.
  */
-function keepLink(url: string, label: string | null): boolean {
+function keepLink(url: string, label: string | null): Kept {
   if (UNSUBSCRIBE.test(url) || (label !== null && UNSUBSCRIBE.test(label))) return false;
   let parsed: URL;
   try {
@@ -279,26 +279,39 @@ function keepLink(url: string, label: string | null): boolean {
   if (PIXEL_PATH.test(parsed.pathname)) return false;
   const pathAsks = ACTION.test(parsed.pathname);
   if (DROP.test(url) || (label !== null && DROP.test(label))) {
-    return (
+    const rescue =
       HELP_HOST.test(parsed.hostname.split(".")[0]) &&
       pathAsks &&
-      !ARTICLE_PATH.test(parsed.pathname)
-    );
+      !ARTICLE_PATH.test(parsed.pathname);
+    return rescue ? "rescued" : false;
   }
   if (SOCIAL_HOSTS.test(parsed.hostname)) {
-    return pathAsks || (label !== null && ACTION.test(label));
+    return pathAsks || (label !== null && ACTION.test(label)) ? "rescued" : false;
   }
-  return true;
+  return "kept";
 }
+
+/**
+ * How a link was kept: by main's rules, or rescued (a help or support host's
+ * action path, a social site's action). Rescues read words in paths and
+ * labels that are often someone's content (a repo, an article or video
+ * title), so a rescued link ranks after every other: it only answers when
+ * the mail has nothing else.
+ */
+type Kept = "kept" | "rescued" | false;
 
 function findLinks(text: string | null, html: string | null): ExtractedLink[] {
   const seen = new Set<string>();
   const links: ExtractedLink[] = [];
+  const rescued: ExtractedLink[] = [];
   const add = (rawUrl: string, label: string | null) => {
     const url = cleanUrl(rawUrl);
-    if (!url || seen.has(url) || !keepLink(url, label)) return;
+    if (!url || seen.has(url)) return;
+    const kept = keepLink(url, label);
+    if (!kept) return;
     seen.add(url);
-    links.push({ url, label, action: ACTION.test(url) || (label !== null && ACTION.test(label)) });
+    const link = { url, label, action: ACTION.test(url) || (label !== null && ACTION.test(label)) };
+    (kept === "rescued" ? rescued : links).push(link);
   };
   if (html) {
     for (const anchor of findAnchors(html)) {
@@ -310,7 +323,11 @@ function findLinks(text: string | null, html: string | null): ExtractedLink[] {
     if (!source) continue;
     for (const match of source.matchAll(URL_IN_TEXT)) add(match[0], null);
   }
-  const ranked = [...links.filter((link) => link.action), ...links.filter((link) => !link.action)];
+  const ranked = [
+    ...links.filter((link) => link.action),
+    ...links.filter((link) => !link.action),
+    ...rescued,
+  ];
   return ranked.slice(0, MAX_LINKS);
 }
 

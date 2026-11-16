@@ -146,10 +146,12 @@ describe("extractFromEmail", () => {
       ].join("\n"),
       html: null,
     });
+    // A rescued link (here a support host's verify page) ranks after the
+    // mail's own links: it only answers when nothing else does.
     expect(found.links.map((link) => [link.url, link.action])).toEqual([
-      ["https://support.acme.test/verify?token=Qw81xk", true],
       ["https://shop.acme.test/orders/1043/track/", false],
       ["https://links.acme.test/track/click?id=9f2", false],
+      ["https://support.acme.test/verify?token=Qw81xk", true],
     ]);
   });
 
