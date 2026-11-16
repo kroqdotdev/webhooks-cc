@@ -231,6 +231,7 @@ function asSetup(value: Json | undefined): EmailSenderSetup | null {
             fqdn: helo.fqdn === true,
             resolves: helo.resolves === true,
             matchesPtr: helo.matches_ptr === true,
+            error: asString(helo.error),
           }
         : null,
     error: asString(setup.error),

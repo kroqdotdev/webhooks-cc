@@ -1,0 +1,8 @@
+{
+  "title": "HELO checks that could not run read as not checked",
+  "items": [
+    "When the mail host cannot look up the name a sending server introduced itself with (the DNS server failed or refused to answer), the deliverability report says the HELO name was not checked instead of saying it does not resolve, and counts nothing to fix",
+    "The sender setup on captured email carries an error on the HELO facts when that lookup failed, through the API, SDK and MCP server; mail captured earlier reads as before",
+    "The mail host caps the reverse DNS lookups it runs at once, so a burst of connections cannot start any number of them; a connection past the cap records its reverse DNS as not checked"
+  ]
+}

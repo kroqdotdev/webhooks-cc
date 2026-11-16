@@ -325,7 +325,8 @@ fn is_absent(error: &mail_auth::Error) -> bool {
     )
 }
 
-/// What a forward lookup of a PTR name says about the client's address.
+/// What a forward lookup of a name (a PTR name, the HELO name) says about
+/// the client's address.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Forward {
     Matches,
@@ -401,14 +402,6 @@ pub(crate) async fn forward(
         Err(e) if is_absent(&e) => Forward::Differs,
         Err(_) => Forward::Failed,
     }
-}
-
-pub(crate) async fn resolves_to(
-    authenticator: &MessageAuthenticator,
-    name: String,
-    ip: IpAddr,
-) -> bool {
-    forward(authenticator, name, ip).await == Forward::Matches
 }
 
 /// Run blocking `work` once one of `slots` is free, answering by `deadline`.

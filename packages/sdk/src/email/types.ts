@@ -165,10 +165,12 @@ export interface EmailSenderSetup {
     /** An address literal such as [192.0.2.1] instead of a name. */
     ipLiteral: boolean;
     fqdn: boolean;
-    /** The name resolves to the sending server's address. */
+    /** The name resolves to the sending server's address (false when `error` is set). */
     resolves: boolean;
     /** The name is the server's forward-confirmed reverse DNS name. */
     matchesPtr: boolean;
+    /** Set when the name's addresses could not be looked up ("lookup failed"): whether it resolves is unknown. Absent on mail captured before it existed. */
+    error?: string | null;
   } | null;
   /** Set when the lookups could not finish ("timeout", "too large"). */
   error: string | null;

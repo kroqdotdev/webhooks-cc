@@ -573,6 +573,15 @@ function serverFindings({ email }: DeliverabilityInput, add: Add) {
         "HELO resolves to the server",
         `The server introduced itself as ${helo.name}, which resolves to its address.`
       );
+    } else if (helo.error) {
+      // A DNS timeout or server failure when the email arrived: unknown,
+      // so not something for the sender to fix.
+      add(
+        "helo",
+        "info",
+        "HELO not checked",
+        `The server introduced itself as ${helo.name}, whose addresses could not be looked up when the email arrived, so whether it resolves is unknown.`
+      );
     } else {
       add(
         "helo",
