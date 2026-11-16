@@ -798,7 +798,7 @@ const PROVIDER_SEO: Partial<Record<string, ProviderSeo>> = {
       {
         question: "Can I test Clerk webhooks without a public server?",
         answer:
-          "Yes. Point the Clerk endpoint at a webhooks.cc URL to see each user.created or session.created payload as it arrives, and run whk tunnel <port> --endpoint <slug> to forward the deliveries to your app on localhost.",
+          "Yes. Point the Clerk endpoint at a webhooks.cc URL to see each user.created or session.created payload as it arrives, and run whk tunnel <port> --endpoint <slug> with that endpoint's slug to forward the deliveries to your app on localhost.",
       },
     ],
   },
@@ -1362,17 +1362,17 @@ const PROVIDER_SEO: Partial<Record<string, ProviderSeo>> = {
       {
         question: "How do I create a BigCommerce webhook?",
         answer:
-          "Through the REST API: POST to https://api.bigcommerce.com/stores/{store_hash}/v3/hooks with your X-Auth-Token and a JSON body holding scope (such as store/order/created) and destination, the HTTPS URL to call. is_active and headers are optional. The destination must answer with a 200 and be served on port 443; custom ports are not supported. An API account's default scope is enough to create and manage webhooks.",
+          "Through the REST API: POST to https://api.bigcommerce.com/stores/{store_hash}/v3/hooks with your X-Auth-Token and a JSON body holding scope (such as store/order/created) and destination, the HTTPS URL to call. is_active and headers are optional. The destination must answer with a 2xx response and be served on port 443; custom ports are not supported. An API account's default scope is enough to create and manage webhooks.",
       },
       {
         question: "How do I test BigCommerce webhooks?",
         answer:
-          "Create a free webhooks.cc endpoint and use its URL as the destination when you create the hook, then make the change the scope watches, such as placing an order on the store. Each callback appears on the endpoint with its headers and payload, so you can see the scope, the hash and the ids in data before writing a handler. To run your own code on it, run whk tunnel <port> --endpoint <slug> with that endpoint's slug and every callback is forwarded to localhost as well.",
+          "Create a free webhooks.cc endpoint and use its URL as the destination when you create the hook, then make the change the scope watches, such as placing an order on the store. Each callback appears on the endpoint with its headers and payload, so you can see the scope, the hash and the ids in data before writing a handler. To try your own handler, run whk tunnel <port> --endpoint <slug> with that endpoint's slug, and every callback is also forwarded to localhost.",
       },
       {
         question: "How do I verify a BigCommerce webhook?",
         answer:
-          "BigCommerce documents signature checks with the Standard Webhooks libraries, verified with your app's client secret (base64-encoded first, as BigCommerce's samples do), which use the webhook-id, webhook-timestamp and webhook-signature headers; the timestamp guards against replays. You can also pass a headers object when creating the hook, and BigCommerce sends those headers with every callback, for example as a shared secret your handler checks.",
+          "BigCommerce documents signature checks with the Standard Webhooks libraries, which read the webhook-id, webhook-timestamp and webhook-signature headers. Verify with your app's client secret, base64-encoded first as BigCommerce's samples do; the timestamp guards against replays. You can also pass a headers object when creating the hook, and BigCommerce sends those headers with every callback, for example as a shared secret your handler checks.",
       },
       {
         question: "What is the BigCommerce webhook retry schedule?",
@@ -1447,7 +1447,7 @@ const PROVIDER_SEO: Partial<Record<string, ProviderSeo>> = {
       {
         question: "How do I test Chargebee webhooks locally?",
         answer:
-          "Create a free webhooks.cc endpoint and add its URL as a webhook on your Chargebee test site (Settings, Configure Chargebee, API Keys and Webhooks, Webhooks tab). Click Test Webhook on the webhook's card and pick an event, or make a test purchase with a Test Gateway card, and the delivery appears on the endpoint with its headers and body. To reach code on your machine, run whk tunnel <port> --endpoint <slug> with that endpoint's slug and every delivery is forwarded to localhost as well as kept on the endpoint.",
+          "Create a free webhooks.cc endpoint and add its URL as a webhook on your Chargebee test site (Settings, Configure Chargebee, API Keys and Webhooks, Webhooks tab). Click Test Webhook on the webhook's card and pick an event, or make a test purchase with a Test Gateway card, and the delivery appears on the endpoint with its headers and body. To reach code on your machine, run whk tunnel <port> --endpoint <slug> with that endpoint's slug, and every delivery is forwarded to localhost as well as kept on the endpoint.",
       },
       {
         question: "Does Chargebee sign its webhooks?",
