@@ -20,7 +20,8 @@
 --   - What internal accounts' endpoints received so far moves into
 --     deleted_webhooks once, so applying this never lowers the public total
 --     (00038 keeps it from going down); only their traffic from now on is
---     left out. Apply this file once: a second run would add that sum again.
+--     left out. A second run skips this step (the trigger below marks the
+--     first).
 --
 -- Marking an account internal later takes its live counts out of the total
 -- at the next refresh (4x a day). Same signatures and grants as 00038; the
@@ -35,20 +36,35 @@ begin;
 -- endpoints so that a delete committing between the backfill's snapshot and
 -- its row lock is not counted twice (once by the old trigger, once here).
 -- Captures and endpoint writes wait until the file commits, a few
--- milliseconds once both are held; each lock waits for writers already
--- running, up to the lock_timeout of the psql recipe. Apply at a quiet hour.
+-- milliseconds once both are held. Each lock waits at most a second for
+-- writers already running (captures queue behind the wait), so a slow one
+-- fails the file instead of stalling captures; run it again then. Apply at a
+-- quiet hour.
+set local lock_timeout = '1s';
 lock table public.users in share row exclusive mode;
 lock table public.endpoints in share mode;
 
--- Under the site_stats row lock, like refresh_site_stats().
-update public.site_stats
-   set deleted_webhooks = deleted_webhooks + (
-     select coalesce(sum(e.request_count), 0)
-       from public.endpoints e
-       join public.users u on u.id = e.user_id
-      where u.internal
-   )
- where id = 1;
+-- Under the site_stats row lock, like refresh_site_stats(). Only on the
+-- first run: the trigger this file creates marks it as applied, so running
+-- the file again never adds the sum twice.
+do $$
+begin
+  if not exists (
+    select 1 from pg_trigger
+     where tgname = 'users_internal_endpoints_first'
+       and tgrelid = 'public.users'::regclass
+  ) then
+    update public.site_stats
+       set deleted_webhooks = deleted_webhooks + (
+         select coalesce(sum(e.request_count), 0)
+           from public.endpoints e
+           join public.users u on u.id = e.user_id
+          where u.internal
+       )
+     where id = 1;
+  end if;
+end;
+$$;
 
 create or replace function public.accumulate_deleted_endpoint_webhooks()
 returns trigger

@@ -237,7 +237,10 @@ export function startStatusCanary(): void {
     if (running) return;
     running = true;
     try {
-      await Promise.all(legs.map((leg) => runLeg(leg)));
+      const outcomes = await Promise.all(legs.map((leg) => runLeg(leg)));
+      // A miss may mean the endpoint was made again under the same slug:
+      // look its id up afresh next time.
+      if (outcomes.some((outcome) => outcome !== "ok")) cachedId = undefined;
     } finally {
       running = false;
     }

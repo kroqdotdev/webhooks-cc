@@ -238,7 +238,7 @@ async function parseAttachments(
     // Stored reads may run a little past the job's budget, since a parse
     // already paid for is cheap to deliver, but not without bound: a run of
     // slow reads must not keep a slot for good (the status heartbeat counts
-    // on JOB_BUDGET_MS + STORED_READ_GRACE_MS plus one read's timeout).
+    // on JOB_BUDGET_MS + STORED_READ_GRACE_MS and a few slow calls).
     if (Date.now() > options.deadline + STORED_READ_GRACE_MS) {
       keep({ ...base, error: "time" }, null);
       continue;
@@ -513,7 +513,12 @@ export function startParseWorker(): void {
     alive: () => {
       const now = Date.now();
       if (busy >= CONCURRENCY) {
-        return now - Math.max(lastJobDoneAt, lastClaimDoneAt) < JOB_BUDGET_MS + 2 * 60_000;
+        // A job's worst case: its budget, the stored-read grace, and a few
+        // slow storage and database calls past them.
+        return (
+          now - Math.max(lastJobDoneAt, lastClaimDoneAt) <
+          JOB_BUDGET_MS + STORED_READ_GRACE_MS + 3 * 30_000
+        );
       }
       return now - lastClaimDoneAt < 2 * 60_000;
     },
