@@ -117,4 +117,13 @@ group("reportRequestError", () => {
     reportRequestError(new RangeError("too big"), { method: "GET" }, context);
     expect(sdk.captureException).toHaveBeenCalledTimes(2);
   });
+
+  it("leaves out Next refusing a router state header, which is the sender's fault", () => {
+    reportRequestError(
+      new Error("The router state header was sent but could not be parsed."),
+      { method: "GET" },
+      { routePath: "/dashboard/page", routeType: "render" }
+    );
+    expect(sdk.captureException).not.toHaveBeenCalled();
+  });
 });

@@ -1,6 +1,11 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import type { NextConfig } from "next";
+import {
+  MALFORMED_ROUTER_STATE,
+  ROUTER_STATE_HEADER,
+  ROUTER_STATE_REFUSED_PATH,
+} from "./lib/router-state-header";
 
 // auth.md discovery URL. Mirrors lib/agent/metadata.ts buildAuthMdUrl(), but
 // resolved here from raw env because next.config runs outside the app's lazy
@@ -224,6 +229,20 @@ const nextConfig: NextConfig = {
         // mailhooks.cc's docs come after the twins, so an agent asking it for
         // markdown gets the same twin as on webhooks.cc.
         ...mailhooksDocsRewrites,
+        // An RSC request whose router state header is not what Next's client
+        // writes would fail the render as a 500; it gets a 400 instead
+        // (lib/router-state-header.ts). beforeFiles rewrites chain, each later
+        // rule matching the path an earlier one rewrote to, so this comes last:
+        // whatever the rules above made of the path, no later one renders it.
+        {
+          // "(.*)" rather than "*", which would leave out the root.
+          source: "/:path(.*)",
+          has: [
+            ...rscRequest,
+            { type: "header" as const, key: ROUTER_STATE_HEADER, value: MALFORMED_ROUTER_STATE },
+          ],
+          destination: ROUTER_STATE_REFUSED_PATH,
+        },
       ],
     };
   },
