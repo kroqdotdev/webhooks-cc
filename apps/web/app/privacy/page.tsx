@@ -28,7 +28,7 @@ export default function PrivacyPage() {
 
       <main className="max-w-3xl mx-auto px-6 py-10 md:px-10">
         <h1 className="text-3xl md:text-4xl font-bold mb-4">Privacy Policy</h1>
-        <p className="text-sm text-muted-foreground mb-8">Last updated: November 11, 2026</p>
+        <p className="text-sm text-muted-foreground mb-8">Last updated: November 17, 2026</p>
 
         <div className="space-y-3 text-sm text-muted-foreground">
           <p>
@@ -74,6 +74,12 @@ export default function PrivacyPage() {
               server; Supabase Inc. does not receive your data. The original message and the
               attachments of each captured email are kept apart from the database, in Hetzner&apos;s
               object storage in Falkenstein, and deleted with the request.
+            </p>
+            <p>
+              So that the service can be restored if those servers are lost, encrypted copies of the
+              database and of captured emails are also kept in Cloudflare&apos;s R2 storage in the
+              European Union. They are encrypted on our servers before they leave, with a key
+              Cloudflare does not have.
             </p>
             <p>
               The emails we send leave from our own mail server in Copenhagen, Denmark, and are
@@ -284,7 +290,10 @@ export default function PrivacyPage() {
             <p>We use these companies to run webhooks.cc:</p>
             <ul className="list-disc pl-5 space-y-1">
               <li>Hetzner hosts our servers and backups in Germany</li>
-              <li>Cloudflare protects and delivers all traffic to webhooks.cc</li>
+              <li>
+                Cloudflare protects and delivers all traffic to webhooks.cc and stores our encrypted
+                backups in the EU
+              </li>
               <li>Webdock hosts our mail server and our error and log monitoring in Denmark</li>
               <li>Amazon SES delivers our emails from Germany</li>
               <li>PostHog provides product analytics from its EU region</li>
@@ -482,8 +491,10 @@ export default function PrivacyPage() {
             </p>
             <p>
               <span className="font-bold text-foreground">Backups:</span> Hetzner keeps seven daily
-              backups of our server and deletes the oldest each time it makes a new one, so data you
-              delete leaves the backups after about a week.
+              backups of our server and deletes the oldest each time it makes a new one. Our own
+              encrypted backups in Cloudflare R2 let us restore the database to any moment in the
+              past week and are deleted as they age. Data you delete leaves every backup within
+              about ten days.
             </p>
             <p>
               <span className="font-bold text-foreground">Billing records:</span> Polar keeps the

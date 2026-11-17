@@ -28,16 +28,17 @@ const SUBPROCESSORS: readonly Subprocessor[] = [
     purpose:
       "Hosts the server that runs webhooks.cc, its database, and its backups, the server that serves shared previews, the object storage that keeps the original message and attachments of each captured email, and the standby server of StatOSS, our error and log monitoring.",
     data: "All data described in our privacy policy, including captured webhooks.",
-    location: "Falkenstein, Germany. Backups stay in Falkenstein, in a separate data center.",
+    location:
+      "Falkenstein, Germany. The server backups stay in Falkenstein, in a separate data center.",
   },
   {
     name: "Cloudflare",
     entity: "Cloudflare, Inc., United States",
     purpose:
-      "DNS, attack protection, and secure delivery for every webhooks.cc address and for the previews shared on sharehooks.cc, the relay that sends endpoint notifications, the Turnstile check that keeps spam off the report form, and the network and backups of StatOSS.",
-    data: "All traffic in transit, including the webhooks sent to your endpoints, the notifications sent from them, and the pages visitors load from shared previews, and visitor IP addresses. The browser signals Turnstile reads when someone sends a report. StatOSS's backups of error reports and logs, kept in Western Europe.",
+      "DNS, attack protection, and secure delivery for every webhooks.cc address and for the previews shared on sharehooks.cc, the relay that sends endpoint notifications, the Turnstile check that keeps spam off the report form, the storage that keeps our encrypted backups of the database and of captured emails, and the network and backups of StatOSS.",
+    data: "All traffic in transit, including the webhooks sent to your endpoints, the notifications sent from them, and the pages visitors load from shared previews, and visitor IP addresses. The browser signals Turnstile reads when someone sends a report. Our backups of the database and of captured emails, encrypted on our servers with a key Cloudflare does not have, kept in the European Union and deleted within about ten days. StatOSS's backups of error reports and logs, kept in Western Europe.",
     location:
-      "Cloudflare's global network: requests are handled at the data center nearest the sender, and logs and metadata are kept in the United States and Europe",
+      "Cloudflare's global network: requests are handled at the data center nearest the sender, and logs and metadata are kept in the United States and Europe. Our backups are stored in the European Union (R2's EU jurisdiction).",
     safeguard: "EU-US Data Privacy Framework and Standard Contractual Clauses",
   },
   {
@@ -81,7 +82,7 @@ export default function SubprocessorsPage() {
 
       <main className="max-w-3xl mx-auto px-6 py-10 md:px-10">
         <h1 className="text-3xl md:text-4xl font-bold mb-4">Subprocessors</h1>
-        <p className="text-sm text-muted-foreground mb-8">Last updated: November 10, 2026</p>
+        <p className="text-sm text-muted-foreground mb-8">Last updated: November 17, 2026</p>
 
         <div className="space-y-3 text-sm text-muted-foreground">
           <p>
