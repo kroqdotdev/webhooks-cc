@@ -502,7 +502,9 @@ export function startParseWorker(): void {
     label: "parsing",
     alive: () => {
       const now = Date.now();
-      if (busy >= CONCURRENCY) return now - lastJobDoneAt < JOB_BUDGET_MS + 2 * 60_000;
+      if (busy >= CONCURRENCY) {
+        return now - Math.max(lastJobDoneAt, lastClaimDoneAt) < JOB_BUDGET_MS + 2 * 60_000;
+      }
       return now - lastClaimDoneAt < 2 * 60_000;
     },
   });

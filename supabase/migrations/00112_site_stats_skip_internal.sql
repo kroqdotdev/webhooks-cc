@@ -17,12 +17,27 @@
 --     statement trigger runs, so a deleted internal account's endpoints are
 --     counted then: rare, and only ever too high, never lost.
 --
--- Marking an account internal takes its live counts out of the total at the
--- next refresh (4x a day). Same signatures and grants as 00038; the whole
--- file runs in one transaction so the two functions change together.
+--   - What internal accounts' endpoints received so far moves into
+--     deleted_webhooks once, so applying this never lowers the public total
+--     (00038 keeps it from going down); only their traffic from now on is
+--     left out. Apply this file once: a second run would add that sum again.
+--
+-- Marking an account internal later takes its live counts out of the total
+-- at the next refresh (4x a day). Same signatures and grants as 00038; the
+-- whole file runs in one transaction so the two functions change together.
 -- ============================================================================
 
 begin;
+
+-- Under the site_stats row lock, like refresh_site_stats().
+update public.site_stats
+   set deleted_webhooks = deleted_webhooks + (
+     select coalesce(sum(e.request_count), 0)
+       from public.endpoints e
+       join public.users u on u.id = e.user_id
+      where u.internal
+   )
+ where id = 1;
 
 create or replace function public.accumulate_deleted_endpoint_webhooks()
 returns trigger
