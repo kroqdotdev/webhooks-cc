@@ -1,19 +1,15 @@
 "use client";
 
-import { useAnnouncedRouter } from "@/lib/announced-router";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { Star } from "lucide-react";
 import { useAuth } from "@/components/providers/supabase-auth-provider";
 import {
   defaultDashboardEndpoint,
-  emitDashboardEndpointsChanged,
-  fetchDashboardEndpoints,
   setDashboardEndpointFavorite,
-  subscribeDashboardEndpointsChanged,
   type DashboardEndpointWithSharing,
-  type DashboardEndpointsResponse,
 } from "@/lib/dashboard-api";
+import { noteNavigationTo } from "@/lib/leave-guard";
 import { Button } from "@/components/ui/button";
 import {
   Select,
@@ -28,55 +24,48 @@ import {
 import { trackEndpointFavorited, trackEndpointSwitched } from "@/lib/analytics";
 import { useSite } from "@/components/providers/site-provider";
 import { listedOn, type EndpointSite } from "@/lib/site";
+import { useDashboardEndpoints } from "@/components/dashboard/endpoints-provider";
+
+/** The endpoint with a star clicked here but not yet in the list. */
+function withStar(star: { id: string; favorite: boolean }) {
+  return (ep: DashboardEndpointWithSharing): DashboardEndpointWithSharing =>
+    ep.id === star.id ? { ...ep, favorite: star.favorite } : ep;
+}
+
+/** The switcher's outline while the list loads: the trigger and the star, empty. */
+function SwitcherPlaceholder() {
+  return (
+    <div aria-hidden className="flex min-w-0 flex-1 items-center gap-1 md:flex-initial">
+      <div className="h-10 min-w-0 flex-1 rounded-md border border-input bg-background md:w-[260px] md:flex-initial" />
+      <div className="h-10 w-10 shrink-0" />
+    </div>
+  );
+}
 
 export function EndpointSwitcher() {
   const { session } = useAuth();
-  const [data, setData] = useState<DashboardEndpointsResponse | null>(null);
-  const router = useAnnouncedRouter();
+  // The dashboard's one list (endpoints-provider.tsx).
+  const { data: listed, failed, reload } = useDashboardEndpoints();
   const searchParams = useSearchParams();
   const currentSlug = searchParams.get("endpoint");
   const site = useSite();
   const [savingFavorite, setSavingFavorite] = useState(false);
-
-  useEffect(() => {
-    const accessToken = session?.access_token;
-    if (!accessToken) {
-      setData(null);
-      return;
-    }
-
-    let cancelled = false;
-    // Only the latest load counts: two quick star clicks start two reloads,
-    // and the first to start may answer last with the older favourite.
-    let loads = 0;
-
-    const load = async () => {
-      const seq = ++loads;
-      try {
-        const nextData = await fetchDashboardEndpoints(accessToken);
-        if (!cancelled && seq === loads) {
-          setData(nextData);
-        }
-      } catch (error) {
-        console.error("Failed to load endpoints for switcher:", error);
-        // A failed reload keeps the last list, so the switcher and its star
-        // stay usable; only a first load that fails leaves it empty.
-        if (!cancelled && seq === loads) {
-          setData((prev) => prev ?? { owned: [], shared: [] });
-        }
-      }
-    };
-
-    void load();
-    const unsubscribe = subscribeDashboardEndpointsChanged(() => {
-      void load();
-    });
-
-    return () => {
-      cancelled = true;
-      unsubscribe();
-    };
-  }, [session?.access_token]);
+  // A star clicked here shows at once, but only here: the page reads
+  // favourites to pick the endpoint a bare /dashboard opens, and it should
+  // change only once the server has the change. Dropped when the save fails,
+  // when the list read after the save arrives, or, once the save has ended,
+  // when any list already agrees with it (so it never masks a later change
+  // made elsewhere). While saving it stays: a read started before the save
+  // may still answer with the old value.
+  const [star, setStar] = useState<{ id: string; favorite: boolean } | null>(null);
+  if (star && !savingFavorite && listed) {
+    const ep = [...listed.owned, ...listed.shared].find((e) => e.id === star.id);
+    if (!ep || ep.favorite === star.favorite) setStar(null);
+  }
+  const data =
+    listed && star
+      ? { owned: listed.owned.map(withStar(star)), shared: listed.shared.map(withStar(star)) }
+      : listed;
 
   // The endpoints this site lists, and the one open now even if it is listed
   // on the other site (opened by its link), as the dashboard does.
@@ -85,13 +74,28 @@ export function EndpointSwitcher() {
   const owned = (data?.owned ?? []).filter(shown);
   const allEndpoints = [...owned, ...(data?.shared ?? []).filter(shown)];
 
-  if (!data || allEndpoints.length === 0) {
-    return null;
-  }
+  // The list could not be read: the page says so, and there is nothing to switch.
+  if (failed) return null;
+  // Until there is something to switch to, a stand-in of the switcher's size,
+  // so the header does not grow and push the page down when it appears: while
+  // the list loads, and while a new account's first endpoint is being made.
+  if (!data || data.owned.length + data.shared.length === 0) return <SwitcherPlaceholder />;
+  // Endpoints, but none listed on this site.
+  if (allEndpoints.length === 0) return null;
 
+  // Through the History API, which Next syncs into useSearchParams, as the
+  // dashboard writes its own address: the page is a client page with nothing
+  // to fetch from the server, so router.push only cost a server round trip
+  // with nothing changing on screen. The dashboard loads the endpoint's
+  // requests the moment it sees the new address.
+  // Announced first (lib/leave-guard.ts), so a ?request= write the page has
+  // waiting for the old endpoint is held back instead of landing on the new
+  // endpoint's address before the page has seen it.
   const handleChange = (slug: string) => {
     trackEndpointSwitched();
-    router.push(`/dashboard?endpoint=${slug}`);
+    const href = `/dashboard?endpoint=${encodeURIComponent(slug)}`;
+    noteNavigationTo(href);
+    window.history.pushState(null, "", href);
   };
 
   // Resolve the ?endpoint= param the same way the dashboard does (exact match,
@@ -118,8 +122,6 @@ export function EndpointSwitcher() {
     const accessToken = session?.access_token;
     if (!current || !accessToken || savingFavorite) return;
     const favorite = !current.favorite;
-    const mark = (value: boolean) => (ep: DashboardEndpointWithSharing) =>
-      ep.id === current.id ? { ...ep, favorite: value } : ep;
     // Keep the open endpoint open: when the URL names no endpoint, or one
     // that is gone, the dashboard shows the first favourite, which this
     // change may move.
@@ -127,28 +129,26 @@ export function EndpointSwitcher() {
     if (current.slug !== currentSlug) {
       const params = new URLSearchParams(window.location.search);
       params.set("endpoint", current.slug);
-      router.replace(`/dashboard?${params.toString()}`);
+      window.history.replaceState(null, "", `/dashboard?${params.toString()}`);
     }
-    setData((prev) =>
-      prev
-        ? { owned: prev.owned.map(mark(favorite)), shared: prev.shared.map(mark(favorite)) }
-        : prev
-    );
+    const mine = { id: current.id, favorite };
+    const drop = () => setStar((shown) => (shown === mine ? null : shown));
+    setStar(mine);
     setSavingFavorite(true);
     try {
       await setDashboardEndpointFavorite(accessToken, current.slug, favorite);
       trackEndpointFavorited(favorite);
     } catch (error) {
       console.error("Failed to change the favourite endpoint:", error);
-      setData((prev) =>
-        prev
-          ? { owned: prev.owned.map(mark(!favorite)), shared: prev.shared.map(mark(!favorite)) }
-          : prev
-      );
+      drop();
+      void reload();
+      return;
     } finally {
       setSavingFavorite(false);
-      emitDashboardEndpointsChanged();
     }
+    // The list now carries the change. If this read fails, the star stays
+    // until the next click: the server has the change, the list may not.
+    if (await reload()) drop();
   };
 
   // Who shares it, beside its name: the teams of an endpoint the caller shares,

@@ -3,11 +3,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const getUser = vi.hoisted(() => vi.fn().mockResolvedValue({ data: { user: null }, error: null }));
 
-vi.mock("@supabase/ssr", () => ({
-  createServerClient: vi.fn(() => ({
+const createServerClient = vi.hoisted(() =>
+  vi.fn<(...args: unknown[]) => { auth: { getUser: () => Promise<unknown> } }>(() => ({
     auth: { getUser },
-  })),
-}));
+  }))
+);
+
+vi.mock("@supabase/ssr", () => ({ createServerClient }));
 
 import { MAILHOOKS_FEATURES } from "./lib/mailhooks-features";
 import { LAYOUT_TEMPLATES } from "./lib/layout-templates";
@@ -16,7 +18,18 @@ import { config, proxy } from "./proxy";
 
 beforeEach(() => {
   getUser.mockClear();
+  createServerClient.mockClear();
+  vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", "https://api1.webhooks.cc");
+  vi.stubEnv("SUPABASE_URL", "http://gateway:8000");
 });
+
+afterEach(() => vi.unstubAllEnvs());
+
+/** What a browser sends when it loads a page into its window. */
+const PAGE_LOAD = {
+  "sec-fetch-dest": "document",
+  accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+};
 
 describe("proxy", () => {
   it("refuses POST requests with Next-Action and RSC headers before touching Supabase auth", async () => {
@@ -63,15 +76,16 @@ describe("proxy", () => {
     });
     const apiRes = await proxy(apiPost);
     expect(apiRes.status).toBe(200);
-    expect(getUser).toHaveBeenCalledTimes(1);
+    expect(getUser).not.toHaveBeenCalled();
 
     const pageGet = new NextRequest("https://webhooks.cc/", {
       method: "GET",
+      headers: PAGE_LOAD,
     });
     const pageRes = await proxy(pageGet);
     expect(pageRes.status).toBe(200);
     expect(pageRes.headers.get("Content-Security-Policy")).toContain("default-src 'self'");
-    expect(getUser).toHaveBeenCalledTimes(2);
+    expect(getUser).toHaveBeenCalledTimes(1);
   });
 
   it("lets the email preview load images on every page, not only the dashboard", async () => {
@@ -85,6 +99,109 @@ describe("proxy", () => {
       expect(csp).toContain("frame-src 'self' https://challenges.cloudflare.com;");
       expect(csp).not.toContain("google.com");
     }
+  });
+});
+
+describe("proxy: session check", () => {
+  it("checks the session when a page loads into the window", async () => {
+    await proxy(new NextRequest("https://webhooks.cc/dashboard", { headers: PAGE_LOAD }));
+    expect(getUser).toHaveBeenCalledTimes(1);
+  });
+
+  it("checks it for a browser without Sec-Fetch-Dest that asks for HTML", async () => {
+    await proxy(
+      new NextRequest("https://webhooks.cc/dashboard", {
+        headers: { accept: PAGE_LOAD.accept },
+      })
+    );
+    expect(getUser).toHaveBeenCalledTimes(1);
+  });
+
+  it("leaves client navigations, prefetches and router.refresh() alone", async () => {
+    // Next makes them with fetch() and strips its RSC headers before the
+    // proxy runs, so all the proxy sees is a fetch.
+    for (const path of ["/dashboard?endpoint=abc", "/docs", "/"]) {
+      await proxy(
+        new NextRequest(`https://webhooks.cc${path}`, {
+          headers: { "sec-fetch-dest": "empty", accept: "*/*" },
+        })
+      );
+    }
+    expect(getUser).not.toHaveBeenCalled();
+  });
+
+  it("lets Sec-Fetch-Dest decide before Accept", async () => {
+    // A fetch that asks for HTML, a frame and a HEAD are no page loads.
+    for (const init of [
+      { headers: { "sec-fetch-dest": "empty", accept: PAGE_LOAD.accept } },
+      { headers: { "sec-fetch-dest": "iframe", accept: PAGE_LOAD.accept } },
+      { method: "HEAD", headers: PAGE_LOAD },
+    ]) {
+      await proxy(new NextRequest("https://webhooks.cc/dashboard", init));
+    }
+    expect(getUser).not.toHaveBeenCalled();
+  });
+
+  it("leaves API routes alone, even opened as a page", async () => {
+    for (const [path, init] of [
+      ["/api/endpoints", { headers: { authorization: "Bearer x", "sec-fetch-dest": "empty" } }],
+      ["/api/endpoints", { headers: PAGE_LOAD }],
+      ["/api", { headers: PAGE_LOAD }],
+      ["/api/auth/device-request", { method: "POST", headers: { "sec-fetch-dest": "empty" } }],
+    ] as const) {
+      await proxy(new NextRequest(`https://webhooks.cc${path}`, init));
+    }
+    expect(getUser).not.toHaveBeenCalled();
+  });
+
+  it("leaves the auth handoff routes, which set their own cookies, alone", async () => {
+    for (const path of [
+      "/auth/callback?code=x",
+      "/auth/confirm?token_hash=x",
+      "/auth/switch/finish",
+    ]) {
+      await proxy(new NextRequest(`https://webhooks.cc${path}`, { headers: PAGE_LOAD }));
+    }
+    expect(getUser).not.toHaveBeenCalled();
+  });
+
+  it("checks over the internal address under the public address's cookie name", async () => {
+    await proxy(new NextRequest("https://webhooks.cc/dashboard", { headers: PAGE_LOAD }));
+    const [url, , options] = createServerClient.mock.calls[0] as [
+      string,
+      string,
+      { cookieOptions?: { name?: string } },
+    ];
+    expect(url).toBe("http://gateway:8000");
+    expect(options.cookieOptions?.name).toBe("sb-api1-auth-token");
+  });
+
+  it("keeps a response that sets session cookies out of caches, however often it sets them", async () => {
+    type SetAll = (
+      cookies: { name: string; value: string; options: object }[],
+      headers: Record<string, string>
+    ) => void;
+    createServerClient.mockImplementationOnce((...args: unknown[]) => {
+      const { setAll } = (args[2] as { cookies: { setAll: SetAll } }).cookies;
+      return {
+        auth: {
+          getUser: async () => {
+            // A refresh, then a refused session: @supabase/ssr hands the
+            // headers over with the first call only.
+            setAll([{ name: "sb-api1-auth-token", value: "refreshed", options: {} }], {
+              "Cache-Control": "private, no-cache, no-store, must-revalidate, max-age=0",
+            });
+            setAll([{ name: "sb-api1-auth-token", value: "", options: { maxAge: 0 } }], {});
+            return { data: { user: null }, error: null };
+          },
+        },
+      };
+    });
+    const res = await proxy(
+      new NextRequest("https://webhooks.cc/dashboard", { headers: PAGE_LOAD })
+    );
+    expect(res.headers.get("Cache-Control")).toContain("no-store");
+    expect(res.headers.get("set-cookie")).toMatch(/^sb-api1-auth-token=;/);
   });
 });
 

@@ -60,19 +60,15 @@ import { exportToJson, exportToCsv, downloadFile } from "@/lib/export";
 import { trackRequestExported } from "@/lib/analytics";
 import { subscribeToEndpointRequestChanges } from "@/lib/supabase/realtime";
 import {
-  fetchDashboardEndpoints,
   fetchDashboardRequests,
   fetchDashboardSearch,
   fetchDashboardSearchCount,
   isAbortError,
   SearchBusyError,
   type DashboardSearchPage,
-  subscribeDashboardEndpointsChanged,
   defaultDashboardEndpoint,
   createDashboardEndpoint,
-  emitDashboardEndpointsChanged,
   updateDashboardEndpoint,
-  claimGuestEndpointForUser,
   type DashboardEndpoint,
   sendTestEmail,
   fetchDashboardRequestById,
@@ -114,6 +110,7 @@ import { toEmailSummary } from "@/lib/email-capture";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { CodeBox } from "@/components/ui/code";
+import { useDashboardEndpoints } from "@/components/dashboard/endpoints-provider";
 
 const CLICKHOUSE_PAGE_SIZE = 50;
 const PANE_MIN = 240;
@@ -193,9 +190,21 @@ export default function DashboardPage() {
   const accessToken = session?.access_token ?? null;
   // Every endpoint the account can open; the list shows those listed on this
   // site (lib/site.ts), but a link to any of them still opens it.
-  const [allEndpoints, setAllEndpoints] = useState<DashboardEndpoint[] | undefined>(undefined);
+  // One list for the page and the header's switcher (endpoints-provider.tsx).
+  const {
+    data: endpointsData,
+    failed: endpointsFailed,
+    reload: loadEndpoints,
+  } = useDashboardEndpoints();
+  const allEndpoints = useMemo<DashboardEndpoint[] | undefined>(
+    () => (endpointsData ? [...endpointsData.owned, ...endpointsData.shared] : undefined),
+    [endpointsData]
+  );
   // The account's own endpoints (layouts are the owner's to change).
-  const [ownedSlugs, setOwnedSlugs] = useState<Set<string>>(new Set());
+  const ownedSlugs = useMemo(
+    () => new Set((endpointsData?.owned ?? []).map((endpoint) => endpoint.slug)),
+    [endpointsData]
+  );
   const site = useSite();
   const [recentRequests, setRecentRequests] = useState<Request[]>([]);
   // The endpoint whose first page of requests has arrived; until then an
@@ -746,45 +755,6 @@ export default function DashboardPage() {
     return () => clearTimeout(searchDebounceRef.current);
   }, [searchInput]);
 
-  const guestClaimAttempted = useRef(false);
-  // Only the latest load counts: every star click starts a reload, and an
-  // older one may answer last with the favourites from before it.
-  const endpointsLoadSeq = useRef(0);
-
-  const loadEndpoints = useCallback(async () => {
-    if (!accessToken) return;
-    const seq = ++endpointsLoadSeq.current;
-
-    // On first load, try to claim a guest endpoint from /go
-    if (!guestClaimAttempted.current) {
-      guestClaimAttempted.current = true;
-      try {
-        const stored = localStorage.getItem("demo_endpoint");
-        if (stored) {
-          const parsed = JSON.parse(stored) as { slug?: string };
-          if (parsed.slug) {
-            await claimGuestEndpointForUser(accessToken, parsed.slug);
-          }
-          localStorage.removeItem("demo_endpoint");
-        }
-      } catch {
-        // Claim is best-effort; proceed with normal load
-      }
-    }
-
-    try {
-      const response = await fetchDashboardEndpoints(accessToken);
-      if (seq !== endpointsLoadSeq.current) return;
-      setAllEndpoints([...response.owned, ...response.shared]);
-      setOwnedSlugs(new Set(response.owned.map((endpoint) => endpoint.slug)));
-    } catch (error) {
-      console.error("Failed to load dashboard endpoints:", error);
-      // A failed reload keeps the list it had: an empty one would show the
-      // first-endpoint screen, which creates an endpoint on its own.
-      if (seq === endpointsLoadSeq.current) setAllEndpoints((prev) => prev ?? []);
-    }
-  }, [accessToken]);
-
   const refreshRecentRequests = useCallback(async () => {
     if (!accessToken || !currentSlug) {
       recentRequestsRequestSeq.current++;
@@ -808,19 +778,6 @@ export default function DashboardPage() {
       }
     }
   }, [accessToken, currentSlug]);
-
-  useEffect(() => {
-    if (!accessToken) {
-      return;
-    }
-
-    void loadEndpoints();
-    const unsubscribe = subscribeDashboardEndpointsChanged(() => {
-      void loadEndpoints();
-    });
-
-    return unsubscribe;
-  }, [accessToken, loadEndpoints]);
 
   useEffect(() => {
     void refreshRecentRequests();
@@ -1967,8 +1924,9 @@ export default function DashboardPage() {
   useEffect(() => {
     if (!missingSlug || missingVerified === missingSlug) return;
     let cancelled = false;
-    void loadEndpoints().then(() => {
-      if (!cancelled) setMissingVerified(missingSlug);
+    // Only a list read now settles it; a failed read leaves the question open.
+    void loadEndpoints().then((loaded) => {
+      if (!cancelled && loaded) setMissingVerified(missingSlug);
     });
     return () => {
       cancelled = true;
@@ -2064,6 +2022,10 @@ export default function DashboardPage() {
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [handleSelect, handleToggleLiveMode, showTab, toggleCollapse]);
+
+  if (!authLoading && allEndpoints === undefined && endpointsFailed) {
+    return <EndpointsLoadFailed onRetry={loadEndpoints} />;
+  }
 
   if (authLoading || endpoints === undefined || allEndpoints === undefined) {
     return <DashboardSkeleton />;
@@ -2197,6 +2159,8 @@ export default function DashboardPage() {
 
       {!listedOn(currentEndpoint.site, site.key) && (
         <ListedElsewhereNotice
+          // Its state (pending, error, already listed) is this endpoint's.
+          key={currentEndpoint.slug}
           slug={currentEndpoint.slug}
           endpointSite={currentEndpoint.site}
           canList={ownsCurrentEndpoint && ownedSlugs.has(currentEndpoint.slug)}
@@ -2887,34 +2851,74 @@ function siteBody(site: SiteKey): { site?: SiteKey } {
   return twoSites() ? { site } : {};
 }
 
+/**
+ * The list of endpoints could not be read. Never shown as an empty list:
+ * that is the first-endpoint screen, which creates an endpoint on its own.
+ */
+function EndpointsLoadFailed({ onRetry }: { onRetry: () => Promise<unknown> }) {
+  const [retrying, setRetrying] = useState(false);
+  const retry = () => {
+    setRetrying(true);
+    void onRetry().finally(() => setRetrying(false));
+  };
+  return (
+    <div className="flex-1 flex items-center justify-center p-8">
+      <div className="text-center space-y-4">
+        <h2 className="text-xl font-bold tracking-normal">Could not load your endpoints</h2>
+        <p className="text-muted-foreground max-w-sm">
+          Something went wrong on our side or with the connection. Your endpoints are safe.
+        </p>
+        <Button variant="primary" onClick={retry} disabled={retrying}>
+          {retrying ? "Trying again..." : "Try again"}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 function AutoCreateEndpoint({
   accessToken,
   onCreated,
 }: {
   accessToken: string | null;
-  onCreated: () => Promise<void>;
+  /** Reads the list again (the one list, endpoints-provider.tsx); answers whether it could. */
+  onCreated: () => Promise<boolean>;
 }) {
   const site = useSite();
   const [error, setError] = useState<string | null>(null);
   const attempted = useRef(false);
+  // Made, but the list read after it failed: trying again only reads the
+  // list, so a second endpoint is never made.
+  const created = useRef(false);
+  const LIST_FAILED = "Your first endpoint is ready, but the list could not be loaded.";
 
-  useEffect(() => {
-    if (!accessToken || attempted.current) return;
-    attempted.current = true;
-
+  const create = useCallback(() => {
+    if (!accessToken) return;
     createDashboardEndpoint(accessToken, siteBody(site.key))
-      .then(() => {
-        // The header's endpoint list reloads too.
-        emitDashboardEndpointsChanged();
-        return onCreated();
+      .then(async () => {
+        created.current = true;
+        if (!(await onCreated())) setError(LIST_FAILED);
       })
       .catch(() => setError("Could not create your first endpoint."));
   }, [accessToken, onCreated, site.key]);
 
+  useEffect(() => {
+    if (!accessToken || attempted.current) return;
+    attempted.current = true;
+    create();
+  }, [accessToken, create]);
+
+  // Asked again directly: the effect above runs once.
   const handleRetry = useCallback(() => {
-    attempted.current = false;
     setError(null);
-  }, []);
+    if (!created.current) {
+      create();
+      return;
+    }
+    void onCreated().then((loaded) => {
+      if (!loaded) setError(LIST_FAILED);
+    });
+  }, [create, onCreated]);
 
   if (error) {
     return (
@@ -2954,7 +2958,7 @@ function NoEndpointsHere({
   elsewhere: number;
   /** The account's own endpoints listed on the other site; only the owner can list them here. */
   ownedElsewhere: string[];
-  onCreated: () => Promise<void>;
+  onCreated: () => Promise<boolean>;
 }) {
   const site = useSite();
   const other = SITES[otherSite(site.key)];
@@ -2962,17 +2966,33 @@ function NoEndpointsHere({
   const [creating, setCreating] = useState(false);
   const [listing, setListing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Listed here already, but the list read after it failed: trying again
+  // only reads the list.
+  const changed = useRef(false);
 
   const listHereToo = () => {
     if (!accessToken || ownedElsewhere.length === 0) return;
     setListing(true);
     setError(null);
-    Promise.all(
-      ownedElsewhere.map((slug) => updateDashboardEndpoint(accessToken, slug, { site: "both" }))
-    )
-      .then(() => {
-        emitDashboardEndpointsChanged();
-        return onCreated();
+    const change = changed.current
+      ? Promise.resolve()
+      : Promise.all(
+          ownedElsewhere.map((slug) => updateDashboardEndpoint(accessToken, slug, { site: "both" }))
+        ).then(() => {
+          changed.current = true;
+        });
+    change
+      .then(() => onCreated())
+      .then((loaded) => {
+        // The list read again: done. A later attempt makes the change again,
+        // in case what it listed was taken off this site since.
+        if (loaded) {
+          changed.current = false;
+          setListing(false);
+          return;
+        }
+        setError("They are listed here now, but the list could not be loaded. Try again.");
+        setListing(false);
       })
       .catch(() => {
         setError("Could not show them here. Try again.");
@@ -3063,23 +3083,39 @@ function ListedElsewhereNotice({
   endpointSite: DashboardEndpoint["site"];
   /** The owner can list it on both sites from here. */
   canList: boolean;
-  onListed: () => Promise<void>;
+  onListed: () => Promise<boolean>;
 }) {
   const site = useSite();
   const { session } = useAuth();
   const home = SITES[endpointHomeSite(endpointSite, site.key)];
   const [listing, setListing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Listed here already, but the list read after it failed: trying again
+  // only reads the list.
+  const changed = useRef(false);
   const listHere = () => {
     const accessToken = session?.access_token;
     if (!accessToken || listing) return;
     setListing(true);
     setError(null);
-    updateDashboardEndpoint(accessToken, slug, { site: "both" })
-      .then(() => {
-        setOpenEndpoint({ slug, site: "both" });
-        emitDashboardEndpointsChanged();
-        return onListed();
+    const change = changed.current
+      ? Promise.resolve()
+      : updateDashboardEndpoint(accessToken, slug, { site: "both" }).then(() => {
+          changed.current = true;
+          setOpenEndpoint({ slug, site: "both" });
+        });
+    change
+      .then(() => onListed())
+      .then((loaded) => {
+        // The list read again: done. A later attempt makes the change again,
+        // in case what it listed was taken off this site since.
+        if (loaded) {
+          changed.current = false;
+          setListing(false);
+          return;
+        }
+        setError("It is listed here now, but the list could not be loaded. Try again.");
+        setListing(false);
       })
       .catch(() => {
         setError("It could not be listed here. Try again.");
