@@ -1924,8 +1924,9 @@ export default function DashboardPage() {
   useEffect(() => {
     if (!missingSlug || missingVerified === missingSlug) return;
     let cancelled = false;
-    void loadEndpoints().then(() => {
-      if (!cancelled) setMissingVerified(missingSlug);
+    // Only a list read now settles it; a failed read leaves the question open.
+    void loadEndpoints().then((loaded) => {
+      if (!cancelled && loaded) setMissingVerified(missingSlug);
     });
     return () => {
       cancelled = true;
@@ -2878,26 +2879,39 @@ function AutoCreateEndpoint({
   onCreated,
 }: {
   accessToken: string | null;
-  onCreated: () => Promise<unknown>;
+  /** Reads the list again (the one list, endpoints-provider.tsx); answers whether it could. */
+  onCreated: () => Promise<boolean>;
 }) {
   const site = useSite();
   const [error, setError] = useState<string | null>(null);
   const attempted = useRef(false);
+  // Made, but the list read after it failed: trying again only reads the
+  // list, so a second endpoint is never made.
+  const created = useRef(false);
+  const LIST_FAILED = "Your first endpoint is ready, but the list could not be loaded.";
 
   useEffect(() => {
     if (!accessToken || attempted.current) return;
     attempted.current = true;
 
     createDashboardEndpoint(accessToken, siteBody(site.key))
-      // The one list (endpoints-provider.tsx), the header's too.
-      .then(() => onCreated())
+      .then(async () => {
+        created.current = true;
+        if (!(await onCreated())) setError(LIST_FAILED);
+      })
       .catch(() => setError("Could not create your first endpoint."));
   }, [accessToken, onCreated, site.key]);
 
   const handleRetry = useCallback(() => {
-    attempted.current = false;
     setError(null);
-  }, []);
+    if (created.current) {
+      void onCreated().then((loaded) => {
+        if (!loaded) setError(LIST_FAILED);
+      });
+      return;
+    }
+    attempted.current = false;
+  }, [onCreated]);
 
   if (error) {
     return (

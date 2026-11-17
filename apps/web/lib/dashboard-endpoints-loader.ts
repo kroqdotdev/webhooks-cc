@@ -18,8 +18,10 @@ type StateUpdate = (prev: DashboardEndpointsState | null) => DashboardEndpointsS
  * - Every load waits for the guest claim, not only the first. An empty list
  *   makes the dashboard create an endpoint of its own, so a load that listed
  *   before the claim landed would leave a new account with two.
- * - Only the latest load counts: every star click starts a reload, and an
- *   older one may answer last with the favourites from before it.
+ * - A list never replaces a newer one: every star click starts a reload, and
+ *   an older one may answer last with the favourites from before it. An
+ *   older list still counts when nothing newer has arrived (the newest load
+ *   may fail), but a failure counts only from the newest load.
  * - A failed load keeps the list it had. With none yet, it reports a failure
  *   rather than an empty list, which is the first-endpoint screen.
  * - reload() settles with the newest load, so a caller that waits on it never
@@ -35,17 +37,24 @@ export function createEndpointsLoader(deps: {
 }) {
   let claim: { userId: string; done: Promise<void> } | null = null;
   let seq = 0;
+  // The newest load whose list is on screen, and whose account loads now.
+  let applied = 0;
+  let currentUser: string | null = null;
   let latest: Promise<boolean> = Promise.resolve(false);
 
   async function load(accessToken: string, userId: string): Promise<boolean> {
     const mine = ++seq;
+    currentUser = userId;
     if (claim?.userId !== userId) {
       claim = { userId, done: deps.claim(accessToken).catch(() => {}) };
     }
     await claim.done;
     try {
       const data = await deps.fetchList(accessToken);
-      if (mine === seq) deps.setState(() => ({ userId, data, failed: false }));
+      if (mine > applied && userId === currentUser) {
+        applied = mine;
+        deps.setState(() => ({ userId, data, failed: false }));
+      }
       return true;
     } catch (error) {
       deps.onError?.(error);

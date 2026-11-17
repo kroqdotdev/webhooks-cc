@@ -161,7 +161,7 @@ describe("createEndpointsLoader", () => {
     expect(h.state()).toEqual({ userId: "u1", data: list("a"), failed: false });
   });
 
-  it("does not let a newer load's failure hide behind an older success", async () => {
+  it("shows an older list when the newer load failed and nothing newer arrived", async () => {
     const h = harness();
     const first = h.loader.reload("token", "u1");
     h.claims[0].resolve();
@@ -170,11 +170,40 @@ describe("createEndpointsLoader", () => {
     await flush();
     h.fetches[1].reject(new Error("503"));
     await flush();
+    expect(h.state()).toEqual({ userId: "u1", failed: true });
     h.fetches[0].resolve(list("a"));
     await Promise.all([first, second]);
-    // The older answer is not applied (it is not the newest), and with no
-    // list yet the failure is what shows.
-    expect(h.state()).toEqual({ userId: "u1", failed: true });
+    // A list arrived after all: it beats the failure screen.
+    expect(h.state()).toEqual({ userId: "u1", data: list("a"), failed: false });
+  });
+
+  it("never lets an older list replace a newer one, nor another account's", async () => {
+    const h = harness();
+    const a1 = h.loader.reload("token", "u1");
+    h.claims[0].resolve();
+    await flush();
+    const a2 = h.loader.reload("token", "u1");
+    await flush();
+    h.fetches[1].resolve(list("newer"));
+    await flush();
+    h.fetches[0].resolve(list("older"));
+    await Promise.all([a1, a2]);
+    expect(h.state()?.data).toEqual(list("newer"));
+
+    // Another account signs in while the first one's load is on its way.
+    const stale = h.loader.reload("token", "u1");
+    await flush();
+    const b = h.loader.reload("token-b", "u2");
+    await flush();
+    h.claims[1].resolve();
+    await flush();
+    h.fetches[2].resolve(list("u1 list"));
+    await flush();
+    expect(h.state()?.userId).toBe("u1");
+    expect(h.state()?.data).toEqual(list("newer"));
+    h.fetches[3].resolve(list("u2 list"));
+    await Promise.all([stale, b]);
+    expect(h.state()).toEqual({ userId: "u2", data: list("u2 list"), failed: false });
   });
 
   it("still lists when the claim fails", async () => {

@@ -119,3 +119,48 @@ test("an endpoint list that cannot be read says so, and creates no endpoint", as
     await deleteTestUser(fresh.id);
   }
 });
+
+test("a first endpoint made while the list cannot be read is not made twice", async ({ page }) => {
+  const fresh = await createTestUser();
+  try {
+    // The list reads (empty) until the first endpoint is made, then fails
+    // until the person tries again.
+    let created = false;
+    let refusing = true;
+    await page.route("**/api/endpoints", async (route) => {
+      const method = route.request().method();
+      if (method === "POST") created = true;
+      if (method === "GET" && created && refusing) {
+        await route.fulfill({
+          status: 503,
+          contentType: "application/json",
+          body: JSON.stringify({ error: "unavailable" }),
+        });
+        return;
+      }
+      await route.continue();
+    });
+
+    await signInTestUser(page, fresh, "/dashboard");
+    await expect(
+      page.getByText("Your first endpoint is ready, but the list could not be loaded.")
+    ).toBeVisible({ timeout: 15000 });
+    const count = async () =>
+      (
+        await admin
+          .from("endpoints")
+          .select("id", { count: "exact", head: true })
+          .eq("user_id", fresh.id)
+      ).count;
+    expect(await count()).toBe(1);
+
+    refusing = false;
+    await page.getByRole("button", { name: "Try again" }).click();
+    await expect(page.getByRole("combobox", { name: "Endpoint" })).toBeVisible({
+      timeout: 15000,
+    });
+    expect(await count()).toBe(1);
+  } finally {
+    await deleteTestUser(fresh.id);
+  }
+});
