@@ -1,0 +1,6 @@
+{
+  "title": "Off-site backups",
+  "items": [
+    "The privacy page and the subprocessor list now say that encrypted backups of the database and of captured emails are also kept in Cloudflare R2 in the EU, and that deleted data leaves every backup within about ten days"
+  ]
+}
