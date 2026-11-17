@@ -56,6 +56,8 @@ const RETRY_BACKOFF_MS = 15_000;
 const MAX_FILES = 20;
 /** One job's time across its files and layouts. */
 const JOB_BUDGET_MS = 90_000;
+/** How far past the budget a stored parse may still be read back. */
+const STORED_READ_GRACE_MS = 60_000;
 /** Rows of each sheet kept in the result inline; the rest stay in the stored parse. */
 const INLINE_ROWS = 1000;
 const INLINE_TEXT = 256 * 1024;
@@ -233,9 +235,11 @@ async function parseAttachments(
       continue;
     }
 
-    // The job's budget holds for stored reads too: a run of slow reads must
-    // not keep a slot past it (the status heartbeat counts on the bound).
-    if (Date.now() > options.deadline) {
+    // Stored reads may run a little past the job's budget, since a parse
+    // already paid for is cheap to deliver, but not without bound: a run of
+    // slow reads must not keep a slot for good (the status heartbeat counts
+    // on JOB_BUDGET_MS + STORED_READ_GRACE_MS plus one read's timeout).
+    if (Date.now() > options.deadline + STORED_READ_GRACE_MS) {
       keep({ ...base, error: "time" }, null);
       continue;
     }

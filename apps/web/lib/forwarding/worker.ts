@@ -1279,6 +1279,7 @@ export function startForwardingWorker(): void {
   let lastTickAt = 0;
   let claimedSinceHeartbeat = 0;
   let lastClaimDoneAt = Date.now();
+  let lastDeliveryDoneAt = Date.now();
 
   const tick = async () => {
     // Every BUSY_POLL_MS while deliveries were claimed lately, else every IDLE_POLL_MS.
@@ -1295,7 +1296,10 @@ export function startForwardingWorker(): void {
       claimedSinceHeartbeat += claims.length;
       for (const claim of claims) {
         inFlight++;
-        void deliverLogged(claim, requests.get(claim.request_id)).finally(() => inFlight--);
+        void deliverLogged(claim, requests.get(claim.request_id)).finally(() => {
+          inFlight--;
+          lastDeliveryDoneAt = Date.now();
+        });
       }
     } catch (error) {
       reportError("[forwarding] claim failed", error);
@@ -1304,11 +1308,19 @@ export function startForwardingWorker(): void {
     }
   };
 
-  // The status page's Forwarding monitor: alive while claims complete.
+  // The status page's Forwarding monitor: alive while claims complete, or,
+  // with every slot busy (then no claim is tried), while deliveries still
+  // finish; a file drop holds its slot up to about 4 minutes.
   startHeartbeat({
     url: serverEnv().STATUS_HEARTBEAT_FORWARDING_URL,
     label: "forwarding",
-    alive: () => Date.now() - lastClaimDoneAt < 2 * 60_000,
+    alive: () => {
+      const now = Date.now();
+      if (inFlight >= CONCURRENCY) {
+        return now - Math.max(lastDeliveryDoneAt, lastClaimDoneAt) < 5 * 60_000;
+      }
+      return now - lastClaimDoneAt < 2 * 60_000;
+    },
   });
   globalForWorker.__emailForwardingWorker = setInterval(() => void tick(), BUSY_POLL_MS);
   globalForWorker.__emailForwardingWorker.unref();

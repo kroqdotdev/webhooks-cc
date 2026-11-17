@@ -29,11 +29,15 @@
 
 begin;
 
--- Endpoint writes wait for this file to commit: a delete committing between
--- the backfill's snapshot and its row lock would otherwise be counted twice
--- (once by the old trigger, once here). Captures update endpoints too and
--- wait as well, for the few milliseconds the file takes; the lock_timeout in
--- the psql recipe bounds how long the file waits for the lock.
+-- Locks first, in the order capture_webhook() takes them (users, through the
+-- quota decrement, then endpoints), so a capture in flight can never hold one
+-- while waiting for the other: users for the trigger created below, then
+-- endpoints so that a delete committing between the backfill's snapshot and
+-- its row lock is not counted twice (once by the old trigger, once here).
+-- Captures and endpoint writes wait until the file commits, a few
+-- milliseconds once both are held; each lock waits for writers already
+-- running, up to the lock_timeout of the psql recipe. Apply at a quiet hour.
+lock table public.users in share row exclusive mode;
 lock table public.endpoints in share mode;
 
 -- Under the site_stats row lock, like refresh_site_stats().

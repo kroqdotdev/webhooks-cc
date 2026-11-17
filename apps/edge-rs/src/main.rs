@@ -356,7 +356,8 @@ fn health(state: &State) -> Response<Body> {
     let fresh = state
         .web
         .since_sync()
-        .is_some_and(|ago| ago <= state.config.sync_every * 3);
+        // Five rounds: a web deploy's restart passes without a flap.
+        .is_some_and(|ago| ago <= state.config.sync_every * 5);
     let (status, body) = if fresh {
         (StatusCode::OK, r#"{"status":"ok"}"#)
     } else {
