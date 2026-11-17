@@ -267,9 +267,12 @@ test("a seat change asks for confirmation and shows a failed quote in the dialog
 
     const dialog = page.getByRole("alertdialog");
     await expect(dialog.getByRole("heading", { name: "Add 1 seat?" })).toBeVisible();
-    await expect(dialog.getByRole("button", { name: /add seat/i })).toBeDisabled({
+    // The failure itself, not only a quote still loading (which disables the
+    // button too).
+    await expect(dialog.getByText("Could not price the seat change")).toBeVisible({
       timeout: 15000,
     });
+    await expect(dialog.getByRole("button", { name: /add seat/i })).toBeDisabled();
     await dialog.getByRole("button", { name: "Keep 3 seats" }).click();
     await expect(dialog).toHaveCount(0);
   } finally {
