@@ -14,10 +14,13 @@ import { pingHeartbeat } from "./heartbeat";
  * MX host can be up while its handoff to the receiver is not), so these are
  * what tell the page that a webhook or an email is actually kept.
  *
- * The canary endpoint belongs to an internal account (`users.internal`), so
- * the operations metrics, the analytics reports and the site totals leave
- * it out. Its captures count against that account's quota like any other:
- * about 600 a day, so the account needs Pro or better (Free takes 50).
+ * The canary endpoint belongs to a staff account of its own, which stays on
+ * Business without a subscription. It is deliberately not internal, so its
+ * captures count like any other account's: in its quota (576 a day, about
+ * 17,300 a month, so Free's 50 a day would not do), in the site totals and
+ * in the analytics reports; the operations metrics leave it out as staff.
+ * The endpoint delivers, then deletes, so a run that fails before removing
+ * its capture leaves nothing for long.
  */
 
 const EVERY_MS = 5 * 60_000;
