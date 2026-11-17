@@ -4,6 +4,7 @@ import { useSyncExternalStore, type ReactNode } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { clearPendingUser, reportAuthenticatedUser } from "@/lib/analytics";
 import { endAccountConsentSession } from "@/lib/analytics-account-consent";
+import { loadSession, startSessionChecks } from "@/lib/session-check";
 import type { User, Session } from "@supabase/supabase-js";
 
 interface AuthContextValue {
@@ -26,6 +27,9 @@ const INITIAL_STATE: AuthContextValue = {
 let authState: AuthContextValue = INITIAL_STATE;
 const storeListeners = new Set<() => void>();
 let authListenerStarted = false;
+// The page load's check with GoTrue has settled (useSessionChecked). Kept out
+// of the snapshot above so its one change re-renders only RequireAuth.
+let sessionChecked = false;
 
 function setAuthSession(session: Session | null) {
   // A signed-in session that ended, or became another account's: the
@@ -49,20 +53,21 @@ function startAuthListener() {
   authListenerStarted = true;
 
   const supabase = createClient();
+  // A session ended elsewhere signs the page out once GoTrue says so: checked
+  // when the page loads with one, and when our API refuses a request
+  // (lib/session-check.ts; the proxy only refreshes an expired session).
+  const checkSession = startSessionChecks(supabase.auth, window, () => !!authState.session);
 
-  // Get initial session
-  void (async () => {
-    try {
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
-      setAuthSession(session);
-    } catch {
-      // Resolve the loading state even if the session fetch fails, so
-      // consumers don't get stuck showing a loading placeholder forever.
-      setAuthSession(null);
-    }
-  })();
+  // Get initial session, then check it.
+  void loadSession({
+    getSession: async () => (await supabase.auth.getSession()).data.session,
+    setSession: setAuthSession,
+    check: checkSession,
+    markChecked: () => {
+      sessionChecked = true;
+      storeListeners.forEach((listener) => listener());
+    },
+  });
 
   // Listen for auth state changes (login, logout, token refresh).
   // Intentionally never unsubscribed: the store outlives any one component.
@@ -109,6 +114,19 @@ export function useIsAuthenticated(): boolean {
   return useSyncExternalStore(
     subscribe,
     () => authState.isAuthenticated,
+    () => false
+  );
+}
+
+/**
+ * Whether the page load's check with GoTrue has settled (or there was no
+ * session to check): until then a session from the cookie may be one that
+ * ended elsewhere, which RequireAuth treats as never signed in on this page.
+ */
+export function useSessionChecked(): boolean {
+  return useSyncExternalStore(
+    subscribe,
+    () => sessionChecked,
     () => false
   );
 }

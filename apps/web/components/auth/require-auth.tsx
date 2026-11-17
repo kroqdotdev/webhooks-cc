@@ -3,7 +3,11 @@
 import { PageLoading } from "@/components/page-loading";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
-import { SupabaseAuthProvider, useAuth } from "@/components/providers/supabase-auth-provider";
+import {
+  SupabaseAuthProvider,
+  useAuth,
+  useSessionChecked,
+} from "@/components/providers/supabase-auth-provider";
 import { MfaChallenge, useNeedsSecondFactor } from "./mfa-challenge";
 
 /**
@@ -12,6 +16,20 @@ import { MfaChallenge, useNeedsSecondFactor } from "./mfa-challenge";
  */
 export function loginPathFor(here: string, wasSignedIn: boolean): string {
   return here === "/" || wasSignedIn ? "/login" : `/login?redirect=${encodeURIComponent(here)}`;
+}
+
+/**
+ * Whether this page counts as signed in, given whether it did before: once
+ * a session is there and GoTrue has confirmed it on this load. A session
+ * from the cookie that ended elsewhere is found out a moment after the page
+ * opens, before that, so its visitor still gets the way back.
+ */
+export function signedInHere(
+  before: boolean,
+  isAuthenticated: boolean,
+  sessionChecked: boolean
+): boolean {
+  return before || (isAuthenticated && sessionChecked);
 }
 
 export function RequireAuth({ children }: { children: React.ReactNode }) {
@@ -24,6 +42,7 @@ export function RequireAuth({ children }: { children: React.ReactNode }) {
 
 function RequireAuthInner({ children }: { children: React.ReactNode }) {
   const { isAuthenticated, isLoading, session } = useAuth();
+  const sessionChecked = useSessionChecked();
   const router = useRouter();
   // An account with an authenticator app finishes signing in here; the API
   // refuses its session until it has (lib/mfa.ts).
@@ -37,11 +56,16 @@ function RequireAuthInner({ children }: { children: React.ReactNode }) {
 
   // Whether this page was signed in: once the session ends in this tab
   // (a sign-out in another tab, a refused refresh), the login page does not
-  // offer the way back.
+  // offer the way back. A session counts only once GoTrue has confirmed it
+  // on this load: one from the cookie that ended elsewhere is found out a
+  // moment after the page opens, and that visitor still gets the way back.
   const wasSignedIn = useRef(false);
 
   useEffect(() => {
-    if (isAuthenticated) wasSignedIn.current = true;
+    wasSignedIn.current = signedInHere(wasSignedIn.current, isAuthenticated, sessionChecked);
+  }, [isAuthenticated, sessionChecked]);
+
+  useEffect(() => {
     if (!isLoading && !isAuthenticated) {
       // Arriving signed out, back to this page after signing in (the login
       // page accepts only a path on this site: lib/auth-redirect.ts), so a

@@ -1,11 +1,13 @@
 import { NextRequest } from "next/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const getUser = vi.hoisted(() => vi.fn().mockResolvedValue({ data: { user: null }, error: null }));
+const getSession = vi.hoisted(() =>
+  vi.fn().mockResolvedValue({ data: { session: null }, error: null })
+);
 
 const createServerClient = vi.hoisted(() =>
-  vi.fn<(...args: unknown[]) => { auth: { getUser: () => Promise<unknown> } }>(() => ({
-    auth: { getUser },
+  vi.fn<(...args: unknown[]) => { auth: { getSession: () => Promise<unknown> } }>(() => ({
+    auth: { getSession },
   }))
 );
 
@@ -17,7 +19,7 @@ import { MAILHOOKS_PAGES } from "./lib/site";
 import { config, proxy } from "./proxy";
 
 beforeEach(() => {
-  getUser.mockClear();
+  getSession.mockClear();
   createServerClient.mockClear();
   vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", "https://api1.webhooks.cc");
   vi.stubEnv("SUPABASE_URL", "http://gateway:8000");
@@ -43,7 +45,7 @@ describe("proxy", () => {
     const res = await proxy(req);
     expect(res.status).toBe(404);
     expect(await res.text()).toBe("Not Found");
-    expect(getUser).not.toHaveBeenCalled();
+    expect(getSession).not.toHaveBeenCalled();
   });
 
   it("refuses any request carrying Next-Action, including on /api routes", async () => {
@@ -55,7 +57,7 @@ describe("proxy", () => {
     });
     const res = await proxy(req);
     expect(res.status).toBe(404);
-    expect(getUser).not.toHaveBeenCalled();
+    expect(getSession).not.toHaveBeenCalled();
   });
 
   it("refuses POST requests to non-/api routes without Next-Action", async () => {
@@ -67,7 +69,7 @@ describe("proxy", () => {
     });
     const res = await proxy(req);
     expect(res.status).toBe(404);
-    expect(getUser).not.toHaveBeenCalled();
+    expect(getSession).not.toHaveBeenCalled();
   });
 
   it("lets POST requests to /api routes and GET requests to pages through", async () => {
@@ -76,7 +78,7 @@ describe("proxy", () => {
     });
     const apiRes = await proxy(apiPost);
     expect(apiRes.status).toBe(200);
-    expect(getUser).not.toHaveBeenCalled();
+    expect(getSession).not.toHaveBeenCalled();
 
     const pageGet = new NextRequest("https://webhooks.cc/", {
       method: "GET",
@@ -85,7 +87,7 @@ describe("proxy", () => {
     const pageRes = await proxy(pageGet);
     expect(pageRes.status).toBe(200);
     expect(pageRes.headers.get("Content-Security-Policy")).toContain("default-src 'self'");
-    expect(getUser).toHaveBeenCalledTimes(1);
+    expect(getSession).toHaveBeenCalledTimes(1);
   });
 
   it("lets the email preview load images on every page, not only the dashboard", async () => {
@@ -102,19 +104,19 @@ describe("proxy", () => {
   });
 });
 
-describe("proxy: session check", () => {
-  it("checks the session when a page loads into the window", async () => {
+describe("proxy: session refresh", () => {
+  it("looks at the session when a page loads into the window, to refresh it", async () => {
     await proxy(new NextRequest("https://webhooks.cc/dashboard", { headers: PAGE_LOAD }));
-    expect(getUser).toHaveBeenCalledTimes(1);
+    expect(getSession).toHaveBeenCalledTimes(1);
   });
 
-  it("checks it for a browser without Sec-Fetch-Dest that asks for HTML", async () => {
+  it("looks at it for a browser without Sec-Fetch-Dest that asks for HTML", async () => {
     await proxy(
       new NextRequest("https://webhooks.cc/dashboard", {
         headers: { accept: PAGE_LOAD.accept },
       })
     );
-    expect(getUser).toHaveBeenCalledTimes(1);
+    expect(getSession).toHaveBeenCalledTimes(1);
   });
 
   it("leaves client navigations, prefetches and router.refresh() alone", async () => {
@@ -127,7 +129,7 @@ describe("proxy: session check", () => {
         })
       );
     }
-    expect(getUser).not.toHaveBeenCalled();
+    expect(getSession).not.toHaveBeenCalled();
   });
 
   it("lets Sec-Fetch-Dest decide before Accept", async () => {
@@ -139,7 +141,7 @@ describe("proxy: session check", () => {
     ]) {
       await proxy(new NextRequest("https://webhooks.cc/dashboard", init));
     }
-    expect(getUser).not.toHaveBeenCalled();
+    expect(getSession).not.toHaveBeenCalled();
   });
 
   it("leaves API routes alone, even opened as a page", async () => {
@@ -151,7 +153,7 @@ describe("proxy: session check", () => {
     ] as const) {
       await proxy(new NextRequest(`https://webhooks.cc${path}`, init));
     }
-    expect(getUser).not.toHaveBeenCalled();
+    expect(getSession).not.toHaveBeenCalled();
   });
 
   it("leaves the auth handoff routes, which set their own cookies, alone", async () => {
@@ -162,10 +164,10 @@ describe("proxy: session check", () => {
     ]) {
       await proxy(new NextRequest(`https://webhooks.cc${path}`, { headers: PAGE_LOAD }));
     }
-    expect(getUser).not.toHaveBeenCalled();
+    expect(getSession).not.toHaveBeenCalled();
   });
 
-  it("checks over the internal address under the public address's cookie name", async () => {
+  it("refreshes over the internal address under the public address's cookie name", async () => {
     await proxy(new NextRequest("https://webhooks.cc/dashboard", { headers: PAGE_LOAD }));
     const [url, , options] = createServerClient.mock.calls[0] as [
       string,
@@ -185,14 +187,14 @@ describe("proxy: session check", () => {
       const { setAll } = (args[2] as { cookies: { setAll: SetAll } }).cookies;
       return {
         auth: {
-          getUser: async () => {
+          getSession: async () => {
             // A refresh, then a refused session: @supabase/ssr hands the
             // headers over with the first call only.
             setAll([{ name: "sb-api1-auth-token", value: "refreshed", options: {} }], {
               "Cache-Control": "private, no-cache, no-store, must-revalidate, max-age=0",
             });
             setAll([{ name: "sb-api1-auth-token", value: "", options: { maxAge: 0 } }], {});
-            return { data: { user: null }, error: null };
+            return { data: { session: null }, error: null };
           },
         },
       };
@@ -224,7 +226,7 @@ describe("proxy: markdown twins", () => {
       // The negotiated URL is the page's own, which stays indexable.
       expect(res.headers.get("X-Robots-Tag")).toBeNull();
       expect(res.headers.get("Content-Security-Policy")).toContain("default-src 'self'");
-      expect(getUser).not.toHaveBeenCalled();
+      expect(getSession).not.toHaveBeenCalled();
     }
   );
 
@@ -244,7 +246,7 @@ describe("proxy: markdown twins", () => {
     );
 
     expect(res.headers.get(MARKED)).toBeNull();
-    expect(getUser).toHaveBeenCalledTimes(1);
+    expect(getSession).toHaveBeenCalledTimes(1);
   });
 
   it("drops a marker a client sent itself", async () => {
@@ -264,7 +266,7 @@ describe("proxy: markdown twins", () => {
       expect(res.headers.get(MARKED)).toBeNull();
       expect(res.headers.get("X-Robots-Tag")).toBe("noindex");
     }
-    expect(getUser).not.toHaveBeenCalled();
+    expect(getSession).not.toHaveBeenCalled();
   });
 });
 
@@ -282,7 +284,7 @@ describe("proxy: remote MCP server", () => {
       expect(res.status).toBe(200);
       expect(res.headers.get("X-Robots-Tag")).toBe("noindex, nofollow");
       expect(res.headers.get("X-Content-Type-Options")).toBe("nosniff");
-      expect(getUser).not.toHaveBeenCalled();
+      expect(getSession).not.toHaveBeenCalled();
     }
   );
 
