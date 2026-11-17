@@ -664,7 +664,8 @@ describe("checkout links", () => {
     // The write after minting failed: the link never learned its session.
     expect(await stored(id)).toMatchObject({ status: "open", polar_checkout_id: null });
 
-    // Meanwhile the account got Pro from another checkout.
+    // Meanwhile the account got Pro from another checkout, a twin of this one:
+    // paid minutes apart, so the second is ended (duplicateVerdict()).
     const kept = `sub_kept_${ts}`;
     const customerId = `cus_never_stored_${ts}`;
     await admin
@@ -679,9 +680,10 @@ describe("checkout links", () => {
     const duplicate = `sub_dup_${ts}`;
     const session = `polar_checkout_never_stored_${ts}`;
     const state: Record<string, Record<string, unknown>> = {};
-    const live = (subscriptionId: string, checkoutId: string | null) => ({
+    const live = (subscriptionId: string, checkoutId: string | null, startedAt: Date) => ({
       id: subscriptionId,
       status: "active",
+      started_at: startedAt.toISOString(),
       ended_at: null,
       product_id: "prod_pro_test",
       customer_id: customerId,
@@ -692,8 +694,8 @@ describe("checkout links", () => {
       cancel_at_period_end: false,
       pending_update: null,
     });
-    state[kept] = live(kept, null);
-    state[duplicate] = live(duplicate, session);
+    state[kept] = live(kept, null, new Date(Date.now() - 10 * 60_000));
+    state[duplicate] = live(duplicate, session, new Date());
     polar.subscriptionGet.mockImplementation(
       async (subscriptionId: string) => state[subscriptionId]
     );
@@ -1537,7 +1539,8 @@ describe("checkout links let go of or settled late", () => {
     await supersedeCheckoutLinks(replaced, null, null);
     expect(await stored(id)).toMatchObject({ status: "superseded", paid_checkout_id: replaced });
 
-    // Meanwhile the account got Pro from another checkout.
+    // Meanwhile the account got Pro from another checkout, a twin of this one:
+    // paid minutes apart, so the second is ended (duplicateVerdict()).
     const kept = `sub_revoke_kept_${ts}`;
     const duplicate = `sub_revoke_dup_${ts}`;
     const customerId = `cus_revoke_failed_${ts}`;
@@ -1550,9 +1553,10 @@ describe("checkout links let go of or settled late", () => {
         subscription_status: "active",
       })
       .eq("id", userId);
-    const live = (subscriptionId: string, checkoutId: string | null) => ({
+    const live = (subscriptionId: string, checkoutId: string | null, startedAt: Date) => ({
       id: subscriptionId,
       status: "active",
+      started_at: startedAt.toISOString(),
       ended_at: null,
       product_id: "prod_pro_test",
       customer_id: customerId,
@@ -1564,8 +1568,8 @@ describe("checkout links let go of or settled late", () => {
       pending_update: null,
     });
     const state: Record<string, Record<string, unknown>> = {
-      [kept]: live(kept, null),
-      [duplicate]: live(duplicate, session),
+      [kept]: live(kept, null, new Date(Date.now() - 10 * 60_000)),
+      [duplicate]: live(duplicate, session, new Date()),
     };
     polar.subscriptionGet.mockImplementation(
       async (subscriptionId: string) => state[subscriptionId]
