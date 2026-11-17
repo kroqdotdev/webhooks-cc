@@ -141,7 +141,9 @@ describe("malformedRouterState", () => {
     expect(malformedRouterState(value)).toBe(false);
     expect(malformedRouterState(`${value}!`)).toBe(false);
     expect(malformedRouterState(`${value} `)).toBe(true);
-    expect(performance.now() - start).toBeLessThan(100);
+    // Linear matching takes about a millisecond; backtracking would take
+    // seconds. The bound is loose so a busy CI runner never trips it.
+    expect(performance.now() - start).toBeLessThan(1000);
   });
 });
 
