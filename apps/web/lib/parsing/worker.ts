@@ -5,6 +5,8 @@ import type { Json } from "@/lib/supabase/database";
 import { emailFieldValues, storedEmailFields } from "@/lib/email-fields";
 import { planEntitlements, teamEntitlements } from "@/lib/entitlements";
 import { reportError } from "@/lib/observability";
+import { serverEnv } from "@/lib/env";
+import { startHeartbeat } from "@/lib/status/heartbeat";
 import { attachmentKey } from "@/lib/storage/attachments";
 import { getObjectBytes, isObjectStorageConfigured, putObject } from "@/lib/storage/object-store";
 import { clipText, fitParsed } from "./fit";
@@ -54,6 +56,8 @@ const RETRY_BACKOFF_MS = 15_000;
 const MAX_FILES = 20;
 /** One job's time across its files and layouts. */
 const JOB_BUDGET_MS = 90_000;
+/** How far past the budget a stored parse may still be read back. */
+const STORED_READ_GRACE_MS = 60_000;
 /** Rows of each sheet kept in the result inline; the rest stay in the stored parse. */
 const INLINE_ROWS = 1000;
 const INLINE_TEXT = 256 * 1024;
@@ -231,6 +235,14 @@ async function parseAttachments(
       continue;
     }
 
+    // Stored reads may run a little past the job's budget, since a parse
+    // already paid for is cheap to deliver, but not without bound: a run of
+    // slow reads must not keep a slot for good (the status heartbeat counts
+    // on JOB_BUDGET_MS + STORED_READ_GRACE_MS and a few slow calls).
+    if (Date.now() > options.deadline + STORED_READ_GRACE_MS) {
+      keep({ ...base, error: "time" }, null);
+      continue;
+    }
     // Parsed before (a retry, a replay or the preview): read it again,
     // unless it was cut off at a balance that has room for more now.
     const storedBytes = await getObjectBytes(parsedKey(request.id, index));
@@ -470,15 +482,19 @@ export function startParseWorker(): void {
   if (globalForParsing.__parseWorker) return;
   let busy = 0;
   let claiming = false;
+  let lastClaimDoneAt = Date.now();
+  let lastJobDoneAt = Date.now();
   const fill = async () => {
     if (claiming || busy >= CONCURRENCY) return;
     claiming = true;
     try {
       const jobs = await claim(CONCURRENCY - busy);
+      lastClaimDoneAt = Date.now();
       for (const job of jobs) {
         busy++;
         void parseJob(job).finally(() => {
           busy--;
+          lastJobDoneAt = Date.now();
           void fill();
         });
       }
@@ -488,6 +504,25 @@ export function startParseWorker(): void {
       claiming = false;
     }
   };
+  // The status page's Email parsing monitor: alive while claims complete,
+  // or, with every slot busy (then no claim is tried), while jobs still
+  // finish within their budget; slots that all hang go quiet.
+  startHeartbeat({
+    url: serverEnv().STATUS_HEARTBEAT_PARSING_URL,
+    label: "parsing",
+    alive: () => {
+      const now = Date.now();
+      if (busy >= CONCURRENCY) {
+        // A job's worst case: its budget, the stored-read grace, and a few
+        // slow storage and database calls past them.
+        return (
+          now - Math.max(lastJobDoneAt, lastClaimDoneAt) <
+          JOB_BUDGET_MS + STORED_READ_GRACE_MS + 3 * 30_000
+        );
+      }
+      return now - lastClaimDoneAt < 2 * 60_000;
+    },
+  });
   globalForParsing.__parseWorker = setInterval(() => void fill(), POLL_MS);
   globalForParsing.__parseWorker.unref();
   void fill();

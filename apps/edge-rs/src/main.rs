@@ -335,10 +335,47 @@ async fn handle(
             state.registry.len()
         )));
     }
+    if req.uri().path() == HEALTH_PATH {
+        return health(&state);
+    }
     if req.uri().path() == CONNECT_PATH {
         return connect(state, req, remote).await;
     }
     pages::unknown_host()
+}
+
+/// The public health check on the control host (tunnel.webhooks.cc), for
+/// the status page. Never under a preview name, where every path is the
+/// shared site's.
+const HEALTH_PATH: &str = "/v1/health";
+
+/// Healthy while the edge has heard from the web app lately: without it
+/// no share or live session opens, however well the edge itself runs.
+/// Says nothing about shares, unlike /__edge/health.
+fn health(state: &State) -> Response<Body> {
+    let fresh = state
+        .web
+        .since_sync()
+        // Five rounds: a web deploy's restart passes without a flap.
+        .is_some_and(|ago| ago <= state.config.sync_every * 5);
+    let (status, body) = if fresh {
+        (StatusCode::OK, r#"{"status":"ok"}"#)
+    } else {
+        // 503, not 502: Cloudflare passes it through with this body.
+        (
+            StatusCode::SERVICE_UNAVAILABLE,
+            r#"{"status":"unavailable","reason":"The tunnel has not reached webhooks.cc lately."}"#,
+        )
+    };
+    meter::own_page(
+        Response::builder()
+            .status(status)
+            .header(header::CONTENT_TYPE, "application/json")
+            .header(header::CACHE_CONTROL, "no-store")
+            .body(pages::full(body))
+            .unwrap(),
+        meter::INTERNAL,
+    )
 }
 
 /// Whether a Host names the box from inside: an address, `localhost`, or a
@@ -1847,6 +1884,22 @@ mod tests {
         );
         let other = get(&base, "example.com", "/").await;
         assert_eq!(other.status(), 421);
+    }
+
+    #[tokio::test]
+    async fn the_public_health_check_follows_the_web_app() {
+        let (base, state) = edge().await;
+        let before = get(&base, "tunnel.webhooks.cc", HEALTH_PATH).await;
+        assert_eq!(before.status(), 503);
+        assert_eq!(before.headers()["cache-control"], "no-store");
+        assert!(before.text().await.unwrap().contains("unavailable"));
+        state.web.mark_synced_for_test();
+        let after = get(&base, "tunnel.webhooks.cc", HEALTH_PATH).await;
+        assert_eq!(after.status(), 200);
+        assert_eq!(after.text().await.unwrap(), r#"{"status":"ok"}"#);
+        // Under a preview name the path is the shared site's.
+        let preview = get(&base, "calm-otter.sharehooks.localhost:4000", HEALTH_PATH).await;
+        assert_eq!(preview.status(), 404);
     }
 
     #[tokio::test]

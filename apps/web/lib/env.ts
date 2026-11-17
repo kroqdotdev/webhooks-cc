@@ -84,6 +84,21 @@ function blankToUndefined<T extends z.ZodTypeAny>(schema: T) {
   );
 }
 
+/**
+ * A status page setting (lib/status/): empty counts as unset, and a value
+ * that does not parse turns its check off with a warning instead of
+ * stopping the app, since it only feeds monitoring.
+ */
+function statusSetting<T extends z.ZodTypeAny>(schema: T, name: string) {
+  return z.preprocess(
+    (value) => (typeof value === "string" && value.trim() === "" ? undefined : value),
+    schema.optional().catch(() => {
+      console.warn(`[status] ${name} is not valid; its check is off`);
+      return undefined;
+    })
+  );
+}
+
 const serverEnvSchema = z
   .object({
     CAPTURE_SHARED_SECRET: z.string().min(1),
@@ -113,6 +128,24 @@ const serverEnvSchema = z
       (value) => (typeof value === "string" && value.trim() === "" ? undefined : value),
       z.string().url().optional()
     ),
+    // Status page heartbeats (StatOSS heartbeat URLs, lib/status/): the
+    // forwarding and parse workers ping theirs while they claim work, and the
+    // canary (lib/status/canary.ts) sends a webhook and, with
+    // STATUS_CANARY_SMTP (host:port of the MX listener), an email to the
+    // endpoint STATUS_CANARY_SLUG, pinging once each is found in the
+    // database. Each unset URL turns its check off.
+    STATUS_HEARTBEAT_FORWARDING_URL: statusSetting(
+      z.string().url(),
+      "STATUS_HEARTBEAT_FORWARDING_URL"
+    ),
+    STATUS_HEARTBEAT_PARSING_URL: statusSetting(z.string().url(), "STATUS_HEARTBEAT_PARSING_URL"),
+    STATUS_HEARTBEAT_CAPTURE_URL: statusSetting(z.string().url(), "STATUS_HEARTBEAT_CAPTURE_URL"),
+    STATUS_HEARTBEAT_MAIL_URL: statusSetting(z.string().url(), "STATUS_HEARTBEAT_MAIL_URL"),
+    STATUS_CANARY_SLUG: statusSetting(
+      z.string().regex(/^[a-zA-Z0-9_-]{1,50}$/),
+      "STATUS_CANARY_SLUG"
+    ),
+    STATUS_CANARY_SMTP: statusSetting(z.string(), "STATUS_CANARY_SMTP"),
     // The email forwarding worker (lib/forwarding/worker.ts). On by default;
     // turn it off for a process that should not send deliveries.
     EMAIL_FORWARDING_WORKER: z
@@ -384,6 +417,12 @@ export function serverEnv() {
       NOTIFY_PROXY_URL: process.env.NOTIFY_PROXY_URL,
       NOTIFY_SECRET: process.env.NOTIFY_SECRET || undefined,
       MCP_INTERNAL_API_URL: process.env.MCP_INTERNAL_API_URL,
+      STATUS_HEARTBEAT_FORWARDING_URL: process.env.STATUS_HEARTBEAT_FORWARDING_URL,
+      STATUS_HEARTBEAT_PARSING_URL: process.env.STATUS_HEARTBEAT_PARSING_URL,
+      STATUS_HEARTBEAT_CAPTURE_URL: process.env.STATUS_HEARTBEAT_CAPTURE_URL,
+      STATUS_HEARTBEAT_MAIL_URL: process.env.STATUS_HEARTBEAT_MAIL_URL,
+      STATUS_CANARY_SLUG: process.env.STATUS_CANARY_SLUG,
+      STATUS_CANARY_SMTP: process.env.STATUS_CANARY_SMTP,
       EMAIL_FORWARDING_WORKER: process.env.EMAIL_FORWARDING_WORKER,
       FORWARDING_ALLOW_PRIVATE_TARGETS: process.env.FORWARDING_ALLOW_PRIVATE_TARGETS,
       ENDPOINT_CREATE_RATE_LIMIT: process.env.ENDPOINT_CREATE_RATE_LIMIT,

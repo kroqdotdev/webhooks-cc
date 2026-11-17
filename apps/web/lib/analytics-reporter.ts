@@ -202,6 +202,14 @@ async function sendDailyUsage(dayStart: Date): Promise<number> {
   // This process's read counts go in first, so the day is read with them.
   await flushApiReads();
   const admin = createAdminClient();
+  // Internal accounts (users.internal: tests, the status page's canary) are
+  // not customers; their usage stays out of the reports.
+  const { data: internal, error: internalError } = await admin
+    .from("users")
+    .select("id")
+    .eq("internal", true);
+  if (internalError) throw new Error(internalError.message);
+  const skip = new Set((internal ?? []).map((u) => u.id));
   let sent = 0;
   for (let from = 0; ; from += PAGE_SIZE) {
     const { data, error } = await admin
@@ -211,6 +219,7 @@ async function sendDailyUsage(dayStart: Date): Promise<number> {
     if (error) throw new Error(error.message);
     const rows = (data ?? []) as unknown as DailyAccountRow[];
     for (const row of rows) {
+      if (skip.has(row.user_id)) continue;
       for (const event of dailyAccountEvents(day, row)) captureServerEvent(event);
     }
     sent += rows.length;

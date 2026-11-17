@@ -3,7 +3,9 @@
 //! session may open, under what name and for how long, and keeps the
 //! record. The edge only carries the traffic.
 
-use std::time::Duration;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
 
@@ -36,6 +38,12 @@ pub struct Web {
     http: reqwest::Client,
     base: String,
     secret: String,
+    /// When the client was made: sync times count from it, on the monotonic
+    /// clock, so a wall clock stepped by NTP never makes an old sync fresh.
+    started: Instant,
+    /// When a sync last got an answer, in milliseconds since `started` plus
+    /// one; 0 before the first. The public health check reads it (main.rs).
+    synced_at: Arc<AtomicU64>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -128,7 +136,30 @@ impl Web {
                 .expect("an HTTP client"),
             base: config.web_url.trim_end_matches('/').to_string(),
             secret: config.edge_secret.clone(),
+            started: Instant::now(),
+            synced_at: Arc::new(AtomicU64::new(0)),
         }
+    }
+
+    /// How long ago a sync last got an answer from the web app, or None
+    /// before the first.
+    pub fn since_sync(&self) -> Option<Duration> {
+        let at = self.synced_at.load(Ordering::Relaxed);
+        (at > 0).then(|| {
+            self.started
+                .elapsed()
+                .saturating_sub(Duration::from_millis(at - 1))
+        })
+    }
+
+    fn mark_synced(&self) {
+        let ms = u64::try_from(self.started.elapsed().as_millis()).unwrap_or(u64::MAX - 1);
+        self.synced_at.store(ms + 1, Ordering::Relaxed);
+    }
+
+    #[cfg(test)]
+    pub fn mark_synced_for_test(&self) {
+        self.mark_synced();
     }
 
     fn post(&self, path: &str) -> reqwest::RequestBuilder {
@@ -204,7 +235,13 @@ impl Web {
         });
         let response = self.post("/api/edge/sync").json(&body).send().await;
         match response {
-            Ok(r) if r.status().is_success() => r.json::<SyncAnswer>().await.ok(),
+            Ok(r) if r.status().is_success() => {
+                let answer = r.json::<SyncAnswer>().await.ok();
+                if answer.is_some() {
+                    self.mark_synced();
+                }
+                answer
+            }
             Ok(r) => {
                 tracing::warn!(status = %r.status(), "web app refused the sync");
                 None
@@ -309,6 +346,11 @@ mod tests {
     /// A web app that answers `/api/edge/close` with these statuses in turn
     /// (the last one from then on), counting the calls.
     async fn web_app(statuses: Vec<u16>) -> (Web, Arc<AtomicUsize>) {
+        web_app_answering(statuses, "").await
+    }
+
+    /// The same, answering every call with this body.
+    async fn web_app_answering(statuses: Vec<u16>, body: &'static str) -> (Web, Arc<AtomicUsize>) {
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let address = listener.local_addr().unwrap();
         let calls = Arc::new(AtomicUsize::new(0));
@@ -328,7 +370,9 @@ mod tests {
                             Ok::<_, Infallible>(
                                 Response::builder()
                                     .status(StatusCode::from_u16(status).unwrap())
-                                    .body(http_body_util::Full::new(bytes::Bytes::new()))
+                                    .body(http_body_util::Full::new(bytes::Bytes::from_static(
+                                        body.as_bytes(),
+                                    )))
                                     .unwrap(),
                             )
                         }
@@ -362,6 +406,23 @@ mod tests {
         web.closed("share-1", "closed").await;
         settle().await;
         assert_eq!(calls.load(Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test]
+    async fn only_an_answered_sync_counts_as_heard_from() {
+        let (web, _) = web_app(vec![500]).await;
+        assert!(web.sync(&[], &[]).await.is_none());
+        assert_eq!(web.since_sync(), None);
+        // A 200 that is not a sync answer does not count either.
+        let (web, _) = web_app_answering(vec![200], "<html>maintenance</html>").await;
+        assert!(web.sync(&[], &[]).await.is_none());
+        assert_eq!(web.since_sync(), None);
+        let (web, _) = web_app_answering(vec![200], r#"{"close":[]}"#).await;
+        assert!(web.sync(&[], &[]).await.is_some());
+        assert!(
+            web.since_sync()
+                .is_some_and(|ago| ago < Duration::from_secs(2))
+        );
     }
 
     #[tokio::test]
