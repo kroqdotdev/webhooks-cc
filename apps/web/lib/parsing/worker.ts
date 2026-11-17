@@ -473,6 +473,7 @@ export function startParseWorker(): void {
   let busy = 0;
   let claiming = false;
   let lastClaimDoneAt = Date.now();
+  let lastJobDoneAt = Date.now();
   const fill = async () => {
     if (claiming || busy >= CONCURRENCY) return;
     claiming = true;
@@ -483,6 +484,7 @@ export function startParseWorker(): void {
         busy++;
         void parseJob(job).finally(() => {
           busy--;
+          lastJobDoneAt = Date.now();
           void fill();
         });
       }
@@ -493,11 +495,16 @@ export function startParseWorker(): void {
     }
   };
   // The status page's Email parsing monitor: alive while claims complete,
-  // or while every slot is busy parsing (then no claim is tried).
+  // or, with every slot busy (then no claim is tried), while jobs still
+  // finish within their budget; slots that all hang go quiet.
   startHeartbeat({
     url: serverEnv().STATUS_HEARTBEAT_PARSING_URL,
     label: "parsing",
-    alive: () => busy >= CONCURRENCY || Date.now() - lastClaimDoneAt < 2 * 60_000,
+    alive: () => {
+      const now = Date.now();
+      if (busy >= CONCURRENCY) return now - lastJobDoneAt < JOB_BUDGET_MS + 2 * 60_000;
+      return now - lastClaimDoneAt < 2 * 60_000;
+    },
   });
   globalForParsing.__parseWorker = setInterval(() => void fill(), POLL_MS);
   globalForParsing.__parseWorker.unref();

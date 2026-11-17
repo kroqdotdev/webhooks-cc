@@ -15,8 +15,9 @@ import { pingHeartbeat } from "./heartbeat";
  * what tell the page that a webhook or an email is actually kept.
  *
  * The canary endpoint belongs to an internal account (`users.internal`), so
- * the operations metrics leave it out; its captures count against that
- * account's quota and the endpoint's daily stats like any other.
+ * the operations metrics, the analytics reports and the site totals leave
+ * it out. Its captures count against that account's quota like any other:
+ * about 600 a day, so the account needs Pro or better (Free takes 50).
  */
 
 const EVERY_MS = 5 * 60_000;
@@ -24,6 +25,8 @@ const FIRST_AFTER_MS = 30_000;
 const FIND_FOR_MS = 30_000;
 const FIND_EVERY_MS = 1_000;
 const SEND_TIMEOUT_MS = 15_000;
+/** Past DATA the listener waits on rspamd, storage and the receiver. */
+const SMTP_SOCKET_TIMEOUT_MS = 30_000;
 
 export type CanaryLeg = {
   label: string;
@@ -53,7 +56,8 @@ export async function runLeg(
     ping = pingHeartbeat,
     nonce = randomBytes(8).toString("hex"),
   } = options;
-  // The database's clock, not ours, stamps the row: allow for a little skew.
+  // The receiver stamps a webhook and the MX host an email, each by its own
+  // clock: allow for a little skew between them and this box.
   const since = new Date(Date.now() - 60_000);
   try {
     await leg.send(nonce);
@@ -174,7 +178,7 @@ function mailLeg(
     tls: { servername: mxHost() },
     connectionTimeout: SEND_TIMEOUT_MS,
     greetingTimeout: SEND_TIMEOUT_MS,
-    socketTimeout: SEND_TIMEOUT_MS,
+    socketTimeout: SMTP_SOCKET_TIMEOUT_MS,
   });
   return {
     label: "email",

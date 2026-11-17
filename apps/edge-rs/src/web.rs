@@ -5,7 +5,7 @@
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
 
@@ -33,19 +33,16 @@ const CLOSE_RETRIES: &[Duration] = if cfg!(test) {
     ]
 };
 
-fn now_secs() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map_or(0, |d| d.as_secs())
-}
-
 #[derive(Clone)]
 pub struct Web {
     http: reqwest::Client,
     base: String,
     secret: String,
-    /// When a sync last got an answer, in seconds since the epoch; 0 before
-    /// the first. The public health check reads it (main.rs).
+    /// When the client was made: sync times count from it, on the monotonic
+    /// clock, so a wall clock stepped by NTP never makes an old sync fresh.
+    started: Instant,
+    /// When a sync last got an answer, in milliseconds since `started` plus
+    /// one; 0 before the first. The public health check reads it (main.rs).
     synced_at: Arc<AtomicU64>,
 }
 
@@ -139,6 +136,7 @@ impl Web {
                 .expect("an HTTP client"),
             base: config.web_url.trim_end_matches('/').to_string(),
             secret: config.edge_secret.clone(),
+            started: Instant::now(),
             synced_at: Arc::new(AtomicU64::new(0)),
         }
     }
@@ -147,12 +145,21 @@ impl Web {
     /// before the first.
     pub fn since_sync(&self) -> Option<Duration> {
         let at = self.synced_at.load(Ordering::Relaxed);
-        (at > 0).then(|| Duration::from_secs(now_secs().saturating_sub(at)))
+        (at > 0).then(|| {
+            self.started
+                .elapsed()
+                .saturating_sub(Duration::from_millis(at - 1))
+        })
+    }
+
+    fn mark_synced(&self) {
+        let ms = u64::try_from(self.started.elapsed().as_millis()).unwrap_or(u64::MAX - 1);
+        self.synced_at.store(ms + 1, Ordering::Relaxed);
     }
 
     #[cfg(test)]
-    pub fn mark_synced(&self) {
-        self.synced_at.store(now_secs(), Ordering::Relaxed);
+    pub fn mark_synced_for_test(&self) {
+        self.mark_synced();
     }
 
     fn post(&self, path: &str) -> reqwest::RequestBuilder {
@@ -231,7 +238,7 @@ impl Web {
             Ok(r) if r.status().is_success() => {
                 let answer = r.json::<SyncAnswer>().await.ok();
                 if answer.is_some() {
-                    self.synced_at.store(now_secs(), Ordering::Relaxed);
+                    self.mark_synced();
                 }
                 answer
             }
@@ -399,7 +406,7 @@ mod tests {
         let (web, _) = web_app(vec![500]).await;
         assert!(web.sync(&[], &[]).await.is_none());
         assert_eq!(web.since_sync(), None);
-        web.mark_synced();
+        web.mark_synced_for_test();
         assert!(
             web.since_sync()
                 .is_some_and(|ago| ago < Duration::from_secs(2))

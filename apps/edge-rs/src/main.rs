@@ -1892,7 +1892,7 @@ mod tests {
         assert_eq!(before.status(), 503);
         assert_eq!(before.headers()["cache-control"], "no-store");
         assert!(before.text().await.unwrap().contains("unavailable"));
-        state.web.mark_synced();
+        state.web.mark_synced_for_test();
         let after = get(&base, "tunnel.webhooks.cc", HEALTH_PATH).await;
         assert_eq!(after.status(), 200);
         assert_eq!(after.text().await.unwrap(), r#"{"status":"ok"}"#);

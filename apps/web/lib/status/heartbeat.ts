@@ -23,6 +23,9 @@ export async function pingHeartbeat(
       method: "POST",
       signal: AbortSignal.timeout(PING_TIMEOUT_MS),
     });
+    // Drained, never cancelled: an unread body holds its connection, and a
+    // cancel can hang Next's patched fetch.
+    await response.arrayBuffer().catch(() => undefined);
     if (response.ok) return true;
     warnOnce(label, `answered ${response.status}`);
   } catch (error) {

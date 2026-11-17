@@ -84,11 +84,20 @@ function blankToUndefined<T extends z.ZodTypeAny>(schema: T) {
   );
 }
 
-/** An optional URL; an empty value counts as unset. */
-const optionalUrl = z.preprocess(
-  (value) => (typeof value === "string" && value.trim() === "" ? undefined : value),
-  z.string().url().optional()
-);
+/**
+ * A status page setting (lib/status/): empty counts as unset, and a value
+ * that does not parse turns its check off with a warning instead of
+ * stopping the app, since it only feeds monitoring.
+ */
+function statusSetting<T extends z.ZodTypeAny>(schema: T, name: string) {
+  return z.preprocess(
+    (value) => (typeof value === "string" && value.trim() === "" ? undefined : value),
+    schema.optional().catch(() => {
+      console.warn(`[status] ${name} is not valid; its check is off`);
+      return undefined;
+    })
+  );
+}
 
 const serverEnvSchema = z
   .object({
@@ -125,21 +134,18 @@ const serverEnvSchema = z
     // STATUS_CANARY_SMTP (host:port of the MX listener), an email to the
     // endpoint STATUS_CANARY_SLUG, pinging once each is found in the
     // database. Each unset URL turns its check off.
-    STATUS_HEARTBEAT_FORWARDING_URL: optionalUrl,
-    STATUS_HEARTBEAT_PARSING_URL: optionalUrl,
-    STATUS_HEARTBEAT_CAPTURE_URL: optionalUrl,
-    STATUS_HEARTBEAT_MAIL_URL: optionalUrl,
-    STATUS_CANARY_SLUG: z.preprocess(
-      (value) => (typeof value === "string" && value.trim() === "" ? undefined : value),
-      z
-        .string()
-        .regex(/^[a-zA-Z0-9_-]{1,50}$/)
-        .optional()
+    STATUS_HEARTBEAT_FORWARDING_URL: statusSetting(
+      z.string().url(),
+      "STATUS_HEARTBEAT_FORWARDING_URL"
     ),
-    STATUS_CANARY_SMTP: z.preprocess(
-      (value) => (typeof value === "string" && value.trim() === "" ? undefined : value),
-      z.string().optional()
+    STATUS_HEARTBEAT_PARSING_URL: statusSetting(z.string().url(), "STATUS_HEARTBEAT_PARSING_URL"),
+    STATUS_HEARTBEAT_CAPTURE_URL: statusSetting(z.string().url(), "STATUS_HEARTBEAT_CAPTURE_URL"),
+    STATUS_HEARTBEAT_MAIL_URL: statusSetting(z.string().url(), "STATUS_HEARTBEAT_MAIL_URL"),
+    STATUS_CANARY_SLUG: statusSetting(
+      z.string().regex(/^[a-zA-Z0-9_-]{1,50}$/),
+      "STATUS_CANARY_SLUG"
     ),
+    STATUS_CANARY_SMTP: statusSetting(z.string(), "STATUS_CANARY_SMTP"),
     // The email forwarding worker (lib/forwarding/worker.ts). On by default;
     // turn it off for a process that should not send deliveries.
     EMAIL_FORWARDING_WORKER: z
