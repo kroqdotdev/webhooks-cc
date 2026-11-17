@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { Star } from "lucide-react";
 import { useAuth } from "@/components/providers/supabase-auth-provider";
@@ -8,7 +8,6 @@ import {
   defaultDashboardEndpoint,
   setDashboardEndpointFavorite,
   type DashboardEndpointWithSharing,
-  type DashboardEndpointsResponse,
 } from "@/lib/dashboard-api";
 import { noteNavigationTo } from "@/lib/leave-guard";
 import { Button } from "@/components/ui/button";
@@ -53,26 +52,13 @@ export function EndpointSwitcher() {
   const [savingFavorite, setSavingFavorite] = useState(false);
   // A star clicked here shows at once, but only here: the page reads
   // favourites to pick the endpoint a bare /dashboard opens, and it should
-  // change only once the server has the change. Shown until the list read
-  // after the save arrives; dropped at once when the save fails. When that
-  // read fails, `until` is the list then on screen, and the next list read
-  // (which has the change) replaces the star.
-  const [star, setStar] = useState<{
-    id: string;
-    favorite: boolean;
-    until?: DashboardEndpointsResponse;
-  } | null>(null);
-  const listedRef = useRef(listed);
-  useEffect(() => {
-    listedRef.current = listed;
-  }, [listed]);
-  const starShown = star && (!star.until || star.until === listed) ? star : null;
+  // change only once the server has the change. Shown until a list read
+  // started after the save arrives (a read started before it may answer
+  // later with the old value); dropped at once when the save fails.
+  const [star, setStar] = useState<{ id: string; favorite: boolean } | null>(null);
   const data =
-    listed && starShown
-      ? {
-          owned: listed.owned.map(withStar(starShown)),
-          shared: listed.shared.map(withStar(starShown)),
-        }
+    listed && star
+      ? { owned: listed.owned.map(withStar(star)), shared: listed.shared.map(withStar(star)) }
       : listed;
 
   // The endpoints this site lists, and the one open now even if it is listed
@@ -154,9 +140,9 @@ export function EndpointSwitcher() {
     } finally {
       setSavingFavorite(false);
     }
-    // The list now carries the change.
+    // The list now carries the change. If this read fails, the star stays
+    // until the next click: the server has the change, the list may not.
     if (await reload()) drop();
-    else setStar((shown) => (shown === mine ? { ...mine, until: listedRef.current } : shown));
   };
 
   // Who shares it, beside its name: the teams of an endpoint the caller shares,

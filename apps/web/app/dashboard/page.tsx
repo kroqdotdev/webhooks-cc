@@ -2890,10 +2890,8 @@ function AutoCreateEndpoint({
   const created = useRef(false);
   const LIST_FAILED = "Your first endpoint is ready, but the list could not be loaded.";
 
-  useEffect(() => {
-    if (!accessToken || attempted.current) return;
-    attempted.current = true;
-
+  const create = useCallback(() => {
+    if (!accessToken) return;
     createDashboardEndpoint(accessToken, siteBody(site.key))
       .then(async () => {
         created.current = true;
@@ -2902,16 +2900,23 @@ function AutoCreateEndpoint({
       .catch(() => setError("Could not create your first endpoint."));
   }, [accessToken, onCreated, site.key]);
 
+  useEffect(() => {
+    if (!accessToken || attempted.current) return;
+    attempted.current = true;
+    create();
+  }, [accessToken, create]);
+
+  // Asked again directly: the effect above runs once.
   const handleRetry = useCallback(() => {
     setError(null);
-    if (created.current) {
-      void onCreated().then((loaded) => {
-        if (!loaded) setError(LIST_FAILED);
-      });
+    if (!created.current) {
+      create();
       return;
     }
-    attempted.current = false;
-  }, [onCreated]);
+    void onCreated().then((loaded) => {
+      if (!loaded) setError(LIST_FAILED);
+    });
+  }, [create, onCreated]);
 
   if (error) {
     return (
@@ -2951,7 +2956,7 @@ function NoEndpointsHere({
   elsewhere: number;
   /** The account's own endpoints listed on the other site; only the owner can list them here. */
   ownedElsewhere: string[];
-  onCreated: () => Promise<unknown>;
+  onCreated: () => Promise<boolean>;
 }) {
   const site = useSite();
   const other = SITES[otherSite(site.key)];
@@ -2959,15 +2964,28 @@ function NoEndpointsHere({
   const [creating, setCreating] = useState(false);
   const [listing, setListing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Listed here already, but the list read after it failed: trying again
+  // only reads the list.
+  const changed = useRef(false);
 
   const listHereToo = () => {
     if (!accessToken || ownedElsewhere.length === 0) return;
     setListing(true);
     setError(null);
-    Promise.all(
-      ownedElsewhere.map((slug) => updateDashboardEndpoint(accessToken, slug, { site: "both" }))
-    )
+    const change = changed.current
+      ? Promise.resolve()
+      : Promise.all(
+          ownedElsewhere.map((slug) => updateDashboardEndpoint(accessToken, slug, { site: "both" }))
+        ).then(() => {
+          changed.current = true;
+        });
+    change
       .then(() => onCreated())
+      .then((loaded) => {
+        if (loaded) return;
+        setError("They are listed here now, but the list could not be loaded. Try again.");
+        setListing(false);
+      })
       .catch(() => {
         setError("Could not show them here. Try again.");
         setListing(false);
@@ -3057,22 +3075,33 @@ function ListedElsewhereNotice({
   endpointSite: DashboardEndpoint["site"];
   /** The owner can list it on both sites from here. */
   canList: boolean;
-  onListed: () => Promise<unknown>;
+  onListed: () => Promise<boolean>;
 }) {
   const site = useSite();
   const { session } = useAuth();
   const home = SITES[endpointHomeSite(endpointSite, site.key)];
   const [listing, setListing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Listed here already, but the list read after it failed: trying again
+  // only reads the list.
+  const changed = useRef(false);
   const listHere = () => {
     const accessToken = session?.access_token;
     if (!accessToken || listing) return;
     setListing(true);
     setError(null);
-    updateDashboardEndpoint(accessToken, slug, { site: "both" })
-      .then(() => {
-        setOpenEndpoint({ slug, site: "both" });
-        return onListed();
+    const change = changed.current
+      ? Promise.resolve()
+      : updateDashboardEndpoint(accessToken, slug, { site: "both" }).then(() => {
+          changed.current = true;
+          setOpenEndpoint({ slug, site: "both" });
+        });
+    change
+      .then(() => onListed())
+      .then((loaded) => {
+        if (loaded) return;
+        setError("It is listed here now, but the list could not be loaded. Try again.");
+        setListing(false);
       })
       .catch(() => {
         setError("It could not be listed here. Try again.");
