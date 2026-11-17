@@ -11,7 +11,7 @@ import {
   matchHas,
   prepareDestination,
 } from "next/dist/shared/lib/router/utils/prepare-destination";
-import { MAILHOOKS_PAGES } from "./lib/site";
+import { MAILHOOKS_MISSING_HEADER, MAILHOOKS_PAGES } from "./lib/site";
 import { MARKDOWN_TWIN_HEADER } from "./lib/markdown-negotiation";
 import { ROUTER_STATE_HEADER, ROUTER_STATE_REFUSED_PATH } from "./lib/router-state-header";
 import nextConfig from "./next.config";
@@ -111,7 +111,12 @@ describe("next.config.ts headers", () => {
   });
 });
 
-/** Where a beforeFiles rewrite sends a request, or null when none matches. */
+/**
+ * Where the beforeFiles rewrites send a request, or null when none matches.
+ * They chain as in Next's router (resolve-routes.js; only afterFiles and
+ * fallback rewrites stop at a file): each rule is matched against the path
+ * the rules before it rewrote to.
+ */
 async function rewriteFor(
   pathname: string,
   headers: Record<string, string> = {},
@@ -120,8 +125,10 @@ async function rewriteFor(
   const rewrites = await config.rewrites?.();
   const beforeFiles = rewrites && !Array.isArray(rewrites) ? (rewrites.beforeFiles ?? []) : [];
   const req = { headers } as unknown as Parameters<typeof matchHas>[0];
+  let current = pathname;
+  let rewritten = false;
   for (const rule of beforeFiles) {
-    const params = getPathMatch(rule.source, { strict: true, removeUnnamedParams: true })(pathname);
+    const params = getPathMatch(rule.source, { strict: true, removeUnnamedParams: true })(current);
     if (!params) continue;
     const hasParams = rule.has || rule.missing ? matchHas(req, {}, rule.has, rule.missing) : {};
     if (!hasParams) continue;
@@ -131,9 +138,10 @@ async function rewriteFor(
       params: { ...params, ...hasParams },
       query: {},
     });
-    return parsedDestination.pathname;
+    current = parsedDestination.pathname ?? current;
+    rewritten = true;
   }
-  return null;
+  return rewritten ? current : null;
 }
 
 describe("next.config.ts router state rewrite", () => {
@@ -213,6 +221,46 @@ describe("next.config.ts mailhooks.cc rewrites", () => {
       vi.unstubAllEnvs();
     }
   }
+
+  it("refuses after the mailhooks.cc rewrites, which would otherwise render mailhooks.cc's 404", async () => {
+    // proxy.ts marks a path mailhooks.cc does not serve; a later rule would
+    // rewrite the refusal to /mailhooks/missing, which renders the page.
+    const config = await mailConfig();
+    expect(
+      await rewriteFor(
+        "/wp-admin",
+        {
+          host: "mailhooks.cc",
+          [MAILHOOKS_MISSING_HEADER]: "1",
+          rsc: "1",
+          [ROUTER_STATE_HEADER]: "%7Bnot-json",
+        },
+        config
+      )
+    ).toBe(ROUTER_STATE_REFUSED_PATH);
+    expect(
+      await rewriteFor(
+        "/docs/agents",
+        {
+          host: "mailhooks.cc",
+          accept: "text/markdown",
+          [MARKDOWN_TWIN_HEADER]: "1",
+          rsc: "1",
+          [ROUTER_STATE_HEADER]: "%7Bnot-json",
+        },
+        config
+      )
+    ).toBe(ROUTER_STATE_REFUSED_PATH);
+    // The same requests with a header Next's client writes keep their rewrites.
+    const tree = encodeURIComponent(JSON.stringify(["", {}]));
+    expect(
+      await rewriteFor(
+        "/docs/agents",
+        { host: "mailhooks.cc", rsc: "1", [ROUTER_STATE_HEADER]: tree },
+        config
+      )
+    ).toBe("/mailhooks/docs/agents");
+  });
 
   it("serves every mailhooks.cc page from app/mailhooks on the mail host only", async () => {
     const config = await mailConfig();
