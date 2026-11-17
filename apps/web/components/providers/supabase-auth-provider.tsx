@@ -4,6 +4,7 @@ import { useSyncExternalStore, type ReactNode } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { clearPendingUser, reportAuthenticatedUser } from "@/lib/analytics";
 import { endAccountConsentSession } from "@/lib/analytics-account-consent";
+import { createSessionCheck, watchApiUnauthorized } from "@/lib/session-check";
 import type { User, Session } from "@supabase/supabase-js";
 
 interface AuthContextValue {
@@ -49,6 +50,13 @@ function startAuthListener() {
   authListenerStarted = true;
 
   const supabase = createClient();
+  // A session ended elsewhere signs the page out once GoTrue says so: checked
+  // when the page loads with one, and when our API refuses a request
+  // (lib/session-check.ts; the proxy only refreshes an expired session).
+  const checkSession = createSessionCheck(supabase.auth);
+  watchApiUnauthorized(window, () => {
+    if (authState.session) void checkSession();
+  });
 
   // Get initial session
   void (async () => {
@@ -57,6 +65,7 @@ function startAuthListener() {
         data: { session },
       } = await supabase.auth.getSession();
       setAuthSession(session);
+      if (session) void checkSession();
     } catch {
       // Resolve the loading state even if the session fetch fails, so
       // consumers don't get stuck showing a loading placeholder forever.

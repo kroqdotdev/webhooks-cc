@@ -130,16 +130,22 @@ function isDocumentLoad(request: NextRequest): boolean {
 }
 
 /**
- * Checks the Supabase session on a page load, which refreshes an expired
- * access token and, when the session was ended elsewhere (signed out on
- * every device, the account deleted), clears its cookies so the page opens
- * signed out.
+ * Refreshes an expired session on a page load, and clears the cookies of one
+ * whose refresh GoTrue refuses. getSession() calls GoTrue only when the access
+ * token has expired, so a signed-in page load costs nothing here otherwise.
+ *
+ * The refresh stays on the server, over the private network, because cookies
+ * the server sets live their full 400 days, while browsers like Safari cap
+ * cookies a script writes at 7 days; and a refresh from the browser goes
+ * through the CDN, whose error pages auth-js can mistake for a refused
+ * refresh. A session ended elsewhere while its token is still fresh is the
+ * browser's to notice (checkSession() in
+ * components/providers/supabase-auth-provider.tsx).
  *
  * Only on page loads: no server component reads the session. The routes that
  * do (/auth/*, and the device login and approvals routes through
- * lib/device-session.ts) check and refresh it themselves, and every other
- * API route reads a bearer token. Checking on every request cost a call to
- * GoTrue on each API call, navigation and prefetch.
+ * lib/device-session.ts) refresh it themselves, and every other API route
+ * reads a bearer token.
  */
 async function refreshSession(request: NextRequest, pathname: string): Promise<NextResponse> {
   let supabaseResponse = NextResponse.next({ request });
@@ -190,7 +196,7 @@ async function refreshSession(request: NextRequest, pathname: string): Promise<N
   // /auth/callback exchanges the OAuth code, /auth/confirm verifies an email
   // token hash and /auth/switch carries a session over from the other site
   // (lib/site-switch.ts).
-  await supabase.auth.getUser();
+  await supabase.auth.getSession();
 
   return supabaseResponse;
 }

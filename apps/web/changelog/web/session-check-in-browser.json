@@ -1,0 +1,7 @@
+{
+  "title": "Faster page loads when signed in",
+  "items": [
+    "A signed-in page load no longer waits for a session check on the server; the browser checks the session in the background instead",
+    "A session ended on another device, or an account deleted, now signs the page out as soon as the dashboard's next request is refused, not only on the next page load"
+  ]
+}
