@@ -1,0 +1,6 @@
+{
+  "title": "Bad router state headers answered 400",
+  "items": [
+    "A page request with a router state header Next cannot read (not encoded JSON, not a route tree, sent twice or too large) is answered 400 before the page renders, instead of failing as a server error"
+  ]
+}

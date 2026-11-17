@@ -1,4 +1,5 @@
 import * as StatOSS from "@statoss/sdk";
+import { isRouterStateHeaderError } from "@/lib/router-state-header";
 
 /**
  * Errors to StatOSS, server side. `instrumentation.ts` starts the client
@@ -97,6 +98,9 @@ export function reportRequestError(
   request: { method: string },
   context: { routePath: string; routeType: string }
 ): void {
+  // A bad router state header is the sender's fault; the proxy refuses most
+  // of them, and Next refuses the rest (lib/router-state-header.ts).
+  if (isRouterStateHeaderError(error)) return;
   const type = error instanceof Error ? error.name : typeof error;
   const { send, suppressed } = admit(`${context.routePath} ${type}`, Date.now());
   if (!send) return;

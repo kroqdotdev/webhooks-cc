@@ -70,6 +70,28 @@ describe("proxy", () => {
     expect(getUser).not.toHaveBeenCalled();
   });
 
+  it("answers a router state header Next could not parse with 400, before Supabase auth", async () => {
+    for (const state of ["%7Bnot-json", encodeURIComponent('{"a":1}'), "x".repeat(40_001)]) {
+      const req = new NextRequest("https://webhooks.cc/dashboard", {
+        headers: { RSC: "1", "Next-Router-State-Tree": state },
+      });
+      const res = await proxy(req);
+      expect(res.status).toBe(400);
+      expect(res.headers.get("Cache-Control")).toBe("no-store");
+    }
+    expect(getUser).not.toHaveBeenCalled();
+  });
+
+  it("lets a client navigation's router state header through", async () => {
+    const tree = ["", { children: ["dashboard", { children: ["__PAGE__", {}] }] }];
+    const req = new NextRequest("https://webhooks.cc/dashboard", {
+      headers: { RSC: "1", "Next-Router-State-Tree": encodeURIComponent(JSON.stringify(tree)) },
+    });
+    const res = await proxy(req);
+    expect(res.status).toBe(200);
+    expect(getUser).toHaveBeenCalledTimes(1);
+  });
+
   it("lets POST requests to /api routes and GET requests to pages through", async () => {
     const apiPost = new NextRequest("https://webhooks.cc/api/go/endpoint", {
       method: "POST",
