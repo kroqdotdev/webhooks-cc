@@ -233,6 +233,12 @@ async function parseAttachments(
       continue;
     }
 
+    // The job's budget holds for stored reads too: a run of slow reads must
+    // not keep a slot past it (the status heartbeat counts on the bound).
+    if (Date.now() > options.deadline) {
+      keep({ ...base, error: "time" }, null);
+      continue;
+    }
     // Parsed before (a retry, a replay or the preview): read it again,
     // unless it was cut off at a balance that has room for more now.
     const storedBytes = await getObjectBytes(parsedKey(request.id, index));

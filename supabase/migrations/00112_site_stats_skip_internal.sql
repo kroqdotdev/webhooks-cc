@@ -12,11 +12,11 @@
 --     only for accounts that are not internal. Guest endpoints (no user) are
 --     counted as before.
 --   - accumulate_deleted_endpoint_webhooks() moves only the counts of deleted
---     endpoints whose owner is not internal into deleted_webhooks. In an
---     account-deletion cascade the users row is already gone when the
---     statement trigger runs, so a deleted internal account's endpoints are
---     counted then: rare, and only ever too high, never lost.
---
+--     endpoints whose owner is not internal into deleted_webhooks.
+--   - An internal account's endpoints are deleted by a BEFORE DELETE trigger
+--     on users, while its row still says internal. In the usual cascade
+--     (auth.users -> users -> endpoints) the statement trigger above runs
+--     after the users row is gone and would count them as a customer's.
 --   - What internal accounts' endpoints received so far moves into
 --     deleted_webhooks once, so applying this never lowers the public total
 --     (00038 keeps it from going down); only their traffic from now on is
@@ -24,10 +24,17 @@
 --
 -- Marking an account internal later takes its live counts out of the total
 -- at the next refresh (4x a day). Same signatures and grants as 00038; the
--- whole file runs in one transaction so the two functions change together.
+-- whole file runs in one transaction so everything changes together.
 -- ============================================================================
 
 begin;
+
+-- Endpoint writes wait for this file to commit: a delete committing between
+-- the backfill's snapshot and its row lock would otherwise be counted twice
+-- (once by the old trigger, once here). Captures update endpoints too and
+-- wait as well, for the few milliseconds the file takes; the lock_timeout in
+-- the psql recipe bounds how long the file waits for the lock.
+lock table public.endpoints in share mode;
 
 -- Under the site_stats row lock, like refresh_site_stats().
 update public.site_stats
@@ -70,6 +77,30 @@ $$;
 
 revoke all on function public.accumulate_deleted_endpoint_webhooks()
   from public, anon, authenticated;
+
+-- SECURITY DEFINER for the same reason as the trigger above: an account
+-- deletion runs as GoTrue's role, which cannot delete endpoints itself.
+create or replace function public.delete_internal_account_endpoints()
+returns trigger
+language plpgsql
+security definer set search_path = ''
+as $$
+begin
+  delete from public.endpoints where user_id = old.id;
+  return old;
+end;
+$$;
+
+revoke all on function public.delete_internal_account_endpoints()
+  from public, anon, authenticated;
+
+drop trigger if exists users_internal_endpoints_first on public.users;
+
+create trigger users_internal_endpoints_first
+  before delete on public.users
+  for each row
+  when (old.internal)
+  execute function public.delete_internal_account_endpoints();
 
 create or replace function public.refresh_site_stats()
 returns void

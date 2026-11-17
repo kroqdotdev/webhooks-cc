@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { parseSmtpTarget, runLeg, type CanaryLeg } from "./canary";
 
 function leg(overrides: Partial<CanaryLeg> = {}): CanaryLeg {
@@ -14,13 +14,24 @@ function leg(overrides: Partial<CanaryLeg> = {}): CanaryLeg {
 
 const fast = { findForMs: 50, findEveryMs: 5, nonce: "abc123" };
 
+/** Runs a leg on virtual time, so a busy runner cannot cut its polling short. */
+async function run(l: CanaryLeg, options: Parameters<typeof runLeg>[1]) {
+  const outcome = runLeg(l, options);
+  await vi.runAllTimersAsync();
+  return outcome;
+}
+
 describe("runLeg", () => {
-  afterEach(() => vi.restoreAllMocks());
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+  });
 
   it("pings once the canary is found, after removing it", async () => {
     const ping = vi.fn().mockResolvedValue(true);
     const l = leg();
-    expect(await runLeg(l, { ...fast, ping })).toBe("ok");
+    expect(await run(l, { ...fast, ping })).toBe("ok");
     expect(l.send).toHaveBeenCalledWith("abc123");
     expect(l.find).toHaveBeenCalledWith("abc123", expect.any(Date));
     expect(l.remove).toHaveBeenCalledWith("request-1");
@@ -34,7 +45,7 @@ describe("runLeg", () => {
       .mockResolvedValueOnce(null)
       .mockRejectedValueOnce(new Error("timeout"))
       .mockResolvedValue("request-2");
-    expect(await runLeg(leg({ find }), { ...fast, ping })).toBe("ok");
+    expect(await run(leg({ find }), { ...fast, ping })).toBe("ok");
     expect(find).toHaveBeenCalledTimes(3);
   });
 
@@ -42,7 +53,7 @@ describe("runLeg", () => {
     vi.spyOn(console, "warn").mockImplementation(() => {});
     const ping = vi.fn();
     const l = leg({ send: vi.fn().mockRejectedValue(new Error("connection refused")) });
-    expect(await runLeg(l, { ...fast, ping })).toBe("send_failed");
+    expect(await run(l, { ...fast, ping })).toBe("send_failed");
     expect(l.find).not.toHaveBeenCalled();
     expect(ping).not.toHaveBeenCalled();
   });
@@ -51,7 +62,7 @@ describe("runLeg", () => {
     vi.spyOn(console, "warn").mockImplementation(() => {});
     const ping = vi.fn();
     const l = leg({ find: vi.fn().mockResolvedValue(null) });
-    expect(await runLeg(l, { ...fast, ping })).toBe("not_captured");
+    expect(await run(l, { ...fast, ping })).toBe("not_captured");
     expect(l.remove).not.toHaveBeenCalled();
     expect(ping).not.toHaveBeenCalled();
   });
@@ -60,7 +71,7 @@ describe("runLeg", () => {
     vi.spyOn(console, "warn").mockImplementation(() => {});
     const ping = vi.fn();
     const l = leg({ find: vi.fn().mockRejectedValue(new Error("db down")) });
-    expect(await runLeg(l, { ...fast, ping })).toBe("lookup_failed");
+    expect(await run(l, { ...fast, ping })).toBe("lookup_failed");
     expect(ping).not.toHaveBeenCalled();
   });
 
@@ -68,7 +79,7 @@ describe("runLeg", () => {
     vi.spyOn(console, "warn").mockImplementation(() => {});
     const ping = vi.fn().mockResolvedValue(true);
     const l = leg({ remove: vi.fn().mockRejectedValue(new Error("nope")) });
-    expect(await runLeg(l, { ...fast, ping })).toBe("ok");
+    expect(await run(l, { ...fast, ping })).toBe("ok");
     expect(ping).toHaveBeenCalledTimes(1);
   });
 });

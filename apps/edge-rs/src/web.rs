@@ -346,6 +346,11 @@ mod tests {
     /// A web app that answers `/api/edge/close` with these statuses in turn
     /// (the last one from then on), counting the calls.
     async fn web_app(statuses: Vec<u16>) -> (Web, Arc<AtomicUsize>) {
+        web_app_answering(statuses, "").await
+    }
+
+    /// The same, answering every call with this body.
+    async fn web_app_answering(statuses: Vec<u16>, body: &'static str) -> (Web, Arc<AtomicUsize>) {
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let address = listener.local_addr().unwrap();
         let calls = Arc::new(AtomicUsize::new(0));
@@ -365,7 +370,9 @@ mod tests {
                             Ok::<_, Infallible>(
                                 Response::builder()
                                     .status(StatusCode::from_u16(status).unwrap())
-                                    .body(http_body_util::Full::new(bytes::Bytes::new()))
+                                    .body(http_body_util::Full::new(bytes::Bytes::from_static(
+                                        body.as_bytes(),
+                                    )))
                                     .unwrap(),
                             )
                         }
@@ -406,7 +413,12 @@ mod tests {
         let (web, _) = web_app(vec![500]).await;
         assert!(web.sync(&[], &[]).await.is_none());
         assert_eq!(web.since_sync(), None);
-        web.mark_synced_for_test();
+        // A 200 that is not a sync answer does not count either.
+        let (web, _) = web_app_answering(vec![200], "<html>maintenance</html>").await;
+        assert!(web.sync(&[], &[]).await.is_none());
+        assert_eq!(web.since_sync(), None);
+        let (web, _) = web_app_answering(vec![200], r#"{"close":[]}"#).await;
+        assert!(web.sync(&[], &[]).await.is_some());
         assert!(
             web.since_sync()
                 .is_some_and(|ago| ago < Duration::from_secs(2))
