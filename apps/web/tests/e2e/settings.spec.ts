@@ -10,7 +10,11 @@ import {
 /**
  * The account and team settings pages: what the teams suite does not cover.
  * Billing states are written to the team row directly, as the Polar webhook
- * would, without a Polar subscription id, so nothing here calls Polar.
+ * would, without a Polar subscription id. The tests that show billing states
+ * and seat controls give the team a made-up id while they run, because a
+ * team with a subscription status but no id reads as complimentary
+ * (staff-owned, migration 00108), which has neither; the only Polar call
+ * that makes is the seat quote's read, which fails as the test expects.
  */
 
 test.describe.configure({ mode: "serial" });
@@ -30,6 +34,9 @@ async function setTeam(patch: Record<string, unknown>) {
   const { error } = await admin.from("teams").update(patch).eq("id", teamId);
   if (error) throw new Error(`Failed to update team: ${error.message}`);
 }
+
+/** Made up: the tests that show billing states set it while they run, and clear it. */
+const E2E_SUBSCRIPTION_ID = "sub_e2e_settings_fixture";
 
 const ACTIVE = {
   subscription_status: "active",
@@ -216,48 +223,58 @@ test("billing states read correctly for the owner and the member", async ({ brow
   const ownerPage = await (await browser.newContext()).newPage();
   const memberPage = await (await browser.newContext()).newPage();
 
-  await setTeam({ subscription_status: "past_due" });
-  await openTeam(ownerPage, owner);
-  await expect(ownerPage.getByText("Payment past due", { exact: true }).first()).toBeVisible();
+  try {
+    await setTeam({ subscription_status: "past_due", polar_subscription_id: E2E_SUBSCRIPTION_ID });
+    await openTeam(ownerPage, owner);
+    await expect(ownerPage.getByText("Payment past due", { exact: true }).first()).toBeVisible();
 
-  await setTeam({ subscription_status: "active", cancel_at_period_end: true });
-  await ownerPage.reload();
-  const billing = ownerPage.locator("#billing");
-  await expect(billing.getByText("Cancels at period end")).toBeVisible({ timeout: 15000 });
-  await expect(billing.getByRole("button", { name: "Keep subscription" })).toBeVisible();
+    await setTeam({ subscription_status: "active", cancel_at_period_end: true });
+    await ownerPage.reload();
+    const billing = ownerPage.locator("#billing");
+    await expect(billing.getByText("Cancels at period end")).toBeVisible({ timeout: 15000 });
+    await expect(billing.getByRole("button", { name: "Keep subscription" })).toBeVisible();
 
-  await openTeam(memberPage, member);
-  const memberBilling = memberPage.locator("#billing");
-  await expect(memberBilling.getByText("Cancels at period end")).toBeVisible();
-  await expect(memberBilling.getByRole("button")).toHaveCount(0);
+    await openTeam(memberPage, member);
+    const memberBilling = memberPage.locator("#billing");
+    await expect(memberBilling.getByText("Cancels at period end")).toBeVisible();
+    await expect(memberBilling.getByRole("button")).toHaveCount(0);
 
-  await setTeam({ cancel_at_period_end: false, pending_seats: 2 });
-  await ownerPage.reload();
-  await expect(ownerPage.getByText("Drops from 3 to 2 seats", { exact: false })).toBeVisible({
-    timeout: 15000,
-  });
-  await expect(ownerPage.getByRole("button", { name: "Keep 3 seats" })).toBeVisible();
-  await expect(
-    ownerPage.getByRole("list", { name: "Seats" }).getByText("Removed at renewal")
-  ).toBeVisible();
-
-  await setTeam(ACTIVE);
+    await setTeam({ cancel_at_period_end: false, pending_seats: 2 });
+    await ownerPage.reload();
+    await expect(ownerPage.getByText("Drops from 3 to 2 seats", { exact: false })).toBeVisible({
+      timeout: 15000,
+    });
+    await expect(ownerPage.getByRole("button", { name: "Keep 3 seats" })).toBeVisible();
+    await expect(
+      ownerPage.getByRole("list", { name: "Seats" }).getByText("Removed at renewal")
+    ).toBeVisible();
+  } finally {
+    await setTeam({ ...ACTIVE, polar_subscription_id: null });
+  }
 });
 
 test("a seat change asks for confirmation and shows a failed quote in the dialog", async ({
   page,
 }) => {
-  await openTeam(page, owner);
-  await page.getByRole("button", { name: "Increase seats" }).click();
-  await page.getByRole("button", { name: "Update seats" }).click();
+  // Polar has no subscription by this made-up id, so pricing fails (a read,
+  // nothing is changed); the dialog must say so and keep its confirm button
+  // disabled instead of charging blind.
+  await setTeam({ polar_subscription_id: E2E_SUBSCRIPTION_ID });
+  try {
+    await openTeam(page, owner);
+    await page.getByRole("button", { name: "Increase seats" }).click();
+    await page.getByRole("button", { name: "Update seats" }).click();
 
-  const dialog = page.getByRole("alertdialog");
-  await expect(dialog.getByRole("heading", { name: "Add 1 seat?" })).toBeVisible();
-  // This team has no Polar subscription, so pricing fails; the dialog must say so
-  // and keep its confirm button disabled instead of charging blind.
-  await expect(dialog.getByRole("button", { name: /add seat/i })).toBeDisabled({ timeout: 15000 });
-  await dialog.getByRole("button", { name: "Keep 3 seats" }).click();
-  await expect(dialog).toHaveCount(0);
+    const dialog = page.getByRole("alertdialog");
+    await expect(dialog.getByRole("heading", { name: "Add 1 seat?" })).toBeVisible();
+    await expect(dialog.getByRole("button", { name: /add seat/i })).toBeDisabled({
+      timeout: 15000,
+    });
+    await dialog.getByRole("button", { name: "Keep 3 seats" }).click();
+    await expect(dialog).toHaveCount(0);
+  } finally {
+    await setTeam({ polar_subscription_id: null });
+  }
 });
 
 test("after checkout the page waits for activation, then shows the team", async ({ page }) => {

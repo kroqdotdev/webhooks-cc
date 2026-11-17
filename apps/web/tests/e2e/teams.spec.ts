@@ -267,9 +267,18 @@ test("member can view team manage page", async ({ page }) => {
   await expect(table.getByText("Owner", { exact: true })).toBeVisible();
   await expect(table.getByText("Member", { exact: true }).first()).toBeVisible();
 
-  // Members see the team's subscription state, without owner-only controls
-  await expect(page.getByText("Active", { exact: true })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Update seats" })).not.toBeVisible();
+  // Members see the team's subscription state, without owner-only controls.
+  // A made-up subscription id while it shows: a team with a status but no id
+  // reads as complimentary (staff-owned, migration 00108). Cleared again, so
+  // nothing later (seat changes, deleting the team) calls Polar with it.
+  await setTeamBilling({ polar_subscription_id: "sub_e2e_teams_fixture" });
+  try {
+    await page.reload();
+    await expect(page.getByText("Active", { exact: true })).toBeVisible({ timeout: 10000 });
+    await expect(page.getByRole("button", { name: "Update seats" })).not.toBeVisible();
+  } finally {
+    await setTeamBilling({ polar_subscription_id: null });
+  }
 });
 
 test("avatar dropdown shows Teams link", async ({ page }) => {
