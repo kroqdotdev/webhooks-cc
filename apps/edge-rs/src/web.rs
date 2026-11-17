@@ -3,7 +3,9 @@
 //! session may open, under what name and for how long, and keeps the
 //! record. The edge only carries the traffic.
 
-use std::time::Duration;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
 
@@ -31,11 +33,20 @@ const CLOSE_RETRIES: &[Duration] = if cfg!(test) {
     ]
 };
 
+fn now_secs() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_or(0, |d| d.as_secs())
+}
+
 #[derive(Clone)]
 pub struct Web {
     http: reqwest::Client,
     base: String,
     secret: String,
+    /// When a sync last got an answer, in seconds since the epoch; 0 before
+    /// the first. The public health check reads it (main.rs).
+    synced_at: Arc<AtomicU64>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -128,7 +139,20 @@ impl Web {
                 .expect("an HTTP client"),
             base: config.web_url.trim_end_matches('/').to_string(),
             secret: config.edge_secret.clone(),
+            synced_at: Arc::new(AtomicU64::new(0)),
         }
+    }
+
+    /// How long ago a sync last got an answer from the web app, or None
+    /// before the first.
+    pub fn since_sync(&self) -> Option<Duration> {
+        let at = self.synced_at.load(Ordering::Relaxed);
+        (at > 0).then(|| Duration::from_secs(now_secs().saturating_sub(at)))
+    }
+
+    #[cfg(test)]
+    pub fn mark_synced(&self) {
+        self.synced_at.store(now_secs(), Ordering::Relaxed);
     }
 
     fn post(&self, path: &str) -> reqwest::RequestBuilder {
@@ -204,7 +228,13 @@ impl Web {
         });
         let response = self.post("/api/edge/sync").json(&body).send().await;
         match response {
-            Ok(r) if r.status().is_success() => r.json::<SyncAnswer>().await.ok(),
+            Ok(r) if r.status().is_success() => {
+                let answer = r.json::<SyncAnswer>().await.ok();
+                if answer.is_some() {
+                    self.synced_at.store(now_secs(), Ordering::Relaxed);
+                }
+                answer
+            }
             Ok(r) => {
                 tracing::warn!(status = %r.status(), "web app refused the sync");
                 None
@@ -362,6 +392,18 @@ mod tests {
         web.closed("share-1", "closed").await;
         settle().await;
         assert_eq!(calls.load(Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test]
+    async fn only_an_answered_sync_counts_as_heard_from() {
+        let (web, _) = web_app(vec![500]).await;
+        assert!(web.sync(&[], &[]).await.is_none());
+        assert_eq!(web.since_sync(), None);
+        web.mark_synced();
+        assert!(
+            web.since_sync()
+                .is_some_and(|ago| ago < Duration::from_secs(2))
+        );
     }
 
     #[tokio::test]

@@ -46,6 +46,11 @@ export async function register() {
       startAlertChecker();
     }
 
+    // End-to-end checks for the status page (lib/status/canary.ts); starts
+    // only with STATUS_CANARY_SLUG and a heartbeat URL.
+    const { startStatusCanary } = await import("./lib/status/canary");
+    startStatusCanary();
+
     // Delete the stored objects of deleted requests (lib/storage/deleter.ts);
     // starts only when object storage is configured.
     const { startStorageDeleter } = await import("./lib/storage/deleter");

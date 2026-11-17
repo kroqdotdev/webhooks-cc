@@ -1,0 +1,8 @@
+{
+  "title": "Status page checks that follow real traffic",
+  "items": [
+    "status.webhooks.cc checks webhook and email capture end to end: a webhook and an email go out every five minutes and count only once they are found stored",
+    "Forwarding and email parsing report to the status page while they work, so a stalled worker shows there",
+    "The tunnel edge answers a health check of its own, for previews and live tunnels"
+  ]
+}

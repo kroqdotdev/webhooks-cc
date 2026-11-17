@@ -34,6 +34,8 @@ import { isDelivered, jsonForward, sendForward, type SendResult } from "./send";
 import { forwardHeaders, FORWARD_USER_AGENT } from "./sign";
 import { senderTimestamp, type SenderTime } from "./timing";
 import { reportError } from "@/lib/observability";
+import { serverEnv } from "@/lib/env";
+import { startHeartbeat } from "@/lib/status/heartbeat";
 import { withAttachmentPayloads } from "./attachments";
 import { RowsTooLargeError, rowsFor, storedSheetsConfig } from "@/lib/integrations/sheets";
 import {
@@ -1302,6 +1304,12 @@ export function startForwardingWorker(): void {
     }
   };
 
+  // The status page's Forwarding monitor: alive while claims complete.
+  startHeartbeat({
+    url: serverEnv().STATUS_HEARTBEAT_FORWARDING_URL,
+    label: "forwarding",
+    alive: () => Date.now() - lastClaimDoneAt < 2 * 60_000,
+  });
   globalForWorker.__emailForwardingWorker = setInterval(() => void tick(), BUSY_POLL_MS);
   globalForWorker.__emailForwardingWorker.unref();
   setInterval(() => {

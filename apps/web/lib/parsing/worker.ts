@@ -5,6 +5,8 @@ import type { Json } from "@/lib/supabase/database";
 import { emailFieldValues, storedEmailFields } from "@/lib/email-fields";
 import { planEntitlements, teamEntitlements } from "@/lib/entitlements";
 import { reportError } from "@/lib/observability";
+import { serverEnv } from "@/lib/env";
+import { startHeartbeat } from "@/lib/status/heartbeat";
 import { attachmentKey } from "@/lib/storage/attachments";
 import { getObjectBytes, isObjectStorageConfigured, putObject } from "@/lib/storage/object-store";
 import { clipText, fitParsed } from "./fit";
@@ -470,11 +472,13 @@ export function startParseWorker(): void {
   if (globalForParsing.__parseWorker) return;
   let busy = 0;
   let claiming = false;
+  let lastClaimDoneAt = Date.now();
   const fill = async () => {
     if (claiming || busy >= CONCURRENCY) return;
     claiming = true;
     try {
       const jobs = await claim(CONCURRENCY - busy);
+      lastClaimDoneAt = Date.now();
       for (const job of jobs) {
         busy++;
         void parseJob(job).finally(() => {
@@ -488,6 +492,13 @@ export function startParseWorker(): void {
       claiming = false;
     }
   };
+  // The status page's Email parsing monitor: alive while claims complete,
+  // or while every slot is busy parsing (then no claim is tried).
+  startHeartbeat({
+    url: serverEnv().STATUS_HEARTBEAT_PARSING_URL,
+    label: "parsing",
+    alive: () => busy >= CONCURRENCY || Date.now() - lastClaimDoneAt < 2 * 60_000,
+  });
   globalForParsing.__parseWorker = setInterval(() => void fill(), POLL_MS);
   globalForParsing.__parseWorker.unref();
   void fill();

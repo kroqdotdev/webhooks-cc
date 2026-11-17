@@ -84,6 +84,12 @@ function blankToUndefined<T extends z.ZodTypeAny>(schema: T) {
   );
 }
 
+/** An optional URL; an empty value counts as unset. */
+const optionalUrl = z.preprocess(
+  (value) => (typeof value === "string" && value.trim() === "" ? undefined : value),
+  z.string().url().optional()
+);
+
 const serverEnvSchema = z
   .object({
     CAPTURE_SHARED_SECRET: z.string().min(1),
@@ -112,6 +118,27 @@ const serverEnvSchema = z
     MCP_INTERNAL_API_URL: z.preprocess(
       (value) => (typeof value === "string" && value.trim() === "" ? undefined : value),
       z.string().url().optional()
+    ),
+    // Status page heartbeats (StatOSS heartbeat URLs, lib/status/): the
+    // forwarding and parse workers ping theirs while they claim work, and the
+    // canary (lib/status/canary.ts) sends a webhook and, with
+    // STATUS_CANARY_SMTP (host:port of the MX listener), an email to the
+    // endpoint STATUS_CANARY_SLUG, pinging once each is found in the
+    // database. Each unset URL turns its check off.
+    STATUS_HEARTBEAT_FORWARDING_URL: optionalUrl,
+    STATUS_HEARTBEAT_PARSING_URL: optionalUrl,
+    STATUS_HEARTBEAT_CAPTURE_URL: optionalUrl,
+    STATUS_HEARTBEAT_MAIL_URL: optionalUrl,
+    STATUS_CANARY_SLUG: z.preprocess(
+      (value) => (typeof value === "string" && value.trim() === "" ? undefined : value),
+      z
+        .string()
+        .regex(/^[a-zA-Z0-9_-]{1,50}$/)
+        .optional()
+    ),
+    STATUS_CANARY_SMTP: z.preprocess(
+      (value) => (typeof value === "string" && value.trim() === "" ? undefined : value),
+      z.string().optional()
     ),
     // The email forwarding worker (lib/forwarding/worker.ts). On by default;
     // turn it off for a process that should not send deliveries.
@@ -384,6 +411,12 @@ export function serverEnv() {
       NOTIFY_PROXY_URL: process.env.NOTIFY_PROXY_URL,
       NOTIFY_SECRET: process.env.NOTIFY_SECRET || undefined,
       MCP_INTERNAL_API_URL: process.env.MCP_INTERNAL_API_URL,
+      STATUS_HEARTBEAT_FORWARDING_URL: process.env.STATUS_HEARTBEAT_FORWARDING_URL,
+      STATUS_HEARTBEAT_PARSING_URL: process.env.STATUS_HEARTBEAT_PARSING_URL,
+      STATUS_HEARTBEAT_CAPTURE_URL: process.env.STATUS_HEARTBEAT_CAPTURE_URL,
+      STATUS_HEARTBEAT_MAIL_URL: process.env.STATUS_HEARTBEAT_MAIL_URL,
+      STATUS_CANARY_SLUG: process.env.STATUS_CANARY_SLUG,
+      STATUS_CANARY_SMTP: process.env.STATUS_CANARY_SMTP,
       EMAIL_FORWARDING_WORKER: process.env.EMAIL_FORWARDING_WORKER,
       FORWARDING_ALLOW_PRIVATE_TARGETS: process.env.FORWARDING_ALLOW_PRIVATE_TARGETS,
       ENDPOINT_CREATE_RATE_LIMIT: process.env.ENDPOINT_CREATE_RATE_LIMIT,
