@@ -783,15 +783,31 @@ describe("checkout links", () => {
         ...state[duplicate],
         customer: { id: customerId, metadata: { userId } },
       });
-      // Reported for a person: answered, nothing refunded, ended or superseded.
+      // Reported for a person, as not a twin: the missing start times decided
+      // it, not some other way out of the guard.
       expect(status).toBe(200);
-      expect(polar.subscriptionRevoke).not.toHaveBeenCalledWith(duplicate);
+      const { data: audits } = await admin
+        .from("audit_events")
+        .select("action, outcome, target_id, metadata")
+        .eq("action", "billing.duplicate_plan_reported")
+        .eq("target_user_id", userId);
+      expect(audits).toEqual([
+        {
+          action: "billing.duplicate_plan_reported",
+          outcome: "refused",
+          target_id: duplicate,
+          metadata: { stored_subscription_id: kept, reason: "not_a_twin" },
+        },
+      ]);
+      // Nothing refunded or ended: the link paid for a live subscription, which
+      // a person may keep, so it reads paid by its session, not superseded.
+      expect(polar.subscriptionRevoke).not.toHaveBeenCalled();
       const { data: refunds } = await admin
         .from("polar_refunds")
         .select("target")
         .eq("user_id", userId);
       expect(refunds).toEqual([]);
-      expect((await stored(id)).status).not.toBe("superseded");
+      expect(await stored(id)).toMatchObject({ status: "paid", paid_checkout_id: session });
       const { data: user } = await admin
         .from("users")
         .select("polar_subscription_id")
@@ -1650,8 +1666,9 @@ describe("checkout links let go of or settled late", () => {
       });
       expect(status).toBeGreaterThanOrEqual(500);
       expect(polar.subscriptionRevoke).toHaveBeenCalledWith(duplicate);
-      // The refund was recorded before the revoke was asked for, so it is
-      // there although the revoke failed (a redelivery reads the state again).
+      // The refund is recorded before the revoke is asked for, so it is there
+      // although the revoke failed: once revoked, a redelivery would read the
+      // subscription as ended and never record it.
       const { data: refunds } = await admin
         .from("polar_refunds")
         .select("target, reason")
