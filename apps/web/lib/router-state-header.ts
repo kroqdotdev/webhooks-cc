@@ -17,8 +17,9 @@
  * characters `encodeURIComponent` leaves alone and `%XX` escapes, and is at
  * most Next's own 40,000 characters. That stays true whatever Next changes
  * inside the tree, so a real navigation is never refused. A header of that
- * form that still fails Next's schema (well-formed JSON of the wrong shape) is
- * a 500 that `isRouterStateHeaderError()` keeps out of error reports.
+ * form that still fails Next's schema (well-formed JSON of the wrong shape),
+ * and an empty one (a rewrite's `has` treats an empty header as absent), is a
+ * 500 that `isRouterStateHeaderError()` keeps out of error reports.
  */
 
 /** The header's name, as Next's app-router-headers spells it. */
