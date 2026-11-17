@@ -178,7 +178,8 @@ describe("createSessionCheck: the trailing check", () => {
     t.setClock(30_000);
     t.scheduled[0].run();
     t.release();
-    await Promise.resolve();
+    // Let the trailing check finish before asking again.
+    await new Promise((resolve) => setTimeout(resolve, 0));
     expect(t.fake.getUser).toHaveBeenCalledTimes(2);
 
     t.setClock(40_000);
@@ -210,6 +211,60 @@ describe("createSessionCheck: the trailing check", () => {
     t.setClock(0); // set back by hours
     await t.check();
     expect(t.scheduled[0].ms).toBe(30_000);
+  });
+});
+
+describe("createSessionCheck: guards", () => {
+  it("skips a trailing check when the page holds no session by then", async () => {
+    let clock = 0;
+    let hasSession = true;
+    const scheduled: Array<() => void> = [];
+    const fake: SessionAuth = {
+      getUser: vi.fn(async () => ({ error: null })),
+      signOut: vi.fn(async () => ({})),
+    };
+    const check = createSessionCheck(fake, {
+      now: () => clock,
+      minIntervalMs: 30_000,
+      schedule: (run) => scheduled.push(run),
+      shouldRun: () => hasSession,
+    });
+    await check();
+    clock = 10_000;
+    await check();
+    hasSession = false; // signed out meanwhile
+    clock = 30_000;
+    scheduled[0]();
+    await Promise.resolve();
+    expect(fake.getUser).toHaveBeenCalledTimes(1);
+  });
+
+  it("gives up on a check GoTrue does not answer, and runs the next one", async () => {
+    vi.useFakeTimers();
+    try {
+      const fake: SessionAuth = {
+        getUser: vi
+          .fn()
+          .mockImplementationOnce(() => new Promise(() => {}))
+          .mockResolvedValue({ error: { code: "user_not_found" } }),
+        signOut: vi.fn(async () => ({})),
+      };
+      let clock = 0;
+      const check = createSessionCheck(fake, {
+        now: () => clock,
+        minIntervalMs: 30_000,
+        timeoutMs: 10_000,
+      });
+      const hung = check();
+      await vi.advanceTimersByTimeAsync(10_000);
+      await hung;
+      expect(fake.signOut).not.toHaveBeenCalled();
+      clock = 30_000;
+      await check();
+      expect(fake.signOut).toHaveBeenCalledWith({ scope: "local" });
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 

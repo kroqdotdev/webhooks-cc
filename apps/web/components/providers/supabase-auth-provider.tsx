@@ -110,6 +110,14 @@ export function useAuth(): AuthContextValue {
  * useSyncExternalStore skips re-rendering on auth events that don't flip the
  * boolean (token refresh, focus-triggered revalidation).
  */
+export function useIsAuthenticated(): boolean {
+  return useSyncExternalStore(
+    subscribe,
+    () => authState.isAuthenticated,
+    () => false
+  );
+}
+
 /**
  * Whether the page load's check with GoTrue has settled (or there was no
  * session to check): until then a session from the cookie may be one that
@@ -119,14 +127,6 @@ export function useSessionChecked(): boolean {
   return useSyncExternalStore(
     subscribe,
     () => sessionChecked,
-    () => false
-  );
-}
-
-export function useIsAuthenticated(): boolean {
-  return useSyncExternalStore(
-    subscribe,
-    () => authState.isAuthenticated,
     () => false
   );
 }

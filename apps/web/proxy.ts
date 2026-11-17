@@ -144,8 +144,8 @@ function isDocumentLoad(request: NextRequest): boolean {
  *
  * Only on page loads: no server component reads the session. The routes that
  * do (/auth/*, and the device login and approvals routes through
- * lib/device-session.ts) refresh it themselves, and every other API route
- * reads a bearer token.
+ * lib/device-session.ts) check and refresh it themselves, and every other API
+ * route reads a bearer token.
  */
 async function refreshSession(request: NextRequest, pathname: string): Promise<NextResponse> {
   let supabaseResponse = NextResponse.next({ request });

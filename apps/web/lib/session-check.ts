@@ -20,6 +20,14 @@ export interface SessionAuth {
 export const SESSION_CHECK_MIN_INTERVAL_MS = 30_000;
 
 /**
+ * A check GoTrue has not answered by then counts as one that could not
+ * finish: the fetch has no timeout of its own, and a hung one would hold
+ * every later check (they share the one running) and the page load's
+ * checked flag.
+ */
+export const SESSION_CHECK_TIMEOUT_MS = 10_000;
+
+/**
  * A session check that runs one at a time and at most once per interval. A
  * check asked for inside the interval is not dropped: one more runs when the
  * interval ends, so a session revoked just after the last check (or a check
@@ -36,12 +44,17 @@ export function createSessionCheck(
     now?: () => number;
     minIntervalMs?: number;
     schedule?: (run: () => void, ms: number) => unknown;
+    /** Whether a trailing check still has a session to ask about when its time comes. */
+    shouldRun?: () => boolean;
+    timeoutMs?: number;
   } = {}
 ) {
   // A monotonic clock: a system clock set back must not hold checks off.
   const now = opts.now ?? (typeof performance !== "undefined" ? () => performance.now() : Date.now);
   const minIntervalMs = opts.minIntervalMs ?? SESSION_CHECK_MIN_INTERVAL_MS;
   const schedule = opts.schedule ?? ((run: () => void, ms: number) => setTimeout(run, ms));
+  const shouldRun = opts.shouldRun ?? (() => true);
+  const timeoutMs = opts.timeoutMs ?? SESSION_CHECK_TIMEOUT_MS;
   let running: Promise<void> | null = null;
   let lastStarted = Number.NEGATIVE_INFINITY;
   let trailing = false;
@@ -57,7 +70,7 @@ export function createSessionCheck(
         schedule(
           () => {
             trailing = false;
-            void checkSession();
+            if (shouldRun()) void checkSession();
           },
           Math.min(wait, minIntervalMs)
         );
@@ -66,12 +79,19 @@ export function createSessionCheck(
     }
     lastStarted = now();
     running = (async () => {
+      let timer: ReturnType<typeof setTimeout> | undefined;
       try {
-        const { error } = await auth.getUser();
-        if (error?.code === "user_not_found") await auth.signOut({ scope: "local" });
+        const answer = await Promise.race([
+          auth.getUser(),
+          new Promise<null>((resolve) => {
+            timer = setTimeout(() => resolve(null), timeoutMs);
+          }),
+        ]);
+        if (answer?.error?.code === "user_not_found") await auth.signOut({ scope: "local" });
       } catch {
         // A check that could not finish says nothing about the session.
       } finally {
+        clearTimeout(timer);
         running = null;
       }
     })();
@@ -130,7 +150,7 @@ export function startSessionChecks(
   hasSession: () => boolean,
   opts: Parameters<typeof createSessionCheck>[1] = {}
 ): () => Promise<void> {
-  const checkSession = createSessionCheck(auth, opts);
+  const checkSession = createSessionCheck(auth, { shouldRun: hasSession, ...opts });
   watchApiUnauthorized(win, () => {
     if (hasSession()) void checkSession();
   });

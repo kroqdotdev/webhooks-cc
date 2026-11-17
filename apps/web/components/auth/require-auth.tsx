@@ -18,6 +18,20 @@ export function loginPathFor(here: string, wasSignedIn: boolean): string {
   return here === "/" || wasSignedIn ? "/login" : `/login?redirect=${encodeURIComponent(here)}`;
 }
 
+/**
+ * Whether this page counts as signed in, given whether it did before: once
+ * a session is there and GoTrue has confirmed it on this load. A session
+ * from the cookie that ended elsewhere is found out a moment after the page
+ * opens, before that, so its visitor still gets the way back.
+ */
+export function signedInHere(
+  before: boolean,
+  isAuthenticated: boolean,
+  sessionChecked: boolean
+): boolean {
+  return before || (isAuthenticated && sessionChecked);
+}
+
 export function RequireAuth({ children }: { children: React.ReactNode }) {
   return (
     <SupabaseAuthProvider>
@@ -48,7 +62,7 @@ function RequireAuthInner({ children }: { children: React.ReactNode }) {
   const wasSignedIn = useRef(false);
 
   useEffect(() => {
-    if (isAuthenticated && sessionChecked) wasSignedIn.current = true;
+    wasSignedIn.current = signedInHere(wasSignedIn.current, isAuthenticated, sessionChecked);
   }, [isAuthenticated, sessionChecked]);
 
   useEffect(() => {
