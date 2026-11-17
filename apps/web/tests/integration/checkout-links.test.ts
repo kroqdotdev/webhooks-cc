@@ -737,6 +737,72 @@ describe("checkout links", () => {
     await admin.from("polar_refunds").delete().eq("user_id", userId);
   });
 
+  it("leaves a link's second plan subscription that Polar gives no start for to a person", async () => {
+    const userId = await makeUser("no-start");
+    const key = await makeKey(userId);
+    const id = (await create(key.raw, { kind: "plan", plan: "pro" })).body.checkout.id;
+
+    // The account holds Pro already; neither subscription says when it
+    // started, so nothing proves the two are twin checkouts (duplicateVerdict()).
+    const kept = `sub_no_start_kept_${ts}`;
+    const customerId = `cus_no_start_${ts}`;
+    await admin
+      .from("users")
+      .update({
+        plan: "pro",
+        polar_customer_id: customerId,
+        polar_subscription_id: kept,
+        subscription_status: "active",
+      })
+      .eq("id", userId);
+    const duplicate = `sub_no_start_dup_${ts}`;
+    const session = `polar_checkout_no_start_${ts}`;
+    const live = (subscriptionId: string, checkoutId: string | null) => ({
+      id: subscriptionId,
+      status: "active",
+      ended_at: null,
+      product_id: "prod_pro_test",
+      customer_id: customerId,
+      checkout_id: checkoutId,
+      metadata: checkoutId === session ? { checkout_link: id } : {},
+      current_period_start: new Date().toISOString(),
+      current_period_end: new Date(Date.now() + 30 * 86_400_000).toISOString(),
+      cancel_at_period_end: false,
+      pending_update: null,
+    });
+    const state: Record<string, Record<string, unknown>> = {
+      [kept]: live(kept, null),
+      [duplicate]: live(duplicate, session),
+    };
+    polar.subscriptionGet.mockImplementation(
+      async (subscriptionId: string) => state[subscriptionId]
+    );
+
+    try {
+      const status = await deliverStatus("subscription.created", {
+        ...state[duplicate],
+        customer: { id: customerId, metadata: { userId } },
+      });
+      // Reported for a person: answered, nothing refunded, ended or superseded.
+      expect(status).toBe(200);
+      expect(polar.subscriptionRevoke).not.toHaveBeenCalledWith(duplicate);
+      const { data: refunds } = await admin
+        .from("polar_refunds")
+        .select("target")
+        .eq("user_id", userId);
+      expect(refunds).toEqual([]);
+      expect((await stored(id)).status).not.toBe("superseded");
+      const { data: user } = await admin
+        .from("users")
+        .select("polar_subscription_id")
+        .eq("id", userId)
+        .single();
+      expect(user?.polar_subscription_id).toBe(kept);
+    } finally {
+      await admin.from("polar_refunds").delete().eq("user_id", userId);
+    }
+  });
+
   it("leaves a team plan subscription that started before the one the team holds to a person", async () => {
     const owner = await makeUser("older-foreign");
     const teamId = await makeTeam(owner);
@@ -1584,6 +1650,13 @@ describe("checkout links let go of or settled late", () => {
       });
       expect(status).toBeGreaterThanOrEqual(500);
       expect(polar.subscriptionRevoke).toHaveBeenCalledWith(duplicate);
+      // The refund was recorded before the revoke was asked for, so it is
+      // there although the revoke failed (a redelivery reads the state again).
+      const { data: refunds } = await admin
+        .from("polar_refunds")
+        .select("target, reason")
+        .eq("user_id", userId);
+      expect(refunds).toEqual([{ target: `subscription:${duplicate}`, reason: "duplicate_plan" }]);
       // Superseded through this session now, not the one it replaced.
       expect(await stored(id)).toMatchObject({ status: "superseded", paid_checkout_id: session });
 
