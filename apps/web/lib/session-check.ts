@@ -38,7 +38,8 @@ export function createSessionCheck(
     schedule?: (run: () => void, ms: number) => unknown;
   } = {}
 ) {
-  const now = opts.now ?? Date.now;
+  // A monotonic clock: a system clock set back must not hold checks off.
+  const now = opts.now ?? (typeof performance !== "undefined" ? () => performance.now() : Date.now);
   const minIntervalMs = opts.minIntervalMs ?? SESSION_CHECK_MIN_INTERVAL_MS;
   const schedule = opts.schedule ?? ((run: () => void, ms: number) => setTimeout(run, ms));
   let running: Promise<void> | null = null;
@@ -51,10 +52,15 @@ export function createSessionCheck(
     if (wait > 0) {
       if (!trailing) {
         trailing = true;
-        schedule(() => {
-          trailing = false;
-          void checkSession();
-        }, wait);
+        // Never longer than the interval, whatever the clock did; a timer that
+        // fires early finds the interval still running and waits once more.
+        schedule(
+          () => {
+            trailing = false;
+            void checkSession();
+          },
+          Math.min(wait, minIntervalMs)
+        );
       }
       return Promise.resolve();
     }
@@ -129,4 +135,31 @@ export function startSessionChecks(
     if (hasSession()) void checkSession();
   });
   return checkSession;
+}
+
+/**
+ * The page load's part: reads the session the cookie holds, hands it to the
+ * store, then checks it with GoTrue and marks it checked once that settles
+ * (at once when there is no session, or the read failed). Until then a
+ * session from the cookie may be one that ended elsewhere (RequireAuth).
+ */
+export async function loadSession<S>(steps: {
+  getSession: () => Promise<S | null>;
+  setSession: (session: S | null) => void;
+  check: () => Promise<void>;
+  markChecked: () => void;
+}): Promise<void> {
+  let session: S | null;
+  try {
+    session = await steps.getSession();
+  } catch {
+    // Resolve the loading state even if the read fails, so consumers don't
+    // get stuck showing a loading placeholder forever.
+    steps.setSession(null);
+    steps.markChecked();
+    return;
+  }
+  steps.setSession(session);
+  if (session) await steps.check().catch(() => {});
+  steps.markChecked();
 }

@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   createSessionCheck,
   isApiUnauthorized,
+  loadSession,
   startSessionChecks,
   watchApiUnauthorized,
   type SessionAuth,
@@ -126,6 +127,149 @@ describe("createSessionCheck", () => {
     clock = 30_000;
     scheduled[0].run();
     await vi.waitFor(() => expect(fake.signOut).toHaveBeenCalledWith({ scope: "local" }));
+  });
+});
+
+describe("createSessionCheck: the trailing check", () => {
+  function setup() {
+    let clock = 0;
+    const scheduled: Array<{ run: () => void; ms: number }> = [];
+    let release: () => void = () => {};
+    const fake: SessionAuth = {
+      getUser: vi.fn(
+        () =>
+          new Promise<{ error: null }>((resolve) => {
+            release = () => resolve({ error: null });
+          })
+      ),
+      signOut: vi.fn(async () => ({})),
+    };
+    const check = createSessionCheck(fake, {
+      now: () => clock,
+      minIntervalMs: 30_000,
+      schedule: (run, ms) => scheduled.push({ run, ms }),
+    });
+    return {
+      fake,
+      check,
+      scheduled,
+      setClock: (t: number) => (clock = t),
+      release: () => release(),
+    };
+  }
+
+  it("schedules nothing for an ask while a check is running", async () => {
+    const t = setup();
+    const running = t.check();
+    // An ask meanwhile shares the running check rather than scheduling one.
+    expect(t.check()).toBe(running);
+    expect(t.scheduled).toHaveLength(0);
+    t.release();
+    await running;
+  });
+
+  it("runs a second trailing cycle after the first one fired", async () => {
+    const t = setup();
+    const first = t.check();
+    t.release();
+    await first;
+    t.setClock(10_000);
+    await t.check();
+    t.setClock(30_000);
+    t.scheduled[0].run();
+    t.release();
+    await Promise.resolve();
+    expect(t.fake.getUser).toHaveBeenCalledTimes(2);
+
+    t.setClock(40_000);
+    await t.check();
+    expect(t.scheduled).toHaveLength(2);
+    expect(t.scheduled[1].ms).toBe(20_000);
+  });
+
+  it("re-arms once when its timer fires early", async () => {
+    const t = setup();
+    const first = t.check();
+    t.release();
+    await first;
+    t.setClock(10_000);
+    await t.check();
+    t.setClock(20_000); // fired 10 s early
+    t.scheduled[0].run();
+    expect(t.fake.getUser).toHaveBeenCalledTimes(1);
+    expect(t.scheduled).toHaveLength(2);
+    expect(t.scheduled[1].ms).toBe(10_000);
+  });
+
+  it("never waits longer than the interval, whatever the clock did", async () => {
+    const t = setup();
+    t.setClock(10_000_000);
+    const first = t.check();
+    t.release();
+    await first;
+    t.setClock(0); // set back by hours
+    await t.check();
+    expect(t.scheduled[0].ms).toBe(30_000);
+  });
+});
+
+describe("loadSession", () => {
+  function steps(session: { id: string } | null, opts: { readFails?: boolean } = {}) {
+    let settle: () => void = () => {};
+    const order: string[] = [];
+    return {
+      order,
+      settle: () => settle(),
+      s: {
+        getSession: vi.fn(async () => {
+          if (opts.readFails) throw new Error("storage");
+          return session;
+        }),
+        setSession: vi.fn((value: { id: string } | null) =>
+          order.push(`set:${value?.id ?? "none"}`)
+        ),
+        check: vi.fn(
+          () =>
+            new Promise<void>((resolve) => {
+              order.push("check");
+              settle = resolve;
+            })
+        ),
+        markChecked: vi.fn(() => order.push("checked")),
+      },
+    };
+  }
+
+  it("marks a session checked only once its check settles", async () => {
+    const t = steps({ id: "a" });
+    const done = loadSession(t.s);
+    await vi.waitFor(() => expect(t.s.check).toHaveBeenCalled());
+    expect(t.s.markChecked).not.toHaveBeenCalled();
+    t.settle();
+    await done;
+    expect(t.order).toEqual(["set:a", "check", "checked"]);
+  });
+
+  it("marks no session checked at once, without a check", async () => {
+    const t = steps(null);
+    await loadSession(t.s);
+    expect(t.order).toEqual(["set:none", "checked"]);
+    expect(t.s.check).not.toHaveBeenCalled();
+  });
+
+  it("settles the store and the flag when the read fails", async () => {
+    const t = steps({ id: "a" }, { readFails: true });
+    await loadSession(t.s);
+    expect(t.order).toEqual(["set:none", "checked"]);
+  });
+
+  it("marks it checked when the check itself fails", async () => {
+    const t = steps({ id: "a" });
+    t.s.check.mockImplementationOnce(async () => {
+      throw new Error("network");
+    });
+    await loadSession(t.s);
+    expect(t.order).toEqual(["set:a", "checked"]);
   });
 });
 

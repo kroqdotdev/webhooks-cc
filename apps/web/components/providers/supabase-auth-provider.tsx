@@ -4,7 +4,7 @@ import { useSyncExternalStore, type ReactNode } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { clearPendingUser, reportAuthenticatedUser } from "@/lib/analytics";
 import { endAccountConsentSession } from "@/lib/analytics-account-consent";
-import { startSessionChecks } from "@/lib/session-check";
+import { loadSession, startSessionChecks } from "@/lib/session-check";
 import type { User, Session } from "@supabase/supabase-js";
 
 interface AuthContextValue {
@@ -12,12 +12,6 @@ interface AuthContextValue {
   session: Session | null;
   isLoading: boolean;
   isAuthenticated: boolean;
-  /**
-   * The page load's check with GoTrue has finished (or there was no session
-   * to check): until then a session from the cookie may be one that ended
-   * elsewhere, which RequireAuth treats as never signed in on this page.
-   */
-  sessionChecked: boolean;
 }
 
 // Module-level auth store shared by every useAuth() consumer. Pages mount
@@ -28,12 +22,14 @@ const INITIAL_STATE: AuthContextValue = {
   session: null,
   isLoading: true,
   isAuthenticated: false,
-  sessionChecked: false,
 };
 
 let authState: AuthContextValue = INITIAL_STATE;
 const storeListeners = new Set<() => void>();
 let authListenerStarted = false;
+// The page load's check with GoTrue has settled (useSessionChecked). Kept out
+// of the snapshot above so its one change re-renders only RequireAuth.
+let sessionChecked = false;
 
 function setAuthSession(session: Session | null) {
   // A signed-in session that ended, or became another account's: the
@@ -45,7 +41,6 @@ function setAuthSession(session: Session | null) {
     user: session?.user ?? null,
     isLoading: false,
     isAuthenticated: !!session?.user,
-    sessionChecked: authState.sessionChecked,
   };
   storeListeners.forEach((listener) => listener());
   if (authState.user) reportAuthenticatedUser(authState.user);
@@ -62,26 +57,17 @@ function startAuthListener() {
   // when the page loads with one, and when our API refuses a request
   // (lib/session-check.ts; the proxy only refreshes an expired session).
   const checkSession = startSessionChecks(supabase.auth, window, () => !!authState.session);
-  const markChecked = () => {
-    authState = { ...authState, sessionChecked: true };
-    storeListeners.forEach((listener) => listener());
-  };
 
-  // Get initial session
-  void (async () => {
-    try {
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
-      setAuthSession(session);
-      if (session) void checkSession().finally(markChecked);
-      else markChecked();
-    } catch {
-      // Resolve the loading state even if the session fetch fails, so
-      // consumers don't get stuck showing a loading placeholder forever.
-      setAuthSession(null);
-    }
-  })();
+  // Get initial session, then check it.
+  void loadSession({
+    getSession: async () => (await supabase.auth.getSession()).data.session,
+    setSession: setAuthSession,
+    check: checkSession,
+    markChecked: () => {
+      sessionChecked = true;
+      storeListeners.forEach((listener) => listener());
+    },
+  });
 
   // Listen for auth state changes (login, logout, token refresh).
   // Intentionally never unsubscribed: the store outlives any one component.
@@ -124,6 +110,19 @@ export function useAuth(): AuthContextValue {
  * useSyncExternalStore skips re-rendering on auth events that don't flip the
  * boolean (token refresh, focus-triggered revalidation).
  */
+/**
+ * Whether the page load's check with GoTrue has settled (or there was no
+ * session to check): until then a session from the cookie may be one that
+ * ended elsewhere, which RequireAuth treats as never signed in on this page.
+ */
+export function useSessionChecked(): boolean {
+  return useSyncExternalStore(
+    subscribe,
+    () => sessionChecked,
+    () => false
+  );
+}
+
 export function useIsAuthenticated(): boolean {
   return useSyncExternalStore(
     subscribe,

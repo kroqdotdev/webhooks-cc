@@ -3,7 +3,11 @@
 import { PageLoading } from "@/components/page-loading";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
-import { SupabaseAuthProvider, useAuth } from "@/components/providers/supabase-auth-provider";
+import {
+  SupabaseAuthProvider,
+  useAuth,
+  useSessionChecked,
+} from "@/components/providers/supabase-auth-provider";
 import { MfaChallenge, useNeedsSecondFactor } from "./mfa-challenge";
 
 /**
@@ -23,7 +27,8 @@ export function RequireAuth({ children }: { children: React.ReactNode }) {
 }
 
 function RequireAuthInner({ children }: { children: React.ReactNode }) {
-  const { isAuthenticated, isLoading, session, sessionChecked } = useAuth();
+  const { isAuthenticated, isLoading, session } = useAuth();
+  const sessionChecked = useSessionChecked();
   const router = useRouter();
   // An account with an authenticator app finishes signing in here; the API
   // refuses its session until it has (lib/mfa.ts).
@@ -44,6 +49,9 @@ function RequireAuthInner({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     if (isAuthenticated && sessionChecked) wasSignedIn.current = true;
+  }, [isAuthenticated, sessionChecked]);
+
+  useEffect(() => {
     if (!isLoading && !isAuthenticated) {
       // Arriving signed out, back to this page after signing in (the login
       // page accepts only a path on this site: lib/auth-redirect.ts), so a
@@ -52,7 +60,7 @@ function RequireAuthInner({ children }: { children: React.ReactNode }) {
         loginPathFor(`${window.location.pathname}${window.location.search}`, wasSignedIn.current)
       );
     }
-  }, [isAuthenticated, isLoading, sessionChecked, router]);
+  }, [isAuthenticated, isLoading, router]);
 
   if (isLoading || (isAuthenticated && needsSecondFactor === null)) {
     return <PageLoading />;
