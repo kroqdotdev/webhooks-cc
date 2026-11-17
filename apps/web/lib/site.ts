@@ -228,6 +228,7 @@ export const WEBHOOKS_TOP_LEVEL = [
   "privacy",
   "report",
   "robots.txt",
+  "router-state-refused",
   "s",
   "share",
   "share.md",

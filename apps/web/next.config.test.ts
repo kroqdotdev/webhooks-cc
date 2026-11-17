@@ -13,6 +13,7 @@ import {
 } from "next/dist/shared/lib/router/utils/prepare-destination";
 import { MAILHOOKS_PAGES } from "./lib/site";
 import { MARKDOWN_TWIN_HEADER } from "./lib/markdown-negotiation";
+import { ROUTER_STATE_HEADER, ROUTER_STATE_REFUSED_PATH } from "./lib/router-state-header";
 import nextConfig from "./next.config";
 
 // next.config.ts reads the app URL from the environment when it is loaded.
@@ -134,6 +135,35 @@ async function rewriteFor(
   }
   return null;
 }
+
+describe("next.config.ts router state rewrite", () => {
+  const tree = encodeURIComponent(
+    JSON.stringify(["", { children: ["dashboard", { children: ["__PAGE__", {}] }] }])
+  );
+
+  it("sends an RSC request with a malformed router state header to the 400 route, on any page and host", async () => {
+    for (const path of ["/", "/dashboard", "/docs/agents", "/endpoints/abc123"]) {
+      for (const host of ["webhooks.cc", "mailhooks.cc"]) {
+        expect(
+          await rewriteFor(path, { host, rsc: "1", [ROUTER_STATE_HEADER]: "%7Bnot-json" })
+        ).toBe(ROUTER_STATE_REFUSED_PATH);
+      }
+    }
+  });
+
+  it("leaves a header Next's client writes alone", async () => {
+    expect(await rewriteFor("/dashboard", { rsc: "1", [ROUTER_STATE_HEADER]: tree })).toBeNull();
+  });
+
+  it("leaves requests Next does not read the header on alone", async () => {
+    // Next validates the header only on RSC requests (RSC: 1).
+    expect(await rewriteFor("/dashboard", { [ROUTER_STATE_HEADER]: "%7Bnot-json" })).toBeNull();
+    expect(
+      await rewriteFor("/dashboard", { rsc: "2", [ROUTER_STATE_HEADER]: "%7Bnot-json" })
+    ).toBeNull();
+    expect(await rewriteFor("/dashboard", { rsc: "1" })).toBeNull();
+  });
+});
 
 describe("next.config.ts agent skills rewrite", () => {
   it("serves the index at the directory URL, which Next reaches without its trailing slash", async () => {

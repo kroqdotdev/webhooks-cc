@@ -5,7 +5,6 @@ import { NAV_SECTIONS } from "@/lib/docs-nav";
 import { layoutTemplate } from "@/lib/layout-templates";
 import { malformedApiId, malformedApiIdResponse } from "@/lib/api-path-ids";
 import { imgSrcDirective } from "@/lib/csp-img-src";
-import { ROUTER_STATE_HEADER, malformedRouterState } from "@/lib/router-state-header";
 import { toolConnectSources } from "@/lib/tools/csp";
 import {
   MARKDOWN_TWIN_HEADER,
@@ -26,8 +25,7 @@ import {
 /**
  * Proxy: markdown twins, Supabase session refresh, security headers.
  *
- * 1. Refuses Server Action probes, POST requests outside /api, and router
- *    state headers Next could not parse.
+ * 1. Refuses Server Action probes and POST requests outside /api.
  * 2. Marks requests that prefer a page's markdown twin (next.config.ts rewrites them).
  * 3. On a page load, checks the Supabase session (see refreshSession).
  * 4. Sets Content-Security-Policy and related headers on every response.
@@ -214,19 +212,6 @@ export async function proxy(request: NextRequest) {
     return new NextResponse("Not Found", {
       status: 404,
       headers: { "Content-Type": "text/plain; charset=utf-8" },
-    });
-  }
-
-  // A router state header Next cannot parse would fail the render as a 500
-  // and an error report; only scanners send one (lib/router-state-header.ts).
-  if (malformedRouterState(request.headers.get(ROUTER_STATE_HEADER))) {
-    return new NextResponse("Bad Request", {
-      status: 400,
-      headers: {
-        "Content-Type": "text/plain; charset=utf-8",
-        "Cache-Control": "no-store",
-        "X-Robots-Tag": "noindex, nofollow",
-      },
     });
   }
 

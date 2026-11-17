@@ -1,54 +1,54 @@
 /**
  * Next's client router sends the page's route tree in `Next-Router-State-Tree`
- * on every RSC fetch (`RSC: 1`), URI-encoded JSON of a FlightRouterState.
- * Next validates it while rendering (parseAndValidateFlightRouterState) and
- * throws on a header it cannot use, which makes the request a 500 and an
- * `onRequestError` report. Only scanners send such a header, so the proxy
- * answers them 400 before anything renders (`malformedRouterState()`).
+ * on every RSC fetch (`RSC: 1`), written by `prepareFlightRouterStateForRequest`
+ * as `encodeURIComponent(JSON.stringify(tree))`. Next validates it while
+ * rendering (`parseAndValidateFlightRouterState`) and throws on a header it
+ * cannot use, which makes the request a 500 and an `onRequestError` report.
+ * Only scanners send such a header.
  *
- * The check is deliberately looser than Next's schema: a header Next's own
- * client sends must never be refused here, and Next changes the tree's
- * details between versions (segment tuples, refresh markers, prefetch hints).
- * It checks what every version so far has had in common: a tree is an array
- * of a segment (a string or an array) and an object of child trees. A header
- * that passes this and still fails Next's schema is left out of error
- * reports by `isRouterStateHeaderError()` instead.
+ * The proxy cannot refuse it: Next's adapter removes the RSC headers from the
+ * request the proxy sees and puts them back afterwards. A `next.config.ts`
+ * rewrite matches the real headers, so one sends an RSC request whose header
+ * is plainly not what the client writes to `ROUTER_STATE_REFUSED_PATH`, a
+ * route that answers 400 without rendering anything.
+ *
+ * "Plainly" is a check on the form, not the content: the client's header is
+ * an encoded JSON array, so it starts with `%5B` (`[`), holds nothing but the
+ * characters `encodeURIComponent` leaves alone and `%XX` escapes, and is at
+ * most Next's own 40,000 characters. That stays true whatever Next changes
+ * inside the tree, so a real navigation is never refused. A header of that
+ * form that still fails Next's schema (well-formed JSON of the wrong shape) is
+ * a 500 that `isRouterStateHeaderError()` keeps out of error reports.
  */
-
-/** Next's own limit (20 characters a segment state, 2,000 of them). */
-export const ROUTER_STATE_MAX_LENGTH = 20 * 2000;
 
 /** The header's name, as Next's app-router-headers spells it. */
 export const ROUTER_STATE_HEADER = "next-router-state-tree";
 
-function isTree(value: unknown): boolean {
-  if (!Array.isArray(value) || value.length < 2) return false;
-  const [segment, children] = value;
-  if (typeof segment !== "string" && !Array.isArray(segment)) return false;
-  if (children === null || typeof children !== "object" || Array.isArray(children)) return false;
-  return Object.values(children).every(isTree);
-}
+/** Next's own limit (20 characters a segment state, 2,000 of them). */
+export const ROUTER_STATE_MAX_LENGTH = 20 * 2000;
+
+/** Where the rewrite sends an RSC request with a malformed header. */
+export const ROUTER_STATE_REFUSED_PATH = "/router-state-refused";
+
+/** A header of the form `encodeURIComponent` gives a JSON array. */
+const WELL_FORMED = `(?=.{1,${ROUTER_STATE_MAX_LENGTH}}$)%5B(?:[A-Za-z0-9\\-_.!~*'()]|%[0-9A-Fa-f]{2})*`;
 
 /**
- * Whether a router state header is one Next would refuse: too large,
- * not URI-encoded JSON, or not shaped like a route tree. A duplicated header
- * reaches the proxy joined with ", ", which is no JSON, so it is refused too.
- * No header at all is fine.
+ * Any header value not of that form, for a rewrite's `has` (Next anchors the
+ * pattern with ^ and $). The two alternatives inside are disjoint, so
+ * matching is linear in the header's length.
  */
-export function malformedRouterState(value: string | null): boolean {
-  if (value === null) return false;
-  if (value.length > ROUTER_STATE_MAX_LENGTH) return true;
-  let state: unknown;
-  try {
-    state = JSON.parse(decodeURIComponent(value));
-  } catch {
-    return true;
-  }
-  return !isTree(state);
+export const MALFORMED_ROUTER_STATE = `(?!${WELL_FORMED}$).*`;
+
+const malformed = new RegExp(`^${MALFORMED_ROUTER_STATE}$`);
+
+/** Whether the rewrite refuses this header value, the way Next applies the pattern. */
+export function malformedRouterState(value: string): boolean {
+  return malformed.test(value);
 }
 
 /** The messages parseAndValidateFlightRouterState throws (Next 16). */
-const ROUTER_STATE_ERRORS: ReadonlySet<string> = new Set([
+export const ROUTER_STATE_ERRORS: ReadonlySet<string> = new Set([
   "The router state header was sent but could not be parsed.",
   "Multiple router state headers were sent. This is not allowed.",
   "The router state header was too large.",
@@ -57,7 +57,7 @@ const ROUTER_STATE_ERRORS: ReadonlySet<string> = new Set([
 /**
  * Whether a request error is Next refusing a router state header: a bad
  * request, never our fault, so it is not reported. Only reached for a header
- * the proxy's looser check let through.
+ * of the right form that the rewrite let through.
  */
 export function isRouterStateHeaderError(error: unknown): boolean {
   return error instanceof Error && ROUTER_STATE_ERRORS.has(error.message);

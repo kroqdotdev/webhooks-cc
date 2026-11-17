@@ -1,6 +1,6 @@
 {
   "title": "Bad router state headers answered 400",
   "items": [
-    "A page request with a router state header Next cannot read (not encoded JSON, not a route tree, sent twice or too large) is answered 400 before the page renders, instead of failing as a server error"
+    "A page request whose router state header is not what the site's own pages send (not encoded JSON, sent twice, or garbled) is answered 400 instead of failing as a server error, and a header that only fails once the page reads it is no longer reported as one of our errors"
   ]
 }
