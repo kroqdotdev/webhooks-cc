@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   createSessionCheck,
   isApiUnauthorized,
+  startSessionChecks,
   watchApiUnauthorized,
   type SessionAuth,
 } from "./session-check";
@@ -57,8 +58,13 @@ describe("createSessionCheck", () => {
 
   it("runs one check at a time and at most once per interval", async () => {
     let clock = 0;
+    const scheduled: Array<{ run: () => void; ms: number }> = [];
     const { fake, release } = auth();
-    const check = createSessionCheck(fake, { now: () => clock, minIntervalMs: 30_000 });
+    const check = createSessionCheck(fake, {
+      now: () => clock,
+      minIntervalMs: 30_000,
+      schedule: (run, ms) => scheduled.push({ run, ms }),
+    });
 
     const first = check();
     const second = check();
@@ -66,13 +72,60 @@ describe("createSessionCheck", () => {
     release();
     await first;
 
-    clock = 10_000;
-    await check();
-    expect(fake.getUser).toHaveBeenCalledTimes(1);
-
     clock = 30_000;
     await check();
     expect(fake.getUser).toHaveBeenCalledTimes(2);
+    expect(scheduled).toHaveLength(0);
+  });
+
+  it("runs a check asked for inside the interval once the interval ends", async () => {
+    // The load-time check passed, then the session was revoked and a 401
+    // came in 10 s later: that must not wait for yet another 401.
+    let clock = 0;
+    const scheduled: Array<{ run: () => void; ms: number }> = [];
+    const { fake, release } = auth();
+    release();
+    const check = createSessionCheck(fake, {
+      now: () => clock,
+      minIntervalMs: 30_000,
+      schedule: (run, ms) => scheduled.push({ run, ms }),
+    });
+    await check();
+
+    clock = 10_000;
+    await check();
+    await check();
+    expect(fake.getUser).toHaveBeenCalledTimes(1);
+    // Several asks inside the interval: one check, when it ends.
+    expect(scheduled).toEqual([{ run: expect.any(Function), ms: 20_000 }]);
+
+    clock = 30_000;
+    scheduled[0].run();
+    await Promise.resolve();
+    expect(fake.getUser).toHaveBeenCalledTimes(2);
+  });
+
+  it("still checks after a check that failed, once the interval ends", async () => {
+    let clock = 0;
+    const scheduled: Array<{ run: () => void; ms: number }> = [];
+    const fake: SessionAuth = {
+      getUser: vi
+        .fn()
+        .mockRejectedValueOnce(new TypeError("Failed to fetch"))
+        .mockResolvedValue({ error: { code: "user_not_found" } }),
+      signOut: vi.fn(async () => ({})),
+    };
+    const check = createSessionCheck(fake, {
+      now: () => clock,
+      minIntervalMs: 30_000,
+      schedule: (run, ms) => scheduled.push({ run, ms }),
+    });
+    await check();
+    clock = 5_000;
+    await check();
+    clock = 30_000;
+    scheduled[0].run();
+    await vi.waitFor(() => expect(fake.signOut).toHaveBeenCalledWith({ scope: "local" }));
   });
 });
 
@@ -102,11 +155,44 @@ describe("isApiUnauthorized", () => {
 });
 
 describe("watchApiUnauthorized", () => {
-  function fakeWindow(answer: Response) {
-    const original = vi.fn(async () => answer);
+  function fakeWindow(answer: Response | (() => Promise<Response>)) {
+    const original = vi.fn(function (this: unknown) {
+      return typeof answer === "function" ? answer() : Promise.resolve(answer);
+    });
     const win = { fetch: original, location: { origin: "https://webhooks.cc" } };
     return { win: win as unknown as Window, original };
   }
+
+  it("calls the real fetch exactly as it was called, on the window", async () => {
+    const { win, original } = fakeWindow(new Response(null, { status: 200 }));
+    watchApiUnauthorized(win, () => {});
+    const request = new Request("https://webhooks.cc/api/endpoints");
+    await win.fetch(request);
+    await win.fetch("/x");
+    expect(original.mock.calls[0]).toEqual([request]);
+    expect(original.mock.calls[1]).toEqual(["/x"]);
+    expect(original.mock.contexts[0]).toBe(win);
+  });
+
+  it("hands a rejection back unchanged and reports nothing", async () => {
+    const abort = new DOMException("The operation was aborted.", "AbortError");
+    const { win } = fakeWindow(() => Promise.reject(abort));
+    const seen = vi.fn();
+    watchApiUnauthorized(win, seen);
+    await expect(win.fetch("/api/endpoints")).rejects.toBe(abort);
+    expect(seen).not.toHaveBeenCalled();
+  });
+
+  it("reports only a 401, from a Request as from a path", async () => {
+    const answers = [403, 500, 200, 401];
+    const { win } = fakeWindow(async () => new Response(null, { status: answers.shift()! }));
+    const seen = vi.fn();
+    watchApiUnauthorized(win, seen);
+    for (let i = 0; i < 3; i++) await win.fetch("/api/endpoints");
+    expect(seen).not.toHaveBeenCalled();
+    await win.fetch(new Request("https://webhooks.cc/api/endpoints"));
+    expect(seen).toHaveBeenCalledTimes(1);
+  });
 
   it("passes the request and the response through, and reports a 401", async () => {
     const answer = new Response("{}", { status: 401 });
@@ -131,5 +217,40 @@ describe("watchApiUnauthorized", () => {
     watchApiUnauthorized(win, () => {});
     expect(win.fetch).toBe(wrapped);
     await expect(win.fetch("/api/endpoints")).resolves.toBe(answer);
+  });
+});
+
+describe("startSessionChecks", () => {
+  function setup(hasSession: boolean) {
+    const fake: SessionAuth = {
+      getUser: vi.fn(async () => ({ error: null })),
+      signOut: vi.fn(async () => ({})),
+    };
+    const fetchFake = vi.fn(async () => new Response(null, { status: 401 }));
+    const win = {
+      fetch: fetchFake,
+      location: { origin: "https://webhooks.cc" },
+    } as unknown as Window;
+    const check = startSessionChecks(fake, win, () => hasSession);
+    return { fake, win, check };
+  }
+
+  it("checks on a 401 from our API while the page holds a session", async () => {
+    const { fake, win } = setup(true);
+    await win.fetch("/api/endpoints");
+    await vi.waitFor(() => expect(fake.getUser).toHaveBeenCalledTimes(1));
+  });
+
+  it("does not check on a 401 with no session (a signed-out page)", async () => {
+    const { fake, win } = setup(false);
+    await win.fetch("/api/endpoints");
+    await Promise.resolve();
+    expect(fake.getUser).not.toHaveBeenCalled();
+  });
+
+  it("returns the check for the page load", async () => {
+    const { fake, check } = setup(true);
+    await check();
+    expect(fake.getUser).toHaveBeenCalledTimes(1);
   });
 });

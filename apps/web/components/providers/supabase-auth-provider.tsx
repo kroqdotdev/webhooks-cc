@@ -4,7 +4,7 @@ import { useSyncExternalStore, type ReactNode } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { clearPendingUser, reportAuthenticatedUser } from "@/lib/analytics";
 import { endAccountConsentSession } from "@/lib/analytics-account-consent";
-import { createSessionCheck, watchApiUnauthorized } from "@/lib/session-check";
+import { startSessionChecks } from "@/lib/session-check";
 import type { User, Session } from "@supabase/supabase-js";
 
 interface AuthContextValue {
@@ -12,6 +12,12 @@ interface AuthContextValue {
   session: Session | null;
   isLoading: boolean;
   isAuthenticated: boolean;
+  /**
+   * The page load's check with GoTrue has finished (or there was no session
+   * to check): until then a session from the cookie may be one that ended
+   * elsewhere, which RequireAuth treats as never signed in on this page.
+   */
+  sessionChecked: boolean;
 }
 
 // Module-level auth store shared by every useAuth() consumer. Pages mount
@@ -22,6 +28,7 @@ const INITIAL_STATE: AuthContextValue = {
   session: null,
   isLoading: true,
   isAuthenticated: false,
+  sessionChecked: false,
 };
 
 let authState: AuthContextValue = INITIAL_STATE;
@@ -38,6 +45,7 @@ function setAuthSession(session: Session | null) {
     user: session?.user ?? null,
     isLoading: false,
     isAuthenticated: !!session?.user,
+    sessionChecked: authState.sessionChecked,
   };
   storeListeners.forEach((listener) => listener());
   if (authState.user) reportAuthenticatedUser(authState.user);
@@ -53,10 +61,11 @@ function startAuthListener() {
   // A session ended elsewhere signs the page out once GoTrue says so: checked
   // when the page loads with one, and when our API refuses a request
   // (lib/session-check.ts; the proxy only refreshes an expired session).
-  const checkSession = createSessionCheck(supabase.auth);
-  watchApiUnauthorized(window, () => {
-    if (authState.session) void checkSession();
-  });
+  const checkSession = startSessionChecks(supabase.auth, window, () => !!authState.session);
+  const markChecked = () => {
+    authState = { ...authState, sessionChecked: true };
+    storeListeners.forEach((listener) => listener());
+  };
 
   // Get initial session
   void (async () => {
@@ -65,7 +74,8 @@ function startAuthListener() {
         data: { session },
       } = await supabase.auth.getSession();
       setAuthSession(session);
-      if (session) void checkSession();
+      if (session) void checkSession().finally(markChecked);
+      else markChecked();
     } catch {
       // Resolve the loading state even if the session fetch fails, so
       // consumers don't get stuck showing a loading placeholder forever.

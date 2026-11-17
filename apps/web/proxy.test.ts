@@ -104,13 +104,13 @@ describe("proxy", () => {
   });
 });
 
-describe("proxy: session check", () => {
-  it("checks the session when a page loads into the window", async () => {
+describe("proxy: session refresh", () => {
+  it("looks at the session when a page loads into the window, to refresh it", async () => {
     await proxy(new NextRequest("https://webhooks.cc/dashboard", { headers: PAGE_LOAD }));
     expect(getSession).toHaveBeenCalledTimes(1);
   });
 
-  it("checks it for a browser without Sec-Fetch-Dest that asks for HTML", async () => {
+  it("looks at it for a browser without Sec-Fetch-Dest that asks for HTML", async () => {
     await proxy(
       new NextRequest("https://webhooks.cc/dashboard", {
         headers: { accept: PAGE_LOAD.accept },
@@ -167,7 +167,7 @@ describe("proxy: session check", () => {
     expect(getSession).not.toHaveBeenCalled();
   });
 
-  it("checks over the internal address under the public address's cookie name", async () => {
+  it("refreshes over the internal address under the public address's cookie name", async () => {
     await proxy(new NextRequest("https://webhooks.cc/dashboard", { headers: PAGE_LOAD }));
     const [url, , options] = createServerClient.mock.calls[0] as [
       string,

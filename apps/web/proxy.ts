@@ -130,17 +130,17 @@ function isDocumentLoad(request: NextRequest): boolean {
 }
 
 /**
- * Refreshes an expired session on a page load, and clears the cookies of one
- * whose refresh GoTrue refuses. getSession() calls GoTrue only when the access
- * token has expired, so a signed-in page load costs nothing here otherwise.
+ * Refreshes a session on a page load when its access token has expired (or
+ * is about to), and clears the cookies of one whose refresh GoTrue refuses.
+ * getSession() calls GoTrue only then, so a signed-in page load otherwise
+ * costs nothing here.
  *
- * The refresh stays on the server, over the private network, because cookies
- * the server sets live their full 400 days, while browsers like Safari cap
- * cookies a script writes at 7 days; and a refresh from the browser goes
- * through the CDN, whose error pages auth-js can mistake for a refused
- * refresh. A session ended elsewhere while its token is still fresh is the
- * browser's to notice (checkSession() in
- * components/providers/supabase-auth-provider.tsx).
+ * A page load's refresh is made here, over the private network, because
+ * cookies the server sets live their full 400 days, while Safari caps cookies
+ * a script writes at 7; and a refresh from the browser goes through the CDN,
+ * whose error pages auth-js can mistake for a refused refresh. A tab left
+ * open still refreshes in the browser. A session ended elsewhere while its
+ * token is still fresh is the browser's to notice (lib/session-check.ts).
  *
  * Only on page loads: no server component reads the session. The routes that
  * do (/auth/*, and the device login and approvals routes through

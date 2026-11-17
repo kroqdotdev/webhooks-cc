@@ -23,7 +23,7 @@ export function RequireAuth({ children }: { children: React.ReactNode }) {
 }
 
 function RequireAuthInner({ children }: { children: React.ReactNode }) {
-  const { isAuthenticated, isLoading, session } = useAuth();
+  const { isAuthenticated, isLoading, session, sessionChecked } = useAuth();
   const router = useRouter();
   // An account with an authenticator app finishes signing in here; the API
   // refuses its session until it has (lib/mfa.ts).
@@ -37,11 +37,13 @@ function RequireAuthInner({ children }: { children: React.ReactNode }) {
 
   // Whether this page was signed in: once the session ends in this tab
   // (a sign-out in another tab, a refused refresh), the login page does not
-  // offer the way back.
+  // offer the way back. A session counts only once GoTrue has confirmed it
+  // on this load: one from the cookie that ended elsewhere is found out a
+  // moment after the page opens, and that visitor still gets the way back.
   const wasSignedIn = useRef(false);
 
   useEffect(() => {
-    if (isAuthenticated) wasSignedIn.current = true;
+    if (isAuthenticated && sessionChecked) wasSignedIn.current = true;
     if (!isLoading && !isAuthenticated) {
       // Arriving signed out, back to this page after signing in (the login
       // page accepts only a path on this site: lib/auth-redirect.ts), so a
@@ -50,7 +52,7 @@ function RequireAuthInner({ children }: { children: React.ReactNode }) {
         loginPathFor(`${window.location.pathname}${window.location.search}`, wasSignedIn.current)
       );
     }
-  }, [isAuthenticated, isLoading, router]);
+  }, [isAuthenticated, isLoading, sessionChecked, router]);
 
   if (isLoading || (isAuthenticated && needsSecondFactor === null)) {
     return <PageLoading />;
