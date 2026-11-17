@@ -2159,6 +2159,8 @@ export default function DashboardPage() {
 
       {!listedOn(currentEndpoint.site, site.key) && (
         <ListedElsewhereNotice
+          // Its state (pending, error, already listed) is this endpoint's.
+          key={currentEndpoint.slug}
           slug={currentEndpoint.slug}
           endpointSite={currentEndpoint.site}
           canList={ownsCurrentEndpoint && ownedSlugs.has(currentEndpoint.slug)}
@@ -2982,7 +2984,13 @@ function NoEndpointsHere({
     change
       .then(() => onCreated())
       .then((loaded) => {
-        if (loaded) return;
+        // The list read again: done. A later attempt makes the change again,
+        // in case what it listed was taken off this site since.
+        if (loaded) {
+          changed.current = false;
+          setListing(false);
+          return;
+        }
         setError("They are listed here now, but the list could not be loaded. Try again.");
         setListing(false);
       })
@@ -3099,7 +3107,13 @@ function ListedElsewhereNotice({
     change
       .then(() => onListed())
       .then((loaded) => {
-        if (loaded) return;
+        // The list read again: done. A later attempt makes the change again,
+        // in case what it listed was taken off this site since.
+        if (loaded) {
+          changed.current = false;
+          setListing(false);
+          return;
+        }
         setError("It is listed here now, but the list could not be loaded. Try again.");
         setListing(false);
       })

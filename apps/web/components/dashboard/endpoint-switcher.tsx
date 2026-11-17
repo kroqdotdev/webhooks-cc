@@ -52,10 +52,16 @@ export function EndpointSwitcher() {
   const [savingFavorite, setSavingFavorite] = useState(false);
   // A star clicked here shows at once, but only here: the page reads
   // favourites to pick the endpoint a bare /dashboard opens, and it should
-  // change only once the server has the change. Shown until a list read
-  // started after the save arrives (a read started before it may answer
-  // later with the old value); dropped at once when the save fails.
+  // change only once the server has the change. Dropped when the save fails,
+  // when the list read after the save arrives, or, once the save has ended,
+  // when any list already agrees with it (so it never masks a later change
+  // made elsewhere). While saving it stays: a read started before the save
+  // may still answer with the old value.
   const [star, setStar] = useState<{ id: string; favorite: boolean } | null>(null);
+  if (star && !savingFavorite && listed) {
+    const ep = [...listed.owned, ...listed.shared].find((e) => e.id === star.id);
+    if (!ep || ep.favorite === star.favorite) setStar(null);
+  }
   const data =
     listed && star
       ? { owned: listed.owned.map(withStar(star)), shared: listed.shared.map(withStar(star)) }

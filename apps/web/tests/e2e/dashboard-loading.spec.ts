@@ -171,7 +171,9 @@ test("a first endpoint that could not be made is made when the person tries agai
   const fresh = await createTestUser();
   try {
     let refusing = true;
+    let posts = 0;
     await page.route("**/api/endpoints", async (route) => {
+      if (route.request().method() === "POST") posts++;
       if (route.request().method() === "POST" && refusing) {
         await route.fulfill({
           status: 503,
@@ -193,6 +195,8 @@ test("a first endpoint that could not be made is made when the person tries agai
     await expect(page.getByRole("combobox", { name: "Endpoint" })).toBeVisible({
       timeout: 15000,
     });
+    // The refused attempt and the one the retry made: no third.
+    expect(posts).toBe(2);
     const { count } = await admin
       .from("endpoints")
       .select("id", { count: "exact", head: true })
