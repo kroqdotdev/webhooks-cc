@@ -2,14 +2,17 @@ import { createServerClient } from "@supabase/ssr";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { cookies } from "next/headers";
 import type { Database } from "./database";
+import { serverSupabaseUrl, sessionCookieName } from "./session-cookie";
 
 export async function createClient(): Promise<SupabaseClient<Database>> {
   const cookieStore = await cookies();
 
+  // Over the private network, under the browser's cookie name (session-cookie.ts).
   return createServerClient<Database>(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    serverSupabaseUrl(),
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
+      cookieOptions: { name: sessionCookieName() },
       cookies: {
         getAll() {
           return cookieStore.getAll();
@@ -20,8 +23,9 @@ export async function createClient(): Promise<SupabaseClient<Database>> {
               cookieStore.set(name, value, options)
             );
           } catch {
-            // setAll is called from Server Component where cookies are read-only.
-            // This is OK — middleware handles the refresh.
+            // Read-only in a Server Component. Only route handlers use this
+            // client today, and they can set cookies, so a refreshed session
+            // is written back by the route that refreshed it.
           }
         },
       },

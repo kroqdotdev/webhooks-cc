@@ -60,19 +60,15 @@ import { exportToJson, exportToCsv, downloadFile } from "@/lib/export";
 import { trackRequestExported } from "@/lib/analytics";
 import { subscribeToEndpointRequestChanges } from "@/lib/supabase/realtime";
 import {
-  fetchDashboardEndpoints,
   fetchDashboardRequests,
   fetchDashboardSearch,
   fetchDashboardSearchCount,
   isAbortError,
   SearchBusyError,
   type DashboardSearchPage,
-  subscribeDashboardEndpointsChanged,
   defaultDashboardEndpoint,
   createDashboardEndpoint,
-  emitDashboardEndpointsChanged,
   updateDashboardEndpoint,
-  claimGuestEndpointForUser,
   type DashboardEndpoint,
   sendTestEmail,
   fetchDashboardRequestById,
@@ -114,6 +110,7 @@ import { toEmailSummary } from "@/lib/email-capture";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { CodeBox } from "@/components/ui/code";
+import { useDashboardEndpoints } from "@/components/dashboard/endpoints-provider";
 
 const CLICKHOUSE_PAGE_SIZE = 50;
 const PANE_MIN = 240;
@@ -193,9 +190,21 @@ export default function DashboardPage() {
   const accessToken = session?.access_token ?? null;
   // Every endpoint the account can open; the list shows those listed on this
   // site (lib/site.ts), but a link to any of them still opens it.
-  const [allEndpoints, setAllEndpoints] = useState<DashboardEndpoint[] | undefined>(undefined);
+  // One list for the page and the header's switcher (endpoints-provider.tsx).
+  const {
+    data: endpointsData,
+    failed: endpointsFailed,
+    reload: loadEndpoints,
+  } = useDashboardEndpoints();
+  const allEndpoints = useMemo<DashboardEndpoint[] | undefined>(
+    () => (endpointsData ? [...endpointsData.owned, ...endpointsData.shared] : undefined),
+    [endpointsData]
+  );
   // The account's own endpoints (layouts are the owner's to change).
-  const [ownedSlugs, setOwnedSlugs] = useState<Set<string>>(new Set());
+  const ownedSlugs = useMemo(
+    () => new Set((endpointsData?.owned ?? []).map((endpoint) => endpoint.slug)),
+    [endpointsData]
+  );
   const site = useSite();
   const [recentRequests, setRecentRequests] = useState<Request[]>([]);
   // The endpoint whose first page of requests has arrived; until then an
@@ -746,45 +755,6 @@ export default function DashboardPage() {
     return () => clearTimeout(searchDebounceRef.current);
   }, [searchInput]);
 
-  const guestClaimAttempted = useRef(false);
-  // Only the latest load counts: every star click starts a reload, and an
-  // older one may answer last with the favourites from before it.
-  const endpointsLoadSeq = useRef(0);
-
-  const loadEndpoints = useCallback(async () => {
-    if (!accessToken) return;
-    const seq = ++endpointsLoadSeq.current;
-
-    // On first load, try to claim a guest endpoint from /go
-    if (!guestClaimAttempted.current) {
-      guestClaimAttempted.current = true;
-      try {
-        const stored = localStorage.getItem("demo_endpoint");
-        if (stored) {
-          const parsed = JSON.parse(stored) as { slug?: string };
-          if (parsed.slug) {
-            await claimGuestEndpointForUser(accessToken, parsed.slug);
-          }
-          localStorage.removeItem("demo_endpoint");
-        }
-      } catch {
-        // Claim is best-effort; proceed with normal load
-      }
-    }
-
-    try {
-      const response = await fetchDashboardEndpoints(accessToken);
-      if (seq !== endpointsLoadSeq.current) return;
-      setAllEndpoints([...response.owned, ...response.shared]);
-      setOwnedSlugs(new Set(response.owned.map((endpoint) => endpoint.slug)));
-    } catch (error) {
-      console.error("Failed to load dashboard endpoints:", error);
-      // A failed reload keeps the list it had: an empty one would show the
-      // first-endpoint screen, which creates an endpoint on its own.
-      if (seq === endpointsLoadSeq.current) setAllEndpoints((prev) => prev ?? []);
-    }
-  }, [accessToken]);
-
   const refreshRecentRequests = useCallback(async () => {
     if (!accessToken || !currentSlug) {
       recentRequestsRequestSeq.current++;
@@ -808,19 +778,6 @@ export default function DashboardPage() {
       }
     }
   }, [accessToken, currentSlug]);
-
-  useEffect(() => {
-    if (!accessToken) {
-      return;
-    }
-
-    void loadEndpoints();
-    const unsubscribe = subscribeDashboardEndpointsChanged(() => {
-      void loadEndpoints();
-    });
-
-    return unsubscribe;
-  }, [accessToken, loadEndpoints]);
 
   useEffect(() => {
     void refreshRecentRequests();
@@ -2065,6 +2022,10 @@ export default function DashboardPage() {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [handleSelect, handleToggleLiveMode, showTab, toggleCollapse]);
 
+  if (!authLoading && allEndpoints === undefined && endpointsFailed) {
+    return <EndpointsLoadFailed onRetry={loadEndpoints} />;
+  }
+
   if (authLoading || endpoints === undefined || allEndpoints === undefined) {
     return <DashboardSkeleton />;
   }
@@ -2887,12 +2848,37 @@ function siteBody(site: SiteKey): { site?: SiteKey } {
   return twoSites() ? { site } : {};
 }
 
+/**
+ * The list of endpoints could not be read. Never shown as an empty list:
+ * that is the first-endpoint screen, which creates an endpoint on its own.
+ */
+function EndpointsLoadFailed({ onRetry }: { onRetry: () => Promise<unknown> }) {
+  const [retrying, setRetrying] = useState(false);
+  const retry = () => {
+    setRetrying(true);
+    void onRetry().finally(() => setRetrying(false));
+  };
+  return (
+    <div className="flex-1 flex items-center justify-center p-8">
+      <div className="text-center space-y-4">
+        <h2 className="text-xl font-bold tracking-normal">Could not load your endpoints</h2>
+        <p className="text-muted-foreground max-w-sm">
+          Something went wrong on our side or with the connection. Your endpoints are safe.
+        </p>
+        <Button variant="primary" onClick={retry} disabled={retrying}>
+          {retrying ? "Trying again..." : "Try again"}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 function AutoCreateEndpoint({
   accessToken,
   onCreated,
 }: {
   accessToken: string | null;
-  onCreated: () => Promise<void>;
+  onCreated: () => Promise<unknown>;
 }) {
   const site = useSite();
   const [error, setError] = useState<string | null>(null);
@@ -2903,11 +2889,8 @@ function AutoCreateEndpoint({
     attempted.current = true;
 
     createDashboardEndpoint(accessToken, siteBody(site.key))
-      .then(() => {
-        // The header's endpoint list reloads too.
-        emitDashboardEndpointsChanged();
-        return onCreated();
-      })
+      // The one list (endpoints-provider.tsx), the header's too.
+      .then(() => onCreated())
       .catch(() => setError("Could not create your first endpoint."));
   }, [accessToken, onCreated, site.key]);
 
@@ -2954,7 +2937,7 @@ function NoEndpointsHere({
   elsewhere: number;
   /** The account's own endpoints listed on the other site; only the owner can list them here. */
   ownedElsewhere: string[];
-  onCreated: () => Promise<void>;
+  onCreated: () => Promise<unknown>;
 }) {
   const site = useSite();
   const other = SITES[otherSite(site.key)];
@@ -2970,10 +2953,7 @@ function NoEndpointsHere({
     Promise.all(
       ownedElsewhere.map((slug) => updateDashboardEndpoint(accessToken, slug, { site: "both" }))
     )
-      .then(() => {
-        emitDashboardEndpointsChanged();
-        return onCreated();
-      })
+      .then(() => onCreated())
       .catch(() => {
         setError("Could not show them here. Try again.");
         setListing(false);
@@ -3063,7 +3043,7 @@ function ListedElsewhereNotice({
   endpointSite: DashboardEndpoint["site"];
   /** The owner can list it on both sites from here. */
   canList: boolean;
-  onListed: () => Promise<void>;
+  onListed: () => Promise<unknown>;
 }) {
   const site = useSite();
   const { session } = useAuth();
@@ -3078,7 +3058,6 @@ function ListedElsewhereNotice({
     updateDashboardEndpoint(accessToken, slug, { site: "both" })
       .then(() => {
         setOpenEndpoint({ slug, site: "both" });
-        emitDashboardEndpointsChanged();
         return onListed();
       })
       .catch(() => {

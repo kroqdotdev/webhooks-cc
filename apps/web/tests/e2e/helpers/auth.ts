@@ -1,5 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
 import type { Page } from "@playwright/test";
+import { sessionCookieName } from "@/lib/supabase/session-cookie";
 
 if (!process.env.SUPABASE_URL) throw new Error("SUPABASE_URL env var required");
 const SUPABASE_URL = process.env.SUPABASE_URL;
@@ -103,12 +104,9 @@ export async function signInTestUser(
   await page.goto(origin ? `${origin}/login` : "/login");
   await page.waitForLoadState("domcontentloaded");
 
-  // Set Supabase auth cookies that @supabase/ssr expects.
-  // The cookie name follows the pattern: sb-<project-ref>-auth-token
-  // For self-hosted, project ref is extracted from the URL hostname.
-  const url = new URL(supabaseUrl);
-  const projectRef = url.hostname.split(".")[0];
-  const cookieBase = `sb-${projectRef}-auth-token`;
+  // Set Supabase auth cookies that @supabase/ssr expects, under the name the
+  // app gives them (named after the public address, lib/supabase/session-cookie.ts).
+  const cookieBase = sessionCookieName(supabaseUrl);
 
   // @supabase/ssr stores the session as chunked cookies
   const sessionPayload = JSON.stringify({

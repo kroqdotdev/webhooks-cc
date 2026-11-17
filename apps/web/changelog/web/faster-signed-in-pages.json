@@ -1,0 +1,9 @@
+{
+  "title": "Faster dashboard",
+  "items": [
+    "Signed-in pages and API calls no longer wait about 400 ms for a session check that went out to the internet and back: the server checks the session over the private network, and only when a page loads",
+    "Switching endpoints shows the new endpoint at once instead of after a round trip to the server",
+    "The dashboard asks for the endpoint list once instead of twice, and the header keeps the switcher's place while it loads, so the page no longer jumps on phones",
+    "When the endpoint list cannot be loaded, the dashboard says so and offers to try again, instead of creating a first endpoint"
+  ]
+}

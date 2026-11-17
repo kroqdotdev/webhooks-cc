@@ -1,5 +1,6 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextRequest, NextResponse } from "next/server";
+import { serverSupabaseUrl, sessionCookieName } from "@/lib/supabase/session-cookie";
 import { NAV_SECTIONS } from "@/lib/docs-nav";
 import { layoutTemplate } from "@/lib/layout-templates";
 import { malformedApiId, malformedApiIdResponse } from "@/lib/api-path-ids";
@@ -26,7 +27,7 @@ import {
  *
  * 1. Refuses Server Action probes and POST requests outside /api.
  * 2. Marks requests that prefer a page's markdown twin (next.config.ts rewrites them).
- * 3. Otherwise refreshes the Supabase JWT so server components get fresh cookies.
+ * 3. On a page load, checks the Supabase session (see refreshSession).
  * 4. Sets Content-Security-Policy and related headers on every response.
  *
  * Before all of that it settles the site (lib/site.ts): mailhooks.cc answers
@@ -114,41 +115,82 @@ function unknownMailhooksPage(pathname: string): boolean {
   return layoutTemplate(sender) === null;
 }
 
-/** Refreshes the Supabase session so server components get fresh cookies. */
+/**
+ * A page loaded into the browser's window: not a fetch, a client navigation,
+ * a prefetch or router.refresh(), which Next makes with fetch(). Next strips
+ * its own RSC headers before the proxy runs, so the browser's Sec-Fetch-Dest
+ * tells them apart, and without it (an old browser) an Accept that asks for
+ * HTML, which Next's fetches do not send.
+ */
+function isDocumentLoad(request: NextRequest): boolean {
+  if (request.method !== "GET") return false;
+  const dest = request.headers.get("sec-fetch-dest");
+  if (dest) return dest === "document";
+  return (request.headers.get("accept") ?? "").includes("text/html");
+}
+
+/**
+ * Checks the Supabase session on a page load, which refreshes an expired
+ * access token and, when the session was ended elsewhere (signed out on
+ * every device, the account deleted), clears its cookies so the page opens
+ * signed out.
+ *
+ * Only on page loads: no server component reads the session. The routes that
+ * do (/auth/*, and the device login and approvals routes through
+ * lib/device-session.ts) check and refresh it themselves, and every other
+ * API route reads a bearer token. Checking on every request cost a call to
+ * GoTrue on each API call, navigation and prefetch.
+ */
 async function refreshSession(request: NextRequest, pathname: string): Promise<NextResponse> {
   let supabaseResponse = NextResponse.next({ request });
+  if (
+    !isDocumentLoad(request) ||
+    pathname === "/api" ||
+    pathname.startsWith("/api/") ||
+    pathname.startsWith("/_next") ||
+    pathname.startsWith("/auth/callback") ||
+    pathname.startsWith("/auth/confirm") ||
+    pathname.startsWith("/auth/switch")
+  ) {
+    return supabaseResponse;
+  }
+  // @supabase/ssr hands the no-cache headers over with the first cookies it
+  // sets only; a refresh followed by a refused session sets cookies twice.
+  let noCache: Record<string, string> = {};
 
+  // At the internal address, under the browser's cookie name
+  // (lib/supabase/session-cookie.ts): through the public address the check
+  // left the host and came back through the CDN, hundreds of milliseconds.
   const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    serverSupabaseUrl(),
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
+      cookieOptions: { name: sessionCookieName() },
       cookies: {
         getAll() {
           return request.cookies.getAll();
         },
-        setAll(cookiesToSet) {
+        setAll(cookiesToSet, headers) {
           cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value));
           supabaseResponse = NextResponse.next({ request });
           cookiesToSet.forEach(({ name, value, options }) =>
             supabaseResponse.cookies.set(name, value, options)
           );
+          // A response that sets a session cookie must not be cached.
+          noCache = { ...noCache, ...headers };
+          for (const [name, value] of Object.entries(noCache)) {
+            supabaseResponse.headers.set(name, value);
+          }
         },
       },
     }
   );
 
-  // Refresh session (skip for static assets and the auth handoff routes, which
-  // set their own cookies: /auth/callback exchanges the OAuth code,
-  // /auth/confirm verifies an email token hash and /auth/switch carries a
-  // session over from the other site, lib/site-switch.ts).
-  if (
-    !pathname.startsWith("/_next") &&
-    !pathname.startsWith("/auth/callback") &&
-    !pathname.startsWith("/auth/confirm") &&
-    !pathname.startsWith("/auth/switch")
-  ) {
-    await supabase.auth.getUser();
-  }
+  // The auth handoff routes skipped above set their own cookies:
+  // /auth/callback exchanges the OAuth code, /auth/confirm verifies an email
+  // token hash and /auth/switch carries a session over from the other site
+  // (lib/site-switch.ts).
+  await supabase.auth.getUser();
 
   return supabaseResponse;
 }

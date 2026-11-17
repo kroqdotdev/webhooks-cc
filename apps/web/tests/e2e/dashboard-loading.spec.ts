@@ -73,3 +73,49 @@ test("coming back to the dashboard waits for the requests instead of showing the
   await expect(page.getByText("/orders").first()).toBeVisible({ timeout: 15000 });
   await expect(page.getByText("Waiting for the first request")).toBeHidden();
 });
+
+test("an endpoint list that cannot be read says so, and creates no endpoint", async ({ page }) => {
+  // A new account without endpoints: an empty list would create its first one.
+  const fresh = await createTestUser();
+  try {
+    // Every read of the list fails until the person tries again (the dev
+    // server's StrictMode loads it twice, and the newer answer counts).
+    let refusing = true;
+    await page.route("**/api/endpoints", async (route) => {
+      if (route.request().method() === "GET" && refusing) {
+        await route.fulfill({
+          status: 503,
+          contentType: "application/json",
+          body: JSON.stringify({ error: "unavailable" }),
+        });
+        return;
+      }
+      await route.continue();
+    });
+
+    await signInTestUser(page, fresh, "/dashboard");
+    await expect(page.getByRole("heading", { name: "Could not load your endpoints" })).toBeVisible({
+      timeout: 15000,
+    });
+    // Nothing to switch to: the header shows no switcher.
+    await expect(page.getByRole("combobox", { name: "Endpoint" })).toHaveCount(0);
+    const count = async () =>
+      (
+        await admin
+          .from("endpoints")
+          .select("id", { count: "exact", head: true })
+          .eq("user_id", fresh.id)
+      ).count;
+    expect(await count()).toBe(0);
+
+    // Trying again reads the (empty) list, and only then is the first endpoint made.
+    refusing = false;
+    await page.getByRole("button", { name: "Try again" }).click();
+    await expect(page.getByRole("combobox", { name: "Endpoint" })).toBeVisible({
+      timeout: 15000,
+    });
+    await expect.poll(count, { timeout: 15000 }).toBe(1);
+  } finally {
+    await deleteTestUser(fresh.id);
+  }
+});
