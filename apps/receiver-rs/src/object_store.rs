@@ -14,9 +14,25 @@ use sha2::{Digest, Sha256};
 
 use crate::crypto::hmac_sha256 as hmac;
 
-/// How long one upload or delete may take. The MX host waits up to two
-/// minutes for a delivery, which covers a few of these in a row.
-const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
+/// How long one attempt at an upload or delete may take. Messages are at
+/// most 10 MB and the bucket sits in the same data centre, so a healthy
+/// upload takes a second or two; an attempt that runs this long has stalled.
+const ATTEMPT_TIMEOUT: Duration = Duration::from_secs(15);
+
+/// How long opening a connection may take, within the attempt.
+const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
+
+/// Uploads are tried twice: a single stalled or refused connection otherwise
+/// sends the message back to the sender for a retry minutes later. The MX
+/// host waits up to two minutes for a delivery, which covers both attempts,
+/// the pause and a cleanup delete after a failure. Deletes are tried once,
+/// since the bucket's lifecycle rule removes whatever one leaves behind.
+const PUT_ATTEMPTS: u32 = 2;
+
+#[cfg(not(test))]
+const RETRY_PAUSE: Duration = Duration::from_millis(500);
+#[cfg(test)]
+const RETRY_PAUSE: Duration = Duration::from_millis(10);
 
 #[derive(Clone)]
 pub struct ObjectStoreConfig {
@@ -47,11 +63,42 @@ pub enum StoreError {
     InvalidEndpoint,
 }
 
+impl StoreError {
+    /// Whether another attempt may succeed: anything that went wrong on the
+    /// way (a refused or reset connection, a timeout), a 5xx or a 429. PUT and
+    /// DELETE are idempotent, so trying again is safe.
+    fn is_retryable(&self) -> bool {
+        match self {
+            StoreError::Http(_) => true,
+            StoreError::Status(status) => *status >= 500 || *status == 429,
+            StoreError::InvalidEndpoint => false,
+        }
+    }
+}
+
 impl std::fmt::Display for StoreError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            // reqwest's message names the URL, which holds no secret.
-            StoreError::Http(e) => write!(f, "object storage request failed: {e}"),
+            // reqwest's message names the URL, which holds no secret, but not
+            // why it failed ("error sending request for url (...)"): the cause
+            // (a timeout, a refused connection, a reset) is in its source
+            // chain, which names no secret either.
+            StoreError::Http(e) => {
+                let kind = if e.is_timeout() {
+                    " (timed out)"
+                } else if e.is_connect() {
+                    " (connecting failed)"
+                } else {
+                    ""
+                };
+                write!(f, "object storage request failed{kind}: {e}")?;
+                let mut source = std::error::Error::source(e);
+                while let Some(cause) = source {
+                    write!(f, ": {cause}")?;
+                    source = cause.source();
+                }
+                Ok(())
+            }
             StoreError::Status(status) => write!(f, "object storage answered {status}"),
             StoreError::InvalidEndpoint => write!(f, "object storage endpoint is not a valid URL"),
         }
@@ -66,7 +113,8 @@ pub struct ObjectStore {
 impl ObjectStore {
     pub fn new(config: ObjectStoreConfig) -> Self {
         let client = reqwest::Client::builder()
-            .timeout(REQUEST_TIMEOUT)
+            .timeout(ATTEMPT_TIMEOUT)
+            .connect_timeout(CONNECT_TIMEOUT)
             .redirect(reqwest::redirect::Policy::none())
             .build()
             .expect("failed to build the object storage HTTP client");
@@ -75,7 +123,31 @@ impl ObjectStore {
 
     pub async fn put(&self, key: &str, body: Bytes, content_type: &str) -> Result<(), StoreError> {
         let payload_hash = hex::encode(Sha256::digest(&body));
-        let (url, headers) = self.signed("PUT", key, &payload_hash, Utc::now())?;
+        let mut attempt = 1;
+        loop {
+            match self
+                .put_once(key, body.clone(), content_type, &payload_hash)
+                .await
+            {
+                Err(e) if attempt < PUT_ATTEMPTS && e.is_retryable() => {
+                    tracing::warn!(error = %e, "an object storage upload failed; trying again");
+                    attempt += 1;
+                    tokio::time::sleep(RETRY_PAUSE).await;
+                }
+                outcome => return outcome,
+            }
+        }
+    }
+
+    async fn put_once(
+        &self,
+        key: &str,
+        body: Bytes,
+        content_type: &str,
+        payload_hash: &str,
+    ) -> Result<(), StoreError> {
+        // Signed per attempt, so a retry carries a fresh date.
+        let (url, headers) = self.signed("PUT", key, payload_hash, Utc::now())?;
         let mut request = self
             .client
             .put(url)
@@ -289,6 +361,88 @@ mod tests {
             .unwrap();
         assert_eq!(url, "http://127.0.0.1:8333/mail/m/x/raw.eml");
         assert!(headers.iter().any(|(name, _)| *name == "authorization"));
+    }
+
+    fn store_at(endpoint: String) -> ObjectStore {
+        ObjectStore::new(ObjectStoreConfig {
+            endpoint,
+            region: "us-east-1".into(),
+            bucket: "mail".into(),
+            access_key_id: "id".into(),
+            secret_access_key: "secret".into(),
+        })
+    }
+
+    /// A fake S3 endpoint that answers PUTs with `statuses` in turn (the last
+    /// one from then on) and counts them.
+    async fn answering(
+        statuses: Vec<u16>,
+    ) -> (ObjectStore, std::sync::Arc<std::sync::atomic::AtomicUsize>) {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        let puts = std::sync::Arc::new(AtomicUsize::new(0));
+        let counter = puts.clone();
+        let app = axum::Router::new().fallback(move || {
+            let n = counter.fetch_add(1, Ordering::SeqCst);
+            let status = statuses[n.min(statuses.len() - 1)];
+            async move { axum::http::StatusCode::from_u16(status).unwrap() }
+        });
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        (store_at(format!("http://{addr}")), puts)
+    }
+
+    #[tokio::test]
+    async fn an_upload_that_fails_once_is_tried_again() {
+        let (store, puts) = answering(vec![503, 200]).await;
+        store
+            .put("m/x/raw.eml", Bytes::from_static(b"x"), "message/rfc822")
+            .await
+            .unwrap();
+        assert_eq!(puts.load(std::sync::atomic::Ordering::SeqCst), 2);
+    }
+
+    #[tokio::test]
+    async fn an_upload_gives_up_after_two_attempts() {
+        let (store, puts) = answering(vec![503]).await;
+        let error = store
+            .put("m/x/raw.eml", Bytes::from_static(b"x"), "message/rfc822")
+            .await
+            .unwrap_err();
+        assert_eq!(error.to_string(), "object storage answered 503");
+        assert_eq!(puts.load(std::sync::atomic::Ordering::SeqCst), 2);
+    }
+
+    #[tokio::test]
+    async fn a_refused_upload_is_not_tried_again() {
+        // A 4xx (bad credentials, a missing bucket) will not change on a retry.
+        let (store, puts) = answering(vec![403]).await;
+        assert!(
+            store
+                .put("m/x/raw.eml", Bytes::from_static(b"x"), "message/rfc822")
+                .await
+                .is_err()
+        );
+        assert_eq!(puts.load(std::sync::atomic::Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test]
+    async fn a_connection_failure_names_its_cause() {
+        // A port nothing listens on: reqwest alone would only say "error
+        // sending request for url (...)".
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        drop(listener);
+        let error = store_at(format!("http://{addr}"))
+            .put("m/x/raw.eml", Bytes::from_static(b"x"), "message/rfc822")
+            .await
+            .unwrap_err()
+            .to_string();
+        assert!(
+            error.starts_with("object storage request failed (connecting failed): "),
+            "{error}"
+        );
+        assert!(error.to_lowercase().contains("refused"), "{error}");
     }
 
     #[test]
