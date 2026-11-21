@@ -18,6 +18,7 @@
 //! reported as `transient` rather than bounced.
 
 use std::sync::OnceLock;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
 use axum::body::Bytes;
@@ -444,6 +445,7 @@ pub async fn deliver(State(state): State<AppState>, headers: HeaderMap, body: By
         let auth_doc = bounded_object(auth);
         let spam_doc = bounded_object(spam);
 
+        let storage_failed = AtomicBool::new(false);
         for group in &groups {
             let outcome = capture_for_slug(
                 &state,
@@ -457,6 +459,7 @@ pub async fn deliver(State(state): State<AppState>, headers: HeaderMap, body: By
                     client_ip: &client_ip,
                     received_at,
                     retry,
+                    storage_failed: &storage_failed,
                 },
             )
             .await;
@@ -579,6 +582,11 @@ struct CaptureInput<'a> {
     client_ip: &'a str,
     received_at: DateTime<Utc>,
     retry: bool,
+    /// Set once storing any endpoint's copy of this message failed: the
+    /// sender retries the whole message anyway, so the rest answer transient
+    /// at once instead of each waiting out the store's attempts, which would
+    /// take a message for several endpoints past the MX host's limit.
+    storage_failed: &'a AtomicBool,
 }
 
 /// Capture one endpoint's copy. Returns the result status and request id.
@@ -616,6 +624,10 @@ async fn capture_for_slug(
     // failed upload answers transient, so the sender keeps the message and
     // retries (at least once, as for database failures).
     let stored_objects = match (&state.object_store, &input.prepared.objects) {
+        (Some(_), Some(_)) if input.storage_failed.load(Ordering::Relaxed) => {
+            metrics::mail_ingest("storage_skipped");
+            return ("transient", None);
+        }
         (Some(store), Some(objects)) => {
             let request_id = uuid::Uuid::new_v4();
             let prefix = crate::object_store::request_prefix(&request_id);
@@ -629,6 +641,7 @@ async fn capture_for_slug(
                     Some((request_id, prefix))
                 }
                 Err(e) => {
+                    input.storage_failed.store(true, Ordering::Relaxed);
                     metrics::mail_ingest("storage_failed");
                     if storage_log_throttle()
                         .check("put", Instant::now())
@@ -1314,6 +1327,41 @@ mod tests {
             vec![format!("{prefix}a/0"), format!("{prefix}raw.eml")],
             "the message and its one attachment are removed: {seen:?}"
         );
+    }
+
+    #[tokio::test]
+    async fn a_failed_store_skips_the_other_endpoints_copies() {
+        // Every endpoint stores its own copy; once one failed the sender
+        // retries the whole message, so the rest answer transient without
+        // trying (and waiting out) the store again.
+        let (store, seen) = fake_store(StatusCode::SERVICE_UNAVAILABLE).await;
+        let mut state = test_state(false);
+        state.object_store = Some(store);
+        let raw = "From: orders@acme.example\r\nSubject: Order 1002\r\n\r\nThanks.\r\n";
+        let payload = json!({
+            "recipients": ["acme-orders@mailhooks.cc", "acme-billing@mailhooks.cc"],
+            "raw": b64(raw),
+        });
+        let (headers, body) = signed(DELIVER_PATH, &payload);
+        let (status, value) = json_of(deliver(State(state), headers, body).await).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(
+            value["results"],
+            json!([
+                {"recipient": "acme-orders@mailhooks.cc", "status": "transient"},
+                {"recipient": "acme-billing@mailhooks.cc", "status": "transient"},
+            ])
+        );
+        let puts: Vec<String> = seen
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|line| line.starts_with("PUT"))
+            .cloned()
+            .collect();
+        // One copy's message, tried twice; the second copy never uploads.
+        assert_eq!(puts.len(), 2, "{puts:?}");
+        assert_eq!(puts[0], puts[1]);
     }
 
     #[tokio::test]

@@ -14,10 +14,14 @@ use sha2::{Digest, Sha256};
 
 use crate::crypto::hmac_sha256 as hmac;
 
-/// How long one attempt at an upload or delete may take. Messages are at
-/// most 10 MB and the bucket sits in the same data centre, so a healthy
-/// upload takes a second or two; an attempt that runs this long has stalled.
+/// How long one attempt at an upload or delete may take, body included.
+/// Messages are at most 10 MB and the bucket sits in the same data centre, so
+/// a healthy upload takes a second or two; an attempt that runs this long has
+/// stalled.
+#[cfg(not(test))]
 const ATTEMPT_TIMEOUT: Duration = Duration::from_secs(15);
+#[cfg(test)]
+const ATTEMPT_TIMEOUT: Duration = Duration::from_secs(1);
 
 /// How long opening a connection may take, within the attempt.
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
@@ -25,8 +29,9 @@ const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
 /// Uploads are tried twice: a single stalled or refused connection otherwise
 /// sends the message back to the sender for a retry minutes later. The MX
 /// host waits up to two minutes for a delivery, which covers both attempts,
-/// the pause and a cleanup delete after a failure. Deletes are tried once,
-/// since the bucket's lifecycle rule removes whatever one leaves behind.
+/// the pause and a cleanup delete after a failure (the mail handler stops
+/// storing a message's further copies once one has failed). Deletes are tried
+/// once, since the bucket's lifecycle rule removes whatever one leaves behind.
 const PUT_ATTEMPTS: u32 = 2;
 
 #[cfg(not(test))]
@@ -130,7 +135,14 @@ impl ObjectStore {
                 .await
             {
                 Err(e) if attempt < PUT_ATTEMPTS && e.is_retryable() => {
-                    tracing::warn!(error = %e, "an object storage upload failed; trying again");
+                    // A message and each attachment retry on their own, so an
+                    // outage would print one line per object: one a minute.
+                    if retry_log_throttle()
+                        .check("put", std::time::Instant::now())
+                        .is_some()
+                    {
+                        tracing::warn!(error = %e, "an object storage upload failed; trying again");
+                    }
                     attempt += 1;
                     tokio::time::sleep(RETRY_PAUSE).await;
                 }
@@ -226,6 +238,13 @@ impl ObjectStore {
             ],
         ))
     }
+}
+
+fn retry_log_throttle() -> &'static crate::handlers::log_throttle::LogThrottle {
+    static THROTTLE: std::sync::OnceLock<crate::handlers::log_throttle::LogThrottle> =
+        std::sync::OnceLock::new();
+    THROTTLE
+        .get_or_init(|| crate::handlers::log_throttle::LogThrottle::new(Duration::from_secs(60), 1))
 }
 
 /// A request URL and the headers to send with it.
@@ -414,6 +433,61 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn a_busy_store_is_tried_again() {
+        let (store, puts) = answering(vec![429, 200]).await;
+        store
+            .put("m/x/raw.eml", Bytes::from_static(b"x"), "message/rfc822")
+            .await
+            .unwrap();
+        assert_eq!(puts.load(std::sync::atomic::Ordering::SeqCst), 2);
+    }
+
+    #[tokio::test]
+    async fn a_stalled_upload_times_out_and_is_tried_again() {
+        // The first attempt never gets an answer, the second does.
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        let puts = std::sync::Arc::new(AtomicUsize::new(0));
+        let counter = puts.clone();
+        let app = axum::Router::new().fallback(move || {
+            let first = counter.fetch_add(1, Ordering::SeqCst) == 0;
+            async move {
+                if first {
+                    std::future::pending::<()>().await;
+                }
+                axum::http::StatusCode::OK
+            }
+        });
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        store_at(format!("http://{addr}"))
+            .put("m/x/raw.eml", Bytes::from_static(b"x"), "message/rfc822")
+            .await
+            .unwrap();
+        assert_eq!(puts.load(Ordering::SeqCst), 2);
+    }
+
+    #[tokio::test]
+    async fn a_store_that_never_answers_names_the_timeout() {
+        let app = axum::Router::new().fallback(|| async {
+            std::future::pending::<()>().await;
+            axum::http::StatusCode::OK
+        });
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        let error = store_at(format!("http://{addr}"))
+            .put("m/x/raw.eml", Bytes::from_static(b"x"), "message/rfc822")
+            .await
+            .unwrap_err()
+            .to_string();
+        assert!(
+            error.starts_with("object storage request failed (timed out): "),
+            "{error}"
+        );
+    }
+
+    #[tokio::test]
     async fn a_refused_upload_is_not_tried_again() {
         // A 4xx (bad credentials, a missing bucket) will not change on a retry.
         let (store, puts) = answering(vec![403]).await;
@@ -428,12 +502,9 @@ mod tests {
 
     #[tokio::test]
     async fn a_connection_failure_names_its_cause() {
-        // A port nothing listens on: reqwest alone would only say "error
-        // sending request for url (...)".
-        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
-        let addr = listener.local_addr().unwrap();
-        drop(listener);
-        let error = store_at(format!("http://{addr}"))
+        // A reserved port nothing listens on: reqwest alone would only say
+        // "error sending request for url (...)".
+        let error = store_at("http://127.0.0.1:1".into())
             .put("m/x/raw.eml", Bytes::from_static(b"x"), "message/rfc822")
             .await
             .unwrap_err()
