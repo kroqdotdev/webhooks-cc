@@ -1,0 +1,8 @@
+{
+  "title": "Email storage rides out a stalled upload",
+  "items": [
+    "When storing a captured email in object storage stalls or is refused, the receiver tries once more after a short pause instead of sending the message back to the sender to retry minutes later",
+    "An upload that hangs gives up after 15 seconds instead of 30, and opening a connection after 5, so a retry still fits in the time the mail host waits",
+    "When storing one endpoint's copy of an email fails, the copies for its other endpoints answer at once instead of each trying the store again, since the sender retries the whole message"
+  ]
+}
