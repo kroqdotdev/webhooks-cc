@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useAuth } from "@/components/providers/supabase-auth-provider";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -35,12 +35,19 @@ export function OpsSwitches() {
   const [reasons, setReasons] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState<string | null>(null);
 
+  // Only the latest load is shown: one that answers after a newer one
+  // (a second "Try again", or the reload after a change) is dropped.
+  const loads = useRef(0);
+
   const load = useCallback(async () => {
+    const mine = ++loads.current;
     try {
       const data = await apiFetch<{ switches: SwitchView[] }>(token, "/api/ops/switches");
+      if (mine !== loads.current) return;
       setSwitches(data.switches);
       setError(null);
     } catch (loadError) {
+      if (mine !== loads.current) return;
       setError(loadError instanceof Error ? loadError.message : "Switches could not be loaded.");
     }
   }, [token]);

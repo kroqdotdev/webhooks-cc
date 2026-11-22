@@ -61,6 +61,13 @@ function fromRow(name: OpsSwitchName, row: Row | undefined | null): OpsSwitch {
   };
 }
 
+/** Moves a switch's generation on and answers the new one. */
+function bump(name: OpsSwitchName): number {
+  const next = (generation.get(name) ?? 0) + 1;
+  generation.set(name, next);
+  return next;
+}
+
 function remember(name: OpsSwitchName, off: boolean): void {
   cache.set(name, { off, until: Date.now() + CACHE_MS });
 }
@@ -144,7 +151,7 @@ export async function setSwitch(
 ): Promise<{ changed: boolean; switch: OpsSwitch }> {
   const admin = createAdminClient();
   const row = { off, reason, changed_by: staffId, changed_at: new Date().toISOString() };
-  generation.set(name, (generation.get(name) ?? 0) + 1);
+  const mine = bump(name);
 
   const { data: updated, error } = await admin
     .from("ops_switches")
@@ -164,11 +171,16 @@ export async function setSwitch(
     if (insertError) throw insertError;
     written = (inserted as Row[] | null)?.[0];
   }
+  // Another change in this process started while this one was writing:
+  // which landed last is the database's to say, so neither is cached and
+  // the next check reads it.
+  const overtaken = (generation.get(name) ?? 0) !== mine;
   // Moved again once the write has landed: a read that started after the
   // first move but ran before the write committed holds the old state.
-  generation.set(name, (generation.get(name) ?? 0) + 1);
+  const settled = bump(name);
   if (written) {
-    remember(name, written.off);
+    if (overtaken) cache.delete(name);
+    else remember(name, written.off);
     return { changed: true, switch: fromRow(name, written) };
   }
 
@@ -180,7 +192,9 @@ export async function setSwitch(
     .maybeSingle();
   if (readError) throw readError;
   const now = fromRow(name, current as Row | null);
-  remember(name, now.off);
+  // A change made since this one settled has cached its own answer: leave it.
+  if (overtaken) cache.delete(name);
+  else if ((generation.get(name) ?? 0) === settled) remember(name, now.off);
   return { changed: false, switch: now };
 }
 

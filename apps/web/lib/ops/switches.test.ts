@@ -161,6 +161,42 @@ describe("switchedOff", () => {
 });
 
 describe("setSwitch", () => {
+  it("caches neither of two changes that overlap, so the next check reads the row", async () => {
+    let landFirst: (answer: Answer) => void = () => undefined;
+    // Turning it off waits on its update...
+    answers = [new Promise<Answer>((resolve) => (landFirst = resolve))];
+    const turningOff = setSwitch("ai_assists", true, "why", "staff-1");
+    await vi.waitFor(() => expect(answers).toHaveLength(0));
+    // ...while turning it back on lands at once.
+    answers.push({ data: [row(false)], error: null });
+    await setSwitch("ai_assists", false, "back", "staff-2");
+    landFirst({ data: [row(true)], error: null });
+    await turningOff;
+    // Neither answer is trusted: the row decides.
+    answers.push({ data: { off: false }, error: null });
+    expect(await switchedOff("ai_assists")).toBe(false);
+    expect(reads()).toBe(1);
+  });
+
+  it("does not cache what it read back when a change overtook it", async () => {
+    let landRead: (answer: Answer) => void = () => undefined;
+    answers = [
+      // Already off: nothing updated, so it reads the row back, and waits.
+      { data: [], error: null },
+      { data: [], error: null },
+      new Promise<Answer>((resolve) => (landRead = resolve)),
+    ];
+    const again = setSwitch("ai_assists", true, "again", "staff-1");
+    await vi.waitFor(() => expect(answers).toHaveLength(0));
+    // Meanwhile it is turned on.
+    answers.push({ data: [row(false)], error: null });
+    await setSwitch("ai_assists", false, "back", "staff-2");
+    landRead({ data: row(true), error: null });
+    await again;
+    expect(await switchedOff("ai_assists")).toBe(false);
+    expect(reads()).toBe(0);
+  });
+
   it("writes a change and answers from the row it wrote, with no read after it", async () => {
     answers = [{ data: [row(true, "model misbehaving")], error: null }];
     const saved = await setSwitch("ai_assists", true, "model misbehaving", "staff-1");
