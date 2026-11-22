@@ -39,7 +39,9 @@ export interface ApprovalView {
 export class ApprovalError extends Error {
   constructor(
     readonly status: number,
-    message: string
+    message: string,
+    /** A machine-readable reason, when the action gave one (ActionError). */
+    readonly code?: string
   ) {
     super(message);
     this.name = "ApprovalError";
@@ -368,8 +370,10 @@ export async function decideApproval(
       runContext(row.id)
     ));
   } catch (err) {
-    // Only a clean refusal (ActionError: checked, nothing done) gives the
-    // approval back to approve again. Anything else may have failed after
+    // Only a clean refusal (ActionError: checked, nothing kept) gives the
+    // approval back to approve again. An AI assist cut short by the switch
+    // counts as one: its first request did go out, but the assist is given
+    // back and approving again asks anew. Anything else may have failed after
     // the action took effect (a timeout once the write landed), and
     // approving again would run it twice: the row stays completed without
     // a result, and the asker's poll ends at expiry.
@@ -406,7 +410,7 @@ export async function decideApproval(
         undoError
       );
     }
-    throw new ApprovalError(err.status, err.message);
+    throw new ApprovalError(err.status, err.message, err.code);
   }
   // The action is done whatever happens next, so the row never goes back
   // to pending from here: approving again would run it twice (a second

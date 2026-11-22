@@ -24,7 +24,10 @@ export async function requestApproval(
   try {
     const parsed = await actionSpec(action).parse(input, asker.userId);
     if (!parsed.ok) {
-      return Response.json({ error: parsed.error }, { status: parsed.status ?? 400 });
+      return Response.json(
+        { error: parsed.error, ...(parsed.code ? { code: parsed.code } : {}) },
+        { status: parsed.status ?? 400 }
+      );
     }
     const { approval, requester } = await createApproval({
       asker,

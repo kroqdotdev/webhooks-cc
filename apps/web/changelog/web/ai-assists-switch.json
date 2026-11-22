@@ -1,0 +1,7 @@
+{
+  "title": "AI setup can be paused",
+  "items": [
+    "When webhooks.cc turns AI setup and repair off for a while, the dashboard hides them, and the API answers 503 with the code paused, also when an approval asked for earlier is approved; the status reports paused: true",
+    "An approval for an AI assist that was refused while AI setup was off can be approved again once it is back"
+  ]
+}

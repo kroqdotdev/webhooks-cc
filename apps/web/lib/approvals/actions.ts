@@ -25,13 +25,14 @@ import { loggablePolarError } from "@/lib/polar";
 import { reportError } from "@/lib/observability";
 import {
   AssistRefusal,
+  aiAssistState,
+  aiStateRefusal,
   assistSamples,
   assistsLeft,
   parseAssistInput,
   runEndpointAssist,
   type AssistInput,
 } from "@/lib/ai/endpoint-assist";
-import { aiOffered } from "@/lib/ai/model";
 import {
   accessToken,
   googleConfig,
@@ -111,7 +112,9 @@ export class ActionError extends Error {
   constructor(
     readonly status: number,
     message: string,
-    readonly deniedWith: Json | null = null
+    readonly deniedWith: Json | null = null,
+    /** A machine-readable reason the asker and the approver get with the message. */
+    readonly code?: string
   ) {
     super(message);
     this.name = "ActionError";
@@ -121,7 +124,8 @@ export class ActionError extends Error {
 /** The result a refused budget raise carries: the budget changed while it waited. */
 export const BUDGET_CHANGED_RESULT = { code: "budget_changed" } as const;
 
-type Parsed<P> = { ok: true; params: P } | { ok: false; error: string; status?: number };
+type Parsed<P> =
+  { ok: true; params: P } | { ok: false; error: string; status?: number; code?: string };
 
 interface ActionSpec<P> {
   runAt: "collect" | "approve" | "browser";
@@ -710,8 +714,9 @@ function askLabel(ask: AssistInput["ask"]): string {
 const aiAssist: ActionSpec<AssistParams> = {
   runAt: "approve",
   async parse(input, userId) {
-    if (!aiOffered()) {
-      return { ok: false, error: "AI setup is not available on this server.", status: 404 };
+    const refusal = aiStateRefusal(await aiAssistState());
+    if (refusal) {
+      return { ok: false, error: refusal.message, status: refusal.status, code: refusal.code };
     }
     const body = (input ?? {}) as Record<string, unknown>;
     if (typeof body.slug !== "string")
@@ -756,6 +761,13 @@ const aiAssist: ActionSpec<AssistParams> = {
       { label: "Never sent", value: "Attachments" },
       { label: "Uses", value: "One AI assist" }
     );
+    if ((await aiAssistState()) === "paused") {
+      facts.push({
+        label: "For now",
+        value:
+          "AI setup is turned off for a while, so approving fails until it is back. Nothing is sent or used up; you can approve it then, until it expires.",
+      });
+    }
     return facts;
   },
   async run(userId, { slug, ask, requestIds }) {
@@ -763,7 +775,9 @@ const aiAssist: ActionSpec<AssistParams> = {
       const result = await runEndpointAssist(userId, slug, { ask, requestIds });
       return { result: { ...result }, stored: result as unknown as Json };
     } catch (error) {
-      if (error instanceof AssistRefusal) throw new ActionError(error.status, error.message);
+      if (error instanceof AssistRefusal) {
+        throw new ActionError(error.status, error.message, null, error.code);
+      }
       throw error;
     }
   },

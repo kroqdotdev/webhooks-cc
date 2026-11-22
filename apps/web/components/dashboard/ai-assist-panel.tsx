@@ -166,7 +166,11 @@ export function AiAssistPanel({
       </div>
 
       {info && !info.offered ? (
-        <p className="text-sm text-muted-foreground">AI setup is not available on this server.</p>
+        <p className="text-sm text-muted-foreground">
+          {info.paused
+            ? "AI setup is turned off for now. Try again later."
+            : "AI setup is not available on this server."}
+        </p>
       ) : samples.length === 0 ? (
         <p className="text-sm text-muted-foreground">
           This endpoint has no emails yet. Send it a few of the emails you want read first.

@@ -3,18 +3,20 @@ import { authenticateRequestRequireUser } from "@/lib/api-auth";
 import { requestApproval } from "@/lib/approvals/request";
 import {
   AssistRefusal,
+  aiAssistState,
+  aiStateRefusal,
   assistsLeft,
   parseAssistInput,
   runEndpointAssist,
 } from "@/lib/ai/endpoint-assist";
-import { aiOffered } from "@/lib/ai/model";
 import { jsonObject, ownedEndpoint } from "@/lib/forwarding/destination-routes";
 import { reportError } from "@/lib/observability";
 import { checkRateLimitByKeyWithInfo } from "@/lib/rate-limit";
 
 /**
  * AI setup and repair (lib/ai/endpoint-assist.ts) for an endpoint's layouts
- * and fields. GET: whether it is offered, how many assists are left in the
+ * and fields. GET: whether it is offered (and paused, while staff have it
+ * switched off in /ops), how many assists are left in the
  * rolling 30 days, and when the next one comes back (nextAt); any key of
  * the owner may read it. POST { ask, requestIds, consent: true }: sends the
  * picked emails (1 to 5 of the endpoint's own) to the model and answers only
@@ -34,7 +36,12 @@ export async function GET(request: Request, { params }: Params) {
   try {
     const endpoint = await ownedEndpoint(auth.userId, slug);
     if (!endpoint) return Response.json({ error: "Endpoint not found" }, { status: 404 });
-    return Response.json({ offered: aiOffered(), ...(await assistsLeft(endpoint.id)) });
+    const state = await aiAssistState();
+    return Response.json({
+      offered: state === "offered",
+      paused: state === "paused",
+      ...(await assistsLeft(endpoint.id)),
+    });
   } catch (error) {
     reportError("Reading AI assists failed", error);
     return Response.json({ error: "Internal server error" }, { status: 500 });
@@ -47,8 +54,12 @@ export async function POST(request: Request, { params }: Params) {
   const { slug } = await params;
   const limited = await checkRateLimitByKeyWithInfo(`user:ai-assist:${auth.userId}`, 10);
   if (limited.response) return limited.response;
-  if (!aiOffered()) {
-    return Response.json({ error: "AI setup is not available on this server." }, { status: 404 });
+  const refusal = aiStateRefusal(await aiAssistState());
+  if (refusal) {
+    return Response.json(
+      { error: refusal.message, ...(refusal.code ? { code: refusal.code } : {}) },
+      { status: refusal.status }
+    );
   }
 
   const body = await jsonObject(request, 8 * 1024);

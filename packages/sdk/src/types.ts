@@ -2104,6 +2104,11 @@ export type AiSetupAsk =
 export interface AiSetupStatus {
   /** AI setup is offered on this server. */
   offered: boolean;
+  /**
+   * AI setup is turned off for now by webhooks.cc (offered is then false, and
+   * asks are refused with 503 and code "paused"). Absent from older servers.
+   */
+  paused?: boolean;
   /** Assists the plan allows in a rolling 30 days, and how many were used. */
   allowed: number;
   used: number;

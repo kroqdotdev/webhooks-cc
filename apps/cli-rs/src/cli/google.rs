@@ -172,7 +172,11 @@ pub async fn ai_status(client: &ApiClient, slug: &str, json: bool) -> Result<()>
         return print_json(&answer);
     }
     if answer.get("offered").and_then(Value::as_bool) != Some(true) {
-        crate::outln!("  AI setup is not offered on this server.");
+        if answer.get("paused").and_then(Value::as_bool) == Some(true) {
+            crate::outln!("  AI setup is turned off for now. Try again later.");
+        } else {
+            crate::outln!("  AI setup is not offered on this server.");
+        }
         return Ok(());
     }
     let n = |field: &str| answer.get(field).and_then(Value::as_i64).unwrap_or(0);

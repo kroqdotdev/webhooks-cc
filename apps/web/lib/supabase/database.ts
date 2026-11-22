@@ -8,6 +8,9 @@ export type BillingCheckoutStatus = "open" | "paid" | "expired" | "superseded";
 /** Why an opened link expired unpaid while Polar never said it was not paid (migration 00104). */
 export type BillingCheckoutExpiredReason = "unsettled";
 
+/** A feature staff can turn off from /ops (migration 00113). */
+export type OpsSwitchName = "ai_assists";
+
 /** Why a refund was recorded (migration 00086, lib/billing/refunds.ts). */
 export type PolarRefundReason =
   "duplicate_plan" | "duplicate_addon" | "deleted_account" | "addon_not_applied" | "addon_ended";
@@ -2751,6 +2754,31 @@ export interface Database {
         Row: { taken_at: string; account: string };
         Insert: { taken_at: string; account: string };
         Update: { taken_at?: string; account?: string };
+        Relationships: [];
+      };
+      /** Features staff turn off for everyone from /ops (migration 00113, lib/ops/switches.ts). */
+      ops_switches: {
+        Row: {
+          name: OpsSwitchName;
+          off: boolean;
+          reason: string | null;
+          changed_by: string | null;
+          changed_at: string;
+        };
+        Insert: {
+          name: OpsSwitchName;
+          off?: boolean;
+          reason?: string | null;
+          changed_by?: string | null;
+          changed_at?: string;
+        };
+        Update: {
+          name?: OpsSwitchName;
+          off?: boolean;
+          reason?: string | null;
+          changed_by?: string | null;
+          changed_at?: string;
+        };
         Relationships: [];
       };
     };

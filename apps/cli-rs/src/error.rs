@@ -314,6 +314,13 @@ pub fn classify(error: &anyhow::Error) -> Classified {
             {
                 return billing_refused(code, Some(e.status));
             }
+            // AI setup turned off for now by webhooks.cc: a server error
+            // like any 503, with a hint that waiting is the only fix.
+            if e.code.as_deref() == Some("paused") && e.status == 503 {
+                return from_status(e.status, e.retry_after).hint(
+                    "webhooks.cc turned this off for now. Try again later; nothing was used up.",
+                );
+            }
             return from_status(e.status, e.retry_after);
         }
         if let Some(e) = cause.downcast_ref::<AgentError>() {
@@ -472,6 +479,19 @@ mod tests {
             let c = classify(&api(status));
             assert_eq!((c.code, c.exit, c.status), (code, exit, Some(status)));
         }
+    }
+
+    #[test]
+    fn a_paused_feature_is_a_server_error_with_a_hint() {
+        let error = anyhow::Error::new(ApiError {
+            status: 503,
+            message: "AI setup is turned off for now. Try again later.".into(),
+            retry_after: None,
+            code: Some("paused".into()),
+        });
+        let c = classify(&error);
+        assert_eq!((c.code, c.exit, c.status), ("server_error", 7, Some(503)));
+        assert!(c.hint.unwrap().contains("Try again later"));
     }
 
     #[test]

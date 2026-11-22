@@ -1395,6 +1395,8 @@ export async function startDrivePick(
 export interface AiAssistInfo {
   /** The server can make assists. */
   offered: boolean;
+  /** Turned off for now by staff (offered is then false). Absent from older servers. */
+  paused?: boolean;
   /** Assists the plan has in a rolling 30 days, and used of them. */
   allowed: number;
   used: number;
