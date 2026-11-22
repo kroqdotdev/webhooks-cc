@@ -25,6 +25,7 @@ const NAV = [
   { href: "/ops/refunds", label: "Refunds" },
   { href: "/ops/sharing", label: "Sharing", count: "reports" as const },
   { href: "/ops/saved-replies", label: "Saved replies" },
+  { href: "/ops/switches", label: "Switches" },
 ];
 
 /** The same answer a missing page gives: /ops does not announce itself. */

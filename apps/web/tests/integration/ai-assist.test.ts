@@ -1,11 +1,29 @@
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { createClient } from "@supabase/supabase-js";
 import { GET, POST } from "@/app/api/endpoints/[slug]/layouts/assist/route";
 import { getUsageForUser } from "@/lib/supabase/usage";
 import { decideApproval, pollApproval, reviewApproval } from "@/lib/approvals/store";
 import { generateApiKey, hashApiKey } from "@/lib/supabase/api-keys";
+import { resetSwitchCache, setSwitch } from "@/lib/ops/switches";
+import { GET as opsSwitchesGet, POST as opsSwitchesPost } from "@/app/api/ops/switches/route";
+
+// Staff sign-in (a session past two-factor) is stood in for: the ops routes
+// admit the user id in x-test-staff. The switch is one row for everyone, so
+// its route is tested here, in the one suite that reads it, not beside it.
+vi.mock("@/lib/staff", async (importOriginal) => {
+  const real = await importOriginal<typeof import("@/lib/staff")>();
+  return {
+    ...real,
+    authenticateStaffRequest: async (request: Request) => {
+      const id = request.headers.get("x-test-staff");
+      return id
+        ? { success: true, userId: id }
+        : { success: false, response: Response.json({ error: "Not found" }, { status: 404 }) };
+    },
+  };
+});
 
 /**
  * AI setup and repair (migration 00075, lib/ai) against the local database
@@ -23,6 +41,8 @@ let server: Server;
 const asked: { body: Record<string, unknown>; beta: string | undefined }[] = [];
 /** What the fake model answers next: a proposal, a status, or a refusal. */
 let answers: ({ proposal: unknown } | { status: number } | { refusal: true })[] = [];
+/** Run while the model "thinks", before it answers. */
+let beforeAnswer: (() => Promise<void>) | null = null;
 const saved: Record<string, string | undefined> = {};
 const userIds: string[] = [];
 const ts = Date.now();
@@ -37,8 +57,9 @@ beforeAll(async () => {
     }
     let raw = "";
     req.on("data", (chunk) => (raw += chunk));
-    req.on("end", () => {
+    req.on("end", async () => {
       asked.push({ body: JSON.parse(raw), beta: req.headers["anthropic-beta"] as string });
+      if (beforeAnswer) await beforeAnswer();
       const next = answers.shift() ?? { status: 500 };
       if ("status" in next) {
         res.writeHead(next.status, { "content-type": "application/json" });
@@ -61,6 +82,9 @@ beforeAll(async () => {
     });
   });
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  // A run killed inside a test that turned AI assists off leaves them off.
+  await admin.from("ops_switches").update({ off: false }).eq("name", "ai_assists");
+  resetSwitchCache();
   for (const [key, value] of Object.entries({
     ANTHROPIC_API_KEY: "test-key",
     AI_API_BASE_URL: `http://127.0.0.1:${(server.address() as AddressInfo).port}`,
@@ -72,6 +96,9 @@ beforeAll(async () => {
 
 afterAll(async () => {
   server?.close();
+  // A run cut short inside a test that turned AI assists off must not leave
+  // the dev database with them off.
+  await admin.from("ops_switches").update({ off: false }).eq("name", "ai_assists");
   for (const [key, value] of Object.entries(saved)) {
     if (value === undefined) delete process.env[key];
     else process.env[key] = value;
@@ -82,6 +109,7 @@ afterAll(async () => {
 beforeEach(() => {
   asked.length = 0;
   answers = [];
+  beforeAnswer = null;
 });
 
 async function signedIn(plan = "business") {
@@ -288,6 +316,135 @@ describe("AI setup and repair", () => {
       "4002",
     ]);
     expect((await (await call("GET", owner.slug, raw)).json()).used).toBe(1);
+  });
+
+  it("stops offering and refuses every ask while staff have AI assists off", async () => {
+    const owner = await signedIn();
+    const raw = generateApiKey();
+    const { data: key, error } = await admin
+      .from("api_keys")
+      .insert({
+        user_id: owner.userId,
+        name: "agent",
+        key_hash: hashApiKey(raw),
+        key_prefix: raw.slice(0, 12),
+      })
+      .select("id")
+      .single();
+    if (error) throw error;
+    const ids = [await capture(owner.slug, "Order #5001 confirmed", "x")];
+    const ask = { kind: "field", name: "order", description: "the order number" };
+    // Asked while on; the owner approves after the switch went off.
+    const asking = await call("POST", owner.slug, raw, { ask, requestIds: ids, consent: true });
+    expect(asking.status).toBe(202);
+    const { approval } = (await asking.json()) as { approval: { id: string; code: string } };
+
+    await setSwitch("ai_assists", true, "integration test", owner.userId);
+    try {
+      expect(await (await call("GET", owner.slug, owner.token)).json()).toMatchObject({
+        offered: false,
+        paused: true,
+      });
+      const refused = await call("POST", owner.slug, owner.token, {
+        ask,
+        requestIds: ids,
+        consent: true,
+      });
+      expect(refused.status).toBe(503);
+      expect(await refused.json()).toMatchObject({ code: "paused" });
+      expect((await call("POST", owner.slug, raw, { ask, requestIds: ids })).status).toBe(503);
+      // The approval page says so before the owner clicks.
+      const review = await reviewApproval(approval.code, owner.userId, null);
+      expect(JSON.stringify(review?.details)).toContain("turned off for a while");
+      // Approving refuses and leaves the approval to approve again later.
+      await expect(decideApproval(approval.code, owner.userId, true)).rejects.toMatchObject({
+        status: 503,
+        code: "paused",
+        message: expect.stringMatching(/turned off/),
+      });
+      // The database refuses on its own, whatever a process has cached.
+      const { data: taken } = await admin.rpc("take_ai_assist", {
+        p_endpoint_id: owner.endpointId,
+        p_actor_id: owner.userId,
+        p_kind: "field",
+      });
+      expect(taken).toEqual({ status: "paused" });
+      expect(asked).toHaveLength(0);
+    } finally {
+      await setSwitch("ai_assists", false, "integration test done", owner.userId);
+    }
+
+    expect((await (await call("GET", owner.slug, owner.token)).json()).offered).toBe(true);
+    answers = [{ proposal: field("Order #(\\d+)") }];
+    expect(await decideApproval(approval.code, owner.userId, true)).toMatchObject({ done: true });
+    const polled = await pollApproval(approval.id, { userId: owner.userId, keyId: key.id });
+    expect(polled?.approval.status).toBe("completed");
+  });
+
+  it("is refused by the database while this process still has the switch on", async () => {
+    const owner = await signedIn();
+    const ids = [await capture(owner.slug, "Order #6001 confirmed", "x")];
+    resetSwitchCache();
+    // Read as on, and kept for 10 seconds.
+    expect((await (await call("GET", owner.slug, owner.token)).json()).offered).toBe(true);
+    await admin.from("ops_switches").update({ off: true }).eq("name", "ai_assists");
+    try {
+      expect((await (await call("GET", owner.slug, owner.token)).json()).offered).toBe(true);
+      const refused = await call("POST", owner.slug, owner.token, {
+        ask: { kind: "field", name: "order", description: "the order number" },
+        requestIds: ids,
+        consent: true,
+      });
+      expect(refused.status).toBe(503);
+      expect(await refused.json()).toMatchObject({ code: "paused" });
+      expect(asked).toHaveLength(0);
+      const { count } = await admin
+        .from("ai_assist_uses")
+        .select("id", { count: "exact", head: true })
+        .eq("actor_id", owner.userId);
+      expect(count).toBe(0);
+      // Once the cache runs out, the route sees it too.
+      resetSwitchCache();
+      expect((await (await call("GET", owner.slug, owner.token)).json()).paused).toBe(true);
+    } finally {
+      await admin.from("ops_switches").update({ off: false }).eq("name", "ai_assists");
+      resetSwitchCache();
+    }
+    expect((await (await call("GET", owner.slug, owner.token)).json()).paused).toBe(false);
+  });
+
+  it("does not ask the model a second time once AI assists were switched off", async () => {
+    const owner = await signedIn();
+    const ids = [
+      await capture(owner.slug, "Order #7001 confirmed", "x"),
+      await capture(owner.slug, "Order #7002 confirmed", "y"),
+    ];
+    // The first answer finds nothing, which would earn a second ask.
+    answers = [{ proposal: field("Invoice (\\d+)") }, { proposal: field("Order #(\\d+)") }];
+    beforeAnswer = async () => {
+      beforeAnswer = null;
+      await admin.from("ops_switches").update({ off: true }).eq("name", "ai_assists");
+    };
+    try {
+      const response = await call("POST", owner.slug, owner.token, {
+        ask: { kind: "field", name: "order", description: "the order number" },
+        requestIds: ids,
+        consent: true,
+      });
+      // Cut short, not "nothing found": the asker reads why, and the
+      // assist is given back.
+      expect(response.status).toBe(503);
+      expect(await response.json()).toMatchObject({ code: "paused" });
+      expect(asked).toHaveLength(1);
+      const { count } = await admin
+        .from("ai_assist_uses")
+        .select("id", { count: "exact", head: true })
+        .eq("actor_id", owner.userId);
+      expect(count).toBe(0);
+    } finally {
+      await admin.from("ops_switches").update({ off: false }).eq("name", "ai_assists");
+      resetSwitchCache();
+    }
   });
 
   it("needs consent and the endpoint's own emails, and sends nothing without them", async () => {
@@ -620,5 +777,103 @@ describe("AI setup and repair", () => {
       nextAt: new Date(fiveDaysAgo.getTime() + 30 * 86_400_000).toISOString(),
     });
     expect(usage?.parsedPages).toMatchObject({ used: 0, limit: 20 });
+  });
+});
+
+describe("the AI assists switch in /ops", () => {
+  function opsCall(method: "GET" | "POST", staff: string | null, body?: unknown) {
+    const request = new Request("http://localhost/api/ops/switches", {
+      method,
+      headers: {
+        "content-type": "application/json",
+        ...(staff ? { "x-test-staff": staff } : {}),
+      },
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+    });
+    return method === "GET" ? opsSwitchesGet(request) : opsSwitchesPost(request);
+  }
+
+  it("answers 404 to anyone but staff", async () => {
+    expect((await opsCall("GET", null)).status).toBe(404);
+    expect(
+      (await opsCall("POST", null, { name: "ai_assists", off: true, reason: "nope" })).status
+    ).toBe(404);
+  });
+
+  it("asks which switch, which way and why", async () => {
+    const staff = await signedIn();
+    expect(
+      (await opsCall("POST", staff.userId, { name: "everything", off: true, reason: "test" }))
+        .status
+    ).toBe(400);
+    expect(
+      (await opsCall("POST", staff.userId, { name: "ai_assists", off: "yes", reason: "test" }))
+        .status
+    ).toBe(400);
+    expect(
+      (await opsCall("POST", staff.userId, { name: "ai_assists", off: true, reason: " " })).status
+    ).toBe(400);
+    const { data } = await admin.from("ops_switches").select("off").eq("name", "ai_assists");
+    expect(data).toEqual([{ off: false }]);
+  });
+
+  it("turns AI assists off and back on, shows the last change and audits both", async () => {
+    const staff = await signedIn();
+    try {
+      const off = await opsCall("POST", staff.userId, {
+        name: "ai_assists",
+        off: true,
+        reason: "model misbehaving",
+      });
+      expect(off.status).toBe(200);
+      expect(await off.json()).toMatchObject({ changed: true });
+      // A second tab asking for the same state changes and audits nothing.
+      const again = await opsCall("POST", staff.userId, {
+        name: "ai_assists",
+        off: true,
+        reason: "from another tab",
+      });
+      expect(await again.json()).toMatchObject({
+        changed: false,
+        switch: { off: true, reason: "model misbehaving" },
+      });
+      const listed = (await (await opsCall("GET", staff.userId)).json()) as {
+        switches: Record<string, unknown>[];
+      };
+      expect(listed.switches).toEqual([
+        expect.objectContaining({
+          name: "ai_assists",
+          label: "AI assists",
+          off: true,
+          reason: "model misbehaving",
+          changedBy: staff.userId,
+          changedByEmail: expect.stringContaining("@webhooks-test.local"),
+          configured: true,
+        }),
+      ]);
+      // The assist route in this process sees it at once.
+      expect((await (await call("GET", staff.slug, staff.token)).json()).offered).toBe(false);
+    } finally {
+      expect(
+        (
+          await opsCall("POST", staff.userId, {
+            name: "ai_assists",
+            off: false,
+            reason: "fixed again",
+          })
+        ).status
+      ).toBe(200);
+    }
+    expect((await (await call("GET", staff.slug, staff.token)).json()).offered).toBe(true);
+    const { data: audit } = await admin
+      .from("audit_events")
+      .select("action, target_id, metadata")
+      .eq("actor_user_id", staff.userId)
+      .like("action", "ops.switch_%")
+      .order("occurred_at");
+    expect(audit?.map((row) => [row.action, row.target_id, row.metadata?.reason])).toEqual([
+      ["ops.switch_off", "ai_assists", "model misbehaving"],
+      ["ops.switch_on", "ai_assists", "fixed again"],
+    ]);
   });
 });

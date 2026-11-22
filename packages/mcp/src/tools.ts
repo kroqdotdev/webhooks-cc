@@ -4522,7 +4522,7 @@ export function registerTools(
 
   server.tool(
     "ai_setup_status",
-    "Whether AI setup is offered for an endpoint, and how many AI assists the plan has left in a rolling 30 days.",
+    "Whether AI setup is offered for an endpoint, and how many AI assists the plan has left in a rolling 30 days. paused: true means webhooks.cc turned it off for now (offered is then false); try again later, nothing is used up.",
     {
       slug: z.string().describe("The endpoint's slug"),
     },

@@ -39,7 +39,9 @@ export interface ApprovalView {
 export class ApprovalError extends Error {
   constructor(
     readonly status: number,
-    message: string
+    message: string,
+    /** A machine-readable reason, when the action gave one (ActionError). */
+    readonly code?: string
   ) {
     super(message);
     this.name = "ApprovalError";
@@ -406,7 +408,7 @@ export async function decideApproval(
         undoError
       );
     }
-    throw new ApprovalError(err.status, err.message);
+    throw new ApprovalError(err.status, err.message, err.code);
   }
   // The action is done whatever happens next, so the row never goes back
   // to pending from here: approving again would run it twice (a second

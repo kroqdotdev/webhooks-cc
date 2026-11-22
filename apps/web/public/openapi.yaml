@@ -1027,6 +1027,11 @@ paths:
                 properties:
                   offered:
                     type: boolean
+                  paused:
+                    type: boolean
+                    description: >-
+                      AI setup is turned off for now by webhooks.cc; `offered` is then false, and
+                      asks answer 503 with `code: "paused"`
                   allowed:
                     type: integer
                   used:
@@ -1085,6 +1090,22 @@ paths:
           $ref: "#/components/responses/NotFound"
         "429":
           $ref: "#/components/responses/RateLimited"
+        "503":
+          description: >-
+            AI setup is turned off for now (`code: "paused"`); nothing is used up. Approving an
+            approval asked earlier answers the same while it lasts, and the approval can be
+            approved again once it is back.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [error]
+                properties:
+                  error:
+                    type: string
+                  code:
+                    type: string
+                    enum: [paused]
   /api/endpoints/{slug}/layouts/template:
     parameters:
       - $ref: "#/components/parameters/slug"

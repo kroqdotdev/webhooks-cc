@@ -6,9 +6,10 @@ import {
   type AssistAsk,
   type AssistResult,
 } from "@/lib/ai/assist";
-import { AssistModelError, FIELD_SOURCES } from "@/lib/ai/model";
+import { AssistModelError, FIELD_SOURCES, aiOffered } from "@/lib/ai/model";
 import type { EmailField } from "@webhooks-cc/sdk/email";
 import { ownedEndpoint } from "@/lib/forwarding/destination-routes";
+import { freshSwitchState, switchedOff } from "@/lib/ops/switches";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getRequestByIdForUser, type RequestRecord } from "@/lib/supabase/requests";
 import { isUuid } from "@/lib/uuid";
@@ -31,6 +32,27 @@ export class AssistRefusal extends Error {
     super(message);
     this.name = "AssistRefusal";
   }
+}
+
+/** What an asker reads while staff have AI assists switched off (lib/ops/switches.ts). */
+export const AI_PAUSED_MESSAGE = "AI setup is turned off for now. Try again later.";
+
+/**
+ * Whether AI setup can run here: "unconfigured" without an API key,
+ * "paused" while staff have it switched off in /ops, else "offered".
+ */
+export async function aiAssistState(): Promise<"offered" | "unconfigured" | "paused"> {
+  if (!aiOffered()) return "unconfigured";
+  return (await switchedOff("ai_assists")) ? "paused" : "offered";
+}
+
+/** The refusal for a state other than "offered", or null. */
+export function aiStateRefusal(state: "offered" | "unconfigured" | "paused"): AssistRefusal | null {
+  if (state === "unconfigured") {
+    return new AssistRefusal(404, "AI setup is not available on this server.");
+  }
+  if (state === "paused") return new AssistRefusal(503, AI_PAUSED_MESSAGE, "paused");
+  return null;
 }
 
 export interface AssistInput {
@@ -182,6 +204,7 @@ export async function runEndpointAssist(
   if (takeError) throw takeError;
   const take = (taken ?? {}) as { status?: string; id?: string; allowed?: number; used?: number };
   if (take.status !== "ok" || !take.id) {
+    if (take.status === "paused") throw aiStateRefusal("paused")!;
     throw new AssistRefusal(
       take.status === "none_left" ? 429 : take.status === "busy" ? 409 : 404,
       take.status === "none_left"
@@ -196,11 +219,21 @@ export async function runEndpointAssist(
 
   // Once the model was asked, a failure keeps the assist ("error"); before, it is given back.
   let asked = false;
+  // Set by mayAskAgain below, read after runAssist returns.
+  let switchState = "on" as "on" | "off" | "unknown";
   try {
     let result: AssistResult;
     try {
       asked = true;
-      result = await runAssist(input.ask, requests, prepared);
+      // Staff may have switched AI assists off while the first answer was
+      // coming: the second request is not sent then, nor when the switch
+      // cannot be read.
+      result = await runAssist(input.ask, requests, prepared, {
+        mayAskAgain: async () => {
+          switchState = await freshSwitchState("ai_assists");
+          return switchState === "on";
+        },
+      });
     } catch (error) {
       // Given back when it cost nothing; kept when the model may have run.
       const billed = error instanceof AssistModelError && error.billed;
@@ -211,6 +244,19 @@ export async function runEndpointAssist(
         throw new AssistRefusal(error.temporary ? 503 : 422, error.message);
       }
       throw error;
+    }
+    if (result.cutShort) {
+      // Switched off before it could finish (or the switch could not be
+      // read): given back, and the asker reads why rather than "nothing
+      // found". The first request did reach the model; an approval that
+      // ends here goes back to pending, and approving it again sends the
+      // emails again, with the owner's consent.
+      await finish(useId, "failed");
+      if (switchState === "off") throw aiStateRefusal("paused")!;
+      throw new AssistRefusal(
+        503,
+        "AI setup could not finish just now. Try again; nothing was used up."
+      );
     }
     await finish(useId, result.fields.length > 0 ? "proposed" : "none");
     // The counts the take answered (this ask included): a fresh read that

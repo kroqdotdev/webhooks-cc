@@ -33,6 +33,11 @@ export interface AssistResult {
   layoutName: string | null;
   /** Proposals dropped because they did not compile or missed a sample. */
   dropped: number;
+  /**
+   * The first answer found nothing and mayAskAgain said no: the ask was cut
+   * short (the switch went off), not answered. Never sent to a client.
+   */
+  cutShort?: true;
 }
 
 /** Samples at most, and how much of each part the model reads at full size. */
@@ -254,7 +259,13 @@ export function prepareAssist(ask: AssistAsk, requests: RequestRecord[]): Prepar
 export async function runAssist(
   ask: AssistAsk,
   requests: RequestRecord[],
-  { instruction, samples }: PreparedAssist
+  { instruction, samples }: PreparedAssist,
+  {
+    mayAskAgain = async () => true,
+  }: {
+    /** Asked before the second request; false answers with cutShort. */
+    mayAskAgain?: () => Promise<boolean>;
+  } = {}
 ): Promise<AssistResult> {
   const signal = AbortSignal.timeout(ASSIST_DEADLINE_MS);
   const deadline = Date.now() + ASSIST_DEADLINE_MS;
@@ -263,7 +274,18 @@ export async function runAssist(
   // From here the model has answered: any failure keeps the assist.
   try {
     let { passed, failures } = check(proposal, ask, requests);
-    if (passed.length === 0 && failures.length > 0 && deadline - Date.now() >= RETRY_MIN_MS) {
+    const worthAgain =
+      passed.length === 0 && failures.length > 0 && deadline - Date.now() >= RETRY_MIN_MS;
+    if (worthAgain && !(await mayAskAgain())) {
+      return {
+        fields: [],
+        match: null,
+        layoutName: null,
+        dropped: failures.length,
+        cutShort: true,
+      };
+    }
+    if (worthAgain) {
       // Once more, with what went wrong, and no retries of its own.
       proposal = await proposePatterns(
         {

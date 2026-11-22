@@ -107,6 +107,8 @@ export type AuditAction =
   | "ops.view_ended"
   | "ops.refund_approved"
   | "ops.refund_dismissed"
+  | "ops.switch_off"
+  | "ops.switch_on"
   | "ops.saved_reply_changed"
   | "tunnel.share_stopped"
   | "tunnel.name_reserved"

@@ -95,7 +95,10 @@ export async function POST(request: Request) {
     return Response.json({ status: approve ? (decided.done ? "done" : "approved") : "denied" });
   } catch (err) {
     if (err instanceof ApprovalError) {
-      return Response.json({ error: err.message }, { status: err.status });
+      return Response.json(
+        { error: err.message, ...(err.code ? { code: err.code } : {}) },
+        { status: err.status }
+      );
     }
     // An action may call Polar, whose errors carry its response body.
     reportError("POST /api/approvals/decide failed", loggablePolarError(err));
