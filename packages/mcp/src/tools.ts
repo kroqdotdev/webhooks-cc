@@ -4531,7 +4531,7 @@ export function registerTools(
 
   server.tool(
     "ai_setup",
-    "Have AI propose email fields (or a layout, or a repaired field) from 1 to 5 of an endpoint's captured emails. It sends those emails (subject, sender, recipients, text, headers; never attachments) to Anthropic's model, so the account's owner must approve it: this returns a link and a code to show them, and the page lists the emails. Then call wait_for_approval for the proposals, each with the value it found in every email. Nothing is saved: apply the fields with update_endpoint. Uses one AI assist.",
+    "Have AI propose email fields (or a layout, or a repaired field) from 1 to 5 of an endpoint's captured emails. It sends those emails (subject, sender, recipients, text, headers; never attachments) to Anthropic's model, so the account's owner must approve it: this returns a link and a code to show them, and the page lists the emails. Then call wait_for_approval for the proposals, each with the value it found in every email. Nothing is saved: apply the fields with update_endpoint. Uses one AI assist. If an approval stays pending, ai_setup_status says whether AI setup is paused for now.",
     {
       slug: z.string().describe("The endpoint's slug"),
       requestIds: z

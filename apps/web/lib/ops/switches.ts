@@ -90,7 +90,10 @@ export async function switchedOff(name: OpsSwitchName): Promise<boolean> {
  * check treats as not on.
  */
 export async function freshSwitchState(name: OpsSwitchName): Promise<"on" | "off" | "unknown"> {
-  return readSwitch(name);
+  // Once more after a failed read, so a single blip does not cut an ask
+  // short whose first request was already paid for.
+  const state = await readSwitch(name);
+  return state === "unknown" ? readSwitch(name) : state;
 }
 
 async function readSwitch(name: OpsSwitchName): Promise<"on" | "off" | "unknown"> {

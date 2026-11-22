@@ -108,8 +108,20 @@ describe("switchedOff", () => {
   });
 
   it("answers unknown for a fresh read that failed", async () => {
-    answers = [{ data: null, error: { message: "down" } }];
+    answers = [
+      { data: null, error: { message: "down" } },
+      { data: null, error: { message: "still down" } },
+    ];
     expect(await freshSwitchState("ai_assists")).toBe("unknown");
+    expect(reads()).toBe(2);
+  });
+
+  it("reads once more after a failed fresh read", async () => {
+    answers = [
+      { data: null, error: { message: "blip" } },
+      { data: { off: false }, error: null },
+    ];
+    expect(await freshSwitchState("ai_assists")).toBe("on");
   });
 
   it("does not let a read that started before a change put the old state back", async () => {

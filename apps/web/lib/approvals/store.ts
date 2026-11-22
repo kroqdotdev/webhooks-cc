@@ -370,8 +370,10 @@ export async function decideApproval(
       runContext(row.id)
     ));
   } catch (err) {
-    // Only a clean refusal (ActionError: checked, nothing done) gives the
-    // approval back to approve again. Anything else may have failed after
+    // Only a clean refusal (ActionError: checked, nothing kept) gives the
+    // approval back to approve again. An AI assist cut short by the switch
+    // counts as one: its first request did go out, but the assist is given
+    // back and approving again asks anew. Anything else may have failed after
     // the action took effect (a timeout once the write landed), and
     // approving again would run it twice: the row stays completed without
     // a result, and the asker's poll ends at expiry.
