@@ -442,7 +442,7 @@ const CAPTURE_ONLY_PROVIDERS: Record<string, CaptureOnlyProvider> = {
     signatureHeader: "verif-hash",
     signatureAlgorithm: null,
     signatureNote:
-      "On the v3 API this is not an HMAC: the secret hash set in the dashboard is sent as-is in the verif-hash header, and your handler compares it with its stored value. The v4 API sends a base64 HMAC-SHA256 of the body in a flutterwave-signature header instead.",
+      "On the v3 API this is not an HMAC: the secret hash set in the dashboard is sent as-is in the verif-hash header, and your handler compares it with its stored value. Flutterwave's v4 docs describe a base64 HMAC-SHA256 of the body in a flutterwave-signature header instead.",
     signatureOptional: true,
   },
   jira: {
@@ -1597,7 +1597,7 @@ const PROVIDER_SEO: Partial<Record<string, ProviderSeo>> = {
       {
         question: "Are Mollie webhooks signed?",
         answer:
-          "Classic webhooks are not: they hold only an id, and fetching the resource with your API key is the check. Mollie advises against allowing its IP addresses only, because they change. Next-gen webhooks (in beta), which you subscribe to by event type in the dashboard or through the API, carry an X-Mollie-Signature header of the form sha256=<hex>, an HMAC-SHA256 of the unaltered request body keyed with the signing secret. Remove the prefix, compute the same HMAC and compare in constant time. Rotating the secret needs care: Mollie's next-gen webhooks page says a new secret replaces the old one at once, with no overlap, so change it in your handler at the same moment.",
+          "Classic webhooks are not: they hold only an id, and fetching the resource with your API key is the check. Mollie advises against allowing its IP addresses only, because they change. Next-gen webhooks (in beta), which you subscribe to by event type in the dashboard or through the API, carry an X-Mollie-Signature header of the form sha256=<hex>, an HMAC-SHA256 of the unaltered request body keyed with the signing secret. Remove the prefix, compute the same HMAC and compare in constant time. Rotating the secret needs care: Mollie's next-gen webhooks page says a new secret replaces the old one at once, with no overlap, so have your handler accept both the old and the new secret while you switch.",
       },
       {
         question: "How does Mollie test mode work?",
@@ -1624,7 +1624,7 @@ const PROVIDER_SEO: Partial<Record<string, ProviderSeo>> = {
     reference: {
       heading: "Flutterwave test cards for successful payments",
       intro:
-        "These are the v3 API's test cards and work in test mode only. Each card triggers one authorization flow (PIN, 3D Secure, address verification or none), so pick the one your integration has to handle; the last card is for preauthorized charges.",
+        "These are the main test cards of the v3 API and work in test mode only. Each card triggers one authorization flow (PIN, 3D Secure, address verification or none), so pick the one your integration has to handle; the last card is for preauthorized charges.",
       columns: ["Card", "Number"],
       codeColumn: 1,
       rows: [
@@ -1716,9 +1716,9 @@ const PROVIDER_SEO: Partial<Record<string, ProviderSeo>> = {
           "On the v3 API a test transfer stays PENDING unless its reference says otherwise: put _PMCK at the end of the reference to mock a successful transfer, or _PMCK_ST_F to mock a failed one. The status changes after 10 minutes by default; add DU_ and a number of minutes after it, as in _PMCKDU_1 or _PMCK_ST_FDU_1, to change the wait. Flutterwave asks you to whitelist the IP addresses of the servers that make the transfer calls.",
       },
       {
-        question: "Is this the same on the Flutterwave v4 API?",
+        question: "Do Flutterwave v4 webhooks work the same way?",
         answer:
-          "No. The cards, events and verif-hash check on this page follow the v3 docs. On v4 a secret hash is required and keys an HMAC-SHA256 of the webhook body, sent base64-encoded in a flutterwave-signature header. The payload names the event in a type field, beside an id and a timestamp, with statuses such as succeeded. The sandbox picks the outcome of a mock card payment from an X-Scenario-Key header on the API call. The 200-only rule, the 60-second timeout and the 3 retries 30 minutes apart, once turned on, are the same.",
+          "No. The cards, events and verif-hash check on this page follow the v3 docs. On v4 you must set a secret hash, and the docs describe Flutterwave using it as the key for an HMAC-SHA256 of the webhook body, sent base64-encoded in a flutterwave-signature header. The payload names the event in a type field, beside an id and a timestamp, with statuses such as succeeded. The sandbox picks the outcome of a mock card payment from an X-Scenario-Key header on the API call. The 200-only rule, the 60-second timeout and the 3 retries 30 minutes apart, once turned on, are the same.",
       },
     ],
   },
