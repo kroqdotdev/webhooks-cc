@@ -518,6 +518,7 @@ const CAPTURE_ONLY_PROVIDERS: Record<string, CaptureOnlyProvider> = {
     signatureAlgorithm: "HMAC-SHA256",
     signatureNote:
       "Only next-gen webhooks are signed, with a sha256=<hex> value. Classic webhooks post just a resource ID, and the handler fetches the resource through the API to read its status.",
+    signatureOptional: true,
   },
   netlify: {
     label: "Netlify",
@@ -1514,7 +1515,7 @@ const PROVIDER_SEO: Partial<Record<string, ProviderSeo>> = {
     title: "Mollie Webhooks: Test Mode, Test Cards & Retry Schedule",
     h1: "Mollie webhooks: test mode, test cards and retries",
     description:
-      "Mollie test card numbers and the amounts that force a failed payment, what the webhook POST carries, the 10-attempt retry schedule, and a free URL that captures each call.",
+      "Mollie test card numbers, the amounts that set each failureReason, what the webhook POST carries, the 10-attempt retry schedule, and a free capture URL.",
     reference: {
       heading: "Mollie test cards",
       intro:
@@ -1559,20 +1560,19 @@ const PROVIDER_SEO: Partial<Record<string, ProviderSeo>> = {
       {
         heading: "When Mollie calls a payment webhook",
         intro:
-          "A classic webhook is the webhookUrl you pass when creating a payment, subscription or payment link. Mollie calls it when the payment changes in one of these ways, in test mode as in live mode.",
+          "A classic webhook is the webhookUrl you pass when creating a payment, order, subscription or payment link. Mollie calls it when the payment changes in one of these ways, in test mode as in live mode.",
         columns: ["Change", "What happened"],
-        codeColumn: 0,
         rows: [
-          ["paid", "The payment reached the paid status"],
-          ["authorized", "The payment was authorized and can be captured"],
-          ["expired", "The payment expired"],
-          ["failed", "The payment failed"],
+          ["Status paid", "The customer completed the payment"],
+          ["Status authorized", "The payment was authorized and can be captured"],
+          ["Status expired", "The payment expired"],
+          ["Status failed", "The payment failed"],
           [
-            "canceled",
+            "Status canceled",
             "The payment was canceled (with a method preset, only once the customer also cancels on the hosted checkout page)",
           ],
-          ["refund", "A refund on the payment reached processing, refunded or failed"],
-          ["chargeback", "A chargeback was received on the payment"],
+          ["A refund", "A refund on the payment reached processing, refunded or failed"],
+          ["A chargeback", "A chargeback was received on the payment"],
         ],
         source: {
           label: "Mollie webhooks reference",
@@ -1594,17 +1594,17 @@ const PROVIDER_SEO: Partial<Record<string, ProviderSeo>> = {
       {
         question: "What is the Mollie webhook retry schedule?",
         answer:
-          "Mollie expects a 200 OK within 15 seconds; a slower answer counts as failed even if it is a 200. It calls the webhook 10 times in all: right after the status change, then 1, 2, 4, 8, 16 and 29 minutes after the previous attempt, then 1 hour, 2 hours and 22 hours, which puts the last attempt 26 hours after the change. You cannot trigger a call again yourself; for a webhook that already succeeded, Mollie's docs point to its support team.",
+          "Mollie expects a 200 OK within 15 seconds; a slower answer counts as failed even if it is a 200. Until it gets one, it calls the webhook up to 10 times: right after the status change, then 1, 2, 4, 8, 16 and 29 minutes after the previous attempt, then 1 hour, 2 hours and 22 hours, which puts the last attempt 26 hours after the change. You cannot trigger a call again yourself; for a webhook that already succeeded, Mollie's docs point to its support team.",
       },
       {
         question: "Are Mollie webhooks signed?",
         answer:
-          "Classic webhooks are not: they hold only an id, and fetching the resource with your API key is the check. Mollie advises against allowing its IP addresses only, because they change. Next-gen webhooks (in beta), which you subscribe to by event type in the dashboard or through the API, carry an X-Mollie-Signature header of the form sha256=<hex>, an HMAC-SHA256 of the unaltered request body keyed with the signing secret. Remove the prefix, compute the same HMAC and compare in constant time. Roll secret in the dashboard makes a new secret and expires the old one within a day.",
+          "Classic webhooks are not: they hold only an id, and fetching the resource with your API key is the check. Mollie advises against allowing its IP addresses only, because they change. Next-gen webhooks (in beta), which you subscribe to by event type in the dashboard or through the API, carry an X-Mollie-Signature header of the form sha256=<hex>, an HMAC-SHA256 of the unaltered request body keyed with the signing secret. Remove the prefix, compute the same HMAC and compare in constant time. Rotating the secret needs care: Mollie's next-gen webhooks page says a new secret replaces the old one at once, with no overlap, so change it in your handler at the same moment.",
       },
       {
         question: "How does Mollie test mode work?",
         answer:
-          "Each website profile has a Live API key and a Test API key, and anything created with the test key is kept apart from live data; with access tokens or app tokens you pass the testmode parameter instead. Test payments replace the hosted checkout with a test mode checkout screen where you choose the outcome, and payment methods are active in test mode at once, even while they show as pending. Endpoints for business operations do not support test mode.",
+          "Each website profile has a Live API key and a Test API key, and anything created with the test key is kept apart from live data; with advanced access tokens or app tokens you pass the testmode parameter instead. Test payments replace the hosted checkout with a test mode checkout screen where you choose the outcome, and payment methods are active in test mode at once, even while they show as pending. Endpoints for business operations do not support test mode.",
       },
       {
         question: "How do I test Mollie refunds, chargebacks and recurring payments?",
@@ -1614,7 +1614,7 @@ const PROVIDER_SEO: Partial<Record<string, ProviderSeo>> = {
       {
         question: "Why does Mollie say the webhook location is invalid?",
         answer:
-          "The URL has to be reachable from Mollie's side, so localhost and other addresses only your machine knows are refused. Use a public URL, such as a webhooks.cc endpoint. If your server redirects the call, answer with 307 or 308: after a 301 or 302 the request turns from POST into GET and the id is lost.",
+          "The URL has to be reachable from Mollie's side, so localhost and other addresses only your machine knows are refused. Use a public URL, such as a webhooks.cc endpoint. A separate trap is a redirect: after a 301 or 302 the call turns from POST into GET and the id is lost, so point webhookUrl at the final URL. A 307 or 308 keeps the POST, though Mollie discourages relying on one.",
       },
     ],
   },
@@ -1622,11 +1622,11 @@ const PROVIDER_SEO: Partial<Record<string, ProviderSeo>> = {
     title: "Flutterwave Test Cards, Webhook Events & verif-hash",
     h1: "Flutterwave webhooks: test cards, events and verif-hash",
     description:
-      "Flutterwave test card numbers with their expiry, CVV, PIN and OTP, webhook events such as charge.completed, the verif-hash check, timeout and retries, and a free capture URL.",
+      "Flutterwave test card numbers with expiry, CVV, PIN and OTP, webhook events such as charge.completed, the verif-hash check, timeout and retries.",
     reference: {
       heading: "Flutterwave test cards for successful payments",
       intro:
-        "These work in test mode only. Each card triggers one authorization flow (PIN, 3D Secure, address verification or none), so pick the one your integration has to handle.",
+        "These work in test mode only. Each card triggers one authorization flow (PIN, 3D Secure, address verification, pre-authentication or none), so pick the one your integration has to handle.",
       columns: ["Card", "Number"],
       codeColumn: 1,
       rows: [
@@ -1636,7 +1636,10 @@ const PROVIDER_SEO: Partial<Record<string, ProviderSeo>> = {
         ["Visa, AVS (09/32, CVV 899, PIN 3310, OTP 12345)", "4556 0527 0417 2643"],
         ["Verve, PIN (10/31, CVV 780, PIN 3310, OTP 12345)", "5061 4604 1012 0223 210"],
         ["Verve, no authentication (10/29, CVV 564, PIN 3310)", "5061 4601 6697 6054 667"],
-        ["Mastercard, pre-authorization (09/31, CVV 789, PIN 3310)", "5377 2836 4507 7450"],
+        [
+          "Mastercard, pre-authentication test card (09/31, CVV 789, PIN 3310)",
+          "5377 2836 4507 7450",
+        ],
       ],
       source: {
         label: "Flutterwave testing docs",
@@ -1664,7 +1667,7 @@ const PROVIDER_SEO: Partial<Record<string, ProviderSeo>> = {
       {
         heading: "Flutterwave webhook events",
         intro:
-          "A Flutterwave webhook is a POST with a JSON body: an event field naming the event and a data object with the transaction's id, status and payment or customer details. One event name covers both outcomes, so read data.status. Virtual card and refund notifications are shaped differently and have no event field.",
+          "A Flutterwave webhook is a POST with a JSON body: an event field naming the event and a data object with the transaction's id, status and payment or customer details. One event name covers both outcomes, so read data.status. Virtual card notifications, and the refund sample in Flutterwave's docs, are shaped differently and have no event field.",
         columns: ["event", "When Flutterwave sends it"],
         codeColumn: 0,
         rows: [
@@ -1692,7 +1695,7 @@ const PROVIDER_SEO: Partial<Record<string, ProviderSeo>> = {
       {
         question: "How do I test Flutterwave webhooks?",
         answer:
-          "Create a free webhooks.cc endpoint, switch the Flutterwave dashboard to test mode, and add the endpoint's URL under Settings, Webhooks, with a secret hash and the retry option ticked. Make a payment with a test card and the charge.completed call appears on the endpoint with its headers and JSON body. To reach code on your machine, run whk tunnel <port> --endpoint <slug> with that endpoint's slug, and every call is forwarded to localhost as well as kept on the endpoint.",
+          "Create a free webhooks.cc endpoint and add its URL in the Flutterwave dashboard under Settings, Webhooks, with a secret hash and the retry option ticked. Then, in test mode, make a payment with a test card and the charge.completed call appears on the endpoint with its headers and JSON body. To reach code on your machine, run whk tunnel <port> --endpoint <slug> with that endpoint's slug, and every call is forwarded to localhost as well as kept on the endpoint.",
       },
       {
         question: "How do I verify a Flutterwave webhook?",

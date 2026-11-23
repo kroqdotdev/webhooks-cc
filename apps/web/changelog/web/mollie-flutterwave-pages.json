@@ -1,7 +1,7 @@
 {
   "title": "Mollie and Flutterwave webhook pages",
   "items": [
-    "The Mollie page lists the test card numbers, the amounts that force a failed card payment, when a payment webhook is called, the retry schedule and how test mode works",
+    "The Mollie page lists the test card numbers, the amounts that set each failure reason on a failed card payment, when a payment webhook is called, the retry schedule and how test mode works",
     "The Flutterwave page lists the test cards with their expiry, CVV, PIN and OTP, the webhook events, the verif-hash check, the timeout and retries"
   ]
 }

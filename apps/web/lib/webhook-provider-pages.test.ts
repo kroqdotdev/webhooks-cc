@@ -43,7 +43,7 @@ describe("webhook provider pages", () => {
   });
 
   it("marks opt-in signing as optional, and never for SDK providers", () => {
-    for (const slug of ["segment", "zapier", "chargebee", "jira", "mailchimp"]) {
+    for (const slug of ["segment", "zapier", "chargebee", "jira", "mailchimp", "mollie"]) {
       expect(getWebhookProviderPage(slug)?.signatureOptional).toBe(true);
     }
     expect(getWebhookProviderPage("pagerduty")?.signatureOptional).toBe(false);
