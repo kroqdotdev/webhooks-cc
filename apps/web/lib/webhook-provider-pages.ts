@@ -442,7 +442,8 @@ const CAPTURE_ONLY_PROVIDERS: Record<string, CaptureOnlyProvider> = {
     signatureHeader: "verif-hash",
     signatureAlgorithm: null,
     signatureNote:
-      "Not an HMAC: the secret hash set in the dashboard is sent as-is in the verif-hash header, and your handler compares it with its stored value.",
+      "On the v3 API this is not an HMAC: the secret hash set in the dashboard is sent as-is in the verif-hash header, and your handler compares it with its stored value. The v4 API sends a base64 HMAC-SHA256 of the body in a flutterwave-signature header instead.",
+    signatureOptional: true,
   },
   jira: {
     label: "Jira",
@@ -1536,21 +1537,21 @@ const PROVIDER_SEO: Partial<Record<string, ProviderSeo>> = {
       {
         heading: "Mollie test amounts for failed card payments",
         intro:
-          "Create a test mode card payment for one of these amounts, then set it to failed on the test mode checkout screen, and the payment comes back with that failureReason. Test mode supports EUR only.",
+          "Create a test mode card payment for one of these amounts, then set it to failed on the test mode checkout screen, and the payment comes back with that failureReason. For now, Mollie's test mode supports EUR only.",
         columns: ["failureReason", "Amount"],
         codeColumn: 0,
         rows: [
-          ["invalid_card_number", "EUR 1,001.00"],
-          ["invalid_cvv", "EUR 1,002.00"],
-          ["invalid_card_holder_name", "EUR 1,003.00"],
-          ["card_expired", "EUR 1,004.00"],
-          ["invalid_card_type", "EUR 1,005.00"],
-          ["refused_by_issuer", "EUR 1,006.00"],
-          ["insufficient_funds", "EUR 1,007.00"],
-          ["inactive_card", "EUR 1,008.00"],
-          ["possible_fraud", "EUR 1,009.00"],
-          ["authentication_failed", "EUR 1,010.00"],
-          ["card_declined", "EUR 1,011.00"],
+          ["invalid_card_number", "EUR 1001.00"],
+          ["invalid_cvv", "EUR 1002.00"],
+          ["invalid_card_holder_name", "EUR 1003.00"],
+          ["card_expired", "EUR 1004.00"],
+          ["invalid_card_type", "EUR 1005.00"],
+          ["refused_by_issuer", "EUR 1006.00"],
+          ["insufficient_funds", "EUR 1007.00"],
+          ["inactive_card", "EUR 1008.00"],
+          ["possible_fraud", "EUR 1009.00"],
+          ["authentication_failed", "EUR 1010.00"],
+          ["card_declined", "EUR 1011.00"],
         ],
         source: {
           label: "Mollie testing docs",
@@ -1560,17 +1561,14 @@ const PROVIDER_SEO: Partial<Record<string, ProviderSeo>> = {
       {
         heading: "When Mollie calls a payment webhook",
         intro:
-          "A classic webhook is the webhookUrl you pass when creating a payment, order, subscription or payment link. Mollie calls it when the payment changes in one of these ways, in test mode as in live mode.",
+          "A classic webhook is the webhookUrl you pass when creating a payment, subscription or payment link (an order takes one too, with triggers of its own). Mollie calls it when the payment changes in one of these ways, in test mode as in live mode.",
         columns: ["Change", "What happened"],
         rows: [
           ["Status paid", "The customer completed the payment"],
           ["Status authorized", "The payment was authorized and can be captured"],
           ["Status expired", "The payment expired"],
           ["Status failed", "The payment failed"],
-          [
-            "Status canceled",
-            "The payment was canceled (with a method preset, only once the customer also cancels on the hosted checkout page)",
-          ],
+          ["Status canceled", "The payment was canceled"],
           ["A refund", "A refund on the payment reached processing, refunded or failed"],
           ["A chargeback", "A chargeback was received on the payment"],
         ],
@@ -1604,7 +1602,7 @@ const PROVIDER_SEO: Partial<Record<string, ProviderSeo>> = {
       {
         question: "How does Mollie test mode work?",
         answer:
-          "Each website profile has a Live API key and a Test API key, and anything created with the test key is kept apart from live data; with advanced access tokens or app tokens you pass the testmode parameter instead. Test payments replace the hosted checkout with a test mode checkout screen where you choose the outcome, and payment methods are active in test mode at once, even while they show as pending. Endpoints for business operations do not support test mode.",
+          "Each website profile has a Live API key and a Test API key, managed under Developers, API keys in the Mollie dashboard, and anything created with the test key is kept apart from live data; with advanced access tokens or app tokens you pass the testmode parameter instead. Test payments replace the hosted checkout with a test mode checkout screen where you choose the outcome, and payment methods are active in test mode at once, even while they show as pending. Endpoints for business operations do not support test mode.",
       },
       {
         question: "How do I test Mollie refunds, chargebacks and recurring payments?",
@@ -1614,7 +1612,7 @@ const PROVIDER_SEO: Partial<Record<string, ProviderSeo>> = {
       {
         question: "Why does Mollie say the webhook location is invalid?",
         answer:
-          "The URL has to be reachable from Mollie's side, so localhost and other addresses only your machine knows are refused. Use a public URL, such as a webhooks.cc endpoint. A separate trap is a redirect: after a 301 or 302 the call turns from POST into GET and the id is lost, so point webhookUrl at the final URL. A 307 or 308 keeps the POST, though Mollie discourages relying on one.",
+          "The URL has to be reachable from Mollie's side, so a localhost URL is not accepted. Use a public URL, such as a webhooks.cc endpoint. A separate trap is a redirect: after a 301 or 302 the call turns from POST into GET and the id is lost, so point webhookUrl at the final URL. A 307 or 308 keeps the POST, though Mollie discourages relying on one.",
       },
     ],
   },
@@ -1626,7 +1624,7 @@ const PROVIDER_SEO: Partial<Record<string, ProviderSeo>> = {
     reference: {
       heading: "Flutterwave test cards for successful payments",
       intro:
-        "These work in test mode only. Each card triggers one authorization flow (PIN, 3D Secure, address verification, pre-authentication or none), so pick the one your integration has to handle.",
+        "These are the v3 API's test cards and work in test mode only. Each card triggers one authorization flow (PIN, 3D Secure, address verification or none), so pick the one your integration has to handle; the last card is for preauthorized charges.",
       columns: ["Card", "Number"],
       codeColumn: 1,
       rows: [
@@ -1650,7 +1648,7 @@ const PROVIDER_SEO: Partial<Record<string, ProviderSeo>> = {
       {
         heading: "Flutterwave test cards for failed payments",
         intro:
-          "Test mode only. In the payment modal any OTP passes, except 5548, which mocks a wrong OTP, and 6648, which mocks insufficient funds.",
+          "For the v3 API, in test mode only. In the payment modal any OTP passes, except 5548, which mocks a wrong OTP, and 6648, which mocks insufficient funds.",
         columns: ["Card", "Number"],
         codeColumn: 1,
         rows: [
@@ -1667,8 +1665,8 @@ const PROVIDER_SEO: Partial<Record<string, ProviderSeo>> = {
       {
         heading: "Flutterwave webhook events",
         intro:
-          "A Flutterwave webhook is a POST with a JSON body: an event field naming the event and a data object with the transaction's id, status and payment or customer details. One event name covers both outcomes, so read data.status. Virtual card notifications, and the refund sample in Flutterwave's docs, are shaped differently and have no event field.",
-        columns: ["event", "When Flutterwave sends it"],
+          "On the v3 API a Flutterwave webhook is a POST with a JSON body: an event field naming the event and a data object with the transaction's id, status and payment or customer details. These are the events in the sample payloads of Flutterwave's docs. One event name covers both outcomes, so read data.status. Virtual card notifications, and the refund sample in Flutterwave's docs, are shaped differently and have no event field.",
+        columns: ["event", "What it reports"],
         codeColumn: 0,
         rows: [
           ["charge.completed", "A payment finished; data.status is successful or failed"],
@@ -1695,12 +1693,12 @@ const PROVIDER_SEO: Partial<Record<string, ProviderSeo>> = {
       {
         question: "How do I test Flutterwave webhooks?",
         answer:
-          "Create a free webhooks.cc endpoint and add its URL in the Flutterwave dashboard under Settings, Webhooks, with a secret hash and the retry option ticked. Then, in test mode, make a payment with a test card and the charge.completed call appears on the endpoint with its headers and JSON body. To reach code on your machine, run whk tunnel <port> --endpoint <slug> with that endpoint's slug, and every call is forwarded to localhost as well as kept on the endpoint.",
+          "Create a free webhooks.cc endpoint and add its URL in the Flutterwave dashboard under Settings, Webhooks, with a secret hash and the retry option ticked. Use a secret hash made for testing: on the v3 API the header carries the value itself, so anyone who can open the capture can read it. Then make a test mode payment with a test card, and the charge.completed call appears on the endpoint with its headers and JSON body. To reach code on your machine, run whk tunnel <port> --endpoint <slug> with that endpoint's slug, and every call is forwarded to localhost as well as kept on the endpoint.",
       },
       {
         question: "How do I verify a Flutterwave webhook?",
         answer:
-          "Set a secret hash where you add the webhook URL. Flutterwave sends that value as it is in a header named verif-hash; it is not an HMAC of the body. Your handler compares the header with the value it has stored and discards the request when the header is missing or different. Flutterwave also tells you to call its transaction verification endpoint before giving value, and to check that status, amount, currency and tx_ref match what you expect.",
+          "Set a secret hash where you add the webhook URL. On the v3 API, Flutterwave sends that value as it is in a header named verif-hash; it is not an HMAC of the body. Your handler compares the header with the value it has stored and discards the request when the header is missing or different. Flutterwave also tells you to call its transaction verification endpoint before giving value, and to check that status, amount, currency and tx_ref match what you expect.",
       },
       {
         question: "Does Flutterwave retry failed webhooks?",
@@ -1710,12 +1708,17 @@ const PROVIDER_SEO: Partial<Record<string, ProviderSeo>> = {
       {
         question: "How do I know a Flutterwave key is a test key?",
         answer:
-          "Test keys carry _TEST, as in FLWPUBK_TEST-..., and the toggle in the dashboard's settings switches both the mode and the keys shown. No real money moves in test mode, and the test cards, bank accounts and mobile money numbers work there only. Transaction receipts in test mode go to your business email, not to the customer's.",
+          "On the v3 API, test keys carry _TEST, as in FLWPUBK_TEST-..., and the toggle in the dashboard's settings switches both the mode and the keys shown. No real money moves in test mode, and the test cards, bank accounts and mobile money numbers work there only. Transaction receipts in test mode go to your business email, not to the customer's.",
       },
       {
         question: "How do I test Flutterwave transfers?",
         answer:
-          "A test transfer stays PENDING unless its reference says otherwise: end the reference with _PMCK to mock a successful transfer, or with _PMCK_ST_F to mock a failed one. The status changes after 10 minutes by default; append DU_ and a number of minutes, as in _PMCKDU_1, to change the wait.",
+          "On the v3 API a test transfer stays PENDING unless its reference says otherwise: put _PMCK at the end of the reference to mock a successful transfer, or _PMCK_ST_F to mock a failed one. The status changes after 10 minutes by default; add DU_ and a number of minutes after it, as in _PMCKDU_1 or _PMCK_ST_FDU_1, to change the wait. Flutterwave asks you to whitelist the IP addresses of the servers that make the transfer calls.",
+      },
+      {
+        question: "Is this the same on the Flutterwave v4 API?",
+        answer:
+          "No. The cards, events and verif-hash check on this page follow the v3 docs. On v4 a secret hash is required and keys an HMAC-SHA256 of the webhook body, sent base64-encoded in a flutterwave-signature header. The payload names the event in a type field, beside an id and a timestamp, with statuses such as succeeded. The sandbox picks the outcome of a mock card payment from an X-Scenario-Key header on the API call. The 200-only rule, the 60-second timeout and the 3 retries 30 minutes apart, once turned on, are the same.",
       },
     ],
   },
