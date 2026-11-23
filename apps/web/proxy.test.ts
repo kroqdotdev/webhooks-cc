@@ -307,6 +307,63 @@ describe("proxy: remote MCP server", () => {
   });
 });
 
+describe("proxy: links opened with their punctuation", () => {
+  beforeEach(() => {
+    vi.stubEnv("NEXT_PUBLIC_APP_URL", "https://webhooks.cc");
+    vi.stubEnv("NEXT_PUBLIC_MAILHOOKS_URL", "https://mailhooks.cc");
+  });
+
+  it("sends a page link that kept a sentence's period or a parenthesis to the page", async () => {
+    for (const [path, page] of [
+      ["/account/api-keys.", "/account/api-keys"],
+      ["/docs/layouts);", "/docs/layouts"],
+      ["/docs/sdk/testing/pytest)", "/docs/sdk/testing/pytest"],
+    ]) {
+      const res = await proxy(
+        new NextRequest(`https://webhooks.cc${path}`, { headers: PAGE_LOAD })
+      );
+      expect(res.status).toBe(308);
+      expect(res.headers.get("location")).toBe(`https://webhooks.cc${page}`);
+    }
+    expect(getSession).not.toHaveBeenCalled();
+  });
+
+  it("keeps the query and the site", async () => {
+    const res = await proxy(new NextRequest("https://webhooks.cc/docs/share.?ref=cli"));
+    expect(res.headers.get("location")).toBe("https://webhooks.cc/docs/share?ref=cli");
+
+    const mail = await proxy(new NextRequest("https://mailhooks.cc/pricing."));
+    expect(mail.status).toBe(308);
+    expect(mail.headers.get("location")).toBe("https://mailhooks.cc/pricing");
+  });
+
+  it("never redirects to another host", async () => {
+    const res = await proxy(new NextRequest("https://webhooks.cc//evil.example."));
+    expect(res.status).toBe(308);
+    expect(new URL(res.headers.get("location")!).origin).toBe("https://webhooks.cc");
+  });
+
+  it("leaves the API and writes alone", async () => {
+    const api = await proxy(new NextRequest("https://webhooks.cc/api/endpoints."));
+    expect(api.status).toBe(200);
+    expect(api.headers.get("location")).toBeNull();
+
+    const mcp = await proxy(new NextRequest("https://webhooks.cc/mcp.", { method: "POST" }));
+    expect(mcp.headers.get("location")).toBeNull();
+
+    const post = await proxy(
+      new NextRequest("https://webhooks.cc/api/go/endpoint.", { method: "POST" })
+    );
+    expect(post.headers.get("location")).toBeNull();
+  });
+
+  it("leaves ordinary pages alone", async () => {
+    const res = await proxy(new NextRequest("https://webhooks.cc/docs/share"));
+    expect(res.status).toBe(200);
+    expect(res.headers.get("location")).toBeNull();
+  });
+});
+
 describe("proxy: two sites", () => {
   beforeEach(() => {
     vi.stubEnv("NEXT_PUBLIC_APP_URL", "https://webhooks.cc");

@@ -19,8 +19,10 @@ import {
   mailhooksOrigin,
   servedOnMailhooks,
   siteForHost,
+  siteOrigin,
   webhooksOrigin,
 } from "@/lib/site";
+import { withoutTrailingPunctuation } from "@/lib/link-punctuation";
 
 /**
  * Proxy: markdown twins, Supabase session refresh, security headers.
@@ -32,7 +34,9 @@ import {
  *
  * Before all of that it settles the site (lib/site.ts): mailhooks.cc answers
  * only its own paths and sends the rest to webhooks.cc, and the pages behind
- * its host rewrites (app/mailhooks) are not served on webhooks.cc.
+ * its host rewrites (app/mailhooks) are not served on webhooks.cc. A page
+ * link opened with the punctuation after it goes to the page without it
+ * (lib/link-punctuation.ts).
  */
 
 function sanitizeCspOrigin(raw: string | undefined, fallback: string): string {
@@ -237,6 +241,21 @@ export async function proxy(request: NextRequest) {
   request.headers.delete(SITE_HEADER);
   request.headers.delete(MAILHOOKS_MISSING_HEADER);
   const site = siteForHost(request.headers.get("host") ?? request.nextUrl.host);
+  // "/account/api-keys." from a sentence, "/docs/layouts)" from parentheses:
+  // no page ends that way, so send the reader to the page they meant. Reads
+  // only, never the API or the MCP server, whose callers get the 404.
+  const isRead = request.method === "GET" || request.method === "HEAD";
+  const trimmed =
+    isRead && !isApiPath && !isMcpPath && !pathname.startsWith("/_next/")
+      ? withoutTrailingPunctuation(pathname)
+      : null;
+  if (trimmed) {
+    const origin = new URL(siteOrigin(site)).origin;
+    // One leading slash: "//evil.com." would otherwise resolve to another host.
+    const own = trimmed.replace(/^[/\\]+/, "/");
+    const target = new URL(`${own}${request.nextUrl.search}`, origin);
+    return NextResponse.redirect(target.origin === origin ? target : new URL("/", origin), 308);
+  }
   // A path mailhooks.cc does not serve goes to webhooks.cc only when webhooks.cc
   // has it; anything else is mailhooks.cc's own 404 (app/mailhooks/not-found.tsx).
   let missingOnMailhooks = false;
@@ -286,7 +305,6 @@ export async function proxy(request: NextRequest) {
   request.headers.delete(MARKDOWN_TWIN_HEADER);
 
   let response: NextResponse;
-  const isRead = request.method === "GET" || request.method === "HEAD";
   if (missingOnMailhooks) {
     // Marked for the next.config.ts rewrite to mailhooks.cc's own 404.
     const headers = new Headers(request.headers);
