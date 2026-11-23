@@ -43,7 +43,15 @@ describe("webhook provider pages", () => {
   });
 
   it("marks opt-in signing as optional, and never for SDK providers", () => {
-    for (const slug of ["segment", "zapier", "chargebee", "jira", "mailchimp"]) {
+    for (const slug of [
+      "segment",
+      "zapier",
+      "chargebee",
+      "jira",
+      "mailchimp",
+      "mollie",
+      "flutterwave",
+    ]) {
       expect(getWebhookProviderPage(slug)?.signatureOptional).toBe(true);
     }
     expect(getWebhookProviderPage("pagerduty")?.signatureOptional).toBe(false);
@@ -118,9 +126,11 @@ describe("webhook provider pages", () => {
       "coinbase-commerce",
       "discord",
       "docusign",
+      "flutterwave",
       "intercom",
       "lemonsqueezy",
       "linear",
+      "mollie",
       "mux",
       "paddle",
       "razorpay",
@@ -150,6 +160,7 @@ describe("webhook provider pages", () => {
           "2026-11-10T00:00:00.000Z",
           "2026-11-12T00:00:00.000Z",
           "2026-11-16T00:00:00.000Z",
+          "2026-11-23T00:00:00.000Z",
           `${SHARED_COPY_CHANGED}T00:00:00.000Z`,
         ],
         page.slug
