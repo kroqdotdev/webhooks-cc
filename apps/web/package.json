@@ -62,8 +62,8 @@
   },
   "devDependencies": {
     "@apidevtools/swagger-parser": "^13.1.0",
-    "@playwright/test": "^1.65.0",
-    "@statoss/cli": "^0.2.1",
+    "@playwright/test": "^1.65.1",
+    "@statoss/cli": "^0.3.0",
     "@tailwindcss/postcss": "^4.3.4",
     "@tailwindcss/typography": "^0.5.20",
     "@types/hast": "^3.0.5",
@@ -75,9 +75,9 @@
     "@types/source-map-support": "^0.5.10",
     "@types/ssh2": "^1.15.6",
     "pagefind": "^1.6.0",
-    "postcss": "8.5.32",
+    "postcss": "8.5.33",
     "tailwindcss": "^4.3.4",
     "typescript": "^6.0.3",
-    "vitest": "^5.1.0"
+    "vitest": "^5.1.1"
   }
 }
