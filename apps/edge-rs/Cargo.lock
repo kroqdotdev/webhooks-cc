@@ -1851,9 +1851,9 @@ checksum = "a2eb9349b6444b326872e140eb1cf5e7c522154d69e7a0ffb0fb81c06b37543f"
 
 [[package]]
 name = "statoss"
-version = "0.1.1"
+version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3863948e68e01c1468a4d3b7dc44604b6954dd3c3ffeaf80579cabeaa3c7f8de"
+checksum = "da1e1bfd2e389bbd2fa999e168d363dffd48c8ebd0145e627db19251d73fb7eb"
 dependencies = [
  "sentry",
  "serde",
